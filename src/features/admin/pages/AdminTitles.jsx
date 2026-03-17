@@ -71,6 +71,16 @@ function applyCatalogSorting(query, sortBy, sortDirection) {
   }
 }
 
+async function resolveOfficialLinkIds() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('title_availability')
+    .select('canonical_title_id')
+    .eq('is_official', true);
+  if (error) throw error;
+  return [...new Set((data || []).map((r) => r.canonical_title_id))];
+}
+
 async function resolveMatchingIds(searchTerm, filters) {
   if (!supabase) return [];
 
@@ -169,6 +179,7 @@ export function AdminTitles() {
     status: 'all',
     originCountry: 'all',
     isAdult: 'all',
+    hasLinks: 'all',
     yearFrom: '',
     yearTo: '',
     scoreMin: '',
@@ -192,11 +203,44 @@ export function AdminTitles() {
       const to = from + PAGE_SIZE - 1;
       const searchTerm = filters.searchTerm.trim();
 
+      // Pre-fetch IDs with official links when the hasLinks filter is active
+      let linkIds = null;
+      if (filters.hasLinks !== 'all') {
+        linkIds = await resolveOfficialLinkIds();
+        if (filters.hasLinks === 'yes' && linkIds.length === 0) {
+          setTitles([]);
+          setTotalCount(0);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const applyLinkFilter = (query) => {
+        if (linkIds === null) return query;
+        if (filters.hasLinks === 'yes') {
+          return query.in('id', linkIds);
+        }
+        // hasLinks === 'no'
+        if (linkIds.length === 0) return query;
+        return query.not('id', 'in', `(${linkIds.join(',')})`);
+      };
+
       let data;
       let count = 0;
 
       if (searchTerm) {
-        const matchingIds = await resolveMatchingIds(searchTerm, filters);
+        let matchingIds = await resolveMatchingIds(searchTerm, filters);
+
+        // Intersect / exclude based on link filter
+        if (linkIds !== null) {
+          const linkSet = new Set(linkIds);
+          if (filters.hasLinks === 'yes') {
+            matchingIds = matchingIds.filter((id) => linkSet.has(id));
+          } else {
+            matchingIds = matchingIds.filter((id) => !linkSet.has(id));
+          }
+        }
+
         if (matchingIds.length === 0) {
           setTitles([]);
           setTotalCount(0);
@@ -222,6 +266,7 @@ export function AdminTitles() {
           .select(CANONICAL_TITLE_SELECT, { count: 'exact' });
 
         query = applyCatalogFilters(query, filters);
+        query = applyLinkFilter(query);
         query = applyCatalogSorting(query, filters.sortBy, filters.sortDirection);
 
         const response = await query.range(from, to);
@@ -253,6 +298,7 @@ export function AdminTitles() {
     filters.status,
     filters.originCountry,
     filters.isAdult,
+    filters.hasLinks,
     filters.yearFrom,
     filters.yearTo,
     filters.scoreMin,
@@ -294,6 +340,7 @@ export function AdminTitles() {
       filters.status,
       filters.originCountry,
       filters.isAdult,
+      filters.hasLinks,
       filters.yearFrom,
       filters.yearTo,
       filters.scoreMin,
@@ -313,6 +360,7 @@ export function AdminTitles() {
       status: 'all',
       originCountry: 'all',
       isAdult: 'all',
+      hasLinks: 'all',
       yearFrom: '',
       yearTo: '',
       scoreMin: '',
@@ -400,6 +448,14 @@ export function AdminTitles() {
             {ADULT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
+          </select>
+        </label>
+        <label>
+          <span className="form-label">Links</span>
+          <select className="form-select" value={filters.hasLinks} onChange={handleFilterChange('hasLinks')}>
+            <option value="all">All</option>
+            <option value="yes">Has links</option>
+            <option value="no">No links</option>
           </select>
         </label>
         <label>
