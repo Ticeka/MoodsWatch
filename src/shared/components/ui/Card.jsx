@@ -205,23 +205,6 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
           </div>
         </div>
 
-        {showStatusMenu && (
-          <div className="quick-status-menu" onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}>
-            {LIST_STATUS_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                className={`quick-status-item ${currentStatus === option.id ? 'active' : ''}`}
-                onClick={(event) => handleQuickStatus(event, option.id)}
-                style={{ '--status-color': option.color }}
-              >
-                <span>{option.icon}</span>
-                <span>{getLocalizedLabel(option, language)}</span>
-                {currentStatus === option.id && <span className="check-mark">{t('card.selected')}</span>}
-              </button>
-            ))}
-          </div>
-        )}
-
         {statusLabel && (
           <div
             className="card-status-pill"
@@ -231,6 +214,23 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
           </div>
         )}
       </div>
+
+      {showStatusMenu && (
+        <div className="quick-status-menu" onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+          {LIST_STATUS_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              className={`quick-status-item ${currentStatus === option.id ? 'active' : ''}`}
+              onClick={(event) => handleQuickStatus(event, option.id)}
+              style={{ '--status-color': option.color }}
+            >
+              <span>{option.icon}</span>
+              <span>{getLocalizedLabel(option, language)}</span>
+              {currentStatus === option.id && <span className="check-mark">{t('card.selected')}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="card-content">
         <div className="card-meta">
