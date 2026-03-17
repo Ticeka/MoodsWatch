@@ -12,6 +12,7 @@ import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
 
 const WatchlistContext = createContext();
 const WATCHLIST_STORAGE_KEY = 'moodtoon-watchlist';
+const WATCHLIST_REQUEST_TIMEOUT_MS = 10000;
 
 function getWatchlistStorageKey(userId) {
   return userId ? `${WATCHLIST_STORAGE_KEY}:${userId}` : WATCHLIST_STORAGE_KEY;
@@ -33,6 +34,116 @@ function normalizeWatchlistItem(item = {}) {
     rewatchCount: item.rewatchCount ?? 0,
     metadata: item.metadata ?? {},
   };
+}
+
+function getWatchlistItemTimestamp(item = {}) {
+  const rawValue = item.updatedAt ?? item.addedAt ?? item.createdAt ?? null;
+  if (!rawValue) {
+    return 0;
+  }
+
+  const timestamp = new Date(rawValue).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeWatchlists(localItems = [], remoteItems = []) {
+  const mergedByTitleId = new Map();
+
+  [...remoteItems, ...localItems].forEach((item) => {
+    const normalizedItem = normalizeWatchlistItem(item);
+    if (!normalizedItem.titleId) {
+      return;
+    }
+
+    const existingItem = mergedByTitleId.get(normalizedItem.titleId);
+    if (!existingItem || getWatchlistItemTimestamp(normalizedItem) >= getWatchlistItemTimestamp(existingItem)) {
+      mergedByTitleId.set(normalizedItem.titleId, normalizedItem);
+    }
+  });
+
+  return [...mergedByTitleId.values()];
+}
+
+function areWatchlistsEqual(leftItems = [], rightItems = []) {
+  if (leftItems.length !== rightItems.length) {
+    return false;
+  }
+
+  const leftMap = new Map(leftItems.map((item) => [item.titleId, normalizeWatchlistItem(item)]));
+  const rightMap = new Map(rightItems.map((item) => [item.titleId, normalizeWatchlistItem(item)]));
+
+  if (leftMap.size !== rightMap.size) {
+    return false;
+  }
+
+  for (const [titleId, leftItem] of leftMap.entries()) {
+    const rightItem = rightMap.get(titleId);
+    if (!rightItem) {
+      return false;
+    }
+
+    if (JSON.stringify(leftItem) !== JSON.stringify(rightItem)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timeout`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
+
+function toUserListRow(userId, item) {
+  return {
+    user_id: userId,
+    title_id: item.titleId,
+    list_status: item.status,
+    progress_episode: item.progressEpisode,
+    progress_chapter: item.progressChapter,
+    score: item.score,
+    note: item.note,
+    created_at: item.addedAt || item.updatedAt || new Date().toISOString(),
+    updated_at: item.updatedAt || item.addedAt || new Date().toISOString(),
+    last_consumed_at: item.lastConsumedAt,
+    target_episode: item.targetEpisode,
+    target_chapter: item.targetChapter,
+    rewatch_count: item.rewatchCount,
+    metadata: item.metadata || {},
+  };
+}
+
+async function persistWatchlistSnapshot(userId, items = []) {
+  if (!userId || !supabase || items.length === 0) {
+    return;
+  }
+
+  const rows = items.map((item) => toUserListRow(userId, normalizeWatchlistItem(item)));
+
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100);
+    const { error } = await withTimeout(
+      supabase.from('user_lists').upsert(chunk, { onConflict: 'user_id, title_id' }),
+      WATCHLIST_REQUEST_TIMEOUT_MS,
+      'Watchlist sync'
+    );
+
+    if (error) {
+      throw error;
+    }
+  }
 }
 
 function clampProgressValue(value, total) {
@@ -239,6 +350,7 @@ export function WatchlistProvider({ children }) {
   const watchlistRef = useRef(watchlist);
   watchlistRef.current = watchlist;
   const watchlistMapRef = useRef(new Map());
+  const syncRequestRef = useRef(Promise.resolve());
 
   useEffect(() => {
     setHistory(loadStoredTitleHistory(userId));
@@ -253,19 +365,27 @@ export function WatchlistProvider({ children }) {
     }
 
     try {
-      await supabase.from('user_title_history').insert({
-        user_id: userId,
-        title_id: historyItem.titleId,
-        event_type: historyItem.eventType,
-        from_status: historyItem.fromStatus,
-        to_status: historyItem.toStatus,
-        progress_episode: historyItem.progressEpisode,
-        progress_chapter: historyItem.progressChapter,
-        score: historyItem.score,
-        note: historyItem.note,
-        metadata: historyItem.metadata,
-        created_at: historyItem.createdAt,
-      });
+      const { error } = await withTimeout(
+        supabase.from('user_title_history').insert({
+          user_id: userId,
+          title_id: historyItem.titleId,
+          event_type: historyItem.eventType,
+          from_status: historyItem.fromStatus,
+          to_status: historyItem.toStatus,
+          progress_episode: historyItem.progressEpisode,
+          progress_chapter: historyItem.progressChapter,
+          score: historyItem.score,
+          note: historyItem.note,
+          metadata: historyItem.metadata,
+          created_at: historyItem.createdAt,
+        }),
+        WATCHLIST_REQUEST_TIMEOUT_MS,
+        'History insert'
+      );
+
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.warn('Failed to persist title history:', error.message);
     }
@@ -277,10 +397,18 @@ export function WatchlistProvider({ children }) {
     }
 
     try {
-      await supabase.from('user_consumption_sessions').insert({
-        user_id: userId,
-        ...payload,
-      });
+      const { error } = await withTimeout(
+        supabase.from('user_consumption_sessions').insert({
+          user_id: userId,
+          ...payload,
+        }),
+        WATCHLIST_REQUEST_TIMEOUT_MS,
+        'Consumption session insert'
+      );
+
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.warn('Failed to persist consumption session:', error.message);
     }
@@ -303,66 +431,38 @@ export function WatchlistProvider({ children }) {
       try {
         const localWatchlist = loadStoredWatchlist(userId);
         if (localWatchlist.length > 0) {
-          const rows = localWatchlist.map((item) => ({
-            user_id: userId,
-            title_id: item.titleId,
-            list_status: item.status,
-            progress_episode: item.progressEpisode,
-            progress_chapter: item.progressChapter,
-            score: item.score,
-            note: item.note,
-            created_at: item.addedAt || item.updatedAt || new Date().toISOString(),
-            updated_at: item.updatedAt || item.addedAt || new Date().toISOString(),
-            last_consumed_at: item.lastConsumedAt,
-            target_episode: item.targetEpisode,
-            target_chapter: item.targetChapter,
-            rewatch_count: item.rewatchCount,
-            metadata: item.metadata || {},
-          }));
-
-          for (let i = 0; i < rows.length; i += 100) {
-            const chunk = rows.slice(i, i + 100);
-            const { error: upsertError } = await supabase
-              .from('user_lists')
-              .upsert(chunk, { onConflict: 'user_id, title_id' });
-
-            if (upsertError) {
-              throw upsertError;
-            }
-          }
+          setWatchlist(localWatchlist);
         }
 
-        const listQuery = supabase
-          .from('user_lists')
-          .select(`
-            title_id,
-            list_status,
-            progress_episode,
-            progress_chapter,
-            score,
-            note,
-            created_at,
-            updated_at,
-            last_consumed_at,
-            target_episode,
-            target_chapter,
-            rewatch_count,
-            metadata
-          `)
-          .eq('user_id', userId);
-
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Watchlist fetch timeout')), 10000);
-        });
-
-        const { data, error } = await Promise.race([listQuery, timeoutPromise]);
+        const { data, error } = await withTimeout(
+          supabase
+            .from('user_lists')
+            .select(`
+              title_id,
+              list_status,
+              progress_episode,
+              progress_chapter,
+              score,
+              note,
+              created_at,
+              updated_at,
+              last_consumed_at,
+              target_episode,
+              target_chapter,
+              rewatch_count,
+              metadata
+            `)
+            .eq('user_id', userId),
+          WATCHLIST_REQUEST_TIMEOUT_MS,
+          'Watchlist fetch'
+        );
 
         if (error) {
           throw error;
         }
 
         if (data && !cancelled) {
-          const formatted = data.map(item => normalizeWatchlistItem({
+          const remoteWatchlist = data.map(item => normalizeWatchlistItem({
             titleId: item.title_id,
             status: item.list_status,
             progressEpisode: item.progress_episode,
@@ -377,16 +477,33 @@ export function WatchlistProvider({ children }) {
             rewatchCount: item.rewatch_count,
             metadata: item.metadata,
           }));
-          setWatchlist(formatted);
-          saveStoredWatchlist(userId, formatted);
+          const mergedWatchlist = mergeWatchlists(localWatchlist, remoteWatchlist);
+          setWatchlist(mergedWatchlist);
+          saveStoredWatchlist(userId, mergedWatchlist);
+
+          if (!areWatchlistsEqual(mergedWatchlist, remoteWatchlist)) {
+            syncRequestRef.current = syncRequestRef.current
+              .catch(() => {})
+              .then(() => persistWatchlistSnapshot(userId, mergedWatchlist))
+              .catch((syncError) => {
+                console.warn('Failed to sync merged watchlist:', syncError.message);
+              });
+          }
 
           // Fetch title details separately to avoid a slow JOIN on the critical path
-          const titleIds = data.map((item) => item.title_id).filter(Boolean);
+          const titleIds = mergedWatchlist.map((item) => item.titleId).filter(Boolean);
           if (titleIds.length > 0 && !cancelled) {
-            const { data: titlesData } = await supabase
-              .from('canonical_titles')
-              .select(CANONICAL_TITLE_BROWSE_SELECT)
-              .in('id', titleIds);
+            const { data: titlesData, error: titlesError } = await withTimeout(
+              supabase
+                .from('canonical_titles')
+                .select(CANONICAL_TITLE_BROWSE_SELECT)
+                .in('id', titleIds),
+              WATCHLIST_REQUEST_TIMEOUT_MS,
+              'Watchlist titles fetch'
+            );
+            if (titlesError) {
+              throw titlesError;
+            }
             if (titlesData && !cancelled) {
               setWatchlistTitles(titlesData.map(mapCanonicalTitle));
             }
@@ -515,13 +632,17 @@ export function WatchlistProvider({ children }) {
     try {
       if (userId && supabase) {
         // Update Database
-        const { error } = await supabase.from('user_lists').upsert({
-          user_id: userId,
-          title_id: titleId,
-          list_status: status,
-          updated_at: timestamp,
-          metadata: previousItem?.metadata || {},
-        }, { onConflict: 'user_id, title_id' });
+        const { error } = await withTimeout(
+          supabase.from('user_lists').upsert({
+            user_id: userId,
+            title_id: titleId,
+            list_status: status,
+            updated_at: timestamp,
+            metadata: previousItem?.metadata || {},
+          }, { onConflict: 'user_id, title_id' }),
+          WATCHLIST_REQUEST_TIMEOUT_MS,
+          'Watchlist add'
+        );
 
         if (error) {
           throw error;
@@ -543,7 +664,7 @@ export function WatchlistProvider({ children }) {
             createdAt: timestamp,
           });
 
-      await recordHistory(historyItem);
+      void recordHistory(historyItem);
     } catch (error) {
       setWatchlist(previousWatchlist);
       throw error;
@@ -557,18 +678,22 @@ export function WatchlistProvider({ children }) {
 
     try {
       if (userId && supabase) {
-        const { error } = await supabase
-          .from('user_lists')
-          .delete()
-          .eq('user_id', userId)
-          .eq('title_id', titleId);
+        const { error } = await withTimeout(
+          supabase
+            .from('user_lists')
+            .delete()
+            .eq('user_id', userId)
+            .eq('title_id', titleId),
+          WATCHLIST_REQUEST_TIMEOUT_MS,
+          'Watchlist delete'
+        );
 
         if (error) {
           throw error;
         }
       }
 
-      await recordHistory(createHistoryEvent({
+      void recordHistory(createHistoryEvent({
         titleId,
         eventType: 'removed_from_list',
         fromStatus: previousItem?.status || null,
@@ -603,11 +728,15 @@ export function WatchlistProvider({ children }) {
         if (updates.metadata !== undefined) dbUpdates.metadata = updates.metadata;
         dbUpdates.updated_at = timestamp;
         
-        const { error } = await supabase
-          .from('user_lists')
-          .update(dbUpdates)
-          .eq('user_id', userId)
-          .eq('title_id', titleId);
+        const { error } = await withTimeout(
+          supabase
+            .from('user_lists')
+            .update(dbUpdates)
+            .eq('user_id', userId)
+            .eq('title_id', titleId),
+          WATCHLIST_REQUEST_TIMEOUT_MS,
+          'Watchlist update'
+        );
 
         if (error) {
           throw error;
@@ -620,11 +749,11 @@ export function WatchlistProvider({ children }) {
 
       const consumptionSessionPayload = buildConsumptionSessionPayload(title, previousItem, updates, timestamp);
       if (consumptionSessionPayload) {
-        await recordConsumptionSession(consumptionSessionPayload);
+        void recordConsumptionSession(consumptionSessionPayload);
       }
 
       if (updates.progressEpisode !== undefined || updates.progressChapter !== undefined) {
-        await recordHistory(createHistoryEvent({
+        void recordHistory(createHistoryEvent({
           titleId,
           eventType: 'progress_updated',
           fromStatus: previousItem.status,
@@ -636,7 +765,7 @@ export function WatchlistProvider({ children }) {
       }
 
       if (updates.status && updates.status !== previousItem.status) {
-        await recordHistory(createHistoryEvent({
+        void recordHistory(createHistoryEvent({
           titleId,
           eventType: 'status_changed',
           fromStatus: previousItem.status,
@@ -644,7 +773,7 @@ export function WatchlistProvider({ children }) {
           createdAt: timestamp,
         }));
       } else if (updates.score !== undefined) {
-        await recordHistory(createHistoryEvent({
+        void recordHistory(createHistoryEvent({
           titleId,
           eventType: 'score_updated',
           fromStatus: previousItem.status,
@@ -653,7 +782,7 @@ export function WatchlistProvider({ children }) {
           createdAt: timestamp,
         }));
       } else if (updates.note !== undefined) {
-        await recordHistory(createHistoryEvent({
+        void recordHistory(createHistoryEvent({
           titleId,
           eventType: 'note_updated',
           fromStatus: previousItem.status,

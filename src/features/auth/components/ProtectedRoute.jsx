@@ -4,11 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 
 export function ProtectedRoute({ children, allowedRoles = [] }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isProfileLoading } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || (user && allowedRoles.length > 0 && isProfileLoading && !user?.profile?.role)) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
         <div style={{ textAlign: 'center' }}>

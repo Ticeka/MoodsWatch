@@ -2,9 +2,23 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { supabase } from '@/shared/lib/supabase';
 
 const AuthContext = createContext();
+const PROFILE_REQUEST_TIMEOUT_MS = 8000;
 
-// In-flight dedup only — prevents duplicate concurrent DB requests
 const profileRequestCache = new Map();
+
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
 
 async function fetchUserProfile(userId) {
   if (!userId || !supabase) return null;
@@ -13,11 +27,15 @@ async function fetchUserProfile(userId) {
     return profileRequestCache.get(userId);
   }
 
-  const request = supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle()
+  const request = withTimeout(
+    supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle(),
+    PROFILE_REQUEST_TIMEOUT_MS,
+    'Profile fetch'
+  )
     .then(({ data, error }) => {
       if (error) {
         console.warn('Error fetching user profile:', error.message);
@@ -39,12 +57,15 @@ async function ensureUserProfile(userId) {
   const profile = await fetchUserProfile(userId);
   if (profile) return profile;
 
-  // First-time user — create profile record
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .upsert({ id: userId }, { onConflict: 'id' })
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await withTimeout(
+    supabase
+      .from('user_profiles')
+      .upsert({ id: userId }, { onConflict: 'id' })
+      .select('*')
+      .maybeSingle(),
+    PROFILE_REQUEST_TIMEOUT_MS,
+    'Profile create'
+  );
 
   if (error) {
     console.warn('Error creating user profile:', error.message);
@@ -58,10 +79,37 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+
+  const hydrateUserProfile = useCallback(async (authUser) => {
+    if (!authUser?.id || !supabase) {
+      return null;
+    }
+
+    setIsProfileLoading(true);
+
+    try {
+      const profile = await ensureUserProfile(authUser.id);
+      setUser((prev) => {
+        if (!prev || prev.id !== authUser.id) {
+          return prev;
+        }
+
+        return { ...prev, profile };
+      });
+      return profile;
+    } catch (error) {
+      console.warn('Profile hydration error:', error);
+      return null;
+    } finally {
+      setIsProfileLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
       setIsLoading(false);
+      setIsProfileLoading(false);
       return;
     }
 
@@ -71,8 +119,10 @@ export function AuthProvider({ children }) {
         setSession(currentSession);
 
         if (currentSession?.user) {
-          const profile = await ensureUserProfile(currentSession.user.id);
-          setUser({ ...currentSession.user, profile });
+          setUser(currentSession.user);
+          setIsLoading(false);
+          void hydrateUserProfile(currentSession.user);
+          return;
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
@@ -83,21 +133,21 @@ export function AuthProvider({ children }) {
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
 
       if (newSession?.user) {
-        const profile = await ensureUserProfile(newSession.user.id);
-        setUser({ ...newSession.user, profile });
+        setUser(newSession.user);
+        setIsLoading(false);
+        void hydrateUserProfile(newSession.user);
       } else {
         setUser(null);
+        setIsProfileLoading(false);
       }
-
-      setIsLoading(false);
     });
 
     return () => subscription?.unsubscribe();
-  }, []);
+  }, [hydrateUserProfile]);
 
   const signInWithEmail = useCallback(async (email, password) => {
     if (!supabase) throw new Error('Supabase client is not available');
@@ -106,15 +156,14 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      const profile = await ensureUserProfile(data.user.id);
-      const nextUser = { ...data.user, profile };
-      setUser(nextUser);
+      setUser(data.user);
       setSession(data.session);
-      return { ...data, user: nextUser };
+      void hydrateUserProfile(data.user);
+      return { ...data, user: data.user };
     }
 
     return data;
-  }, []);
+  }, [hydrateUserProfile]);
 
   const signUpWithEmail = useCallback(async (email, password, username) => {
     if (!supabase) throw new Error('Supabase client is not available');
@@ -127,15 +176,14 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      const profile = await ensureUserProfile(data.user.id);
-      const nextUser = { ...data.user, profile };
-      setUser(nextUser);
+      setUser(data.user);
       setSession(data.session);
-      return { ...data, user: nextUser };
+      void hydrateUserProfile(data.user);
+      return { ...data, user: data.user };
     }
 
     return data;
-  }, []);
+  }, [hydrateUserProfile]);
 
   const signOut = useCallback(async () => {
     if (!supabase) throw new Error('Supabase client is not available');
@@ -144,6 +192,7 @@ export function AuthProvider({ children }) {
     if (error) throw error;
     setSession(null);
     setUser(null);
+    setIsProfileLoading(false);
   }, []);
 
   const updateUserProfile = useCallback(async (updates) => {
@@ -155,11 +204,15 @@ export function AuthProvider({ children }) {
 
     if (Object.keys(payload).length === 0) return user?.profile ?? null;
 
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .upsert({ id: user.id, ...payload }, { onConflict: 'id' })
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await withTimeout(
+      supabase
+        .from('user_profiles')
+        .upsert({ id: user.id, ...payload }, { onConflict: 'id' })
+        .select('*')
+        .maybeSingle(),
+      PROFILE_REQUEST_TIMEOUT_MS,
+      'Profile update'
+    );
 
     if (error) throw error;
 
@@ -172,11 +225,12 @@ export function AuthProvider({ children }) {
     user,
     session,
     isLoading,
+    isProfileLoading,
     signInWithEmail,
     signUpWithEmail,
     signOut,
     updateUserProfile,
-  }), [user, session, isLoading, signInWithEmail, signUpWithEmail, signOut, updateUserProfile]);
+  }), [user, session, isLoading, isProfileLoading, signInWithEmail, signUpWithEmail, signOut, updateUserProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

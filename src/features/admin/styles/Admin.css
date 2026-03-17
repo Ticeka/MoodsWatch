@@ -651,6 +651,47 @@ textarea.form-input {
   gap: var(--space-6);
 }
 
+/* ============================================
+   Admin Edit Section (lightweight, no animation)
+   ============================================ */
+.admin-edit-section {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+}
+
+.admin-edit-section h2 {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Sticky save bar for edit pages */
+.admin-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-default);
+  margin-top: var(--space-6);
+}
+
+.admin-sticky-bar-info {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+}
+
 .admin-list-toolbar {
   display: flex;
   justify-content: space-between;

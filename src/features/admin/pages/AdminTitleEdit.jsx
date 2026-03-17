@@ -40,12 +40,67 @@ const PLATFORM_OPTIONS = [
   'Other',
 ];
 
-async function runQuery(request, fallbackMessage) {
-  const result = await request;
+const ADMIN_SAVE_TIMEOUT_MS = 10000;
+
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
+
+async function runQuery(request, label) {
+  const result = await withTimeout(request, ADMIN_SAVE_TIMEOUT_MS, label);
   if (result?.error) {
     throw result.error;
   }
   return result;
+}
+
+function sortByJsonValue(items = []) {
+  return [...items].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+function normalizeStringList(value = '') {
+  return [...new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )].sort((left, right) => left.localeCompare(right));
+}
+
+function normalizePlatformLinks(platformLinks = []) {
+  return sortByJsonValue(
+    platformLinks
+      .map((item) => ({
+        platform_name: String(item.platform_name || '').trim(),
+        url: String(item.url || '').trim(),
+        region_code: String(item.region_code || '').trim().toUpperCase() || null,
+      }))
+      .filter((item) => item.platform_name && item.url)
+  );
+}
+
+function buildRelationSnapshot({ titleId, formData, selectedMoods, genreInput, tagInput, platformLinks }) {
+  return {
+    aliases: sortByJsonValue(buildAliasRows(titleId, formData).map(({ canonical_title_id, ...item }) => item)),
+    moods: [...new Set((selectedMoods || []).map(Number).filter(Boolean))].sort((left, right) => left - right),
+    genres: normalizeStringList(genreInput),
+    tags: normalizeStringList(tagInput),
+    availability: normalizePlatformLinks(platformLinks),
+  };
+}
+
+function areRelationEntriesEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function AdminTitleEdit() {
@@ -83,6 +138,7 @@ export function AdminTitleEdit() {
   const [genreInput, setGenreInput] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [platformLinks, setPlatformLinks] = useState([]);
+  const [initialRelations, setInitialRelations] = useState(null);
 
   const fetchTitleDetails = useCallback(async () => {
     if (!supabase) {
@@ -93,32 +149,53 @@ export function AdminTitleEdit() {
 
     setIsLoading(true);
     try {
-      const { data: moodsData, error: moodsError } = await supabase.from('moods').select('*').order('name_en');
+      const { data: moodsData, error: moodsError } = await runQuery(
+        supabase.from('moods').select('*').order('name_en'),
+        'Load moods'
+      );
       if (moodsError) throw moodsError;
       setAvailableMoods(moodsData || []);
 
-      if (isNew) return;
+      if (isNew) {
+        setInitialRelations(null);
+        return;
+      }
 
-      const { data, error } = await supabase
-        .from('canonical_titles')
-        .select(CANONICAL_TITLE_SELECT)
-        .eq('id', id)
-        .single();
+      const { data, error } = await runQuery(
+        supabase
+          .from('canonical_titles')
+          .select(CANONICAL_TITLE_SELECT)
+          .eq('id', id)
+          .single(),
+        'Load title details'
+      );
 
       if (error) throw error;
       if (!data) return;
 
-      setFormData(mapCanonicalRecordToAdminForm(data));
-      setSelectedMoods(data.moods?.map((item) => item.mood_id) || []);
-      setGenreInput(data.genres?.map((item) => item.genre_name).join(', ') || '');
-      setTagInput(data.tags?.map((item) => item.tag_name).join(', ') || '');
-      setPlatformLinks(
-        data.availability?.map((item) => ({
-          platform_name: item.platform_name,
-          url: item.url,
-          region_code: item.region_code || '',
-        })) || [],
-      );
+      const nextFormData = mapCanonicalRecordToAdminForm(data);
+      const nextSelectedMoods = data.moods?.map((item) => item.mood_id) || [];
+      const nextGenreInput = data.genres?.map((item) => item.genre_name).join(', ') || '';
+      const nextTagInput = data.tags?.map((item) => item.tag_name).join(', ') || '';
+      const nextPlatformLinks = data.availability?.map((item) => ({
+        platform_name: item.platform_name,
+        url: item.url,
+        region_code: item.region_code || '',
+      })) || [];
+
+      setFormData(nextFormData);
+      setSelectedMoods(nextSelectedMoods);
+      setGenreInput(nextGenreInput);
+      setTagInput(nextTagInput);
+      setPlatformLinks(nextPlatformLinks);
+      setInitialRelations(buildRelationSnapshot({
+        titleId: id,
+        formData: nextFormData,
+        selectedMoods: nextSelectedMoods,
+        genreInput: nextGenreInput,
+        tagInput: nextTagInput,
+        platformLinks: nextPlatformLinks,
+      }));
     } catch (error) {
       console.error('Error fetching title details:', error);
       toast.error(t('admin.titleEdit.unableToLoad'));
@@ -197,79 +274,109 @@ export function AdminTitleEdit() {
       let titleId = id;
 
       if (isNew) {
-        const { data: inserted, error } = await supabase.from('canonical_titles').insert([payload]).select().single();
+        const { data: inserted, error } = await runQuery(
+          supabase.from('canonical_titles').insert([payload]).select().single(),
+          'Create title'
+        );
         if (error) throw error;
         titleId = inserted.id;
       } else {
-        const { error } = await supabase.from('canonical_titles').update(payload).eq('id', id);
+        const { error } = await runQuery(
+          supabase.from('canonical_titles').update(payload).eq('id', id),
+          'Update title'
+        );
         if (error) throw error;
       }
 
-      await Promise.all([
-        runQuery(supabase.from('title_aliases').delete().eq('canonical_title_id', titleId)),
-        runQuery(supabase.from('title_moods').delete().eq('canonical_title_id', titleId)),
-        runQuery(supabase.from('title_genres').delete().eq('canonical_title_id', titleId)),
-        runQuery(supabase.from('title_tags').delete().eq('canonical_title_id', titleId)),
-        runQuery(supabase.from('title_availability').delete().eq('canonical_title_id', titleId)),
-      ]);
+      const nextRelations = buildRelationSnapshot({
+        titleId,
+        formData,
+        selectedMoods,
+        genreInput,
+        tagInput,
+        platformLinks,
+      });
+      const previousRelations = initialRelations;
+      const relationOperations = [];
 
-      const relationPromises = [];
-      const genres = genreInput.split(',').map((item) => item.trim()).filter(Boolean);
-      const tags = tagInput.split(',').map((item) => item.trim()).filter(Boolean);
-      const aliases = buildAliasRows(titleId, formData);
-      const platforms = platformLinks
-        .map((item) => ({
-          platform_name: String(item.platform_name || '').trim(),
-          url: String(item.url || '').trim(),
-          region_code: String(item.region_code || '').trim().toUpperCase(),
-        }))
-        .filter((item) => item.platform_name && item.url);
-
-      if (aliases.length) {
-        relationPromises.push(
-          runQuery(supabase.from('title_aliases').insert(aliases)),
-        );
+      if (!previousRelations || !areRelationEntriesEqual(previousRelations.aliases, nextRelations.aliases)) {
+        relationOperations.push(async () => {
+          await runQuery(supabase.from('title_aliases').delete().eq('canonical_title_id', titleId), 'Delete aliases');
+          if (nextRelations.aliases.length) {
+            await runQuery(
+              supabase.from('title_aliases').insert(
+                nextRelations.aliases.map((item) => ({ canonical_title_id: titleId, ...item }))
+              ),
+              'Insert aliases'
+            );
+          }
+        });
       }
 
-      if (selectedMoods.length) {
-        relationPromises.push(
-          runQuery(supabase.from('title_moods').insert(
-            selectedMoods.map((mood_id) => ({ canonical_title_id: titleId, mood_id })),
-          )),
-        );
+      if (!previousRelations || !areRelationEntriesEqual(previousRelations.moods, nextRelations.moods)) {
+        relationOperations.push(async () => {
+          await runQuery(supabase.from('title_moods').delete().eq('canonical_title_id', titleId), 'Delete moods');
+          if (nextRelations.moods.length) {
+            await runQuery(
+              supabase.from('title_moods').insert(
+                nextRelations.moods.map((moodId) => ({ canonical_title_id: titleId, mood_id: moodId }))
+              ),
+              'Insert moods'
+            );
+          }
+        });
       }
 
-      if (genres.length) {
-        relationPromises.push(
-          runQuery(supabase.from('title_genres').insert(
-            genres.map((genre_name) => ({ canonical_title_id: titleId, genre_name })),
-          )),
-        );
+      if (!previousRelations || !areRelationEntriesEqual(previousRelations.genres, nextRelations.genres)) {
+        relationOperations.push(async () => {
+          await runQuery(supabase.from('title_genres').delete().eq('canonical_title_id', titleId), 'Delete genres');
+          if (nextRelations.genres.length) {
+            await runQuery(
+              supabase.from('title_genres').insert(
+                nextRelations.genres.map((genreName) => ({ canonical_title_id: titleId, genre_name: genreName }))
+              ),
+              'Insert genres'
+            );
+          }
+        });
       }
 
-      if (tags.length) {
-        relationPromises.push(
-          runQuery(supabase.from('title_tags').insert(
-            tags.map((tag_name) => ({ canonical_title_id: titleId, tag_name })),
-          )),
-        );
+      if (!previousRelations || !areRelationEntriesEqual(previousRelations.tags, nextRelations.tags)) {
+        relationOperations.push(async () => {
+          await runQuery(supabase.from('title_tags').delete().eq('canonical_title_id', titleId), 'Delete tags');
+          if (nextRelations.tags.length) {
+            await runQuery(
+              supabase.from('title_tags').insert(
+                nextRelations.tags.map((tagName) => ({ canonical_title_id: titleId, tag_name: tagName }))
+              ),
+              'Insert tags'
+            );
+          }
+        });
       }
 
-      if (platforms.length) {
-        relationPromises.push(
-          runQuery(supabase.from('title_availability').insert(
-            platforms.map((platform) => ({
-              canonical_title_id: titleId,
-              platform_name: platform.platform_name,
-              region_code: platform.region_code || null,
-              url: platform.url,
-              is_official: true,
-            })),
-          )),
-        );
+      if (!previousRelations || !areRelationEntriesEqual(previousRelations.availability, nextRelations.availability)) {
+        relationOperations.push(async () => {
+          await runQuery(supabase.from('title_availability').delete().eq('canonical_title_id', titleId), 'Delete availability');
+          if (nextRelations.availability.length) {
+            await runQuery(
+              supabase.from('title_availability').insert(
+                nextRelations.availability.map((platform) => ({
+                  canonical_title_id: titleId,
+                  platform_name: platform.platform_name,
+                  region_code: platform.region_code,
+                  url: platform.url,
+                  is_official: true,
+                }))
+              ),
+              'Insert availability'
+            );
+          }
+        });
       }
 
-      await Promise.all(relationPromises);
+      await Promise.all(relationOperations.map((operation) => operation()));
+      setInitialRelations(nextRelations);
 
       toast.success(isNew ? t('admin.titleEdit.titleCreated') : t('admin.titleEdit.titleUpdated'), { id: toastId });
       navigate('/admin/titles');
@@ -286,37 +393,27 @@ export function AdminTitleEdit() {
   }
 
   return (
-    <div className="admin-page-content animate-fade-in">
-      <div className="admin-header" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <button
-            onClick={() => navigate('/admin/titles')}
-            className="action-btn"
-            style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-1) var(--space-3)' }}
-            type="button"
-          >
-            Back
-          </button>
-          <h1 style={{ fontSize: '2rem', marginBottom: 'var(--space-2)' }}>
+    <div className="admin-page-content">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-4)' }}>
+        <button
+          onClick={() => navigate('/admin/titles')}
+          className="action-btn"
+          style={{ padding: 'var(--space-1) var(--space-3)', flexShrink: 0 }}
+          type="button"
+        >
+          ← Back
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
             {isNew ? t('admin.titleEdit.createTitle') : t('admin.titleEdit.editTitle')}
           </h1>
-          {!isNew && <p style={{ color: 'var(--text-secondary)' }}>{t('admin.titleEdit.catalogId', { id })}</p>}
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-          <button className="action-btn" onClick={() => navigate('/admin/titles')} type="button">
-            {t('admin.common.cancel')}
-          </button>
-          <button className="primary-btn" onClick={handleSave} disabled={isSaving} type="submit">
-            {isSaving ? t('admin.common.saving') : t('admin.common.save')}
-          </button>
+          {!isNew && <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', margin: '2px 0 0' }}>ID: {id}</p>}
         </div>
       </div>
 
       <form onSubmit={handleSave} className="admin-form-container">
-        <div className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-2)' }}>
-            {t('admin.titleEdit.basicMetadata')}
-          </h2>
+        <div className="admin-edit-section">
+          <h2>{t('admin.titleEdit.basicMetadata')}</h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-6)' }}>
             <div>
@@ -351,10 +448,8 @@ export function AdminTitleEdit() {
           </div>
         </div>
 
-        <div className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-2)' }}>
-            {t('admin.titleEdit.discoveryMapping')}
-          </h2>
+        <div className="admin-edit-section">
+          <h2>{t('admin.titleEdit.discoveryMapping')}</h2>
 
           <div style={{ marginBottom: 'var(--space-6)' }}>
             <label className="form-label">{t('admin.titleEdit.moods')}</label>
@@ -394,10 +489,8 @@ export function AdminTitleEdit() {
           </div>
         </div>
 
-        <div className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-2)' }}>
-            {t('admin.titleEdit.availability')}
-          </h2>
+        <div className="admin-edit-section">
+          <h2>{t('admin.titleEdit.availability')}</h2>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {platformLinks.map((platform, idx) => (
@@ -437,10 +530,8 @@ export function AdminTitleEdit() {
           </div>
         </div>
 
-        <div className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-2)' }}>
-            {t('admin.titleEdit.catalogFields')}
-          </h2>
+        <div className="admin-edit-section">
+          <h2>{t('admin.titleEdit.catalogFields')}</h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-4)' }}>
             <div>
@@ -505,10 +596,8 @@ export function AdminTitleEdit() {
           </div>
         </div>
 
-        <div className="glass-panel">
-          <h2 style={{ fontSize: '1.25rem', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-2)' }}>
-            {t('admin.titleEdit.artwork')}
-          </h2>
+        <div className="admin-edit-section">
+          <h2>{t('admin.titleEdit.artwork')}</h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-6)' }}>
             <div>
@@ -529,6 +618,20 @@ export function AdminTitleEdit() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="admin-sticky-bar">
+          <span className="admin-sticky-bar-info">
+            {!isNew && `ID: ${id}`}
+          </span>
+          <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+            <button className="action-btn" onClick={() => navigate('/admin/titles')} type="button">
+              {t('admin.common.cancel')}
+            </button>
+            <button className="primary-btn" onClick={handleSave} disabled={isSaving} type="submit">
+              {isSaving ? t('admin.common.saving') : t('admin.common.save')}
+            </button>
           </div>
         </div>
       </form>
