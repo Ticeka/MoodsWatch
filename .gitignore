@@ -1,3 +1,16 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+storybook-static
+
+# Environment variables (contains secrets - DO NOT COMMIT)
+.env
+.env.local
+.env.*.local
+
 # Logs
 logs
 *.log
@@ -7,10 +20,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Test output
+coverage
+playwright-report
+test-results
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +35,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS
+Thumbs.db
+
+# Cache
+.cache
+*.local
