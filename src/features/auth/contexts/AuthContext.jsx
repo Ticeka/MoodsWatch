@@ -6,6 +6,22 @@ const PROFILE_REQUEST_TIMEOUT_MS = 8000;
 
 const profileRequestCache = new Map();
 
+function mergeAuthUser(previousUser, nextAuthUser) {
+  if (!nextAuthUser) {
+    return null;
+  }
+
+  if (!previousUser || previousUser.id !== nextAuthUser.id) {
+    return nextAuthUser;
+  }
+
+  return {
+    ...previousUser,
+    ...nextAuthUser,
+    profile: previousUser.profile ?? nextAuthUser.profile,
+  };
+}
+
 function withTimeout(promise, timeoutMs, label) {
   let timeoutId = null;
 
@@ -119,7 +135,7 @@ export function AuthProvider({ children }) {
         setSession(currentSession);
 
         if (currentSession?.user) {
-          setUser(currentSession.user);
+          setUser((prev) => mergeAuthUser(prev, currentSession.user));
           setIsLoading(false);
           void hydrateUserProfile(currentSession.user);
           return;
@@ -137,7 +153,7 @@ export function AuthProvider({ children }) {
       setSession(newSession);
 
       if (newSession?.user) {
-        setUser(newSession.user);
+        setUser((prev) => mergeAuthUser(prev, newSession.user));
         setIsLoading(false);
         void hydrateUserProfile(newSession.user);
       } else {
@@ -156,7 +172,7 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      setUser(data.user);
+      setUser((prev) => mergeAuthUser(prev, data.user));
       setSession(data.session);
       void hydrateUserProfile(data.user);
       return { ...data, user: data.user };
@@ -176,7 +192,7 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      setUser(data.user);
+      setUser((prev) => mergeAuthUser(prev, data.user));
       setSession(data.session);
       void hydrateUserProfile(data.user);
       return { ...data, user: data.user };
