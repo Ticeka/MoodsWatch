@@ -1,0 +1,131 @@
+.selector-container {
+  margin-bottom: var(--space-8);
+}
+
+.section-title {
+  display: flex;
+  font-size: 1.25rem;
+  margin-bottom: var(--space-5);
+  color: var(--text-primary);
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 700;
+}
+
+/* Mood Grid - Refined and cleaner */
+.mood-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.mood-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated); /* Lighter background initially */
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-weight: 600; /* Thicker font weight for better UX */
+  font-size: 1.05rem;
+  transition: all var(--transition-base); /* Slightly slower transition for smoothness */
+  cursor: pointer;
+  user-select: none;
+  box-shadow: var(--shadow-sm); /* Default slight shadow */
+}
+
+/* Add hover color effect */
+.mood-btn:hover:not(.disabled) {
+  border-color: var(--mood-color);
+  background: var(--bg-primary); /* Brighter hover state */
+  color: var(--text-primary);
+  transform: translateY(-2px); /* Lift element on hover */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05); /* Slight shadow glow on hover */
+}
+
+/* Active State with colors! */
+.mood-btn.selected {
+  background: var(--mood-color); 
+  border-color: var(--mood-color);
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1); /* Deeper shadow when selected */
+  transform: scale(1.05); /* Bounce up when selected */
+}
+
+.mood-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.mood-icon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); /* Add depth to icons */
+  transition: transform var(--transition-fast);
+}
+
+.mood-btn:hover:not(.disabled) .mood-icon {
+  transform: scale(1.1); /* Expand icon on hover */
+}
+
+/* Time Grid - Refined and cleaner */
+.time-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.time-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  border: 2px solid var(--border-default); /* Slightly thicker border for "Time" buttons */
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 1.05rem;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
+}
+
+.time-btn:hover:not(.disabled) {
+  border-color: var(--primary-400);
+  background: var(--primary-50);
+  color: var(--primary-700);
+  transform: translateY(-2px);
+}
+
+[data-theme="dark"] .time-btn:hover:not(.disabled) {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--primary-300);
+}
+
+.time-btn.selected {
+  /* Restored gradient for time buttons to look vibrant */
+  background: var(--gradient-primary);
+  color: white;
+  border-color: transparent;
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+  transform: scale(1.05); /* Added slight pop for better UX */
+}
+
+[data-theme="dark"] .time-btn.selected {
+  background: var(--gradient-primary);
+  color: white;
+}
+
+.time-icon {
+  font-size: 1.25rem;
+  transition: transform var(--transition-fast);
+}
+
+.time-btn:hover:not(.disabled) .time-icon {
+  transform: scale(1.1);
+}

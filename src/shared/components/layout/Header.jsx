@@ -1,0 +1,373 @@
+
+import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { Settings, LogOut, ShieldAlert, Globe, Moon, Sun, ChevronDown, Home, Search, Swords, BookMarked, User, Sparkles, ListOrdered } from 'lucide-react';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useTheme } from '@/shared/contexts/ThemeContext';
+import './Layout.css';
+
+function LanguageToggle() {
+  const { language, setLanguage, t } = useLanguage();
+
+  return (
+    <div className="language-toggle" role="group" aria-label={t('layout.language')}>
+      <button
+        type="button"
+        className={`language-toggle-btn ${language === 'en' ? 'active' : ''}`}
+        onClick={(e) => { e.stopPropagation(); setLanguage('en'); }}
+      >
+        EN
+      </button>
+      <button
+        type="button"
+        className={`language-toggle-btn ${language === 'th' ? 'active' : ''}`}
+        onClick={(e) => { e.stopPropagation(); setLanguage('th'); }}
+      >
+        TH
+      </button>
+    </div>
+  );
+}
+
+export function Header() {
+  const { theme, toggleTheme } = useTheme();
+  const { t } = useLanguage();
+  const location = useLocation();
+  const { user, signOut } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
+  const dropdownRef = useRef(null);
+  const chipRef = useRef(null);
+  const portalRef = useRef(null);
+
+  const isActive = (path) => location.pathname === path;
+  const isTierListActive = location.pathname.startsWith('/tierlist');
+  const userLabel = user?.profile?.name || user?.email?.split('@')[0] || 'User';
+  const userRole = user?.profile?.role;
+  const canAccessAdmin = userRole === 'admin' || userRole === 'editor';
+  const closeMobileMenu = () => setMobileMenuOpen(false);
+
+  useEffect(() => {
+    let frameId = null;
+    let lastScrolled = window.scrollY > 20;
+
+    const updateScrolled = () => {
+      frameId = null;
+      const nextScrolled = window.scrollY > 20;
+      if (nextScrolled !== lastScrolled) {
+        lastScrolled = nextScrolled;
+        setScrolled(nextScrolled);
+      }
+    };
+
+    const handleScroll = () => {
+      if (frameId !== null) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(updateScrolled);
+    };
+    const handleClickOutside = (event) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(event.target) &&
+        portalRef.current && !portalRef.current.contains(event.target)
+      ) {
+        setDropdownOpen(false);
+      }
+    };
+
+    updateScrolled();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener('scroll', handleScroll);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (dropdownOpen && chipRef.current) {
+      const rect = chipRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 8,
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [dropdownOpen]);
+
+  return (
+    <>
+      <header className={`header glass ${scrolled ? 'header-scrolled' : ''}`}>
+        <div className="container header-content">
+          <Link to="/" className="logo" onClick={closeMobileMenu}>
+            <span className="logo-icon">
+              <Sparkles size={19} />
+            </span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+          </Link>
+
+          <nav className="desktop-nav">
+            <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Home size={16} /><span className="nav-link-label">{t('layout.home')}</span>
+            </Link>
+            <Link to="/discover" className={`nav-link ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Search size={16} /><span className="nav-link-label">{t('layout.discover')}</span>
+            </Link>
+            <Link to="/battle" className={`nav-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Swords size={16} /><span className="nav-link-label">{t('layout.battle')}</span>
+            </Link>
+            <Link to="/tierlist" className={`nav-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <ListOrdered size={16} /><span className="nav-link-label">{t('layout.tierlist')}</span>
+            </Link>
+            <Link to="/watchlist" className={`nav-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <BookMarked size={16} /><span className="nav-link-label">{t('layout.watchlist')}</span>
+            </Link>
+          </nav>
+
+          <div className="header-actions">
+            {!user && (
+              <div className="guest-actions-desktop">
+                <LanguageToggle />
+                <button
+                  className="theme-toggle"
+                  onClick={toggleTheme}
+                  title={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+                >
+                  {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+              </div>
+            )}
+
+            {user ? (
+              <div className="user-dropdown-container" ref={dropdownRef}>
+                <button
+                  ref={chipRef}
+                  className={`user-chip ${dropdownOpen ? 'ring-active' : ''}`}
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  title={t('layout.accountMenu')}
+                >
+                  {user?.profile?.avatar_url ? (
+                    <img src={user.profile.avatar_url} alt="" className="user-avatar" />
+                  ) : (
+                    <span className="user-avatar" aria-hidden="true">
+                      {userLabel.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="user-name desktop-only">{userLabel}</span>
+                  <ChevronDown size={14} className={`dropdown-chevron desktop-only ${dropdownOpen ? 'rotate' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <Link to="/login" className="login-btn" onClick={closeMobileMenu}>
+                {t('layout.login')}
+              </Link>
+            )}
+
+            <button
+              className={`mobile-menu-btn ${mobileMenuOpen ? 'active' : ''}`}
+              type="button"
+              aria-label={t('layout.openMenu')}
+              onClick={() => setMobileMenuOpen((current) => !current)}
+            >
+              <span className="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className={`mobile-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)}></div>
+      <nav className={`mobile-drawer ${mobileMenuOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
+          <span className="drawer-title">
+            <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+          </span>
+          <button className="drawer-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+        </div>
+        <div className="drawer-links">
+          <Link to="/" className={`drawer-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <Home size={18} /> {t('layout.home')}
+          </Link>
+          <Link to="/discover" className={`drawer-link ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <Search size={18} /> {t('layout.discover')}
+          </Link>
+          <Link to="/battle" className={`drawer-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <Swords size={18} /> {t('layout.battle')}
+          </Link>
+          <Link to="/tierlist" className={`drawer-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <ListOrdered size={18} /> {t('layout.tierlist')}
+          </Link>
+          <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <BookMarked size={18} /> {t('layout.watchlist')}
+          </Link>
+          {user && (
+            <Link to="/profile" className={`drawer-link ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <User size={18} /> {t('layout.profile')}
+            </Link>
+          )}
+        </div>
+        <div className="drawer-footer">
+          <LanguageToggle />
+          {user ? (
+            <>
+              <div className="drawer-user">
+                {user?.profile?.avatar_url ? (
+                  <img src={user.profile.avatar_url} alt="" className="user-avatar" />
+                ) : (
+                  <span className="user-avatar">{userLabel.charAt(0).toUpperCase()}</span>
+                )}
+                <span>{userLabel}</span>
+              </div>
+              {canAccessAdmin && (
+                <Link to="/admin" className="drawer-link admin" onClick={closeMobileMenu}>
+                  <ShieldAlert size={18} /> {t('layout.admin')}
+                </Link>
+              )}
+              <button onClick={signOut} className="drawer-link logout">
+                <LogOut size={18} /> {t('layout.logout')}
+              </button>
+            </>
+          ) : (
+            <Link to="/login" className="drawer-link" onClick={closeMobileMenu}>
+              <User size={18} /> {t('layout.login')}
+            </Link>
+          )}
+          <button onClick={toggleTheme} className="drawer-link theme">
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            {theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+          </button>
+        </div>
+      </nav>
+
+      <nav className="bottom-nav">
+        <Link to="/" className={`bottom-nav-item ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
+          <Home size={20} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{t('layout.home')}</span>
+        </Link>
+        <Link to="/discover" className={`bottom-nav-item ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
+          <Search size={20} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{t('layout.discover')}</span>
+        </Link>
+        <Link to="/battle" className={`bottom-nav-item ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
+          <Swords size={20} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{t('layout.battle')}</span>
+        </Link>
+        <Link to="/watchlist" className={`bottom-nav-item ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
+          <BookMarked size={20} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{t('layout.watchlist')}</span>
+        </Link>
+        {user && (
+          <Link to="/profile" className={`bottom-nav-item ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <User size={20} className="bottom-nav-icon" />
+            <span className="bottom-nav-label">{t('layout.profile')}</span>
+          </Link>
+        )}
+        <button onClick={toggleTheme} className="bottom-nav-item">
+          {theme === 'dark' ? <Sun size={20} className="bottom-nav-icon" /> : <Moon size={20} className="bottom-nav-icon" />}
+          <span className="bottom-nav-label">{theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}</span>
+        </button>
+      </nav>
+
+      {dropdownOpen && user && createPortal(
+        <div
+          ref={portalRef}
+          className="user-dropdown-menu glass-heavy"
+          style={{ position: 'fixed', top: dropdownPos.top, right: dropdownPos.right }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="dropdown-header mobile-only">
+            <strong>{userLabel}</strong>
+            {canAccessAdmin && <span className="role-badge">{userRole}</span>}
+          </div>
+
+          <div className="dropdown-group language-group">
+            <span className="dropdown-label"><Globe size={14} /> {t('layout.language')}</span>
+            <LanguageToggle />
+          </div>
+
+          <button className="dropdown-item" onClick={toggleTheme}>
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{theme === 'dark' ? t('layout.lightMode') : t('layout.darkMode')}</span>
+          </button>
+
+          <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+            <Settings size={16} />
+            <span>{t('layout.profile')}</span>
+          </Link>
+
+          {canAccessAdmin && (
+            <Link to="/admin" className="dropdown-item admin-item" onClick={() => setDropdownOpen(false)}>
+              <ShieldAlert size={16} />
+              <span>{t('layout.adminDesktop')}</span>
+            </Link>
+          )}
+
+          <div className="dropdown-divider"></div>
+
+          <button
+            className="dropdown-item logout-item"
+            onClick={() => { setDropdownOpen(false); signOut(); }}
+          >
+            <LogOut size={16} />
+            <span>{t('layout.logout')}</span>
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+export function Footer() {
+  const { t } = useLanguage();
+
+  return (
+    <footer className="footer">
+      <div className="container footer-content">
+        <div className="footer-brand">
+          <Link to="/" className="logo">
+            <span className="logo-icon">
+              <Sparkles size={19} />
+            </span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+          </Link>
+          <p className="footer-desc">{t('layout.footerDesc')}</p>
+        </div>
+
+        <div className="footer-links">
+          <div className="link-group">
+            <h4>{t('layout.menu')}</h4>
+            <Link to="/">{t('layout.home')}</Link>
+            <Link to="/battle">{t('layout.battle')}</Link>
+            <Link to="/tierlist">{t('layout.tierlist')}</Link>
+            <Link to="/discover">{t('layout.discover')}</Link>
+            <Link to="/watchlist">{t('layout.watchlist')}</Link>
+            <Link to="/profile">{t('layout.profile')}</Link>
+          </div>
+          <div className="link-group">
+            <h4>{t('layout.more')}</h4>
+            <Link to="#">{t('layout.about')}</Link>
+            <Link to="#">{t('layout.contact')}</Link>
+          </div>
+        </div>
+      </div>
+      <div className="footer-bottom">
+        <div className="container">
+          <p>&copy; {new Date().getFullYear()} MoodToon | {t('layout.copyright')}</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+

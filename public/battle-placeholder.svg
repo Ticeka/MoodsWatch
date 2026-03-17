@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Battle placeholder artwork</title>
+  <desc id="desc">Abstract orange and gold poster used when a title has no cover image.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="50%" stop-color="#7c2d12" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#fde68a" stop-opacity="0.95" />
+      <stop offset="55%" stop-color="#fb923c" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#fb923c" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1200" fill="url(#bg)" />
+  <rect width="800" height="1200" fill="url(#glow)" />
+  <circle cx="620" cy="220" r="170" fill="#fff7ed" fill-opacity="0.12" />
+  <circle cx="180" cy="920" r="220" fill="#fdba74" fill-opacity="0.1" />
+  <path d="M120 880C240 700 370 610 520 540C610 498 680 430 720 330" fill="none" stroke="#fff7ed" stroke-opacity="0.22" stroke-width="30" stroke-linecap="round"/>
+  <path d="M120 980C270 840 390 770 520 720C640 675 710 620 760 520" fill="none" stroke="#fed7aa" stroke-opacity="0.2" stroke-width="18" stroke-linecap="round"/>
+  <g fill="#fff7ed" fill-opacity="0.92" font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <text x="400" y="510" font-size="70" font-weight="700" letter-spacing="8">BATTLE</text>
+    <text x="400" y="590" font-size="42" font-weight="600" letter-spacing="12">READY TO PLAY</text>
+  </g>
+</svg>
