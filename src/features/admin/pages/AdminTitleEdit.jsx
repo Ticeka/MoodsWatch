@@ -41,6 +41,48 @@ const PLATFORM_OPTIONS = [
 ];
 
 const ADMIN_SAVE_TIMEOUT_MS = 10000;
+const ADMIN_TITLE_DRAFT_PREFIX = 'moodwatch-admin-title-draft';
+
+function getDraftStorageKey(id, isNew) {
+  return `${ADMIN_TITLE_DRAFT_PREFIX}:${isNew ? 'new' : id}`;
+}
+
+function loadDraft(storageKey) {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(storageKey, draft) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(draft));
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+function clearDraft(storageKey) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // Ignore storage failures
+  }
+}
 
 function withTimeout(promise, timeoutMs, label) {
   let timeoutId = null;
@@ -108,6 +150,7 @@ export function AdminTitleEdit() {
   const navigate = useNavigate();
   const isNew = id === 'new';
   const { t } = useLanguage();
+  const draftStorageKey = getDraftStorageKey(id, isNew);
 
   const [isLoading, setIsLoading] = useState(!isNew);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,6 +200,14 @@ export function AdminTitleEdit() {
       setAvailableMoods(moodsData || []);
 
       if (isNew) {
+        const draft = loadDraft(draftStorageKey);
+        if (draft) {
+          setFormData((current) => ({ ...current, ...(draft.formData || {}) }));
+          setSelectedMoods(draft.selectedMoods || []);
+          setGenreInput(draft.genreInput || '');
+          setTagInput(draft.tagInput || '');
+          setPlatformLinks(draft.platformLinks || []);
+        }
         setInitialRelations(null);
         return;
       }
@@ -183,11 +234,18 @@ export function AdminTitleEdit() {
         region_code: item.region_code || '',
       })) || [];
 
-      setFormData(nextFormData);
-      setSelectedMoods(nextSelectedMoods);
-      setGenreInput(nextGenreInput);
-      setTagInput(nextTagInput);
-      setPlatformLinks(nextPlatformLinks);
+      const draft = loadDraft(draftStorageKey);
+      const restoredFormData = draft?.formData ? { ...nextFormData, ...draft.formData } : nextFormData;
+      const restoredSelectedMoods = draft?.selectedMoods || nextSelectedMoods;
+      const restoredGenreInput = draft?.genreInput ?? nextGenreInput;
+      const restoredTagInput = draft?.tagInput ?? nextTagInput;
+      const restoredPlatformLinks = draft?.platformLinks || nextPlatformLinks;
+
+      setFormData(restoredFormData);
+      setSelectedMoods(restoredSelectedMoods);
+      setGenreInput(restoredGenreInput);
+      setTagInput(restoredTagInput);
+      setPlatformLinks(restoredPlatformLinks);
       setInitialRelations(buildRelationSnapshot({
         titleId: id,
         formData: nextFormData,
@@ -203,7 +261,7 @@ export function AdminTitleEdit() {
     } finally {
       setIsLoading(false);
     }
-  }, [id, isNew, navigate, t]);
+  }, [draftStorageKey, id, isNew, navigate, t]);
 
   useEffect(() => {
     fetchTitleDetails();
@@ -377,6 +435,7 @@ export function AdminTitleEdit() {
 
       await Promise.all(relationOperations.map((operation) => operation()));
       setInitialRelations(nextRelations);
+      clearDraft(draftStorageKey);
 
       toast.success(isNew ? t('admin.titleEdit.titleCreated') : t('admin.titleEdit.titleUpdated'), { id: toastId });
       navigate('/admin/titles');
@@ -387,6 +446,21 @@ export function AdminTitleEdit() {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    saveDraft(draftStorageKey, {
+      formData,
+      selectedMoods,
+      genreInput,
+      tagInput,
+      platformLinks,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [draftStorageKey, formData, genreInput, isLoading, platformLinks, selectedMoods, tagInput]);
 
   if (isLoading) {
     return <div className="admin-page-content" style={{ padding: 'var(--space-10)', textAlign: 'center' }}>{t('admin.common.loading')}</div>;
