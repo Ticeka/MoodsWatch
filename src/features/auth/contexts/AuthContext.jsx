@@ -93,11 +93,6 @@ async function fetchUserProfile(userId) {
     return null;
   }
 
-  const cachedProfile = getCachedProfile(userId);
-  if (cachedProfile) {
-    return cachedProfile;
-  }
-
   if (profileRequestCache.has(userId)) {
     return profileRequestCache.get(userId);
   }
@@ -308,6 +303,8 @@ export function AuthProvider({ children }) {
 
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    profileCache.clear();
+    try { window.localStorage.removeItem(PROFILE_CACHE_KEY); } catch { /* ignore */ }
     setSession(null);
     setUser(null);
   }, []);
