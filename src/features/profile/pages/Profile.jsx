@@ -773,32 +773,6 @@ export function Profile() {
               <article className="profile-section-card">
                 <div className="profile-section-heading">
                   <div>
-                    <h2>{t('profile.continueWatchingReading')}</h2>
-                    <p>{t('profile.activeTitles', { count: continueTitles.length })}</p>
-                  </div>
-                </div>
-                {isWatchlistLoading || isLibraryLoading ? (
-                  <div className="profile-empty-state">
-                    <Loader2 size={20} className="animate-spin" />
-                    <span>{t('profile.loadingContinueTitles')}</span>
-                  </div>
-                ) : continueTitles.length > 0 ? (
-                  <div className="profile-card-grid">
-                    {continueTitles.map((title) => (
-                      <TitleCard key={title.id} title={title} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="profile-empty-state">
-                    <span>{t('profile.noContinueTitles')}</span>
-                    <Link to="/discover" className="profile-inline-link">{t('profile.findNewTitles')}</Link>
-                  </div>
-                )}
-              </article>
-
-              <article className="profile-section-card">
-                <div className="profile-section-heading">
-                  <div>
                     <h2>{t('profile.profileCommentsTitle')}</h2>
                     <p>{t('profile.profileCommentsHint')}</p>
                   </div>
