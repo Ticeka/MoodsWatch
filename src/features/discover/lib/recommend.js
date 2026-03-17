@@ -31,7 +31,7 @@ function resolveWeights(hasMoods, hasLikedTitles) {
   return { moodMatch: 0, genreTagMatch: 0, similarTitle: 0, lengthFit: 0.15, quality: 0.60, freshness: 0.25 };
 }
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_CATALOG_MAX_ROWS = 750;
 
@@ -67,48 +67,40 @@ function resolveRequestedRowLimit(maxRows) {
 }
 
 async function fetchSupabaseTitles({ maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) {
+  const rowLimit = resolveRequestedRowLimit(maxRows) ?? DEFAULT_CATALOG_MAX_ROWS;
+  const step = 1000; // Supabase max per request
   let allData = [];
-  const step = 250;
-  let hasMore = true;
   let lastId = null;
-  const rowLimit = resolveRequestedRowLimit(maxRows);
+  let hasMore = true;
 
-  // Use keyset pagination to avoid deep OFFSET queries that can time out on Supabase.
-  const fetchPromise = (async () => {
-    while (hasMore) {
-      const remaining = rowLimit === null ? step : Math.min(step, Math.max(rowLimit - allData.length, 0));
-      if (remaining === 0) {
-        break;
-      }
+  while (hasMore) {
+    const remaining = Math.min(step, rowLimit - allData.length);
+    if (remaining <= 0) break;
 
-      let query = supabase
-        .from('canonical_titles')
-        .select(CANONICAL_TITLE_BROWSE_SELECT)
-        .order('id', { ascending: true })
-        .limit(remaining);
+    let query = supabase
+      .from('canonical_titles')
+      .select(CANONICAL_TITLE_BROWSE_SELECT)
+      .order('id', { ascending: true })
+      .limit(remaining);
 
-      if (lastId !== null) {
-        query = query.gt('id', lastId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      if (data?.length) {
-        allData = allData.concat(data);
-        lastId = data[data.length - 1].id;
-        if (data.length < remaining) hasMore = false;
-        if (rowLimit !== null && allData.length >= rowLimit) hasMore = false;
-      } else {
-        hasMore = false;
-      }
+    if (lastId !== null) {
+      query = query.gt('id', lastId);
     }
 
-    return allData.map((title) => normalizeTitleType(mapCanonicalTitle(title)));
-  })();
+    const { data, error } = await query;
+    if (error) throw error;
 
-  return fetchPromise;
+    if (data?.length) {
+      allData = allData.concat(data);
+      lastId = data[data.length - 1].id;
+      if (data.length < remaining) hasMore = false;
+      if (allData.length >= rowLimit) hasMore = false;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allData.map((title) => normalizeTitleType(mapCanonicalTitle(title)));
 }
 
 function ensureSupabaseConnected() {
@@ -348,12 +340,11 @@ function filterTitlesByTag(titles, tag) {
 }
 
 export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
-  const canUseRemoteBrowse = !tag.trim();
-
-  if (canUseRemoteBrowse) {
-    return fetchTitlesPageFromSupabase({ type, query, tag, sortBy, page, pageSize });
+  if (!tag.trim()) {
+    return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize });
   }
 
+  // tag filter requires client-side — genres/tags/moods are in separate joined tables
   const titles = await getAllTitles();
   const filtered = sortTitlesCollection(sortTitles(
     filterTitlesByQuery(
