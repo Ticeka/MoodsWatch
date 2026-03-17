@@ -110,7 +110,7 @@ export function Header() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
           </Link>
 
           <nav className="desktop-nav">
@@ -191,7 +191,7 @@ export function Header() {
         <div className="drawer-header">
           <span className="drawer-title">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
           </span>
           <button className="drawer-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
         </div>
@@ -340,7 +340,7 @@ export function Footer() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
           </Link>
           <p className="footer-desc">{t('layout.footerDesc')}</p>
         </div>
@@ -364,7 +364,7 @@ export function Footer() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <p>&copy; {new Date().getFullYear()} MoodToon | {t('layout.copyright')}</p>
+          <p>&copy; {new Date().getFullYear()} MoodWatch | {t('layout.copyright')}</p>
         </div>
       </div>
     </footer>
