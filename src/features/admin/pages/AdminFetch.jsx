@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/shared/lib/supabase';
-import { MOODS } from '@/shared/data/moods';
+import { getAutoDerivableMoods } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -34,7 +34,9 @@ function inferSubtype({ mediaType, originCountry, sourceHints = [] }) {
 }
 function deriveMoodIds(parts) {
   const hay = parts.filter(Boolean).join(' ').toLowerCase();
-  return MOODS.filter((m) => (m.tags || []).some((t) => hay.includes(t.toLowerCase()))).map((m) => m.id);
+  return getAutoDerivableMoods()
+    .filter((mood) => (mood.tags || []).some((tag) => hay.includes(tag.toLowerCase())))
+    .map((mood) => mood.id);
 }
 function normalizeMedia(media) {
   const mediaType = media.type === 'ANIME' ? 'anime' : 'manga';

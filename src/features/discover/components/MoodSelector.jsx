@@ -1,4 +1,5 @@
 import React from 'react';
+import { Sparkles } from 'lucide-react';
 import { MOODS, getLocalizedMoodName } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import './Selectors.css';
@@ -20,7 +21,8 @@ export function MoodSelector({ selected, onChange }) {
   return (
     <div className="selector-container">
       <h3 className="section-title">
-        🎭 {t('selectors.moodTitle')} <span className="subtitle">{t('selectors.moodSubtitle')}</span>
+        <span className="section-title-icon"><Sparkles size={16} aria-hidden="true" /></span>
+        {t('selectors.moodTitle')} <span className="subtitle">{t('selectors.moodSubtitle')}</span>
       </h3>
       <div className="mood-grid stagger-children">
         {MOODS.map((mood) => {

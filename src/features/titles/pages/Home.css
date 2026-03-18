@@ -498,6 +498,12 @@
   flex-wrap: wrap;
 }
 
+.results-visible-count {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .results-sorter {
   display: inline-flex;
   align-items: center;

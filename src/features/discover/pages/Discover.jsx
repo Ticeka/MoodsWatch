@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { listTitles, getCacheInfo, clearTitlesCache } from '@/features/discover/lib/recommend';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
@@ -39,6 +39,7 @@ export function Discover() {
   const [catalogInfo, setCatalogInfo] = useState(getCacheInfo());
   const [errorMessage, setErrorMessage] = useState('');
   const [sortBy, setSortBy] = useState('popularity');
+  const browseSectionRef = useRef(null);
 
   const { watchlist } = useWatchlist();
   const { hiddenFromDiscoveryIds } = useHiddenTitles();
@@ -63,25 +64,38 @@ export function Discover() {
         pageSize: PAGE_SIZE,
       });
 
-      setBrowseResults(response.items);
-      setTotalResults(response.total);
-      setTotalPages(response.totalPages);
-      setCurrentPage(response.page);
-      setCatalogInfo(getCacheInfo());
+      startTransition(() => {
+        setBrowseResults(response.items);
+        setTotalResults(response.total);
+        setTotalPages(response.totalPages);
+        setCurrentPage(response.page);
+        setCatalogInfo(getCacheInfo());
+      });
       return response;
     } catch (error) {
       console.error(error);
-      setBrowseResults([]);
-      setTotalResults(0);
-      setTotalPages(1);
-      setCurrentPage(1);
-      setCatalogInfo(getCacheInfo());
-      setErrorMessage(error.message || t('discover.discoverCatalogError'));
+      startTransition(() => {
+        setBrowseResults([]);
+        setTotalResults(0);
+        setTotalPages(1);
+        setCurrentPage(1);
+        setCatalogInfo(getCacheInfo());
+        setErrorMessage(error.message || t('discover.discoverCatalogError'));
+      });
       return null;
     } finally {
       setIsLoading(false);
     }
   }, [activeTab, query, activeTag, sortBy, t]);
+
+  const scrollToBrowseSection = useCallback(() => {
+    browseSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const handleBrowsePageChange = useCallback((nextPage) => {
+    loadBrowse({ page: nextPage, type: activeTab, searchValue: query, tagValue: activeTag, sortValue: sortBy });
+    window.requestAnimationFrame(scrollToBrowseSection);
+  }, [activeTab, query, activeTag, sortBy, loadBrowse, scrollToBrowseSection]);
 
   useEffect(() => {
     const handleRebuild = () => {
@@ -101,14 +115,16 @@ export function Discover() {
     return () => window.clearTimeout(timeoutId);
   }, [activeTab, query, activeTag, sortBy, loadBrowse]);
 
-  const filteredBrowse = filterSeenTitles(
-    filterTitlesByRecommendationPreferences(
-      filterHiddenTitles(prioritizeUnseenTitles(browseResults, recommendationState), recommendationState),
-      recommendationState
-    ),
-    recommendationState,
-    hideSeen
-  );
+  const filteredBrowse = useMemo(() => (
+    filterSeenTitles(
+      filterTitlesByRecommendationPreferences(
+        filterHiddenTitles(prioritizeUnseenTitles(browseResults, recommendationState), recommendationState),
+        recommendationState
+      ),
+      recommendationState,
+      hideSeen
+    )
+  ), [browseResults, recommendationState, hideSeen]);
 
   const activeTabLabel = useMemo(() => {
     const activeTabItem = TYPE_TABS.find((tab) => tab.id === activeTab) || TYPE_TABS[0];
@@ -122,6 +138,7 @@ export function Discover() {
     : hasActiveTag
       ? t('discover.tagResultsFor', { tag: activeTag })
       : t('discover.allOfType', { type: activeTabLabel });
+  const shownBrowseCount = filteredBrowse.length;
 
   return (
     <div className="discover-page animate-fade-in">
@@ -218,13 +235,18 @@ export function Discover() {
           )}
 
           {!errorMessage && (
-            <div className="browse-context animate-fade-in-up">
+            <div ref={browseSectionRef} className="browse-context animate-fade-in-up">
 	              <div className="browse-toolbar">
 	                <h3 className="browse-heading">
 	                  {resultHeading}
 	                  <span className="browse-count">{t('discover.resultCount', { count: totalResults })}</span>
 	                </h3>
 	                <div className="browse-toolbar-actions">
+                    {totalResults > 0 && (
+                      <span className="browse-visible-count">
+                        {t('discover.showingResultCount', { shown: shownBrowseCount, count: totalResults })}
+                      </span>
+                    )}
 	                  <label className="discover-sorter">
 	                    <span>{t('watchlist.sort')}</span>
 		                    <select value={sortBy} onChange={(event) => {
@@ -258,7 +280,7 @@ export function Discover() {
 
                   <div className="discover-pagination">
                     <button
-	                      onClick={() => loadBrowse({ page: currentPage - 1, type: activeTab, searchValue: query, tagValue: activeTag, sortValue: sortBy })}
+	                      onClick={() => handleBrowsePageChange(currentPage - 1)}
                       className="primary-btn discover-page-btn"
                       disabled={currentPage <= 1}
                     >
@@ -268,7 +290,7 @@ export function Discover() {
                       {t('discover.pageIndicator', { page: currentPage, total: totalPages })}
                     </span>
                     <button
-	                      onClick={() => loadBrowse({ page: currentPage + 1, type: activeTab, searchValue: query, tagValue: activeTag, sortValue: sortBy })}
+	                      onClick={() => handleBrowsePageChange(currentPage + 1)}
                       className="primary-btn discover-page-btn"
                       disabled={currentPage >= totalPages}
                     >

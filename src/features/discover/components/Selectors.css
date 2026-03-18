@@ -12,6 +12,18 @@
   font-weight: 700;
 }
 
+.section-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--gradient-primary);
+  color: #fff;
+  flex-shrink: 0;
+}
+
 /* Mood Grid - Refined and cleaner */
 .mood-grid {
   display: flex;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Sparkles } from 'lucide-react';
 import { TIME_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import './Selectors.css';
@@ -8,7 +9,10 @@ export function TimeSelector({ selected, onChange }) {
 
   return (
     <div className="selector-container">
-      <h3 className="section-title">⏱️ {t('selectors.timeTitle')}</h3>
+      <h3 className="section-title">
+        <span className="section-title-icon"><Sparkles size={16} aria-hidden="true" /></span>
+        {t('selectors.timeTitle')}
+      </h3>
       <div className="time-grid stagger-children">
         {TIME_OPTIONS.map((time) => {
           const isSelected = selected === time.id;

@@ -143,6 +143,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
           alt={title.title_en || title.title_th}
           className="card-image"
           loading="lazy"
+          decoding="async"
         />
         {(favorite || topTitle) && (
           <div className="card-persistent-pills">

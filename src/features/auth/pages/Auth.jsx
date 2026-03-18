@@ -94,7 +94,7 @@ export function Auth() {
 
           <div className="auth-mobile-brand">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
           </div>
 
           <div className="auth-shell-head">

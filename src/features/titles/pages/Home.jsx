@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
@@ -14,6 +14,7 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { TYPE_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
 import { HOMEPAGE_BLOCK_PUBLIC_SELECT, mapHomepagePublicBlock } from '@/shared/lib/editorial';
 import { supabase } from '@/shared/lib/supabase';
+import { TypeIcon } from '@/shared/components/ui/TypeIcon';
 import { Dices, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { sortTitlesCollection, TITLE_SORT_OPTIONS } from '@/shared/lib/titleSorting';
 import {
@@ -48,6 +49,7 @@ export function Home() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [resultSortBy, setResultSortBy] = useState('match');
   const [trendingSortBy, setTrendingSortBy] = useState('popularity');
+  const resultsSectionRef = useRef(null);
 
   const { watchlist, advanceProgress, updateItem, setConsumptionTarget, catchUpToTarget } = useWatchlist();
   const { favoriteTitleIds } = useFavoriteTitles();
@@ -79,13 +81,17 @@ export function Home() {
             return (data || []).map(mapHomepagePublicBlock);
           })(),
         ]);
-        setTrending(nextTrending);
-        setEditorialBlocks(homepageBlocks);
-        setCatalogInfo(getCacheInfo());
+        startTransition(() => {
+          setTrending(nextTrending);
+          setEditorialBlocks(homepageBlocks);
+          setCatalogInfo(getCacheInfo());
+        });
       } catch (err) {
         console.error('Failed to load trending titles', err);
-        setEditorialBlocks([]);
-        setCatalogInfo(getCacheInfo());
+        startTransition(() => {
+          setEditorialBlocks([]);
+          setCatalogInfo(getCacheInfo());
+        });
       } finally {
         setIsInitialLoad(false);
       }
@@ -163,9 +169,11 @@ export function Home() {
         preferences: prefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
       });
-      setResults(recs);
-      setResultsPage(1);
-      setCatalogInfo(getCacheInfo());
+      startTransition(() => {
+        setResults(recs);
+        setResultsPage(1);
+        setCatalogInfo(getCacheInfo());
+      });
     } catch (err) {
       console.error('Failed to fetch recommendations', err);
       setCatalogInfo(getCacheInfo());
@@ -193,8 +201,10 @@ export function Home() {
       const visibleRecs = filterSeen(recs);
       const pool = visibleRecs.length > 0 ? visibleRecs : recs;
       const shuffled = [...pool].sort(() => Math.random() - 0.5);
-      setRandomPick(shuffled[0] || null);
-      setCatalogInfo(getCacheInfo());
+      startTransition(() => {
+        setRandomPick(shuffled[0] || null);
+        setCatalogInfo(getCacheInfo());
+      });
     } catch (err) {
       console.error(err);
       setCatalogInfo(getCacheInfo());
@@ -242,10 +252,23 @@ export function Home() {
   const filterSeen = (list) => filterSeenTitles(applyRecommendationFilters(list), recommendationState, hideSeen);
   const orderTitles = (list) => prioritizeUnseenTitles(list, recommendationState);
 
-  const displayResults = sortTitlesCollection(filterSeen(orderTitles(results)), resultSortBy);
-  const displayTrending = sortTitlesCollection(filterSeen(orderTitles(trending)), trendingSortBy);
-  const resultsTotalPages = Math.max(1, Math.ceil(displayResults.length / RESULTS_PAGE_SIZE));
-  const pagedResults = displayResults.slice((resultsPage - 1) * RESULTS_PAGE_SIZE, resultsPage * RESULTS_PAGE_SIZE);
+  const displayResults = useMemo(
+    () => sortTitlesCollection(filterSeen(orderTitles(results)), resultSortBy),
+    [results, resultSortBy, recommendationState, discoveryState, hideSeen]
+  );
+  const displayTrending = useMemo(
+    () => sortTitlesCollection(filterSeen(orderTitles(trending)), trendingSortBy),
+    [trending, trendingSortBy, recommendationState, discoveryState, hideSeen]
+  );
+  const resultsTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(displayResults.length / RESULTS_PAGE_SIZE)),
+    [displayResults.length]
+  );
+  const pagedResults = useMemo(
+    () => displayResults.slice((resultsPage - 1) * RESULTS_PAGE_SIZE, resultsPage * RESULTS_PAGE_SIZE),
+    [displayResults, resultsPage]
+  );
+  const shownResultsCount = pagedResults.length;
 
   const quickMoods = MOODS.slice(0, 6);
   const heroBlock = useMemo(
@@ -277,9 +300,11 @@ export function Home() {
         preferences: prefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
       });
-      setResults(recs);
-      setResultsPage(1);
-      setCatalogInfo(getCacheInfo());
+      startTransition(() => {
+        setResults(recs);
+        setResultsPage(1);
+        setCatalogInfo(getCacheInfo());
+      });
     } catch (err) {
       console.error(err);
       setCatalogInfo(getCacheInfo());
@@ -355,6 +380,15 @@ export function Home() {
       console.error(error);
       toast.error(t('home.failedCatchUp'));
     }
+  };
+
+  const scrollToResultsSection = () => {
+    resultsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleResultsPageChange = (nextPage) => {
+    setResultsPage(nextPage);
+    window.requestAnimationFrame(scrollToResultsSection);
   };
 
   const heroTitle = heroBlock?.title || t('home.heroTitle');
@@ -513,7 +547,7 @@ export function Home() {
                   className={`type-btn ${type === opt.id ? 'active' : ''}`}
                   onClick={() => setType(opt.id)}
                 >
-                  <span className="type-icon">{opt.icon}</span>
+                  <span className="type-icon"><TypeIcon option={opt} /></span>
                   {getLocalizedLabel(opt, language)}
                 </button>
               ))}
@@ -553,7 +587,7 @@ export function Home() {
       </section>
 
       {(results.length > 0 || isLoading) && (
-        <section id="results-section" className="section results-section">
+        <section id="results-section" ref={resultsSectionRef} className="section results-section">
           <div className="container">
             <div className="results-header">
               <h2 className="section-heading">
@@ -561,6 +595,11 @@ export function Home() {
                 {displayResults.length > 0 && <span className="results-count">{t('home.titlesCount', { count: displayResults.length })}</span>}
               </h2>
               <div className="results-toolbar-actions">
+                {displayResults.length > 0 && (
+                  <span className="results-visible-count">
+                    {t('home.showingTitlesCount', { shown: shownResultsCount, count: displayResults.length })}
+                  </span>
+                )}
                 <label className="results-sorter">
                   <span>{t('watchlist.sort')}</span>
                   <select value={resultSortBy} onChange={(event) => setResultSortBy(event.target.value)}>
@@ -594,7 +633,7 @@ export function Home() {
                   <div className="results-pagination">
                     <button
                       className="results-page-btn"
-                      onClick={() => setResultsPage((page) => Math.max(1, page - 1))}
+                      onClick={() => handleResultsPageChange(Math.max(1, resultsPage - 1))}
                       disabled={resultsPage <= 1}
                     >
                       {t('common.previous')}
@@ -604,7 +643,7 @@ export function Home() {
                     </span>
                     <button
                       className="results-page-btn"
-                      onClick={() => setResultsPage((page) => Math.min(resultsTotalPages, page + 1))}
+                      onClick={() => handleResultsPageChange(Math.min(resultsTotalPages, resultsPage + 1))}
                       disabled={resultsPage >= resultsTotalPages}
                     >
                       {t('common.next')}

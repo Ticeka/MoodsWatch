@@ -109,6 +109,7 @@
       caughtUp: 'ตามถึงเป้าแล้ว',
       failedCatchUp: 'ตามให้ถึงเป้าไม่สำเร็จ',
       titlesCount: '({count} เรื่อง)',
+      showingTitlesCount: 'แสดง {shown} จาก {count} เรื่อง',
     },
     discover: {
       badge: 'ค้นหาและสำรวจ',
@@ -121,6 +122,7 @@
       tagLabel: 'แท็ก',
       loaded: '{count} เรื่องถูกโหลดแล้ว',
       resultCount: '({count} เรื่อง)',
+      showingResultCount: 'แสดง {shown} จาก {count} เรื่อง',
       hideSeen: 'ซ่อนเรื่องที่ดูแล้ว',
       discoverCatalogError: 'โหลดแคตตาล็อกไม่สำเร็จ',
       noResults: 'ไม่พบผลลัพธ์',
@@ -357,7 +359,7 @@
     selectors: {
       moodTitle: 'วันนี้อยากได้อารมณ์ไหน?',
       moodSubtitle: '(เลือกได้สูงสุด 3)',
-      timeTitle: 'มีเวลาแค่ไหน?',
+      timeTitle: 'เรื่องจบหรือยัง?',
     },
     profile: {
       profileCenter: 'ศูนย์รวมโปรไฟล์',
@@ -1184,6 +1186,7 @@
       caughtUp: 'Caught up to target',
       failedCatchUp: 'Failed to catch up to target',
       titlesCount: '({count} titles)',
+      showingTitlesCount: 'Showing {shown} of {count} titles',
     },
     discover: {
       badge: 'Search & Explore',
@@ -1196,6 +1199,7 @@
       tagLabel: 'Tag',
       loaded: '{count} titles loaded',
       resultCount: '({count} titles)',
+      showingResultCount: 'Showing {shown} of {count} titles',
       hideSeen: 'Hide seen titles',
       discoverCatalogError: 'Failed to load discover catalog',
       noResults: 'No results found',
@@ -1432,7 +1436,7 @@
     selectors: {
       moodTitle: 'What mood are you after today?',
       moodSubtitle: '(pick up to 3)',
-      timeTitle: 'How much time do you have?',
+      timeTitle: 'Completed or ongoing?',
     },
     profile: {
       profileCenter: 'Profile Center',

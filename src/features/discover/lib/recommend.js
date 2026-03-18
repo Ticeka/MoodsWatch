@@ -1,5 +1,5 @@
 // MoodToon recommendation engine backed only by canonical_titles in Supabase
-import { MOODS } from '@/shared/data/moods';
+import { MOODS, isExplicitMood } from '@/shared/data/moods';
 import {
   CANONICAL_TITLE_BROWSE_SELECT,
   CANONICAL_TITLE_DETAIL_SELECT,
@@ -374,15 +374,33 @@ function scoreMoodMatch(title, moods) {
   return matched / moods.length;
 }
 
+function splitRequestedMoods(moods = []) {
+  return moods.reduce((acc, moodId) => {
+    if (isExplicitMood(moodId)) {
+      acc.explicit.push(moodId);
+    } else {
+      acc.fuzzy.push(moodId);
+    }
+
+    return acc;
+  }, { explicit: [], fuzzy: [] });
+}
+
 function matchesRequestedMoods(title, moods) {
   if (!moods || moods.length === 0) return true;
 
   const titleMoodIds = new Set(title.moods || []);
-  if (moods.some((mood) => titleMoodIds.has(mood))) {
+  const { explicit, fuzzy } = splitRequestedMoods(moods);
+
+  if (explicit.some((mood) => titleMoodIds.has(mood))) {
     return true;
   }
 
-  const wantedTags = moods.flatMap((mood) => moodGenres[mood] || []).map((tag) => tag.toLowerCase());
+  if (fuzzy.some((mood) => titleMoodIds.has(mood))) {
+    return true;
+  }
+
+  const wantedTags = fuzzy.flatMap((mood) => moodGenres[mood] || []).map((tag) => tag.toLowerCase());
   if (wantedTags.length === 0) return false;
 
   const titleTags = [...(title.genres || []), ...(title.tags || [])].map((tag) => tag.toLowerCase());
@@ -396,8 +414,11 @@ function matchesRequestedMoods(title, moods) {
 function scoreGenreTagMatch(title, moods) {
   if (!moods || moods.length === 0) return 0;
   const titleTags = [...(title.genres || []), ...(title.tags || [])].map((t) => t.toLowerCase());
+  const { fuzzy } = splitRequestedMoods(moods);
 
-  const moodScores = moods.map((m) => {
+  if (fuzzy.length === 0) return 0;
+
+  const moodScores = fuzzy.map((m) => {
     const tags = (moodGenres[m] || []).map((t) => t.toLowerCase());
     if (tags.length === 0) return 0;
     const matched = tags.filter((t) => titleTags.includes(t)).length;
@@ -620,8 +641,11 @@ export async function recommend({
     pool = pool.filter((title) => matchesRequestedMoods(title, moods));
   }
 
-  if ((timeOption?.id || timeOption) === 'completed') {
+  const timeId = timeOption?.id || timeOption;
+  if (timeId === 'completed') {
     pool = pool.filter((title) => title.status === 'completed');
+  } else if (timeId === 'ongoing') {
+    pool = pool.filter((title) => title.status !== 'completed');
   }
 
   const weights = resolveWeights(moods.length > 0, resolvedLikedTitleIds.length > 0);

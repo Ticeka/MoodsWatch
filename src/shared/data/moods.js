@@ -65,12 +65,13 @@ export const MOODS = [
   },
   {
     id: 'op-mc',
-    name_th: 'พระเอกเทพ',
-    name_en: 'OP MC',
+    name_th: 'พระเอกโหด',
+    name_en: 'OP Hero',
     icon: '⚡',
     color: '#a78bfa',
     description: 'พระเอกแกร่งสุดๆ ดูแล้วสะใจ',
-    tags: ['overpowered mc', 'fantasy', 'action', 'power fantasy', 'isekai'],
+    tags: ['overpowered mc', 'power fantasy'],
+    matchMode: 'explicit',
   },
   {
     id: 'slowlife',
@@ -110,8 +111,8 @@ export const MOODS = [
   },
   {
     id: 'coming-of-age',
-    name_th: 'Coming of Age',
-    name_en: 'Coming of Age',
+    name_th: 'เติบโต',
+    name_en: 'Growing Up',
     icon: '🌅',
     color: '#f59e0b',
     description: 'เติบโต เรียนรู้ด้วยวัย',
@@ -119,8 +120,8 @@ export const MOODS = [
   },
   {
     id: 'fantasy-escape',
-    name_th: 'Fantasy Escapism',
-    name_en: 'Fantasy Escapism',
+    name_th: 'Fantasy',
+    name_en: 'Fantasy',
     icon: '🏰',
     color: '#c084fc',
     description: 'หนีไปโลกแฟนตาซี ผจญภัยข้ามโลก',
@@ -128,8 +129,8 @@ export const MOODS = [
   },
   {
     id: 'bedtime',
-    name_th: 'อ่านก่อนนอน',
-    name_en: 'Bedtime Read',
+    name_th: 'ก่อนนอน',
+    name_en: 'Bedtime',
     icon: '🌙',
     color: '#818cf8',
     description: 'สบายๆ อ่านในผ้าห่ม',
@@ -137,14 +138,24 @@ export const MOODS = [
   },
   {
     id: 'quick-finish',
-    name_th: 'ดูจบไว',
-    name_en: 'Quick Finish',
+    name_th: 'จบไว',
+    name_en: 'Quick',
     icon: '⏱️',
     color: '#14b8a6',
     description: 'จบเร็ว ไม่กี่ตอน ดูรวดเดียวจบ',
     tags: ['1 cour', 'movie', 'completed', 'low commitment'],
   },
 ];
+
+export const MOOD_BY_ID = Object.fromEntries(MOODS.map((mood) => [mood.id, mood]));
+
+export function isExplicitMood(moodId) {
+  return MOOD_BY_ID[moodId]?.matchMode === 'explicit';
+}
+
+export function getAutoDerivableMoods() {
+  return MOODS.filter((mood) => mood.matchMode !== 'explicit');
+}
 
 export function getLocalizedLabel(item, language = 'th', thKey = 'label', enKey = 'labelEn') {
   if (!item) {
@@ -165,22 +176,15 @@ export function getLocalizedMoodName(mood, language = 'th') {
 }
 
 export const TIME_OPTIONS = [
-  { id: '20min', label: 'ดูแป๊บเดียว', labelEn: 'Just a bit', maxEpisodes: 1, maxMinutes: 24, icon: '⚡' },
-  { id: '30min', label: 'ตอนเดียวก่อน', labelEn: 'One episode', maxEpisodes: 1, maxMinutes: 30, icon: '🕐' },
-  { id: '1hour', label: 'สัก 2-3 ตอน', labelEn: '2-3 episodes', maxEpisodes: 3, maxMinutes: 60, icon: '🕑' },
-  { id: 'tonight', label: 'คืนนี้ดูจบ', labelEn: 'Finish tonight', maxEpisodes: 13, maxMinutes: 300, icon: '🌙' },
-  { id: 'short', label: '1 ซีซั่นจบ', labelEn: '1 season', maxEpisodes: 13, maxMinutes: null, icon: '📺' },
-  { id: 'long', label: 'ดูยาวๆ หลายซีซั่น', labelEn: 'Long series', maxEpisodes: 999, maxMinutes: null, icon: '📚' },
-  { id: '10ch', label: 'ตอนไม่เยอะ', labelEn: 'Few chapters', maxEpisodes: 10, maxMinutes: null, icon: '📖' },
-  { id: 'few-vol', label: 'มังงะสั้น', labelEn: 'Short manga', maxEpisodes: null, maxMinutes: null, maxVolumes: 10, icon: '📕' },
-  { id: 'completed', label: 'จบแล้ว', labelEn: 'Completed', maxEpisodes: null, maxMinutes: null, status: 'completed', icon: '✅' },
+  { id: 'completed', label: 'จบแล้ว', labelEn: 'Completed', status: 'completed', icon: '✅' },
+  { id: 'ongoing', label: 'ยังไม่จบ', labelEn: 'Ongoing', status: 'ongoing', icon: '🔄' },
 ];
 
 export const TYPE_OPTIONS = [
   { id: 'all', label: 'ทั้งหมด', labelEn: 'All', icon: '🎯' },
   { id: 'anime', label: 'Anime', labelEn: 'Anime', icon: '📺' },
-  { id: 'manga', label: 'Manga', labelEn: 'Manga', icon: '📖' },
-  { id: 'manhwa', label: 'Manhwa', labelEn: 'Manhwa', icon: '🇰🇷' },
+  { id: 'manga', label: 'Manga', labelEn: 'Manga', countryCode: 'JP' },
+  { id: 'manhwa', label: 'Manhwa', labelEn: 'Manhwa', countryCode: 'KR' },
 ];
 
 export const FILTER_OPTIONS = {
