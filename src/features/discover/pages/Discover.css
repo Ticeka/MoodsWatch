@@ -224,12 +224,16 @@
 }
 
 .discover-sorter select {
-  min-height: 42px;
-  padding: 0.7rem 0.95rem;
+  min-height: 36px;
+  padding: 0.45rem 2rem 0.45rem 0.75rem;
   border: 1px solid var(--border-default);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
   color: var(--text-primary);
+}
+
+.discover-sorter select:focus {
+  outline: none;
+  border-color: var(--accent-500);
 }
 
 .hide-seen-toggle {
@@ -316,8 +320,7 @@
 [data-theme="dark"] .type-tab,
 [data-theme="dark"] .quick-tag,
 [data-theme="dark"] .discover-filter-pill,
-[data-theme="dark"] .browse-context,
-[data-theme="dark"] .discover-sorter select {
+[data-theme="dark"] .browse-context {
   background: linear-gradient(180deg, rgba(78, 60, 55, 0.98), rgba(52, 40, 37, 0.96));
   border-color: rgba(255, 226, 206, 0.1);
 }

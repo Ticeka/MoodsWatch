@@ -515,9 +515,15 @@
 .results-sorter select {
   min-width: 8.5rem;
   border: none;
-  background: transparent;
+  background-color: transparent;
   color: var(--text-primary);
+  padding-right: 1.75rem;
   outline: none;
+}
+
+.results-sorter select option {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 .loading-grid {
