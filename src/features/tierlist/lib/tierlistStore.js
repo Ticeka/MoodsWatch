@@ -148,6 +148,7 @@ function normalizeTierList(raw, index = 0) {
     isPublic: Boolean(raw?.isPublic),
     playCount: Number(raw?.playCount || 0),
     ownerName: String(raw?.ownerName || 'You'),
+    ownerUsername: raw?.ownerUsername ? String(raw.ownerUsername) : null,
     ownerUserId: raw?.ownerUserId ? String(raw.ownerUserId) : null,
     createdAt: raw?.createdAt || new Date().toISOString(),
     updatedAt: raw?.updatedAt || new Date().toISOString(),
@@ -419,6 +420,7 @@ function toRemoteList(list, userId = null) {
     is_public: normalized.isPublic,
     play_count: normalized.playCount,
     owner_name: normalized.ownerName,
+    owner_username: normalized.ownerUsername || '',
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
@@ -444,6 +446,7 @@ function fromRemoteList(row, rows = [], poolItems = []) {
     isPublic: row?.is_public,
     playCount: row?.play_count,
     ownerName: row?.owner_name,
+    ownerUsername: row?.owner_username || null,
     ownerUserId: row?.owner_user_id,
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
@@ -484,7 +487,7 @@ async function fetchRemoteLists(userId = null) {
     return [];
   }
 
-  const select = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, created_at, updated_at';
+  const select = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, created_at, updated_at';
   const requests = userId
     ? [
         supabase.from('tierlist_lists').select(select).eq('is_public', true),

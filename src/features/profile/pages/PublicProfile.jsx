@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Loader2, Sparkles, UserRound } from 'lucide-react';
+import { Loader2, MessageSquare, Sparkles, UserRound } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -64,8 +64,13 @@ export function PublicProfile() {
   const [commentError, setCommentError] = useState('');
   const [commentSuccess, setCommentSuccess] = useState('');
   const [commentDraft, setCommentDraft] = useState('');
+  const [replyDraft, setReplyDraft] = useState('');
+  const [activeReplyId, setActiveReplyId] = useState(null);
+  const [expandedReplies, setExpandedReplies] = useState(new Set());
+  const [replyError, setReplyError] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const replyInputRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,11 +173,12 @@ export function PublicProfile() {
             comment_body,
             created_at,
             author_user_id,
+            parent_comment_id,
             author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
           `)
           .eq('profile_user_id', profile.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
+          .order('created_at', { ascending: true })
+          .limit(100);
 
         if (error) throw error;
         if (!cancelled) setComments(data || []);
@@ -194,6 +200,32 @@ export function PublicProfile() {
   const canComment = Boolean(profile?.allow_profile_comments);
   const canPostComment = Boolean(user?.id && canComment && profile?.id);
   const profileInitial = (profile?.name || profile?.username || 'M').charAt(0).toUpperCase();
+
+  const fireProfileNotifications = (savedParentEntry) => {
+    const actorName = user?.profile?.name || user?.profile?.username || t('profile.publicCommentAnonymous');
+    const notifInserts = [];
+    if (profile.id !== user.id) {
+      notifInserts.push(supabase.from('notifications').insert({
+        user_id: profile.id,
+        type: savedParentEntry ? 'comment_reply' : 'profile_comment',
+        reference_id: profile.username,
+        actor_user_id: user.id,
+        message: savedParentEntry
+          ? `${actorName} ${language === 'th' ? 'ตอบกลับคอมเมนต์บนโปรไฟล์ของคุณ' : 'replied to a comment on your profile'}`
+          : `${actorName} ${language === 'th' ? 'คอมเมนต์บนโปรไฟล์ของคุณ' : 'commented on your profile'}`,
+      }));
+    }
+    if (savedParentEntry?.author_user_id && savedParentEntry.author_user_id !== user.id && savedParentEntry.author_user_id !== profile.id) {
+      notifInserts.push(supabase.from('notifications').insert({
+        user_id: savedParentEntry.author_user_id,
+        type: 'comment_reply',
+        reference_id: profile.username,
+        actor_user_id: user.id,
+        message: `${actorName} ${language === 'th' ? 'ตอบกลับคอมเมนต์ของคุณ' : 'replied to your comment'}`,
+      }));
+    }
+    if (notifInserts.length) Promise.allSettled(notifInserts);
+  };
 
   const submitComment = async (event) => {
     event.preventDefault();
@@ -220,6 +252,7 @@ export function PublicProfile() {
         .insert({
           profile_user_id: profile.id,
           author_user_id: user.id,
+          parent_comment_id: null,
           comment_body: commentBody,
         })
         .select(`
@@ -227,19 +260,79 @@ export function PublicProfile() {
           comment_body,
           created_at,
           author_user_id,
+          parent_comment_id,
           author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
         `)
         .single();
 
       if (error) throw error;
-      setComments((current) => [data, ...current]);
+      setComments((current) => [...current, data]);
       setCommentDraft('');
       setCommentSuccess(t('profile.publicCommentSuccess'));
+      fireProfileNotifications(null);
     } catch {
       setCommentError(t('profile.publicCommentSubmitFailed'));
     } finally {
       setIsSubmittingComment(false);
     }
+  };
+
+  const submitReply = async (event, parentEntry) => {
+    event.preventDefault();
+    if (!canPostComment || !supabase) return;
+    const body = String(replyDraft || '').trim();
+    if (!body || body.length > 500) { setReplyError(t('profile.publicCommentTooLong')); return; }
+    setIsSubmittingComment(true);
+    setReplyError('');
+    try {
+      const { data, error } = await supabase
+        .from('profile_comments')
+        .insert({
+          profile_user_id: profile.id,
+          author_user_id: user.id,
+          parent_comment_id: parentEntry.id,
+          comment_body: body,
+        })
+        .select(`
+          id,
+          comment_body,
+          created_at,
+          author_user_id,
+          parent_comment_id,
+          author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
+        `)
+        .single();
+      if (error) throw error;
+      setComments((current) => [...current, data]);
+      setReplyDraft('');
+      setActiveReplyId(null);
+      setExpandedReplies((prev) => new Set([...prev, parentEntry.id]));
+      fireProfileNotifications(parentEntry);
+    } catch {
+      setReplyError(t('profile.publicCommentSubmitFailed'));
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleReplyClick = (entry) => {
+    const isSame = activeReplyId === entry.id;
+    setActiveReplyId(isSame ? null : entry.id);
+    setReplyDraft('');
+    setReplyError('');
+    if (!isSame) {
+      setExpandedReplies((prev) => new Set([...prev, entry.id]));
+      setTimeout(() => replyInputRef.current?.focus(), 50);
+    }
+  };
+
+  const toggleReplies = (commentId) => {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
   };
 
   if (isLoading) {
@@ -374,7 +467,6 @@ export function PublicProfile() {
           {canComment && (
             <>
               <form className="public-profile-comment-form" onSubmit={submitComment}>
-                <label htmlFor="profile-comment-input">{t('profile.publicCommentLabel')}</label>
                 <textarea
                   id="profile-comment-input"
                   value={commentDraft}
@@ -388,13 +480,15 @@ export function PublicProfile() {
                   maxLength={500}
                   rows={3}
                 />
-                <small>{t('profile.publicCommentHint')}</small>
-                {!user?.id && <p className="public-profile-form-note">{t('profile.publicCommentLoginRequired')}</p>}
-                {commentError && <p className="public-profile-form-error">{commentError}</p>}
-                {commentSuccess && <p className="public-profile-form-success">{commentSuccess}</p>}
-                <Button type="submit" disabled={!canPostComment || isSubmittingComment}>
-                  {isSubmittingComment ? t('profile.publicCommentSubmitting') : t('profile.publicCommentSubmit')}
-                </Button>
+                <div className="public-profile-comment-form-row">
+                  <small>{commentDraft.length}/500</small>
+                  {!user?.id && <span className="public-profile-form-note">{t('profile.publicCommentLoginRequired')}</span>}
+                  {commentError && <span className="public-profile-form-error">{commentError}</span>}
+                  {commentSuccess && <span className="public-profile-form-success">{commentSuccess}</span>}
+                  <Button type="submit" size="sm" variant="primary" disabled={!canPostComment || isSubmittingComment}>
+                    {isSubmittingComment ? t('profile.publicCommentSubmitting') : t('profile.publicCommentSubmit')}
+                  </Button>
+                </div>
               </form>
 
               {isCommentsLoading ? (
@@ -402,14 +496,26 @@ export function PublicProfile() {
                   <Loader2 size={20} className="animate-spin" />
                   <p>{t('profile.publicCommentsLoading')}</p>
                 </div>
-              ) : comments.length > 0 ? (
-                <div className="public-profile-comments-list">
-                  {comments.map((entry) => {
-                    const author = entry.author_profile || {};
-                    const authorName = author.name || author.username || t('profile.publicCommentAnonymous');
-                    const authorInitial = authorName.charAt(0).toUpperCase();
-                    return (
-                      <article key={entry.id} className="public-profile-comment-item">
+              ) : (() => {
+                const topLevel = comments.filter((c) => !c.parent_comment_id);
+                const repliesMap = {};
+                comments.filter((c) => c.parent_comment_id).forEach((c) => {
+                  if (!repliesMap[c.parent_comment_id]) repliesMap[c.parent_comment_id] = [];
+                  repliesMap[c.parent_comment_id].push(c);
+                });
+
+                const renderThread = (entry) => {
+                  const author = entry.author_profile || {};
+                  const authorName = author.name || author.username || t('profile.publicCommentAnonymous');
+                  const authorInitial = authorName.charAt(0).toUpperCase();
+                  const replies = repliesMap[entry.id] || [];
+                  const hasReplies = replies.length > 0;
+                  const isExpanded = expandedReplies.has(entry.id);
+                  const isReplyFormOpen = activeReplyId === entry.id;
+
+                  return (
+                    <div key={entry.id} className="public-profile-comment-thread">
+                      <article className="public-profile-comment-item">
                         <div className="public-profile-comment-avatar-wrap">
                           {author.avatar_url ? (
                             <img src={author.avatar_url} alt="" className="public-profile-comment-avatar" />
@@ -419,20 +525,113 @@ export function PublicProfile() {
                         </div>
                         <div className="public-profile-comment-copy">
                           <div className="public-profile-comment-meta">
-                            <strong>{authorName}</strong>
+                            {author.username
+                              ? <Link to={`/u/${author.username}`} className="public-profile-comment-author-link"><strong>{authorName}</strong></Link>
+                              : <strong>{authorName}</strong>}
                             <span>{formatCommentDate(entry.created_at, locale)}</span>
                           </div>
                           <p>{entry.comment_body}</p>
+                          {user?.id && (
+                            <button type="button" className="public-profile-reply-btn" onClick={() => handleReplyClick(entry)}>
+                              <MessageSquare size={12} /> {t('profile.replyBtn')}
+                            </button>
+                          )}
                         </div>
                       </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="public-profile-empty">
-                  <span>{t('profile.publicCommentsEmpty')}</span>
-                </div>
-              )}
+
+                      {(hasReplies || isReplyFormOpen) && (
+                        <div className="public-profile-thread-indent">
+                          {hasReplies && (
+                            <button
+                              type="button"
+                              className="public-profile-show-replies-btn"
+                              onClick={() => toggleReplies(entry.id)}
+                            >
+                              <span className={`public-profile-reply-chevron${isExpanded ? ' expanded' : ''}`}>▶</span>
+                              {isExpanded
+                                ? t('profile.hideReplies') || (language === 'th' ? 'ซ่อนการตอบกลับ' : 'Hide replies')
+                                : language === 'th'
+                                  ? `${replies.length} การตอบกลับ`
+                                  : `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+                            </button>
+                          )}
+
+                          {isExpanded && (
+                            <div className="public-profile-replies">
+                              {replies.map((reply) => {
+                                const rAuthor = reply.author_profile || {};
+                                const rAuthorName = rAuthor.name || rAuthor.username || t('profile.publicCommentAnonymous');
+                                const rAuthorInitial = rAuthorName.charAt(0).toUpperCase();
+                                return (
+                                  <article key={reply.id} className="public-profile-comment-item public-profile-comment-item-reply">
+                                    <div className="public-profile-comment-avatar-wrap">
+                                      {rAuthor.avatar_url ? (
+                                        <img src={rAuthor.avatar_url} alt="" className="public-profile-comment-avatar public-profile-comment-avatar-sm" />
+                                      ) : (
+                                        <div className="public-profile-comment-avatar fallback public-profile-comment-avatar-sm">{rAuthorInitial}</div>
+                                      )}
+                                    </div>
+                                    <div className="public-profile-comment-copy">
+                                      <div className="public-profile-comment-meta">
+                                        {rAuthor.username
+                                          ? <Link to={`/u/${rAuthor.username}`} className="public-profile-comment-author-link"><strong>{rAuthorName}</strong></Link>
+                                          : <strong>{rAuthorName}</strong>}
+                                        <span>{formatCommentDate(reply.created_at, locale)}</span>
+                                      </div>
+                                      <p>{reply.comment_body}</p>
+                                    </div>
+                                  </article>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {isReplyFormOpen && (
+                            <form className="public-profile-inline-reply-form" onSubmit={(e) => submitReply(e, entry)}>
+                              <textarea
+                                ref={replyInputRef}
+                                value={replyDraft}
+                                onChange={(e) => { setReplyDraft(e.target.value); setReplyError(''); }}
+                                placeholder={language === 'th' ? `ตอบกลับ ${authorName}...` : `Reply to ${authorName}...`}
+                                maxLength={500}
+                                rows={2}
+                                disabled={isSubmittingComment}
+                                className="public-profile-inline-reply-textarea"
+                              />
+                              <div className="public-profile-inline-reply-actions">
+                                <small>{replyDraft.length}/500</small>
+                                {replyError && <span className="public-profile-form-error">{replyError}</span>}
+                                <button
+                                  type="button"
+                                  className="public-profile-cancel-btn"
+                                  onClick={() => { setActiveReplyId(null); setReplyDraft(''); }}
+                                >
+                                  {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                </button>
+                                <Button type="submit" size="sm" variant="primary" disabled={isSubmittingComment || !replyDraft.trim()}>
+                                  {isSubmittingComment
+                                    ? t('profile.publicCommentSubmitting')
+                                    : (language === 'th' ? 'ตอบกลับ' : 'Reply')}
+                                </Button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                return topLevel.length > 0 ? (
+                  <div className="public-profile-comments-list">
+                    {topLevel.map((entry) => renderThread(entry))}
+                  </div>
+                ) : (
+                  <div className="public-profile-empty">
+                    <span>{t('profile.publicCommentsEmpty')}</span>
+                  </div>
+                );
+              })()}
             </>
           )}
         </article>

@@ -1,11 +1,12 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
-import { Settings, LogOut, ShieldAlert, Globe, Moon, Sun, ChevronDown, Home, Search, Swords, BookMarked, User, Sparkles, ListOrdered } from 'lucide-react';
+import { Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
+import { supabase } from '@/shared/lib/supabase';
 import './Layout.css';
 
 function LanguageToggle() {
@@ -28,6 +29,130 @@ function LanguageToggle() {
         TH
       </button>
     </div>
+  );
+}
+
+function NotificationBell({ userId }) {
+  const { t } = useLanguage();
+  const [notifications, setNotifications] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const bellRef = useRef(null);
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    if (!userId || !supabase) return;
+    let cancelled = false;
+
+    async function load() {
+      const { data } = await supabase
+        .from('notifications')
+        .select('id, type, message, is_read, created_at, reference_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (!cancelled) setNotifications(data || []);
+    }
+
+    load();
+
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
+        setNotifications((prev) => [payload.new, ...prev].slice(0, 20));
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e) => {
+      if (
+        bellRef.current && !bellRef.current.contains(e.target) &&
+        panelRef.current && !panelRef.current.contains(e.target)
+      ) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const markAllRead = async () => {
+    if (!supabase || !userId) return;
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  };
+
+  const handleOpen = () => {
+    if (!open && bellRef.current) {
+      const rect = bellRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    setOpen((v) => !v);
+    if (!open) markAllRead();
+  };
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  return (
+    <>
+      <button
+        ref={bellRef}
+        className="notif-bell-btn"
+        onClick={handleOpen}
+        title={t('layout.notifications') || 'Notifications'}
+        type="button"
+      >
+        <Bell size={18} />
+        {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          className="notif-panel glass-heavy"
+          style={{ position: 'fixed', top: pos.top, right: pos.right }}
+        >
+          <div className="notif-panel-head">
+            <strong>{t('layout.notifications') || 'Notifications'}</strong>
+          </div>
+          {notifications.length === 0 ? (
+            <p className="notif-empty">{t('layout.notificationsEmpty') || 'No notifications'}</p>
+          ) : (
+            <ul className="notif-list">
+              {notifications.map((n) => {
+                let href = null;
+                if (n.reference_id) {
+                  if (n.type === 'profile_comment' || (n.type === 'comment_reply' && !String(n.reference_id).startsWith('tierlist-'))) {
+                    href = `/u/${n.reference_id}`;
+                  } else {
+                    href = `/tierlist/play/${n.reference_id}`;
+                  }
+                }
+                return (
+                  <li key={n.id} className={`notif-item${n.is_read ? '' : ' is-unread'}`}>
+                    {href ? (
+                      <Link to={href} className="notif-link" onClick={() => setOpen(false)}>
+                        {n.message}
+                      </Link>
+                    ) : (
+                      <span>{n.message}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
@@ -144,6 +269,8 @@ export function Header() {
                 </button>
               </div>
             )}
+
+            {user && <NotificationBell userId={user.id} />}
 
             {user ? (
               <div className="user-dropdown-container" ref={dropdownRef}>

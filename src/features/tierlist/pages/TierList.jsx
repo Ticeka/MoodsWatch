@@ -8,6 +8,8 @@ import {
   Compass,
   Download,
   Layers,
+  Loader2,
+  MessageSquare,
   Monitor,
   Palette,
   Plus,
@@ -34,6 +36,7 @@ import {
 } from '@/features/tierlist/lib/tierlistStore';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { supabase } from '@/shared/lib/supabase';
 import './TierList.css';
 
 const BROWSE_PAGE_SIZE = 8;
@@ -135,7 +138,18 @@ function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo,
         )}
       </div>
       <div className="tierlist-browse-card-body">
-        <small className="tierlist-chip">{pick('by', 'by')} {list.ownerName || 'User'}</small>
+        <small className="tierlist-chip">
+          {pick('by', 'by')}{' '}
+          {(() => {
+            const slug = list.ownerUsername || list.ownerName;
+            const label = list.ownerName || list.ownerUsername || 'User';
+            return slug && slug !== 'You' ? (
+              <Link to={`/u/${slug}`} className="tierlist-owner-link" onClick={(e) => e.stopPropagation()}>
+                {label}
+              </Link>
+            ) : label;
+          })()}
+        </small>
         <h3>{list.title}</h3>
         <small className="tierlist-meta">
           {list.rows.length} {pick('tiers', 'tiers')} · {list.playCount || 0} {pick('plays', 'plays')}
@@ -911,6 +925,314 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   );
 }
 
+function formatCmtDate(value) {
+  if (!value) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+  } catch {
+    return '';
+  }
+}
+
+function TierListCommentSection({ listId, listOwnerId, pick }) {
+  const { user } = useAuth();
+  const [comments, setComments] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [replyDraft, setReplyDraft] = useState('');
+  const [activeReplyId, setActiveReplyId] = useState(null);
+  const [expandedReplies, setExpandedReplies] = useState(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [replyError, setReplyError] = useState('');
+  const replyInputRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!supabase || !listId) return;
+      setIsLoading(true);
+      try {
+        const { data, error: loadErr } = await supabase
+          .from('tierlist_comments')
+          .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
+          .eq('list_id', listId)
+          .order('created_at', { ascending: true })
+          .limit(100);
+        if (loadErr) throw loadErr;
+        if (!cancelled) setComments(data || []);
+      } catch {
+        // silently ignore load error
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [listId]);
+
+  const fireNotifications = (parentEntry) => {
+    const actorName = user?.profile?.name || user?.profile?.username || pick('Someone', 'Someone');
+    const notifInserts = [];
+    if (listOwnerId && listOwnerId !== user.id) {
+      notifInserts.push(supabase.from('notifications').insert({
+        user_id: listOwnerId,
+        type: parentEntry ? 'comment_reply' : 'tierlist_comment',
+        reference_id: listId,
+        actor_user_id: user.id,
+        message: parentEntry
+          ? `${actorName} ${pick('replied to a comment on your tierlist', 'replied to a comment on your tierlist')}`
+          : `${actorName} ${pick('commented on your tierlist', 'commented on your tierlist')}`,
+      }));
+    }
+    if (parentEntry?.author_user_id && parentEntry.author_user_id !== user.id && parentEntry.author_user_id !== listOwnerId) {
+      notifInserts.push(supabase.from('notifications').insert({
+        user_id: parentEntry.author_user_id,
+        type: 'comment_reply',
+        reference_id: listId,
+        actor_user_id: user.id,
+        message: `${actorName} ${pick('replied to your comment', 'replied to your comment')}`,
+      }));
+    }
+    if (notifInserts.length) Promise.allSettled(notifInserts);
+  };
+
+  const submitComment = async (e) => {
+    e.preventDefault();
+    if (!user?.id || !draft.trim() || !supabase) return;
+    const body = draft.trim();
+    if (body.length > 500) { setError(pick('Comment too long (max 500 chars)', 'Comment too long (max 500 chars)')); return; }
+    setIsSubmitting(true);
+    setError('');
+    try {
+      const { data, error: insertErr } = await supabase
+        .from('tierlist_comments')
+        .insert({ list_id: listId, author_user_id: user.id, parent_comment_id: null, comment_body: body })
+        .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
+        .single();
+      if (insertErr) throw insertErr;
+      setComments((c) => [...c, data]);
+      setDraft('');
+      fireNotifications(null);
+    } catch {
+      setError(pick('Failed to post comment', 'Failed to post comment'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitReply = async (e, parentEntry) => {
+    e.preventDefault();
+    if (!user?.id || !replyDraft.trim() || !supabase) return;
+    const body = replyDraft.trim();
+    if (body.length > 500) { setReplyError(pick('Comment too long (max 500 chars)', 'Comment too long (max 500 chars)')); return; }
+    setIsSubmitting(true);
+    setReplyError('');
+    try {
+      const { data, error: insertErr } = await supabase
+        .from('tierlist_comments')
+        .insert({ list_id: listId, author_user_id: user.id, parent_comment_id: parentEntry.id, comment_body: body })
+        .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
+        .single();
+      if (insertErr) throw insertErr;
+      setComments((c) => [...c, data]);
+      setReplyDraft('');
+      setActiveReplyId(null);
+      setExpandedReplies((prev) => new Set([...prev, parentEntry.id]));
+      fireNotifications(parentEntry);
+    } catch {
+      setReplyError(pick('Failed to post comment', 'Failed to post comment'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReplyClick = (entry) => {
+    const isSame = activeReplyId === entry.id;
+    setActiveReplyId(isSame ? null : entry.id);
+    setReplyDraft('');
+    setReplyError('');
+    if (!isSame) {
+      setExpandedReplies((prev) => new Set([...prev, entry.id]));
+      setTimeout(() => replyInputRef.current?.focus(), 50);
+    }
+  };
+
+  const toggleReplies = (commentId) => {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
+  };
+
+  const topLevel = comments.filter((c) => !c.parent_comment_id);
+  const repliesMap = {};
+  comments.filter((c) => c.parent_comment_id).forEach((c) => {
+    if (!repliesMap[c.parent_comment_id]) repliesMap[c.parent_comment_id] = [];
+    repliesMap[c.parent_comment_id].push(c);
+  });
+
+  const renderThread = (entry) => {
+    const author = entry.author_profile || entry.author || {};
+    const authorName = author.name || author.username || pick('User', 'User');
+    const authorInitial = authorName.charAt(0).toUpperCase();
+    const replies = repliesMap[entry.id] || [];
+    const hasReplies = replies.length > 0;
+    const isExpanded = expandedReplies.has(entry.id);
+    const isReplyFormOpen = activeReplyId === entry.id;
+
+    return (
+      <div key={entry.id} className="tl-comment-thread">
+        <div className="tl-comment">
+          <div className="tl-comment-avatar">
+            {author.avatar_url
+              ? <img src={author.avatar_url} alt="" />
+              : <span>{authorInitial}</span>}
+          </div>
+          <div className="tl-comment-body">
+            <div className="tl-comment-meta">
+              {author.username
+                ? <Link to={`/u/${author.username}`} className="tl-comment-author">{authorName}</Link>
+                : <span className="tl-comment-author">{authorName}</span>}
+              <span className="tl-comment-date">{formatCmtDate(entry.created_at)}</span>
+            </div>
+            <p className="tl-comment-text">{entry.comment_body}</p>
+            {user?.id && (
+              <button
+                type="button"
+                className="tl-comment-reply-btn"
+                onClick={() => handleReplyClick(entry)}
+              >
+                {pick('Reply', 'Reply')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {(hasReplies || isReplyFormOpen) && (
+          <div className="tl-comment-thread-indent">
+            {hasReplies && (
+              <button
+                type="button"
+                className="tl-comment-show-replies-btn"
+                onClick={() => toggleReplies(entry.id)}
+              >
+                <span className={`tl-reply-chevron${isExpanded ? ' expanded' : ''}`}>▶</span>
+                {isExpanded
+                  ? pick('Hide replies', 'ซ่อนการตอบกลับ')
+                  : pick(`${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`, `${replies.length} การตอบกลับ`)}
+              </button>
+            )}
+
+            {isExpanded && (
+              <div className="tl-comment-replies">
+                {replies.map((reply) => {
+                  const rAuthor = reply.author_profile || reply.author || {};
+                  const rAuthorName = rAuthor.name || rAuthor.username || pick('User', 'User');
+                  const rAuthorInitial = rAuthorName.charAt(0).toUpperCase();
+                  return (
+                    <div key={reply.id} className="tl-comment tl-comment-reply">
+                      <div className="tl-comment-avatar tl-comment-avatar-sm">
+                        {rAuthor.avatar_url
+                          ? <img src={rAuthor.avatar_url} alt="" />
+                          : <span>{rAuthorInitial}</span>}
+                      </div>
+                      <div className="tl-comment-body">
+                        <div className="tl-comment-meta">
+                          {rAuthor.username
+                            ? <Link to={`/u/${rAuthor.username}`} className="tl-comment-author">{rAuthorName}</Link>
+                            : <span className="tl-comment-author">{rAuthorName}</span>}
+                          <span className="tl-comment-date">{formatCmtDate(reply.created_at)}</span>
+                        </div>
+                        <p className="tl-comment-text">{reply.comment_body}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {isReplyFormOpen && (
+              <form className="tl-comment-inline-form" onSubmit={(e) => submitReply(e, entry)}>
+                <textarea
+                  ref={replyInputRef}
+                  value={replyDraft}
+                  onChange={(e) => { setReplyDraft(e.target.value); setReplyError(''); }}
+                  placeholder={pick(`Reply to ${authorName}...`, `ตอบกลับ ${authorName}...`)}
+                  maxLength={500}
+                  rows={2}
+                  disabled={isSubmitting}
+                  className="tl-comment-inline-textarea"
+                />
+                <div className="tl-comment-inline-actions">
+                  <small>{replyDraft.length}/500</small>
+                  {replyError && <span className="tl-comment-error">{replyError}</span>}
+                  <button
+                    type="button"
+                    className="tl-comment-cancel-btn"
+                    onClick={() => { setActiveReplyId(null); setReplyDraft(''); }}
+                  >
+                    {pick('Cancel', 'ยกเลิก')}
+                  </button>
+                  <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !replyDraft.trim()}>
+                    {isSubmitting ? pick('Posting...', 'กำลังโพสต์...') : pick('Reply', 'ตอบกลับ')}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <section className="container tl-comments-section">
+      <h2 className="tl-comments-title">
+        <MessageSquare size={16} />
+        {pick('Comments', 'Comments')}
+        <span className="tierlist-count">{comments.length}</span>
+      </h2>
+
+      {user?.id ? (
+        <form className="tl-comment-form" onSubmit={submitComment}>
+          <textarea
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setError(''); }}
+            placeholder={pick('Write a comment...', 'Write a comment...')}
+            maxLength={500}
+            rows={3}
+            disabled={isSubmitting}
+          />
+          <div className="tl-comment-form-row">
+            <small>{draft.length}/500</small>
+            {error && <span className="tl-comment-error">{error}</span>}
+            <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !draft.trim()}>
+              {isSubmitting ? pick('Posting...', 'Posting...') : pick('Post', 'Post')}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <p className="tl-comment-login-hint">
+          <Link to="/login">{pick('Log in', 'Log in')}</Link> {pick('to leave a comment', 'to leave a comment')}
+        </p>
+      )}
+
+      {isLoading ? (
+        <div className="tl-comment-loading"><Loader2 size={18} className="animate-spin" /></div>
+      ) : topLevel.length === 0 ? (
+        <p className="tl-comment-empty">{pick('No comments yet. Be the first!', 'No comments yet. Be the first!')}</p>
+      ) : (
+        <div className="tl-comments-list">
+          {topLevel.map((entry) => renderThread(entry))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function TierListBrowsePage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
@@ -982,9 +1304,11 @@ export function TierListBrowsePage() {
     const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
     const list = buildTierListFromTemplate(savedTemplate);
     const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
+    const ownerUsername = user?.profile?.username || user?.user_metadata?.username || null;
     const libraryAfterList = await saveTierList({
       ...seeded,
-      ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
+      ownerName: ownerUsername || 'You',
+      ownerUsername,
       ownerUserId: user?.id || null,
     }, libraryAfterTemplate, { userId: user?.id || null });
     setLibrary(libraryAfterList);
@@ -992,10 +1316,12 @@ export function TierListBrowsePage() {
   };
 
   const handleRemixList = async (list) => {
+    const remixUsername = user?.profile?.username || user?.user_metadata?.username || null;
     const remixed = {
       ...list,
       id: undefined,
-      ownerName: 'You',
+      ownerName: remixUsername || 'You',
+      ownerUsername: remixUsername,
       ownerUserId: user?.id || null,
       isPublic: false,
       title: `${list.title} (Remix)`,
@@ -1252,9 +1578,11 @@ export function TierListTemplatePage() {
     setTemplate(savedTemplate);
     const list = buildTierListFromTemplate(savedTemplate);
     const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
+    const ownerUsername2 = user?.profile?.username || user?.user_metadata?.username || null;
     const libraryAfterList = await saveTierList({
       ...seeded,
-      ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
+      ownerName: ownerUsername2 || 'You',
+      ownerUsername: ownerUsername2,
       ownerUserId: user?.id || null,
     }, libraryAfterTemplate, { userId: user?.id || null });
     navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
@@ -1331,7 +1659,8 @@ export function TierListTemplatePage() {
                   const remixed = {
                     ...list,
                     id: undefined,
-                    ownerName: 'You',
+                    ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
+                    ownerUsername: user?.profile?.username || user?.user_metadata?.username || null,
                     ownerUserId: user?.id || null,
                     isPublic: false,
                     title: `${list.title} (Remix)`,
@@ -1448,9 +1777,11 @@ export function TierListCreatePage() {
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const list = buildTierListFromTemplate(savedTemplate);
       const seeded = seedPoolFromCatalog(list, selectedTitles.map((title) => Number(title.id)));
+      const ownerUsername3 = user?.profile?.username || user?.user_metadata?.username || null;
       const libraryAfterList = await saveTierList({
         ...seeded,
-        ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
+        ownerName: ownerUsername3 || 'You',
+        ownerUsername: ownerUsername3,
         ownerUserId: user?.id || null,
       }, libraryAfterTemplate, { userId: user?.id || null });
       navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
@@ -1727,9 +2058,21 @@ export function TierListPlayPage() {
     <div className="tierlist-play-page">
       {/* Slim topbar: back link + visibility toggle */}
       <div className="container tierlist-play-topbar">
-        <Link className="btn btn-ghost btn-sm" to={sourceTemplate ? `/tierlist/template/${sourceTemplate.id}` : '/tierlist'}>
-          <ChevronLeft size={14} /> {sourceTemplate ? pick('Back to Template', 'Back to Template') : pick('Browse', 'Browse')}
-        </Link>
+        <div className="tierlist-play-topbar-left">
+          <Link className="btn btn-ghost btn-sm" to={sourceTemplate ? `/tierlist/template/${sourceTemplate.id}` : '/tierlist'}>
+            <ChevronLeft size={14} /> {sourceTemplate ? pick('Back to Template', 'Back to Template') : pick('Browse', 'Browse')}
+          </Link>
+          {!canEdit && (() => {
+            const slug = tierList.ownerUsername || tierList.ownerName;
+            const label = tierList.ownerName || tierList.ownerUsername;
+            return slug && slug !== 'You' ? (
+              <span className="tierlist-by-line">
+                {pick('by', 'by')}{' '}
+                <Link to={`/u/${slug}`} className="tierlist-owner-link">{label}</Link>
+              </span>
+            ) : null;
+          })()}
+        </div>
         {canEdit ? (
           <Button
             size="sm"
@@ -1758,6 +2101,7 @@ export function TierListPlayPage() {
                 ...tierList,
                 id: undefined,
                 ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
+                ownerUsername: user?.profile?.username || user?.user_metadata?.username || null,
                 ownerUserId: user?.id || null,
                 isPublic: false,
                 title: `${tierList.title} (Remix)`,
@@ -1881,6 +2225,14 @@ export function TierListPlayPage() {
             </div>
           )}
         </section>
+      )}
+
+      {tierList.isPublic && (
+        <TierListCommentSection
+          listId={tierList.id}
+          listOwnerId={tierList.ownerUserId}
+          pick={pick}
+        />
       )}
     </div>
   );
