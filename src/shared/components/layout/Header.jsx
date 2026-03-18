@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User } from 'lucide-react';
+import { Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -301,13 +301,10 @@ export function Header() {
               className={`mobile-menu-btn ${mobileMenuOpen ? 'active' : ''}`}
               type="button"
               aria-label={t('layout.openMenu')}
+              aria-expanded={mobileMenuOpen}
               onClick={() => setMobileMenuOpen((current) => !current)}
             >
-              <span className="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
+              {mobileMenuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
             </button>
           </div>
         </div>

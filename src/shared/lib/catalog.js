@@ -89,7 +89,7 @@ function buildOfficialFallbackPlatforms(record) {
   if (record.type === 'anime') {
     suffix = ' anime ไทย';
   } else if (record.type === 'manga') {
-    suffix = record.subtype === 'manhwa' ? ' แปลไทย' : ' มังงะ ไทย';
+    suffix = record.subtype === 'manhwa' ? ' manhwa แปลไทย' : ' มังงะ ไทย';
   }
 
   if (!suffix) return [];
