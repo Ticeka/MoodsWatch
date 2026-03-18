@@ -37,6 +37,7 @@ const AdminHomepage = lazy(() => import('@/features/admin/pages/AdminHomepage').
 const AdminRecommendationPreview = lazy(() => import('@/features/admin/pages/AdminRecommendationPreview').then((module) => ({ default: module.AdminRecommendationPreview })));
 const AdminFetch = lazy(() => import('@/features/admin/pages/AdminFetch').then((module) => ({ default: module.AdminFetch })));
 const AdminGuide = lazy(() => import('@/features/admin/pages/AdminGuide').then((module) => ({ default: module.AdminGuide })));
+const AdminLinks = lazy(() => import('@/features/admin/pages/AdminLinks').then((module) => ({ default: module.AdminLinks })));
 
 function PageLoader() {
   const { t } = useLanguage();
@@ -125,6 +126,7 @@ function App() {
                       <Route path="homepage" element={<AdminHomepage />} />
                       <Route path="recommendations" element={<AdminRecommendationPreview />} />
                       <Route path="fetch" element={<AdminFetch />} />
+                      <Route path="links" element={<AdminLinks />} />
                       <Route path="guide" element={<AdminGuide />} />
                       <Route path="*" element={<AdminFallback />} />
                     </Route>

@@ -82,22 +82,23 @@ function pickPlatformSearchQuery(record) {
 }
 
 function buildOfficialFallbackPlatforms(record) {
-  if (!(record.type === 'manga' && record.subtype === 'manhwa')) {
-    return [];
-  }
-
   const query = pickPlatformSearchQuery(record).trim();
-  if (!query) {
-    return [];
+  if (!query) return [];
+
+  let suffix = null;
+  if (record.type === 'anime') {
+    suffix = ' anime ไทย';
+  } else if (record.type === 'manga') {
+    suffix = record.subtype === 'manhwa' ? ' แปลไทย' : ' มังงะ ไทย';
   }
 
-  const encodedQuery = encodeURIComponent(query);
+  if (!suffix) return [];
 
   return [
     {
-      name: 'WEBTOON',
-      region: 'TH',
-      url: `https://www.webtoons.com/th/search?keyword=${encodedQuery}`,
+      name: 'Google',
+      region: null,
+      url: `https://www.google.com/search?q=${encodeURIComponent(query + suffix)}`,
       isSearchFallback: true,
     },
   ];

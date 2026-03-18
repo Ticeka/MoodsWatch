@@ -9,6 +9,7 @@ import {
   Flag,
   CopyPlus,
   Library,
+  Link2,
   Tags,
   Users,
   Sun,
@@ -74,6 +75,9 @@ export function AdminLayout() {
             </NavLink>
             <NavLink to="/admin/moods" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Tags className="sidebar-link-icon" size={18} /> {t('admin.nav.moodsAndTags')}
+            </NavLink>
+            <NavLink to="/admin/links" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
+              <Link2 className="sidebar-link-icon" size={18} /> Platform Links
             </NavLink>
             <NavLink to="/admin/fetch" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Download className="sidebar-link-icon" size={18} /> {t('admin.nav.fetchData')}

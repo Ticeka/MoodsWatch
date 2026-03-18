@@ -14,7 +14,15 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, Flag, Link, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flag, Link, Plus, Trash2, Trophy } from 'lucide-react';
+
+const PLATFORM_OPTIONS = [
+  'Netflix', 'Bilibili', 'iQIYI', 'Crunchyroll', 'Disney+', 'YouTube',
+  'Ani-One', 'Muse Thailand', 'MANGA Plus', 'WEBTOON', 'Kakao Webtoon',
+  'Tapas', 'Tappytoon', 'Lezhin Comics', 'Comikey', 'Pocket Comics',
+  'Toomics', 'Viz', 'Shonen Jump', 'Line Webtoon', 'Community Scan',
+  'Fan Translation', 'Mirror Site', 'Reading Portal', 'Other',
+];
 import './TitleDetail.css';
 
 const PLATFORM_DISPLAY_NAME_MAP = {
@@ -50,6 +58,9 @@ export function TitleDetail() {
   const [canScrollSimilarPrev, setCanScrollSimilarPrev] = useState(false);
   const [canScrollSimilarNext, setCanScrollSimilarNext] = useState(false);
   const similarRailRef = useRef(null);
+  const [showAddLinkForm, setShowAddLinkForm] = useState(false);
+  const [addLinkForm, setAddLinkForm] = useState({ platform_name: '', url: '', region_code: '' });
+  const [isSavingLink, setIsSavingLink] = useState(false);
 
   const status = title ? getStatus(title.id) : null;
   const watchlistItem = title ? watchlist.find((item) => item.titleId === title.id) : null;
@@ -262,6 +273,52 @@ export function TitleDetail() {
     }
   };
 
+  const isAdmin = user?.profile?.role === 'admin' || user?.profile?.role === 'editor';
+
+  const handleSaveLink = async () => {
+    if (!addLinkForm.platform_name || !addLinkForm.url) {
+      toast.error('กรุณาเลือก Platform และใส่ URL');
+      return;
+    }
+    setIsSavingLink(true);
+    try {
+      const { error } = await supabase.from('title_availability').insert({
+        canonical_title_id: title.id,
+        platform_name: addLinkForm.platform_name,
+        url: addLinkForm.url,
+        region_code: addLinkForm.region_code || null,
+        is_official: true,
+      });
+      if (error) throw error;
+      toast.success('เพิ่มลิงก์แล้ว');
+      setShowAddLinkForm(false);
+      setAddLinkForm({ platform_name: '', url: '', region_code: '' });
+      const refreshed = await getTitleBySlug(slug);
+      setTitle(refreshed);
+    } catch (err) {
+      toast.error(err.message || 'เพิ่มลิงก์ไม่สำเร็จ');
+    } finally {
+      setIsSavingLink(false);
+    }
+  };
+
+  const handleDeleteLink = async (platform) => {
+    try {
+      const { error } = await supabase
+        .from('title_availability')
+        .delete()
+        .eq('canonical_title_id', title.id)
+        .eq('platform_name', platform.name)
+        .eq('url', platform.url);
+      if (error) throw error;
+      toast.success('ลบลิงก์แล้ว');
+      const refreshed = await getTitleBySlug(slug);
+      setTitle(refreshed);
+    } catch (err) {
+      toast.error(err.message || 'ลบไม่สำเร็จ');
+    }
+  };
+
   const handleSubmitReport = async (event) => {
     event.preventDefault();
 
@@ -457,10 +514,64 @@ export function TitleDetail() {
 	                      </div>
 	                    )}
 	                  </div>
-	                  {orderedPlatforms.length > 0 && (
-	                    <span className="platform-count-pill">{orderedPlatforms.length}</span>
-	                  )}
+	                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+	                    {orderedPlatforms.length > 0 && (
+	                      <span className="platform-count-pill">{orderedPlatforms.length}</span>
+	                    )}
+	                    {isAdmin && (
+	                      <button
+	                        type="button"
+	                        className="platform-admin-add-btn"
+	                        onClick={() => setShowAddLinkForm((v) => !v)}
+	                        title="เพิ่มลิงก์"
+	                      >
+	                        <Plus size={14} />
+	                      </button>
+	                    )}
+	                  </div>
 	                </div>
+
+	                {isAdmin && showAddLinkForm && (
+	                  <div className="platform-add-form">
+	                    <select
+	                      className="platform-add-select"
+	                      value={addLinkForm.platform_name}
+	                      onChange={(e) => setAddLinkForm((f) => ({ ...f, platform_name: e.target.value }))}
+	                    >
+	                      <option value="">เลือก Platform</option>
+	                      {PLATFORM_OPTIONS.map((opt) => (
+	                        <option key={opt} value={opt}>{opt}</option>
+	                      ))}
+	                    </select>
+	                    <input
+	                      className="platform-add-input"
+	                      placeholder="URL"
+	                      value={addLinkForm.url}
+	                      onChange={(e) => setAddLinkForm((f) => ({ ...f, url: e.target.value }))}
+	                    />
+	                    <input
+	                      className="platform-add-input platform-add-input--sm"
+	                      placeholder="Region (TH, JP…)"
+	                      value={addLinkForm.region_code}
+	                      onChange={(e) => setAddLinkForm((f) => ({ ...f, region_code: e.target.value.toUpperCase() }))}
+	                    />
+	                    <button
+	                      type="button"
+	                      className="platform-admin-save-btn"
+	                      onClick={handleSaveLink}
+	                      disabled={isSavingLink}
+	                    >
+	                      {isSavingLink ? '...' : 'Save'}
+	                    </button>
+	                    <button
+	                      type="button"
+	                      className="platform-admin-cancel-btn"
+	                      onClick={() => { setShowAddLinkForm(false); setAddLinkForm({ platform_name: '', url: '', region_code: '' }); }}
+	                    >
+	                      ยกเลิก
+	                    </button>
+	                  </div>
+	                )}
 
 	                {orderedPlatforms.length > 0 ? (
 	                  <div className="platform-groups">
@@ -469,10 +580,17 @@ export function TitleDetail() {
 	                        <span className="platform-group-label">Official</span>
 	                        <div className="platforms">
 	                          {officialPlatforms.map((platform) => (
-	                            <a key={`${platform.name}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="platform-link">
-	                              <span className="platform-link-name">{platform.displayName}</span>
-	                              {platform.region && <span className="platform-link-region">{platform.region}</span>}
-	                            </a>
+	                            <div key={`${platform.name}-${platform.url}`} className="platform-link-wrap">
+	                              <a href={platform.url} target="_blank" rel="noreferrer" className="platform-link">
+	                                <span className="platform-link-name">{platform.displayName}</span>
+	                                {platform.region && <span className="platform-link-region">{platform.region}</span>}
+	                              </a>
+	                              {isAdmin && (
+	                                <button type="button" className="platform-admin-del-btn" onClick={() => handleDeleteLink(platform)} title="ลบลิงก์">
+	                                  <Trash2 size={12} />
+	                                </button>
+	                              )}
+	                            </div>
 	                          ))}
 	                        </div>
 	                      </div>
