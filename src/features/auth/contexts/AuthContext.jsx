@@ -131,7 +131,14 @@ export function AuthProvider({ children }) {
 
     const initializeAuth = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          // Stale or invalid refresh token — clear local session silently
+          await supabase.auth.signOut({ scope: 'local' });
+          return;
+        }
+
         setSession(currentSession);
 
         if (currentSession?.user) {
@@ -159,6 +166,7 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setIsProfileLoading(false);
+        setIsLoading(false);
       }
     });
 
