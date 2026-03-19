@@ -294,14 +294,18 @@ export function AdminFetch() {
   const [progress, setProgress] = useState(null);
   const [logs, setLogs] = useState([]);
   const abortRef = useRef(null);
-  const logEndRef = useRef(null);
+  const logContainerRef = useRef(null);
 
   const set = useCallback((key, value) => setConfig((p) => ({ ...p, [key]: value })), []);
 
   const addLog = useCallback((type, message) => {
     const entry = { id: `${Date.now()}-${Math.random()}`, type, message, time: new Date().toLocaleTimeString('th-TH') };
     setLogs((p) => { const n = [...p, entry]; return n.length > 200 ? n.slice(-200) : n; });
-    setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 40);
+    setTimeout(() => {
+      if (logContainerRef.current) {
+        logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+      }
+    }, 40);
   }, []);
 
   // Build AniList variables from config
@@ -656,7 +660,7 @@ export function AdminFetch() {
           <p style={{ margin: '0 0 var(--space-3)', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
             {t('admin.fetch.logTitle')}
           </p>
-          <div style={{
+          <div ref={logContainerRef} style={{
             maxHeight: 320, overflowY: 'auto',
             background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
             borderRadius: 'var(--radius-lg)', padding: 'var(--space-3)',
@@ -669,7 +673,6 @@ export function AdminFetch() {
                 <span style={{ wordBreak: 'break-word', color: LOG_COLOR[log.type] }}>{log.message}</span>
               </div>
             ))}
-            <div ref={logEndRef} />
           </div>
           <p style={{ margin: 'var(--space-2) 0 0', fontSize: '0.73rem', color: 'var(--text-tertiary)' }}>
             {t('admin.fetch.logItems', { count: logs.length })}
