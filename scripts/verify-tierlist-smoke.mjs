@@ -45,9 +45,9 @@ async function runSmokeTest() {
 
   try {
     await page.goto(`${BASE_URL}/tierlist`, { waitUntil: 'networkidle' });
-    await page.locator('a:has-text("View")').first().click();
+    await page.locator('a[href^="/tierlist/template/"]').first().click();
     await page.waitForLoadState('networkidle');
-    await page.locator('button:has-text("Play This Template")').first().click();
+    await page.getByRole('button', { name: /Play This Template|เล่นเทมเพลตนี้/i }).first().click();
     await page.waitForURL(/\/tierlist\/play\//, { timeout: 20000 });
     await page.locator('.tiermaker-editor').waitFor({ state: 'visible', timeout: 45000 });
 
@@ -71,11 +71,11 @@ async function runSmokeTest() {
       throw new Error('Drag/drop did not move a tile into the first row');
     }
 
-    await page.locator('button:has-text("Save")').first().click();
+    await page.getByRole('button', { name: /Save|บันทึก/i }).first().click();
     await page.waitForTimeout(1400);
 
-    const saveStatus = (await page.locator('.tierlist-save-status').textContent())?.trim() || '';
-    if (!saveStatus.toLowerCase().includes('saved')) {
+    const saveStatus = (await page.locator('.tiermaker-toolbar-status').textContent())?.trim().toLowerCase() || '';
+    if (!saveStatus.includes('saved') && !saveStatus.includes('บันทึก')) {
       throw new Error(`Unexpected save status: ${saveStatus}`);
     }
 

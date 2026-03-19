@@ -10,6 +10,10 @@ import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } f
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { Plus, Target, FastForward, Play, CheckCircle2, Heart, List } from 'lucide-react';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
+import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
+import { ErrorState } from '@/shared/components/ui/ErrorState';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import './Watchlist.css';
 
 function buildStableIdList(items = []) {
@@ -394,21 +398,32 @@ export function Watchlist() {
           </div>
 
           <div className="watchlist-controls-shell glass-heavy">
-            <div className="watchlist-tabs-nav">
-              <button className={`watchlist-tab ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>
-                <List size={18} /> {t('watchlist.myList')}
+            <div className="watchlist-tabs-nav" role="tablist" aria-label={t('watchlist.title')}>
+              <button
+                role="tab"
+                aria-selected={activeTab === 'list'}
+                className={`watchlist-tab ${activeTab === 'list' ? 'active' : ''}`}
+                onClick={() => setActiveTab('list')}
+              >
+                <List size={18} aria-hidden="true" /> {t('watchlist.myList')}
               </button>
-              <button className={`watchlist-tab ${activeTab === 'favorites' ? 'active' : ''}`} onClick={() => setActiveTab('favorites')}>
-                <Heart size={18} /> {t('watchlist.favoritesAndMoods')}
+              <button
+                role="tab"
+                aria-selected={activeTab === 'favorites'}
+                className={`watchlist-tab ${activeTab === 'favorites' ? 'active' : ''}`}
+                onClick={() => setActiveTab('favorites')}
+              >
+                <Heart size={18} aria-hidden="true" /> {t('watchlist.favoritesAndMoods')}
               </button>
             </div>
 
             {activeTab === 'list' && (
               <>
                 <div className="watchlist-filter-row">
-                  <div className="status-filters scrollbar-hide">
+                  <div className="status-filters scrollbar-hide" role="group" aria-label={t('watchlist.filterByStatus')}>
                     <button
                       className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
+                      aria-pressed={filter === 'all'}
                       onClick={() => setFilter('all')}
                     >
                       {t('watchlist.all')}
@@ -421,28 +436,31 @@ export function Watchlist() {
                         <button
                           key={option.id}
                           className={`filter-btn ${filter === option.id ? 'active' : ''}`}
+                          aria-pressed={filter === option.id}
                           onClick={() => setFilter(option.id)}
                           style={filter === option.id ? { '--filter-color': option.color } : {}}
                         >
-                          <span className="mr-1">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge">{count}</span>
+                          <span className="mr-1" aria-hidden="true">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge" aria-label={`${count} ${t('watchlist.titles')}`}>{count}</span>
                         </button>
                       );
                     })}
                   </div>
 
                   <div className="watchlist-toolbar">
-                    <label className="watchlist-sorter">
-                      <span>{t('watchlist.sort')}</span>
-                      <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-                        <option value="recent">{t('watchlist.recentlyConsumed')}</option>
-                        <option value="progress">{t('watchlist.highestProgress')}</option>
-                        <option value="status">{t('watchlist.statusPriority')}</option>
-                        <option value="score">{t('watchlist.scoreSort')}</option>
-                        <option value="popularity">{t('watchlist.popularitySort')}</option>
-                        <option value="year">{t('watchlist.newestSort')}</option>
-                        <option value="title">{t('watchlist.titleSort')}</option>
-                      </select>
-                    </label>
+                    <SortSelect
+                      value={sortBy}
+                      onChange={setSortBy}
+                      label={t('watchlist.sort')}
+                      className="watchlist-sorter"
+                    >
+                      <option value="recent">{t('watchlist.recentlyConsumed')}</option>
+                      <option value="progress">{t('watchlist.highestProgress')}</option>
+                      <option value="status">{t('watchlist.statusPriority')}</option>
+                      <option value="score">{t('watchlist.scoreSort')}</option>
+                      <option value="popularity">{t('watchlist.popularitySort')}</option>
+                      <option value="year">{t('watchlist.newestSort')}</option>
+                      <option value="title">{t('watchlist.titleSort')}</option>
+                    </SortSelect>
                   </div>
                 </div>
 
@@ -469,24 +487,25 @@ export function Watchlist() {
                 <span>{t('watchlist.pinnedCount', { count: favoriteList.length })}</span>
               </div>
 
-              {favoritesError && <div className="watchlist-favorites-error">{favoritesError}</div>}
+              {favoritesError && <ErrorState message={favoritesError} />}
 
               <div className="watchlist-moods">
                 <div className="watchlist-favorites-subheader">
                   <h3>{t('watchlist.favoriteTags')}</h3>
                   <span>{isSavingMoods ? t('watchlist.savingTags') : t('watchlist.selectedCount', { count: prefs.favoriteMoods.length })}</span>
                 </div>
-                <div className="watchlist-mood-grid">
+                <div className="watchlist-mood-grid" role="group" aria-label={t('watchlist.favoriteTags')}>
                   {MOODS.map((mood) => {
                     const active = prefs.favoriteMoods.includes(mood.id);
                     return (
                       <button
                         key={mood.id}
                         className={`watchlist-mood-chip ${active ? 'active' : ''}`}
+                        aria-pressed={active}
                         style={{ '--mood-color': mood.color }}
                         onClick={() => toggleMood(mood.id)}
                       >
-                        <span>{mood.icon}</span>
+                        <span aria-hidden="true">{mood.icon}</span>
                         <span>{getLocalizedMoodName(mood, language)}</span>
                       </button>
                     );
@@ -529,9 +548,7 @@ export function Watchlist() {
         <section className="section watchlist-results-section min-h-screen">
           <div className="container">
             {isPageLoading ? (
-              <div className="loading-grid">
-                {[1, 2, 3, 4].map((n) => <div key={n} className="skeleton-card glass"></div>)}
-              </div>
+              <SkeletonGrid count={4} cardClassName="skeleton-card glass" />
             ) : displayList.length > 0 ? (
               <div className="results-grid stagger-children">
                 {displayList.map((title) => {
@@ -581,11 +598,10 @@ export function Watchlist() {
                 })}
               </div>
             ) : (
-              <div className="empty-state">
-                <span className="empty-icon">Empty</span>
-                <h3>{t('watchlist.noTitlesYet')}</h3>
-                <p>{filter === 'all' ? t('watchlist.watchlistEmpty') : t('watchlist.noTitlesForStatus')}</p>
-              </div>
+              <EmptyState
+                title={t('watchlist.noTitlesYet')}
+                message={filter === 'all' ? t('watchlist.watchlistEmpty') : t('watchlist.noTitlesForStatus')}
+              />
             )}
           </div>
         </section>

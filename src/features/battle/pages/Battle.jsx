@@ -166,7 +166,7 @@ function escapeSvgText(value) {
     .replaceAll("'", '&apos;');
 }
 
-function buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsights) {
+function buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsights, t) {
   const decisionCount = getBattleDecisionCount(session);
   const podium = (session?.ranking || []).slice(0, 3);
   const lines = podium
@@ -177,15 +177,23 @@ function buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsi
     .join('');
 
   const communityLine = communityWinner
-    ? `<text x="388" y="474" fill="#cbd5e1" font-size="18">Community winner: ${escapeSvgText(getDisplayName(communityWinner))}</text>`
-    : `<text x="388" y="474" fill="#94a3b8" font-size="18">Community winner: pending</text>`;
+    ? `<text x="388" y="474" fill="#cbd5e1" font-size="18">${escapeSvgText(t('battle.shareCardCommunityWinner', { title: getDisplayName(communityWinner) }))}</text>`
+    : `<text x="388" y="474" fill="#94a3b8" font-size="18">${escapeSvgText(t('battle.shareCardCommunityPending'))}</text>`;
 
   const higherInsight = rankDeltaInsights?.mostHigherThanCommunity
-    ? `You rated higher: ${getDisplayName(rankDeltaInsights.mostHigherThanCommunity.title)} (#${rankDeltaInsights.mostHigherThanCommunity.yourRank} vs #${rankDeltaInsights.mostHigherThanCommunity.communityRank})`
-    : 'You rated higher: no strong divergence yet';
+    ? t('battle.shareCardHigherInsight', {
+      title: getDisplayName(rankDeltaInsights.mostHigherThanCommunity.title),
+      yourRank: rankDeltaInsights.mostHigherThanCommunity.yourRank,
+      communityRank: rankDeltaInsights.mostHigherThanCommunity.communityRank,
+    })
+    : t('battle.shareCardHigherInsightEmpty');
   const lowerInsight = rankDeltaInsights?.mostLowerThanCommunity
-    ? `Community rated higher: ${getDisplayName(rankDeltaInsights.mostLowerThanCommunity.title)} (#${rankDeltaInsights.mostLowerThanCommunity.yourRank} vs #${rankDeltaInsights.mostLowerThanCommunity.communityRank})`
-    : 'Community rated higher: no strong divergence yet';
+    ? t('battle.shareCardLowerInsight', {
+      title: getDisplayName(rankDeltaInsights.mostLowerThanCommunity.title),
+      yourRank: rankDeltaInsights.mostLowerThanCommunity.yourRank,
+      communityRank: rankDeltaInsights.mostLowerThanCommunity.communityRank,
+    })
+    : t('battle.shareCardLowerInsightEmpty');
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -211,39 +219,39 @@ function buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsi
       <rect x="56" y="56" width="250" height="518" rx="28" fill="#020617" stroke="rgba(255,255,255,0.08)" />
       <image href="${escapeSvgText(getTitleArtwork(winner))}" x="56" y="56" width="250" height="518" preserveAspectRatio="xMidYMid slice" />
       <rect x="56" y="394" width="250" height="180" rx="0" fill="url(#bg)" opacity="0.82" />
-      <text x="70" y="430" fill="#fbbf24" font-size="18" font-weight="800">MoodToon Battle Result</text>
+      <text x="70" y="430" fill="#fbbf24" font-size="18" font-weight="800">${escapeSvgText(t('battle.shareCardTitle'))}</text>
       <text x="70" y="466" fill="#ffffff" font-size="30" font-weight="800">${escapeSvgText(getDisplayName(winner))}</text>
-      <text x="70" y="498" fill="#cbd5e1" font-size="18">${escapeSvgText(getMetaLine(winner) || 'Catalog title')}</text>
-      <text x="70" y="536" fill="#e2e8f0" font-size="20">${escapeSvgText(session?.deckLabel || 'Battle Deck')}</text>
+      <text x="70" y="498" fill="#cbd5e1" font-size="18">${escapeSvgText(getMetaLine(winner) || t('battle.catalogFallback'))}</text>
+      <text x="70" y="536" fill="#e2e8f0" font-size="20">${escapeSvgText(session?.deckLabel || t('battle.shareCardDeckFallback'))}</text>
 
-      <text x="388" y="108" fill="url(#accent)" font-size="20" font-weight="800">Solo Battle</text>
-      <text x="388" y="156" fill="#ffffff" font-size="44" font-weight="800">${escapeSvgText(session?.deckLabel || 'Battle Result')}</text>
-      <text x="388" y="198" fill="#cbd5e1" font-size="22">Winner after ${escapeSvgText(decisionCount)} comparisons</text>
+      <text x="388" y="108" fill="url(#accent)" font-size="20" font-weight="800">${escapeSvgText(t('battle.soloBattle'))}</text>
+      <text x="388" y="156" fill="#ffffff" font-size="44" font-weight="800">${escapeSvgText(session?.deckLabel || t('battle.shareCardResultFallback'))}</text>
+      <text x="388" y="198" fill="#cbd5e1" font-size="22">${escapeSvgText(t('battle.shareCardWinnerAfter', { count: decisionCount }))}</text>
 
       <rect x="388" y="236" width="230" height="84" rx="22" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)" />
-      <text x="414" y="270" fill="#94a3b8" font-size="16">Winner score</text>
-      <text x="414" y="302" fill="#f8fafc" font-size="30" font-weight="800">${escapeSvgText(winner?.score || 0)} pts</text>
+      <text x="414" y="270" fill="#94a3b8" font-size="16">${escapeSvgText(t('battle.shareCardWinnerScore'))}</text>
+      <text x="414" y="302" fill="#f8fafc" font-size="30" font-weight="800">${escapeSvgText(t('battle.points', { count: winner?.score || 0 }))}</text>
 
       <rect x="638" y="236" width="230" height="84" rx="22" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)" />
-      <text x="664" y="270" fill="#94a3b8" font-size="16">Wins</text>
+      <text x="664" y="270" fill="#94a3b8" font-size="16">${escapeSvgText(t('battle.shareCardWins'))}</text>
       <text x="664" y="302" fill="#f8fafc" font-size="30" font-weight="800">${escapeSvgText(winner?.wins || 0)}</text>
 
       <rect x="888" y="236" width="256" height="84" rx="22" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)" />
-      <text x="914" y="270" fill="#94a3b8" font-size="16">Titles in deck</text>
+      <text x="914" y="270" fill="#94a3b8" font-size="16">${escapeSvgText(t('battle.shareCardTitlesInDeck'))}</text>
       <text x="914" y="302" fill="#f8fafc" font-size="30" font-weight="800">${escapeSvgText(session?.titles?.length || 0)}</text>
 
       <text x="388" y="302" fill="#94a3b8" font-size="18"></text>
-      <text x="388" y="316" fill="#f8fafc" font-size="24" font-weight="700">Top 3</text>
+      <text x="388" y="316" fill="#f8fafc" font-size="24" font-weight="700">${escapeSvgText(t('battle.shareCardTopThree'))}</text>
       ${lines}
       ${communityLine}
       <rect x="388" y="506" width="356" height="74" rx="22" fill="rgba(34,197,94,0.1)" stroke="rgba(34,197,94,0.24)" />
-      <text x="412" y="534" fill="url(#cool)" font-size="16" font-weight="800">Taste insight</text>
+      <text x="412" y="534" fill="url(#cool)" font-size="16" font-weight="800">${escapeSvgText(t('battle.shareCardTasteInsight'))}</text>
       <text x="412" y="560" fill="#e2e8f0" font-size="16">${escapeSvgText(higherInsight)}</text>
 
       <rect x="764" y="506" width="380" height="74" rx="22" fill="rgba(249,115,22,0.1)" stroke="rgba(249,115,22,0.24)" />
-      <text x="788" y="534" fill="url(#accent)" font-size="16" font-weight="800">Community insight</text>
+      <text x="788" y="534" fill="url(#accent)" font-size="16" font-weight="800">${escapeSvgText(t('battle.shareCardCommunityInsight'))}</text>
       <text x="788" y="560" fill="#e2e8f0" font-size="16">${escapeSvgText(lowerInsight)}</text>
-      <text x="388" y="605" fill="#94a3b8" font-size="18">Generated from MoodToon Battle</text>
+      <text x="388" y="605" fill="#94a3b8" font-size="18">${escapeSvgText(t('battle.shareCardGeneratedFrom'))}</text>
     </svg>
   `.trim();
 }
@@ -266,14 +274,14 @@ function formatBattleTimestamp(value) {
   }
 }
 
-function formatRankDelta(delta) {
+function formatRankDelta(delta, t) {
   if (!Number.isFinite(delta) || delta === 0) {
-    return 'Same as community';
+    return t('battle.sameAsCommunity');
   }
 
   return delta > 0
-    ? `${delta} lower than community`
-    : `${Math.abs(delta)} higher than community`;
+    ? t('battle.lowerThanCommunity', { count: delta })
+    : t('battle.higherThanCommunity', { count: Math.abs(delta) });
 }
 
 function downloadBlob(blob, filename) {
@@ -420,8 +428,9 @@ function BattleSavedDeckPresetCard({ deck, disabled, onStart }) {
   );
 }
 
-function BattleReadyDeckCard({ title, subtitle, deck, badge, disabled, onStart, actionLabel = 'Start battle', className = '', children, variant = 'default' }) {
+function BattleReadyDeckCard({ title, subtitle, deck, badge, disabled, onStart, actionLabel = '', className = '', children, variant = 'default' }) {
   const { t } = useLanguage();
+  const resolvedActionLabel = actionLabel || t('battle.startBattle');
   const previewTitles = deck?.titles?.slice(0, 3) || [];
   const canStart = (deck?.titles?.length || 0) >= 8;
   const metaLabel = `${(deck?.filters?.type || 'all').toUpperCase()} / ${t('battle.titlesReady', { count: deck?.titles?.length || 0 })}`;
@@ -456,7 +465,7 @@ function BattleReadyDeckCard({ title, subtitle, deck, badge, disabled, onStart, 
         </div>
         {subtitle ? <p>{subtitle}</p> : null}
         <span className="battle-preset-meta">{metaLabel}</span>
-        <span className="battle-preset-cta">{actionLabel || t('battle.startBattle')}</span>
+        <span className="battle-preset-cta">{resolvedActionLabel}</span>
       </button>
     );
   }
@@ -687,7 +696,7 @@ export function BattleHub() {
     <div className="battle-page">
       <section className="battle-hero container">
         <div className="battle-hero-copy">
-          <span className="battle-kicker">Battle Mode</span>
+          <span className="battle-kicker">{t('battle.mode')}</span>
           <h1>{t('battle.heroTitle')}</h1>
           <p>{t('battle.heroSubtitle')}</p>
           <div className="battle-hero-actions">
@@ -1748,17 +1757,17 @@ export function BattleSessionPage() {
     [session?.id, session?.updatedAt]
   );
   const decisionCount = getBattleDecisionCount(session);
-  const battlePhase = session?.fastState?.phase === 'playoff' ? 'Top 8 Playoff' : 'Knockout';
+  const battlePhase = session?.fastState?.phase === 'playoff' ? t('battle.playoffPhase') : t('battle.knockoutPhase');
   const battlePhaseDescription = session?.fastState?.phase === 'playoff'
-    ? 'Only the last 8 titles remain. These matches decide the final ranking.'
-    : 'Lose once and that title is out. Knockout continues until only 8 titles remain.';
+    ? t('battle.playoffPhaseDescription')
+    : t('battle.knockoutPhaseDescription');
 
   if (!session) {
     return (
       <div className="battle-page container">
         <div className="glass-heavy battle-empty-state">
-          <h1>Battle session not found</h1>
-          <Button onClick={() => navigate('/battle')}>Back to Battle Hub</Button>
+          <h1>{t('battle.sessionNotFound')}</h1>
+          <Button onClick={() => navigate('/battle')}>{t('battle.backToHub')}</Button>
         </div>
       </div>
     );
@@ -1774,7 +1783,7 @@ export function BattleSessionPage() {
         await persistRemoteBattleSession(user.id, persisted);
       } catch (saveError) {
         console.warn('Failed to persist remote battle update', saveError);
-        toast.error('Battle updated locally, but cloud sync failed');
+        toast.error(t('battle.updateSyncFailed'));
       }
     }
   };
@@ -1811,32 +1820,32 @@ export function BattleSessionPage() {
         await navigator.share(sharePayload);
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-        toast.success('Battle result link copied to clipboard');
+        toast.success(t('battle.shareCopied'));
       } else {
-        toast.error('Share is not supported on this device');
+        toast.error(t('battle.shareNotSupported'));
       }
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        toast.error('Failed to share result');
+        toast.error(t('battle.shareFailed'));
       }
     }
   };
 
   const handleDownloadShareCard = async () => {
     if (!session || !winner) {
-      toast.error('Battle result is not ready to export');
+      toast.error(t('battle.exportNotReady'));
       return;
     }
 
     setIsExportingCard(true);
     try {
-      const svg = buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsights);
+      const svg = buildBattleShareCardSvg(session, winner, communityWinner, rankDeltaInsights, t);
       const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
       downloadBlob(blob, `moodtoon-battle-${session.id}.svg`);
-      toast.success('Share card downloaded');
+      toast.success(t('battle.shareCardDownloaded'));
     } catch (error) {
       console.error(error);
-      toast.error('Failed to export share card');
+      toast.error(t('battle.exportFailed'));
     } finally {
       setIsExportingCard(false);
     }
@@ -1846,14 +1855,14 @@ export function BattleSessionPage() {
     <div className="battle-page">
       <section className="container battle-session-head">
         <div>
-            <span className="battle-kicker"><Swords size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> Solo Battle</span>
+            <span className="battle-kicker"><Swords size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> {t('battle.soloBattle')}</span>
           <h1>{session.deckLabel}</h1>
-          <p>{session.titles.length} titles in deck / {decisionCount}/{session.targetRounds} rounds</p>
+          <p>{t('battle.deckProgress', { count: session.titles.length, current: decisionCount, total: session.targetRounds })}</p>
         </div>
         {session.status !== 'completed' && (
           <div className="battle-session-actions">
-            <Link className="btn btn-ghost btn-sm" to="/battle">Hub</Link>
-            <Button variant="secondary" size="sm" icon={<RotateCcw size={16} />} onClick={handleRestart}>Restart</Button>
+            <Link className="btn btn-ghost btn-sm" to="/battle">{t('battle.hub')}</Link>
+            <Button variant="secondary" size="sm" icon={<RotateCcw size={16} />} onClick={handleRestart}>{t('battle.restart')}</Button>
           </div>
         )}
       </section>
@@ -1862,8 +1871,8 @@ export function BattleSessionPage() {
         <>
           <section className="container battle-progress-panel glass-heavy">
             <div className="battle-progress-copy">
-              <strong>{progressPercent}% complete</strong>
-              <span>{Math.max(0, session.targetRounds - decisionCount)} matches estimated before the playoff result settles</span>
+              <strong>{t('battle.percentComplete', { percent: progressPercent })}</strong>
+              <span>{t('battle.remainingMatchesEstimate', { count: Math.max(0, session.targetRounds - decisionCount) })}</span>
             </div>
             <div className="battle-phase-note">
               <strong>{battlePhase}</strong>
@@ -1886,18 +1895,18 @@ export function BattleSessionPage() {
                       <span key={tag} className="battle-card-tag">{tag}</span>
                     ))}
                   </div>
-                  <Button variant="primary" icon={<Swords size={16} />} onClick={() => handleVote('left')}>Choose Left</Button>
+                  <Button variant="primary" icon={<Swords size={16} />} onClick={() => handleVote('left')}>{t('battle.chooseLeft')}</Button>
                 </div>
               </div>
             </article>
 
             <div className="battle-vs-column">
-              <div className="battle-vs-badge">VS</div>
+              <div className="battle-vs-badge">{t('battle.versus')}</div>
               <div className="battle-center-actions">
-                <Button variant="ghost" size="sm" onClick={() => handleVote('tie')}>Tie</Button>
-                <Button variant="ghost" size="sm" onClick={() => handleVote('skip')}>Skip</Button>
-                <Button variant="ghost" size="sm" onClick={handleUndo} disabled={session.history.length === 0}>Back</Button>
-                <Button variant="secondary" size="sm" onClick={handleFinish}>Finish Now</Button>
+                <Button variant="ghost" size="sm" onClick={() => handleVote('tie')}>{t('battle.tie')}</Button>
+                <Button variant="ghost" size="sm" onClick={() => handleVote('skip')}>{t('battle.skip')}</Button>
+                <Button variant="ghost" size="sm" onClick={handleUndo} disabled={session.history.length === 0}>{t('battle.back')}</Button>
+                <Button variant="secondary" size="sm" onClick={handleFinish}>{t('battle.finishNow')}</Button>
               </div>
             </div>
 
@@ -1912,7 +1921,7 @@ export function BattleSessionPage() {
                       <span key={tag} className="battle-card-tag">{tag}</span>
                     ))}
                   </div>
-                  <Button variant="primary" icon={<ArrowLeftRight size={16} />} onClick={() => handleVote('right')}>Choose Right</Button>
+                  <Button variant="primary" icon={<ArrowLeftRight size={16} />} onClick={() => handleVote('right')}>{t('battle.chooseRight')}</Button>
                 </div>
               </div>
             </article>
@@ -1920,12 +1929,12 @@ export function BattleSessionPage() {
 
           <section className="container battle-section">
             <div className="battle-section-head">
-              <h2>Current leaders</h2>
-              <p>Early signal only. Final ranking settles after more comparisons.</p>
+              <h2>{t('battle.currentLeaders')}</h2>
+              <p>{t('battle.currentLeadersHint')}</p>
             </div>
             <div className="battle-leaderboard glass-heavy">
               {leaders.length === 0 ? (
-                <p>No leader yet. Start voting to reveal the ranking.</p>
+                <p>{t('battle.noLeaderYet')}</p>
               ) : (
                 leaders.map((title, index) => (
                   <div key={title.id} className="battle-leader-row">
@@ -1934,7 +1943,7 @@ export function BattleSessionPage() {
                       <img src={getTitleArtwork(title)} alt="" loading="lazy" />
                     </div>
                     <strong className="battle-leader-name">{getDisplayName(title)}</strong>
-                    <small className="battle-leader-score">{title.score} pts</small>
+                    <small className="battle-leader-score">{t('battle.points', { count: title.score || 0 })}</small>
                   </div>
                 ))
               )}
@@ -1949,57 +1958,57 @@ export function BattleSessionPage() {
                 <img src={getTitleArtwork(winner)} alt="" />
               </div>
               <div className="battle-result-copy">
-                <span className="battle-kicker"><Trophy size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> Result</span>
-                <h2>{winner ? getDisplayName(winner) : 'No winner'}</h2>
-                <p>Champion of your {session.deckLabel} run after {decisionCount} comparisons.</p>
+                <span className="battle-kicker"><Trophy size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> {t('battle.resultLabel')}</span>
+                <h2>{winner ? getDisplayName(winner) : t('battle.noWinner')}</h2>
+                <p>{t('battle.championSummary', { deck: session.deckLabel, count: decisionCount })}</p>
                 <div className="battle-result-meta">
-                  <span>{winner?.score || 0} pts</span>
-                  <span>{winner?.wins || 0} wins</span>
-                  <span>{getMetaLine(winner) || 'Catalog title'}</span>
+                  <span>{t('battle.points', { count: winner?.score || 0 })}</span>
+                  <span>{t('battle.winsLabel', { count: winner?.wins || 0 })}</span>
+                  <span>{getMetaLine(winner) || t('battle.catalogFallback')}</span>
                 </div>
               </div>
 	            </div>
               <div className="battle-result-actions">
-                <Button variant="secondary" icon={<Copy size={16} />} onClick={handleShare}>Share Result</Button>
+                <Button variant="secondary" icon={<Copy size={16} />} onClick={handleShare}>{t('battle.shareResult')}</Button>
                 <Button variant="secondary" onClick={handleDownloadShareCard} disabled={isExportingCard}>
-                  {isExportingCard ? 'Exporting Card...' : 'Download Card'}
+                  {isExportingCard ? t('battle.exportingCard') : t('battle.downloadCard')}
                 </Button>
                 <Button variant="ghost" icon={<BarChart3 size={16} />} disabled={isCommunityLoading || !communityWinner}>
-                  {isCommunityLoading ? 'Loading Community' : communityWinner ? 'Community Synced' : 'Community Pending'}
+                  {isCommunityLoading ? t('battle.loadingCommunity') : communityWinner ? t('battle.communitySynced') : t('battle.communityPending')}
                 </Button>
                 <div className="battle-result-actions-right">
-                  <Link className="btn btn-ghost btn-md" to="/battle">Hub</Link>
-                  <Button variant="secondary" icon={<RotateCcw size={16} />} onClick={handleRestart}>Restart</Button>
+                  <Link className="btn btn-ghost btn-md" to="/battle">{t('battle.hub')}</Link>
+                  <Button variant="secondary" icon={<RotateCcw size={16} />} onClick={handleRestart}>{t('battle.restart')}</Button>
                 </div>
               </div>
             </section>
 
             <section className="container battle-section">
               <div className="battle-section-head">
-                <h2>Community compare</h2>
+                <h2>{t('battle.communityCompare')}</h2>
                 <p>
                   {communityWinner
-                    ? `${communitySampleCount} completed run(s) have been aggregated for this exact deck snapshot.`
-                    : 'Community rollup will appear after synced completed runs exist for this same deck snapshot.'}
+                    ? t('battle.communityCompareSummary', { count: communitySampleCount })
+                    : t('battle.communityComparePending')}
                 </p>
               </div>
 	              {communityWinner ? (
 	                <div className="battle-community-grid">
 	                  <article className="battle-community-card glass-heavy">
-	                    <span className="battle-kicker">Your winner</span>
+	                    <span className="battle-kicker">{t('battle.yourWinner')}</span>
                       <div className="battle-community-highlight">
                         <div className="battle-community-thumb">
                           <img src={getTitleArtwork(winner)} alt="" loading="lazy" />
                         </div>
                         <div className="battle-community-copy">
 	                    <strong>{winner ? getDisplayName(winner) : '-'}</strong>
-	                    <small>{winner ? getMetaLine(winner) : 'No result yet'}</small>
-	                    <span>{winner?.score || 0} pts</span>
+	                    <small>{winner ? getMetaLine(winner) : t('battle.noResultYet')}</small>
+	                    <span>{t('battle.points', { count: winner?.score || 0 })}</span>
                         </div>
                       </div>
 	                  </article>
 	                  <article className="battle-community-card glass-heavy">
-	                    <span className="battle-kicker">Community winner</span>
+	                    <span className="battle-kicker">{t('battle.communityWinner')}</span>
                       <div className="battle-community-highlight">
                         <div className="battle-community-thumb">
                           <img src={getTitleArtwork(communityWinner)} alt="" loading="lazy" />
@@ -2008,7 +2017,10 @@ export function BattleSessionPage() {
 	                    <strong>{getDisplayName(communityWinner)}</strong>
 	                    <small>{getMetaLine(communityWinner)}</small>
 	                    <span>
-	                      Avg rank {Number(communityWinner.avg_rank || 0).toFixed(2)} / {communityWinner.first_place_count || 0} first-place finishes
+	                      {t('battle.avgRankSummary', {
+                          avg: Number(communityWinner.avg_rank || 0).toFixed(2),
+                          count: communityWinner.first_place_count || 0,
+                        })}
 	                    </span>
                         </div>
                       </div>
@@ -2016,7 +2028,7 @@ export function BattleSessionPage() {
 	                </div>
 	              ) : (
 	                <div className="glass-heavy battle-empty-state">
-	                  No community comparison yet for this deck snapshot.
+	                  {t('battle.noCommunityComparison')}
 	                </div>
 	              )}
 	            </section>
@@ -2025,28 +2037,28 @@ export function BattleSessionPage() {
               <section className="container battle-section">
                 <div className="battle-section-head">
                   <div>
-                    <h2>Community ranking</h2>
+                    <h2>{t('battle.communityRanking')}</h2>
                     <p>
-                      Ranked from aggregated completed runs for this exact deck snapshot.
+                      {t('battle.communityRankingSummary')}
                       {communityRankView === 'all'
-                        ? ` Showing all ${communityRanking.length} titles.`
-                        : ` Showing top ${Math.min(5, communityRanking.length)} titles.`}
+                        ? ` ${t('battle.communityRankingAll', { count: communityRanking.length })}`
+                        : ` ${t('battle.communityRankingTop', { count: Math.min(5, communityRanking.length) })}`}
                     </p>
                   </div>
-                  <div className="battle-community-toggle" role="group" aria-label="Community ranking view">
+                  <div className="battle-community-toggle" role="group" aria-label={t('battle.communityRankingView')}>
                     <Button
                       variant={communityRankView === 'top5' ? 'primary' : 'ghost'}
                       size="sm"
                       onClick={() => setCommunityRankView('top5')}
                     >
-                      Show Top 5
+                      {t('battle.showTopFive')}
                     </Button>
                     <Button
                       variant={communityRankView === 'all' ? 'primary' : 'ghost'}
                       size="sm"
                       onClick={() => setCommunityRankView('all')}
                     >
-                      Show All
+                      {t('battle.showAll')}
                     </Button>
                   </div>
                 </div>
@@ -2066,8 +2078,8 @@ export function BattleSessionPage() {
                         </div>
                       </div>
                       <div className="battle-ranking-metrics">
-                        <span>Avg rank {Number(title.avg_rank || 0).toFixed(2)}</span>
-                        <span>{title.first_place_count || 0} firsts</span>
+                        <span>{t('battle.avgRank', { value: Number(title.avg_rank || 0).toFixed(2) })}</span>
+                        <span>{t('battle.firstPlaceCount', { count: title.first_place_count || 0 })}</span>
                       </div>
                     </div>
                   ))}
@@ -2078,12 +2090,12 @@ export function BattleSessionPage() {
             {rankDeltaInsights.comparableCount > 0 && (
               <section className="container battle-section">
                 <div className="battle-section-head">
-                  <h2>Ranking insights</h2>
-                  <p>Where your taste diverges most from the community on this deck snapshot.</p>
+                  <h2>{t('battle.rankingInsights')}</h2>
+                  <p>{t('battle.rankingInsightsHint')}</p>
                 </div>
                 <div className="battle-community-grid">
                   <article className="battle-community-card glass-heavy">
-                    <span className="battle-kicker">You rated higher</span>
+                    <span className="battle-kicker">{t('battle.youRatedHigher')}</span>
                     {rankDeltaInsights.mostHigherThanCommunity ? (
                       <div className="battle-community-highlight">
                         <div className="battle-community-thumb">
@@ -2093,16 +2105,19 @@ export function BattleSessionPage() {
                           <strong>{getDisplayName(rankDeltaInsights.mostHigherThanCommunity.title)}</strong>
                           <small>{getMetaLine(rankDeltaInsights.mostHigherThanCommunity.title)}</small>
                           <span>
-                            Your rank #{rankDeltaInsights.mostHigherThanCommunity.yourRank} vs community #{rankDeltaInsights.mostHigherThanCommunity.communityRank}
+                            {t('battle.yourRankVsCommunity', {
+                              yourRank: rankDeltaInsights.mostHigherThanCommunity.yourRank,
+                              communityRank: rankDeltaInsights.mostHigherThanCommunity.communityRank,
+                            })}
                           </span>
                         </div>
                       </div>
                     ) : (
-                      <span>No title ranked meaningfully above the community yet.</span>
+                      <span>{t('battle.noHigherThanCommunity')}</span>
                     )}
                   </article>
                   <article className="battle-community-card glass-heavy">
-                    <span className="battle-kicker">Community rated higher</span>
+                    <span className="battle-kicker">{t('battle.communityRatedHigher')}</span>
                     {rankDeltaInsights.mostLowerThanCommunity ? (
                       <div className="battle-community-highlight">
                         <div className="battle-community-thumb">
@@ -2112,12 +2127,15 @@ export function BattleSessionPage() {
                           <strong>{getDisplayName(rankDeltaInsights.mostLowerThanCommunity.title)}</strong>
                           <small>{getMetaLine(rankDeltaInsights.mostLowerThanCommunity.title)}</small>
                           <span>
-                            Your rank #{rankDeltaInsights.mostLowerThanCommunity.yourRank} vs community #{rankDeltaInsights.mostLowerThanCommunity.communityRank}
+                            {t('battle.yourRankVsCommunity', {
+                              yourRank: rankDeltaInsights.mostLowerThanCommunity.yourRank,
+                              communityRank: rankDeltaInsights.mostLowerThanCommunity.communityRank,
+                            })}
                           </span>
                         </div>
                       </div>
                     ) : (
-                      <span>No title ranked meaningfully below the community yet.</span>
+                      <span>{t('battle.noLowerThanCommunity')}</span>
                     )}
                   </article>
                 </div>
@@ -2132,7 +2150,7 @@ export function BattleSessionPage() {
                 </div>
                 <span className="battle-podium-rank"><Crown size={20} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }}/> #1</span>
                 <strong>{winner ? getDisplayName(winner) : '-'}</strong>
-                <small>{winner ? getMetaLine(winner) : 'Winner'}</small>
+                <small>{winner ? getMetaLine(winner) : t('battle.winnerFallback')}</small>
               </div>
               {runnerUps.map((title, index) => (
                 <div key={title.id} className="battle-podium-card glass-heavy">
@@ -2149,8 +2167,8 @@ export function BattleSessionPage() {
 
 	          <section className="container battle-section">
 	            <div className="battle-section-head">
-	              <h2>Your ranking</h2>
-	              <p>Top picks from this solo session{communityWinner ? ', with community rollup now available above.' : '.'}</p>
+	              <h2>{t('battle.yourRanking')}</h2>
+	              <p>{communityWinner ? t('battle.yourRankingHintWithCommunity') : t('battle.yourRankingHintSolo')}</p>
 	            </div>
 		            <div className="battle-ranking-list glass-heavy">
 		              {ranking.map((title, index) => {
@@ -2170,26 +2188,26 @@ export function BattleSessionPage() {
 	                      </div>
 		                    </div>
 		                    <div className="battle-ranking-metrics">
-		                      <span>Tier {tier}</span>
+		                      <span>{t('battle.tierLabel', { tier })}</span>
                           {communityRank ? (
                             <span
                               className={`battle-rank-delta ${
                                 rankDelta === 0 ? 'is-even' : rankDelta < 0 ? 'is-higher' : 'is-lower'
                               }`}
-                              title={formatRankDelta(rankDelta)}
+                              title={formatRankDelta(rankDelta, t)}
                             >
                               {rankDelta === 0
-                                ? `Community #${communityRank}`
+                                ? t('battle.communityRank', { rank: communityRank })
                                 : rankDelta < 0
-                                  ? `${Math.abs(rankDelta)} above community`
-                                  : `${rankDelta} below community`}
+                                  ? t('battle.aboveCommunity', { count: Math.abs(rankDelta) })
+                                  : t('battle.belowCommunity', { count: rankDelta })}
                             </span>
                           ) : (
-                            <span className="battle-rank-delta is-missing">No community rank</span>
+                            <span className="battle-rank-delta is-missing">{t('battle.noCommunityRank')}</span>
                           )}
-	                      <span>{title.wins || 0}W</span>
-	                      <span>{title.losses || 0}L</span>
-	                      <span>{title.score || 0} pts</span>
+	                      <span>{t('battle.winsLabel', { count: title.wins || 0 })}</span>
+	                      <span>{t('battle.lossesLabel', { count: title.losses || 0 })}</span>
+	                      <span>{t('battle.points', { count: title.score || 0 })}</span>
 		                    </div>
 		                  </div>
                 );
@@ -2199,8 +2217,8 @@ export function BattleSessionPage() {
 
             <section className="container battle-section">
               <div className="battle-section-head">
-                <h2>Recent battle history</h2>
-                <p>Your latest local or synced runs from this browser profile.</p>
+                <h2>{t('battle.recentBattleHistory')}</h2>
+                <p>{t('battle.recentBattleHistoryHint')}</p>
               </div>
               {recentBattleHistory.length > 0 ? (
                 <div className="battle-history-grid">
@@ -2213,7 +2231,7 @@ export function BattleSessionPage() {
                         </div>
                         <div className="battle-history-copy">
                           <strong>{summary?.deckLabel || entry.deckLabel}</strong>
-                          <small>{summary?.winner ? `Winner: ${getDisplayName(summary.winner)}` : 'In progress'}</small>
+                          <small>{summary?.winner ? t('battle.winner', { title: getDisplayName(summary.winner) }) : t('battle.inProgress')}</small>
                           <span>{formatBattleTimestamp(summary?.completedAt || entry.updatedAt || entry.createdAt)}</span>
                         </div>
                       </Link>
@@ -2222,7 +2240,7 @@ export function BattleSessionPage() {
                 </div>
               ) : (
                 <div className="glass-heavy battle-empty-state">
-                  No other battle sessions saved yet.
+                  {t('battle.noOtherBattleSessions')}
                 </div>
               )}
             </section>

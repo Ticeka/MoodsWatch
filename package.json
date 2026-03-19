@@ -17,6 +17,10 @@
     "catalog:resume:all": "node scripts/catalog/resume-all.mjs",
     "catalog:dedupe": "node scripts/catalog/dedupe-catalog.mjs",
     "catalog:map:webtoon:th": "node scripts/catalog/map-webtoon-th.mjs",
+    "test:unit": "vitest run --project unit",
+    "test:unit:watch": "vitest --project unit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
@@ -49,6 +53,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-storybook": "^10.2.19",
     "globals": "^17.4.0",
+    "@playwright/test": "^1.58.2",
     "playwright": "^1.58.2",
     "prop-types": "^15.8.1",
     "storybook": "^10.2.19",

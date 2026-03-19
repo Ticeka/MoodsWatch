@@ -186,7 +186,7 @@ export function AdminTitleEdit() {
 
   const fetchTitleDetails = useCallback(async () => {
     if (!supabase) {
-      toast.error('Unable to connect to Supabase');
+      toast.error(t('admin.titleEdit.supabaseUnavailable'));
       setIsLoading(false);
       return;
     }
@@ -316,7 +316,7 @@ export function AdminTitleEdit() {
     event?.preventDefault();
 
     if (!supabase) {
-      toast.error('Unable to connect to Supabase');
+      toast.error(t('admin.titleEdit.supabaseUnavailable'));
       return;
     }
 
@@ -442,7 +442,7 @@ export function AdminTitleEdit() {
       navigate('/admin/titles');
     } catch (error) {
       console.error('Error saving title:', error);
-      toast.error(error.message || 'Save failed', { id: toastId });
+      toast.error(error.message || t('admin.titleEdit.saveFailed'), { id: toastId });
     } finally {
       setIsSaving(false);
     }
@@ -476,13 +476,13 @@ export function AdminTitleEdit() {
           style={{ padding: 'var(--space-1) var(--space-3)', flexShrink: 0 }}
           type="button"
         >
-          ← Back
+          {t('admin.titleEdit.backToTitles')}
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
             {isNew ? t('admin.titleEdit.createTitle') : t('admin.titleEdit.editTitle')}
           </h1>
-          {!isNew && <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', margin: '2px 0 0' }}>ID: {id}</p>}
+          {!isNew && <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', margin: '2px 0 0' }}>{t('admin.titleEdit.catalogId', { id })}</p>}
         </div>
       </div>
 
@@ -559,7 +559,7 @@ export function AdminTitleEdit() {
             </div>
             <div>
               <label className="form-label">{t('admin.titleEdit.tags')}</label>
-              <input className="form-input" value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="Magic, School Life" />
+              <input className="form-input" value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder={t('admin.titleEdit.tagPlaceholder')} />
             </div>
           </div>
         </div>
@@ -612,18 +612,18 @@ export function AdminTitleEdit() {
             <div>
               <label className="form-label">{t('admin.titleEdit.type')}</label>
               <select className="form-select" name="type" value={formData.type} onChange={handleInputChange} required>
-                <option value="anime">Anime</option>
-                <option value="manga">Manga</option>
-                <option value="manhwa">Manhwa</option>
+                <option value="anime">{t('admin.titleEdit.typeAnime')}</option>
+                <option value="manga">{t('admin.titleEdit.typeManga')}</option>
+                <option value="manhwa">{t('admin.titleEdit.typeManhwa')}</option>
               </select>
             </div>
             <div>
               <label className="form-label">{t('admin.titleEdit.status')}</label>
               <select className="form-select" name="status" value={formData.status} onChange={handleInputChange}>
-                <option value="ongoing">Ongoing</option>
-                <option value="completed">Completed</option>
-                <option value="upcoming">Upcoming</option>
-                <option value="hiatus">Hiatus</option>
+                <option value="ongoing">{t('admin.titleEdit.statusOngoing')}</option>
+                <option value="completed">{t('admin.titleEdit.statusCompleted')}</option>
+                <option value="upcoming">{t('admin.titleEdit.statusUpcoming')}</option>
+                <option value="hiatus">{t('admin.titleEdit.statusHiatus')}</option>
               </select>
             </div>
             <div>
@@ -656,11 +656,11 @@ export function AdminTitleEdit() {
             </div>
             <div>
               <label className="form-label">{t('admin.titleEdit.originCountry')}</label>
-              <input type="text" className="form-input" name="origin_country" value={formData.origin_country} onChange={handleInputChange} placeholder="JP, KR, CN" />
+              <input type="text" className="form-input" name="origin_country" value={formData.origin_country} onChange={handleInputChange} placeholder={t('admin.titleEdit.originCountryPlaceholder')} />
             </div>
             <div>
               <label className="form-label">{t('admin.titleEdit.originLanguage')}</label>
-              <input type="text" className="form-input" name="origin_language" value={formData.origin_language} onChange={handleInputChange} placeholder="ja, ko, zh" />
+              <input type="text" className="form-input" name="origin_language" value={formData.origin_language} onChange={handleInputChange} placeholder={t('admin.titleEdit.originLanguagePlaceholder')} />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '10px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--error)', fontWeight: 600 }}>
@@ -680,7 +680,7 @@ export function AdminTitleEdit() {
               <input type="text" className="form-input" name="cover_image" value={formData.cover_image} onChange={handleInputChange} />
               {formData.cover_image && (
                 <div style={{ marginTop: 'var(--space-3)' }}>
-                  <img src={formData.cover_image} alt="Preview" style={{ width: '120px', borderRadius: '8px' }} />
+                  <img src={formData.cover_image} alt={t('admin.titleEdit.previewAlt')} style={{ width: '120px', borderRadius: '8px' }} />
                 </div>
               )}
             </div>
@@ -689,7 +689,7 @@ export function AdminTitleEdit() {
               <input type="text" className="form-input" name="banner_image" value={formData.banner_image} onChange={handleInputChange} />
               {formData.banner_image && (
                 <div style={{ marginTop: 'var(--space-3)' }}>
-                  <img src={formData.banner_image} alt="Preview" style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '8px' }} />
+                  <img src={formData.banner_image} alt={t('admin.titleEdit.previewAlt')} style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '8px' }} />
                 </div>
               )}
             </div>
@@ -698,7 +698,7 @@ export function AdminTitleEdit() {
 
         <div className="admin-sticky-bar">
           <span className="admin-sticky-bar-info">
-            {!isNew && `ID: ${id}`}
+            {!isNew && t('admin.titleEdit.catalogId', { id })}
           </span>
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
             <button className="action-btn" onClick={() => navigate('/admin/titles')} type="button">
@@ -715,3 +715,4 @@ export function AdminTitleEdit() {
 }
 
 export default AdminTitleEdit;
+

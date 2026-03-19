@@ -245,7 +245,7 @@ export function Profile() {
         const titles = await getTitlesByIds(requestedIds);
         if (!cancelled) setLibraryTitles(titles);
       } catch (error) {
-        if (!cancelled) setLibraryError(error.message || 'Failed to load titles');
+        if (!cancelled) setLibraryError(error.message || t('profile.loadingLibraryFailed'));
       } finally {
         if (!cancelled) setIsLibraryLoading(false);
       }
@@ -872,7 +872,7 @@ export function Profile() {
                         setShareSuccess('');
                         setShareForm((current) => ({ ...current, username: normalizeUsername(event.target.value) }));
                       }}
-                      placeholder="mood_reader"
+                      placeholder={t('profile.shareUsernamePlaceholder')}
                       maxLength={20}
                       autoCapitalize="none"
                       autoCorrect="off"
@@ -1138,11 +1138,11 @@ export function Profile() {
                             <div className="profile-hidden-actions">
                               <button type="button" className={`profile-chip-btn ${entry?.hideFromRecommendations ? 'active' : ''}`} onClick={() => toggleHiddenScope(title.id, 'recommendations')}>
                                 <EyeOff size={14} />
-                                <span>Recs</span>
+                                <span>{t('profile.hiddenScopeRecommendations')}</span>
                               </button>
                               <button type="button" className={`profile-chip-btn ${entry?.hideFromDiscovery ? 'active' : ''}`} onClick={() => toggleHiddenScope(title.id, 'discovery')}>
                                 <Grid size={14} />
-                                <span>Discover</span>
+                                <span>{t('profile.hiddenScopeDiscovery')}</span>
                               </button>
                               <Button variant="ghost" size="sm" onClick={() => unhideTitle(title.id)}>
                                 {t('profile.unhide')}
@@ -1182,11 +1182,11 @@ export function Profile() {
                 <div className="profile-account-grid">
                   <div className="profile-account-item">
                     <span>{t('profile.theme')}</span>
-                    <strong>{theme === 'dark' ? 'Dark' : 'Light'}</strong>
+                    <strong>{theme === 'dark' ? t('profile.themeDark') : t('profile.themeLight')}</strong>
                   </div>
                   <div className="profile-account-item">
                     <span>{t('profile.role')}</span>
-                    <strong>{profile.role || 'member'}</strong>
+                    <strong>{profile.role || t('profile.roleMember')}</strong>
                   </div>
                   <div className="profile-account-item">
                     <span>{t('profile.joined')}</span>
@@ -1242,7 +1242,7 @@ export function Profile() {
                   type="url"
                   value={form.avatarUrl}
                   onChange={(event) => setForm((current) => ({ ...current, avatarUrl: event.target.value }))}
-                  placeholder="https://..."
+                  placeholder={t('profile.avatarUrlPlaceholder')}
                 />
               </label>
 

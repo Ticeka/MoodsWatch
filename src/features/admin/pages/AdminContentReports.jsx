@@ -3,6 +3,9 @@ import toast from 'react-hot-toast';
 import { Flag, RefreshCw } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
+import { ErrorState } from '@/shared/components/ui/ErrorState';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import {
   CONTENT_REPORT_ISSUE_OPTIONS,
   CONTENT_REPORT_SELECT,
@@ -44,7 +47,8 @@ async function resolveMatchingTitleIds(searchTerm) {
 
 export function AdminContentReports() {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === 'th' ? 'th-TH' : 'en-US';
   const [reports, setReports] = useState([]);
   const [staffOptions, setStaffOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,7 +88,7 @@ export function AdminContentReports() {
 
   const fetchReports = useCallback(async () => {
     if (!supabase) {
-      setErrorMessage('Unable to connect to Supabase');
+      setErrorMessage(t('admin.reports.supabaseUnavailable'));
       setIsLoading(false);
       return;
     }
@@ -173,12 +177,12 @@ export function AdminContentReports() {
       syncEditorState(mappedReports.find((report) => report.id === nextSelectedId));
     } catch (error) {
       console.error('Failed to load content reports:', error);
-      setErrorMessage(error.message || 'Failed to load content reports');
-      toast.error('Failed to load content reports');
+      setErrorMessage(error.message || t('admin.reports.loadFailed'));
+      toast.error(t('admin.reports.loadFailed'));
     } finally {
       setIsLoading(false);
     }
-  }, [filters, selectedId, syncEditorState]);
+  }, [filters, selectedId, syncEditorState, t]);
 
   useEffect(() => {
     fetchReports();
@@ -218,11 +222,11 @@ export function AdminContentReports() {
 
       if (error) throw error;
 
-      toast.success('Report updated');
+      toast.success(t('admin.reports.reportUpdated'));
       await fetchReports();
     } catch (error) {
       console.error('Failed to update report:', error);
-      toast.error('Failed to update report');
+      toast.error(t('admin.reports.updateFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -252,9 +256,9 @@ export function AdminContentReports() {
       </div>
 
       <section className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="admin-form-grid">
+        <div className="admin-form-grid" role="toolbar" aria-label={t('admin.reports.filtersToolbar')}>
           <label>
-            <span className="form-label">Title search</span>
+            <span className="form-label">{t('admin.reports.filterTitleSearch')}</span>
             <input
               className="form-input"
               value={filters.searchTerm}
@@ -262,32 +266,28 @@ export function AdminContentReports() {
               placeholder={t('admin.reports.searchPlaceholder')}
             />
           </label>
-          <label>
-            <span className="form-label">{t('admin.reports.filterIssueType')}</span>
-            <select
-              className="form-select"
-              value={filters.issueType}
-              onChange={(event) => setFilters((current) => ({ ...current, issueType: event.target.value }))}
-            >
+          <SortSelect
+            value={filters.issueType}
+            onChange={(value) => setFilters((current) => ({ ...current, issueType: value }))}
+            label={t('admin.reports.filterIssueType')}
+            className="results-sorter"
+          >
               <option value="all">{t('admin.reports.allIssueTypes')}</option>
               {CONTENT_REPORT_ISSUE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
-          </label>
-          <label>
-            <span className="form-label">{t('admin.reports.filterStatus')}</span>
-            <select
-              className="form-select"
-              value={filters.status}
-              onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-            >
+          </SortSelect>
+          <SortSelect
+            value={filters.status}
+            onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
+            label={t('admin.reports.filterStatus')}
+            className="results-sorter"
+          >
               <option value="all">{t('admin.reports.allStatuses')}</option>
               {CONTENT_REPORT_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
-          </label>
+          </SortSelect>
           <label>
             <span className="form-label">{t('admin.reports.filterDateFrom')}</span>
             <input
@@ -321,9 +321,9 @@ export function AdminContentReports() {
           {isLoading ? (
             <AdminStatePanel title={t('admin.reports.loadingTitle')} description={t('admin.reports.loadingHint')} />
           ) : errorMessage ? (
-            <AdminStatePanel title={t('admin.reports.errorTitle')} description={errorMessage} actionLabel="Retry" onAction={fetchReports} tone="error" />
+            <ErrorState message={errorMessage} onRetry={fetchReports} />
           ) : reports.length === 0 ? (
-            <AdminStatePanel title="No reports found" description={t('admin.reports.noResults')} />
+            <EmptyState title={t('admin.reports.noResultsTitle')} message={t('admin.reports.noResults')} />
           ) : (
             <div className="admin-list-stack">
               {reports.map((report) => (
@@ -339,13 +339,13 @@ export function AdminContentReports() {
                     <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
                       <span className={`admin-queue-pill status-${report.status}`}>{report.statusLabel}</span>
                       <span className="admin-queue-pill">{report.issueLabel}</span>
-                      {report.assigneeName && <span className="admin-queue-pill subtle">Assigned: {report.assigneeName}</span>}
+                      {report.assigneeName && <span className="admin-queue-pill subtle">{t('admin.reports.assignedLabel')}: {report.assigneeName}</span>}
                     </div>
                     <span className="admin-clamp-2">{report.description || t('admin.reports.noReporterNote')}</span>
                   </div>
                   <div className="admin-record-meta">
                     <span>#{report.id}</span>
-                    <span>{new Date(report.createdAt).toLocaleDateString('en-US')}</span>
+                    <span>{new Date(report.createdAt).toLocaleDateString(locale)}</span>
                   </div>
                 </button>
               ))}
@@ -382,12 +382,12 @@ export function AdminContentReports() {
                 </div>
               </div>
 
-              <div className="admin-inline-kv-grid admin-inline-kv-grid-wide" style={{ marginBottom: 'var(--space-5)' }}>
-                <div><span>{t('admin.reports.metaCanonicalTitle')}</span><strong>{selectedReport.title.canonicalTitle || '-'}</strong></div>
-                <div><span>{t('admin.reports.metaSlug')}</span><strong>{selectedReport.title.slug || '-'}</strong></div>
-                <div><span>{t('admin.reports.metaCreated')}</span><strong>{new Date(selectedReport.createdAt).toLocaleString('en-US')}</strong></div>
-                <div><span>{t('admin.reports.metaResolved')}</span><strong>{selectedReport.resolvedAt ? new Date(selectedReport.resolvedAt).toLocaleString('en-US') : '-'}</strong></div>
-              </div>
+                <div className="admin-inline-kv-grid admin-inline-kv-grid-wide" style={{ marginBottom: 'var(--space-5)' }}>
+                  <div><span>{t('admin.reports.metaCanonicalTitle')}</span><strong>{selectedReport.title.canonicalTitle || '-'}</strong></div>
+                  <div><span>{t('admin.reports.metaSlug')}</span><strong>{selectedReport.title.slug || '-'}</strong></div>
+                  <div><span>{t('admin.reports.metaCreated')}</span><strong>{new Date(selectedReport.createdAt).toLocaleString(locale)}</strong></div>
+                  <div><span>{t('admin.reports.metaResolved')}</span><strong>{selectedReport.resolvedAt ? new Date(selectedReport.resolvedAt).toLocaleString(locale) : '-'}</strong></div>
+                </div>
 
               <div className="admin-form-grid">
                 <label>
@@ -409,7 +409,7 @@ export function AdminContentReports() {
                     value={editorState.assignedTo}
                     onChange={(event) => setEditorState((current) => ({ ...current, assignedTo: event.target.value }))}
                   >
-                    <option value="">Unassigned</option>
+                    <option value="">{t('admin.reports.unassigned')}</option>
                     {staffOptions.map((option) => (
                       <option key={option.id} value={option.id}>{option.name || option.id}</option>
                     ))}
@@ -429,7 +429,7 @@ export function AdminContentReports() {
 
               <div className="admin-action-bar">
                 <button className="primary-btn" type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : t('admin.reports.saveUpdate')}
+                  {isSaving ? t('admin.common.saving') : t('admin.reports.saveUpdate')}
                 </button>
               </div>
             </form>

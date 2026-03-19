@@ -145,42 +145,39 @@ async function upsertTitle(norm, skipDuplicates) {
 // ─── Config options ───────────────────────────────────────────────────────────
 
 const SORT_OPTIONS = [
-  { value: 'POPULARITY_DESC', label: 'ยอดนิยม', icon: TrendingUp },
-  { value: 'SCORE_DESC',      label: 'คะแนนสูง', icon: Star },
-  { value: 'TRENDING_DESC',   label: 'กระแส',    icon: Flame },
-  { value: 'UPDATED_AT_DESC', label: 'อัพเดทล่าสุด', icon: Clock },
-  { value: 'START_DATE_DESC', label: 'ออกใหม่',   icon: CalendarDays },
-  { value: 'ID_DESC',         label: 'เพิ่มใหม่ใน AniList', icon: Hash },
+  { value: 'POPULARITY_DESC', labelKey: 'admin.fetch.sortPopularity', icon: TrendingUp },
+  { value: 'SCORE_DESC', labelKey: 'admin.fetch.sortScore', icon: Star },
+  { value: 'TRENDING_DESC', labelKey: 'admin.fetch.sortTrending', icon: Flame },
+  { value: 'UPDATED_AT_DESC', labelKey: 'admin.fetch.sortUpdated', icon: Clock },
+  { value: 'START_DATE_DESC', labelKey: 'admin.fetch.sortStartDate', icon: CalendarDays },
+  { value: 'ID_DESC', labelKey: 'admin.fetch.sortIdDesc', icon: Hash },
 ];
 
-// AniList ANIME formats
 const ANIME_FORMATS = [
-  { value: '',        label: 'ทั้งหมด' },
-  { value: 'TV',      label: 'TV Series' },
-  { value: 'MOVIE',   label: 'Movie' },
-  { value: 'OVA',     label: 'OVA' },
-  { value: 'ONA',     label: 'ONA' },
-  { value: 'SPECIAL', label: 'Special' },
+  { value: '', labelKey: 'admin.fetch.formatAll' },
+  { value: 'TV', labelKey: 'admin.fetch.formatTv' },
+  { value: 'MOVIE', labelKey: 'admin.fetch.formatMovie' },
+  { value: 'OVA', labelKey: 'admin.fetch.formatOva' },
+  { value: 'ONA', labelKey: 'admin.fetch.formatOna' },
+  { value: 'SPECIAL', labelKey: 'admin.fetch.formatSpecial' },
 ];
 
-// Manga subtypes: mapped to AniList countryOfOrigin + format combos
-// AniList distinguishes manga origin by countryOfOrigin, not by a "manhwa" format
 const MANGA_SUBTYPES = [
-  { value: '',         label: 'ทั้งหมด', country: '',   format: '' },
-  { value: 'JP',       label: '🇯🇵 Manga', country: 'JP', format: '' },
-  { value: 'KR',       label: '🇰🇷 Manhwa', country: 'KR', format: '' },
-  { value: 'CN',       label: '🇨🇳 Manhua', country: 'CN', format: '' },
-  { value: 'NOVEL',    label: '📖 Novel',    country: '',   format: 'NOVEL' },
-  { value: 'ONE_SHOT', label: '📄 One Shot', country: '',   format: 'ONE_SHOT' },
+  { value: '', labelKey: 'admin.fetch.subtypeAll', country: '', format: '' },
+  { value: 'JP', labelKey: 'admin.fetch.subtypeMangaJp', country: 'JP', format: '' },
+  { value: 'KR', labelKey: 'admin.fetch.subtypeManhwaKr', country: 'KR', format: '' },
+  { value: 'CN', labelKey: 'admin.fetch.subtypeManhuaCn', country: 'CN', format: '' },
+  { value: 'NOVEL', labelKey: 'admin.fetch.subtypeNovel', country: '', format: 'NOVEL' },
+  { value: 'ONE_SHOT', labelKey: 'admin.fetch.subtypeOneShot', country: '', format: 'ONE_SHOT' },
 ];
 
 const STATUS_OPTIONS = [
-  { value: '',               label: 'ทั้งหมด' },
-  { value: 'RELEASING',      label: 'กำลังออก' },
-  { value: 'FINISHED',       label: 'จบแล้ว' },
-  { value: 'NOT_YET_RELEASED', label: 'เร็วๆ นี้' },
-  { value: 'HIATUS',         label: 'หยุดพัก' },
-  { value: 'CANCELLED',      label: 'ยกเลิก' },
+  { value: '', labelKey: 'admin.fetch.statusAll' },
+  { value: 'RELEASING', labelKey: 'admin.fetch.statusReleasing' },
+  { value: 'FINISHED', labelKey: 'admin.fetch.statusFinished' },
+  { value: 'NOT_YET_RELEASED', labelKey: 'admin.fetch.statusNotYetReleased' },
+  { value: 'HIATUS', labelKey: 'admin.fetch.statusHiatus' },
+  { value: 'CANCELLED', labelKey: 'admin.fetch.statusCancelled' },
 ];
 
 const LOG_ICON = {
@@ -287,7 +284,7 @@ const DEFAULT_CONFIG = {
 };
 
 export function AdminFetch() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [running, setRunning] = useState(false);
@@ -299,9 +296,10 @@ export function AdminFetch() {
   const set = useCallback((key, value) => setConfig((p) => ({ ...p, [key]: value })), []);
 
   const addLog = useCallback((type, message) => {
-    const entry = { id: `${Date.now()}-${Math.random()}`, type, message, time: new Date().toLocaleTimeString('th-TH') };
+    const locale = language === 'th' ? 'th-TH' : 'en-US';
+    const entry = { id: `${Date.now()}-${Math.random()}`, type, message, time: new Date().toLocaleTimeString(locale) };
     setLogs((p) => { const n = [...p, entry]; return n.length > 200 ? n.slice(-200) : n; });
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     if (logContainerRef.current) {
@@ -332,26 +330,26 @@ export function AdminFetch() {
     setLogs([]);
     setProgress({ page: 0, totalPages: config.pages, fetched: 0, imported: 0, updated: 0, skipped: 0, errors: 0 });
 
-    const sortLabel = SORT_OPTIONS.find((s) => s.value === config.sort)?.label || config.sort;
-    addLog('info', `เริ่มดึง ${config.type} — ${sortLabel}`);
+    const sortLabel = t(SORT_OPTIONS.find((s) => s.value === config.sort)?.labelKey || 'admin.fetch.sortPopularity');
+    addLog('info', t('admin.fetch.logStart', { type: config.type, sort: sortLabel }));
 
     try {
       for (let page = 1; page <= config.pages; page++) {
         if (abortRef.current.signal.aborted) break;
         setProgress((p) => ({ ...p, page }));
-        addLog('info', `หน้า ${page}/${config.pages}…`);
+        addLog('info', t('admin.fetch.logPage', { page, total: config.pages }));
 
         let pageData;
         try {
           pageData = await fetchAniListPage(buildVars(page), abortRef.current.signal);
         } catch (err) {
           if (err.name === 'AbortError') break;
-          addLog('error', `ดึงข้อมูลล้มเหลว: ${err.message}`);
+          addLog('error', t('admin.fetch.logFetchFailed', { message: err.message }));
           break;
         }
 
         const items = pageData.media || [];
-        addLog('info', `ได้รับ ${items.length} รายการ`);
+        addLog('info', t('admin.fetch.logItemsReceived', { count: items.length }));
 
         for (const media of items) {
           if (abortRef.current.signal.aborted) break;
@@ -364,7 +362,11 @@ export function AdminFetch() {
               updated:  result === 'updated'  ? p.updated  + 1 : p.updated,
               skipped:  result === 'skipped'  ? p.skipped  + 1 : p.skipped,
             }));
-            const label = result === 'imported' ? 'ใหม่' : result === 'updated' ? 'อัพเดท' : 'ข้าม';
+            const label = result === 'imported'
+              ? t('admin.fetch.resultImported')
+              : result === 'updated'
+                ? t('admin.fetch.resultUpdated')
+                : t('admin.fetch.resultSkipped');
             addLog(result, `[${label}] ${norm.displayTitle}`);
           } catch (err) {
             setProgress((p) => ({ ...p, fetched: p.fetched + 1, errors: p.errors + 1 }));
@@ -373,16 +375,16 @@ export function AdminFetch() {
           await new Promise((r) => setTimeout(r, 0));
         }
 
-        if (!pageData.pageInfo?.hasNextPage) { addLog('info', 'ไม่มีหน้าถัดไป'); break; }
+        if (!pageData.pageInfo?.hasNextPage) { addLog('info', t('admin.fetch.logNoNextPage')); break; }
         if (page < config.pages && !abortRef.current.signal.aborted) await new Promise((r) => setTimeout(r, 1200));
       }
 
       if (!abortRef.current.signal.aborted) {
-        addLog('success', 'เสร็จสิ้น');
-        toast.success('ดึงข้อมูลเสร็จสิ้น');
+        addLog('success', t('admin.fetch.logFinished'));
+        toast.success(t('admin.fetch.fetchFinished'));
       } else {
-        addLog('info', 'หยุดโดยผู้ใช้');
-        toast('หยุดแล้ว');
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
       }
     } catch (err) {
       if (err.name !== 'AbortError') { addLog('error', err.message); toast.error(err.message); }
@@ -446,30 +448,30 @@ export function AdminFetch() {
           </Section>
 
           {/* 2. Subtype / Format */}
-          <Section title={config.type === 'ANIME' ? t('admin.fetch.formatLabel') : 'ประเภทย่อย'}>
+          <Section title={config.type === 'ANIME' ? t('admin.fetch.formatLabel') : t('admin.fetch.subtypeLabel')}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
               {config.type === 'ANIME'
                 ? ANIME_FORMATS.map((f) => (
                     <Chip key={f.value} active={config.animeFormat === f.value} disabled={running}
                       onClick={() => set('animeFormat', f.value)}>
-                      {f.label}
+                      {t(f.labelKey)}
                     </Chip>
                   ))
                 : MANGA_SUBTYPES.map((s) => (
                     <Chip key={s.value} active={config.mangaSubtype === s.value} disabled={running}
                       onClick={() => set('mangaSubtype', s.value)}>
-                      {s.label}
+                      {t(s.labelKey)}
                     </Chip>
                   ))
               }
             </div>
             {config.type === 'MANGA' && config.mangaSubtype && (
               <p style={{ margin: 'var(--space-3) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
-                {config.mangaSubtype === 'KR' && 'กรองโดย countryOfOrigin=KR — ครอบคลุมทั้ง Manhwa และ Webtoon'}
-                {config.mangaSubtype === 'CN' && 'กรองโดย countryOfOrigin=CN — ครอบคลุม Manhua ทุกรูปแบบ'}
-                {config.mangaSubtype === 'JP' && 'กรองโดย countryOfOrigin=JP — เฉพาะ Manga ญี่ปุ่น'}
-                {config.mangaSubtype === 'NOVEL' && 'กรองโดย format=NOVEL — Light Novel และ Web Novel'}
-                {config.mangaSubtype === 'ONE_SHOT' && 'กรองโดย format=ONE_SHOT — ตอนเดียวจบ'}
+                {config.mangaSubtype === 'KR' && t('admin.fetch.subtypeHintKr')}
+                {config.mangaSubtype === 'CN' && t('admin.fetch.subtypeHintCn')}
+                {config.mangaSubtype === 'JP' && t('admin.fetch.subtypeHintJp')}
+                {config.mangaSubtype === 'NOVEL' && t('admin.fetch.subtypeHintNovel')}
+                {config.mangaSubtype === 'ONE_SHOT' && t('admin.fetch.subtypeHintOneShot')}
               </p>
             )}
           </Section>
@@ -483,7 +485,7 @@ export function AdminFetch() {
                   <Chip key={s.value} active={config.sort === s.value} disabled={running}
                     onClick={() => set('sort', s.value)}>
                     <Icon size={13} />
-                    {s.label}
+                    {t(s.labelKey)}
                   </Chip>
                 );
               })}
@@ -496,7 +498,7 @@ export function AdminFetch() {
               {STATUS_OPTIONS.map((s) => (
                 <Chip key={s.value} active={config.status === s.value} disabled={running}
                   onClick={() => set('status', s.value)}>
-                  {s.label}
+                  {t(s.labelKey)}
                 </Chip>
               ))}
             </div>
@@ -510,7 +512,7 @@ export function AdminFetch() {
                   <Star size={13} /> {t('admin.fetch.scoreMin')}
                   <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(0–100)</span>
                 </label>
-                <input type="number" className="form-input" placeholder="ไม่จำกัด"
+                <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
                   min={0} max={100} value={config.minScore} disabled={running}
                   onChange={(e) => set('minScore', e.target.value)} />
               </div>
@@ -518,7 +520,7 @@ export function AdminFetch() {
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <TrendingUp size={13} /> {t('admin.fetch.popularityMin')}
                 </label>
-                <input type="number" className="form-input" placeholder="ไม่จำกัด"
+                <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
                   min={0} value={config.minPopularity} disabled={running}
                   onChange={(e) => set('minPopularity', e.target.value)} />
               </div>
@@ -576,9 +578,7 @@ export function AdminFetch() {
                 background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
                 lineHeight: 1.55,
               }}>
-                {skipDuplicates
-                  ? '✦ เหมาะสำหรับดึงเรื่องใหม่ๆ เข้าระบบโดยไม่แตะข้อมูลเดิม'
-                  : '✦ เหมาะสำหรับ sync ข้อมูลเรื่องเก่า เช่น ตอนใหม่ คะแนน สถานะ'}
+                {skipDuplicates ? t('admin.fetch.skipHintOn') : t('admin.fetch.skipHintOff')}
               </div>
             </div>
           </Section>
@@ -611,12 +611,12 @@ export function AdminFetch() {
 
           {/* Progress stats */}
           {progress && (
-            <Section title={running ? 'กำลังดึง…' : 'ผลลัพธ์'}>
+            <Section title={running ? t('admin.fetch.runningTitle') : t('admin.fetch.resultTitle')}>
               {running && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                    <span>หน้า {progress.page}/{progress.totalPages}</span>
-                    <span>{progress.fetched} รายการ</span>
+                    <span>{t('admin.fetch.pageProgress', { page: progress.page, total: progress.totalPages })}</span>
+                    <span>{t('admin.fetch.itemsProgress', { count: progress.fetched })}</span>
                   </div>
                   <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
                     <div style={{
@@ -701,3 +701,5 @@ export function AdminFetch() {
 }
 
 export default AdminFetch;
+
+

@@ -13,12 +13,17 @@ import {
   Monitor,
   Palette,
   Plus,
+  Search,
   RotateCcw,
   Save,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
+import { ErrorState } from '@/shared/components/ui/ErrorState';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import {
@@ -48,6 +53,53 @@ function getDisplayName(title) {
 
 function getMetaLine(title) {
   return [title?.type, ...(title?.genres || []).slice(0, 2)].filter(Boolean).join(' / ');
+}
+
+function getCurrentUsername(user) {
+  return user?.profile?.username || user?.user_metadata?.username || null;
+}
+
+function buildRemixedTierList(list, user) {
+  const ownerUsername = getCurrentUsername(user);
+  return {
+    ...list,
+    id: undefined,
+    ownerName: ownerUsername || 'You',
+    ownerUsername,
+    ownerUserId: user?.id || null,
+    isPublic: false,
+    title: `${list.title} (Remix)`,
+    playCount: 0,
+  };
+}
+
+function TierListEmptyPanel({ icon, title, message, action }) {
+  return (
+    <div className="glass-heavy tierlist-empty-state">
+      <EmptyState
+        className="empty-state"
+        icon={icon}
+        title={title}
+        message={message}
+        action={action}
+      />
+    </div>
+  );
+}
+
+function TierListErrorPanel({ message, onRetry, backLabel, backTo }) {
+  return (
+    <div className="glass-heavy tierlist-empty-state">
+      <ErrorState message={message} onRetry={onRetry} />
+      {backLabel && backTo ? (
+        <div className="tierlist-template-actions">
+          <Link className="btn btn-ghost btn-sm" to={backTo}>
+            {backLabel}
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function sortTemplates(templates, sortBy) {
@@ -139,10 +191,10 @@ function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo,
       </div>
       <div className="tierlist-browse-card-body">
         <small className="tierlist-chip">
-          {pick('by', 'by')}{' '}
+          {pick('โดย', 'by')}{' '}
           {(() => {
             const slug = list.ownerUsername || list.ownerName;
-            const label = list.ownerName || list.ownerUsername || 'User';
+            const label = list.ownerName || list.ownerUsername || pick('ผู้ใช้', 'User');
             return slug && slug !== 'You' ? (
               <Link to={`/u/${slug}`} className="tierlist-owner-link" onClick={(e) => e.stopPropagation()}>
                 {label}
@@ -152,7 +204,7 @@ function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo,
         </small>
         <h3>{list.title}</h3>
         <small className="tierlist-meta">
-          {list.rows.length} {pick('tiers', 'tiers')} · {list.playCount || 0} {pick('plays', 'plays')}
+          {list.rows.length} {pick('ชั้น', 'tiers')} · {list.playCount || 0} {pick('ครั้งเล่น', 'plays')}
         </small>
       </div>
       <div className="tierlist-browse-card-actions">
@@ -405,12 +457,12 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       const savedList = findTierList(nextTierList.id, savedLibrary) || savedLibrary.lists[0] || nextTierList;
       setTierList(savedList);
       setSaveState('success');
-      setSaveMessage(pick('Latest changes are saved', 'Latest changes are saved'));
-      toast.success(pick('Saved', 'Saved'));
+      setSaveMessage(pick('บันทึกล่าสุดเรียบร้อยแล้ว', 'Latest changes are saved'));
+      toast.success(pick('บันทึกแล้ว', 'Saved'));
     } catch (error) {
       setSaveState('error');
-      setSaveMessage(error?.message || pick('Save failed', 'Save failed'));
-      toast.error(error?.message || pick('Save failed', 'Save failed'));
+      setSaveMessage(error?.message || pick('บันทึกไม่สำเร็จ', 'Save failed'));
+      toast.error(error?.message || pick('บันทึกไม่สำเร็จ', 'Save failed'));
     } finally {
       setIsSaving(false);
     }
@@ -579,7 +631,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       });
 
       if (!blob) {
-        toast.error(pick('Export failed', 'Export failed'));
+        toast.error(pick('ส่งออกไม่สำเร็จ', 'Export failed'));
         return;
       }
 
@@ -592,9 +644,9 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       link.click();
       document.body.removeChild(link);
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      toast.success(pick('Image downloaded', 'Image downloaded'));
+      toast.success(pick('ดาวน์โหลดรูปภาพแล้ว', 'Image downloaded'));
     } catch {
-      toast.error(pick('Export failed', 'Export failed'));
+      toast.error(pick('ส่งออกไม่สำเร็จ', 'Export failed'));
     } finally {
       setIsExporting(false);
     }
@@ -651,7 +703,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
         {/* Mobile: toggle button */}
         <div className="tiermaker-toolbar-compact-toggle">
           <Button variant="ghost" size="sm" onClick={() => setIsToolbarExpanded((c) => !c)}>
-            {toolbarCompact ? pick('Show Controls', 'Show Controls') : pick('Hide Controls', 'Hide Controls')}
+            {toolbarCompact ? pick('แสดงตัวควบคุม', 'Show Controls') : pick('ซ่อนตัวควบคุม', 'Hide Controls')}
           </Button>
         </div>
 
@@ -660,7 +712,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
           <input
             type="text"
             value={tierList.title}
-            placeholder={pick('Tier list name', 'Tier list name')}
+            placeholder={pick('ชื่อ Tier List', 'Tier list name')}
             readOnly={readOnly}
             onChange={(event) => {
               if (readOnly) return;
@@ -677,23 +729,36 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={pick('Search pool...', 'Search pool...')}
+            placeholder={pick('ค้นหาในพูล...', 'Search pool...')}
+            aria-label={pick('ค้นหาในพูล', 'Search pool')}
           />
+          {query ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setQuery('')}
+              aria-label={pick('ล้างการค้นหาในพูล', 'Clear pool search')}
+              title={pick('ล้างการค้นหา', 'Clear search')}
+            >
+              <X size={14} />
+            </Button>
+          ) : null}
         </div>
 
         <div className="tiermaker-toolbar-sep" />
 
         {/* Action buttons */}
-        <div className="tiermaker-toolbar-actions">
+        <div className="tiermaker-toolbar-actions" role="group" aria-label={pick('การกระทำของตัวแก้ไข Tier List', 'Tier list editor actions')}>
           <Button
             variant="ghost"
             size="sm"
             icon={<RotateCcw size={14} />}
             onClick={resetRows}
             disabled={isSaving || readOnly}
-            title={pick('Reset all rows', 'Reset all rows')}
+            title={pick('รีเซ็ตทุกแถว', 'Reset all rows')}
           >
-            {pick('Reset', 'Reset')}
+            {pick('รีเซ็ต', 'Reset')}
           </Button>
           <Button
             variant="ghost"
@@ -701,9 +766,9 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             icon={<Plus size={14} />}
             onClick={handleAddRow}
             disabled={readOnly}
-            title={pick('Add row', 'Add row')}
+            title={pick('เพิ่มแถว', 'Add row')}
           >
-            {pick('Row', 'Row')}
+            {pick('แถว', 'Row')}
           </Button>
           <Button
             variant="primary"
@@ -712,7 +777,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             onClick={handleSave}
             disabled={isSaving || readOnly}
           >
-            {isSaving ? pick('Saving…', 'Saving…') : pick('Save', 'Save')}
+            {isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
           </Button>
           <Button
             variant="ghost"
@@ -720,7 +785,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             icon={<Download size={14} />}
             onClick={handleDownload}
             disabled={isExporting}
-            title={pick('Download image', 'Download image')}
+            title={pick('ดาวน์โหลดรูปภาพ', 'Download image')}
           >
             {isExporting ? pick('…', '…') : pick('IMG', 'IMG')}
           </Button>
@@ -729,22 +794,22 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             size="sm"
             icon={<Layers size={14} />}
             onClick={handleTogglePin}
-            title={isPoolPinned ? pick('Unpin pool', 'Unpin pool') : pick('Pin pool', 'Pin pool')}
+            title={isPoolPinned ? pick('เลิกปักหมุดพูล', 'Unpin pool') : pick('ปักหมุดพูล', 'Pin pool')}
           />
           <Button
             variant="ghost"
             size="sm"
             icon={<Monitor size={14} />}
             onClick={handleTogglePresentation}
-            title={isPresentationMode ? pick('Exit presentation', 'Exit presentation') : pick('Presentation mode', 'Presentation mode')}
+            title={isPresentationMode ? pick('ออกจากโหมดพรีเซนต์', 'Exit presentation') : pick('โหมดพรีเซนต์', 'Presentation mode')}
           />
         </div>
 
         {saveState !== 'idle' && (
           <span className={`tiermaker-toolbar-status ${statusClass}`}>
             {saveState === 'success'
-              ? saveMessage || pick('Saved', 'Saved')
-              : saveMessage || pick('Save failed', 'Save failed')}
+              ? saveMessage || pick('บันทึกแล้ว', 'Saved')
+              : saveMessage || pick('บันทึกไม่สำเร็จ', 'Save failed')}
           </span>
         )}
       </section>
@@ -753,7 +818,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       <div className="tiermaker-export-board">
         <div className="tiermaker-export-head">
           <strong>{tierList.title}</strong>
-          <span>{pick('Ranked with MoodToon Tier List', 'Ranked with MoodToon Tier List')}</span>
+          <span>{pick('จัดอันดับด้วย MoodToon Tier List', 'Ranked with MoodToon Tier List')}</span>
         </div>
         <div className="tiermaker-board" ref={boardRef}>
           {tierList.rows.map((row, index) => (
@@ -773,7 +838,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             >
               <input
                 type="text"
-                aria-label={pick('Tier label', 'Tier label')}
+                aria-label={pick('ป้ายชื่อ Tier', 'Tier label')}
                 value={row.label}
                 readOnly={readOnly}
                 onChange={(event) => {
@@ -798,7 +863,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                   icon={<Palette size={12} />}
                   onClick={() => cycleRowColor(row.id, row.color, index)}
                   disabled={readOnly}
-                  title={pick('Change color', 'Change color')}
+                  title={pick('เปลี่ยนสี', 'Change color')}
                 />
                 <Button
                   variant="ghost"
@@ -806,7 +871,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                   icon={<RotateCcw size={12} />}
                   onClick={() => resetRow(row.id)}
                   disabled={readOnly || row.titleIds.length === 0}
-                  title={pick('Clear row', 'Clear row')}
+                  title={pick('ล้างแถว', 'Clear row')}
                 />
                 <Button
                   variant="ghost"
@@ -819,14 +884,14 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                     setSaveMessage('');
                   }}
                   disabled={readOnly || tierList.rows.length <= 1}
-                  title={pick('Remove row', 'Remove row')}
+                  title={pick('ลบแถว', 'Remove row')}
                 />
             </div>
 
             {/* Drop zone */}
             <div className={`tiermaker-dropzone ${row.titleIds.length === 0 ? 'is-empty' : ''}`}>
               {row.titleIds.length === 0
-                ? <span className="tierlist-empty-row">{pick('Drop here', 'Drop here')}</span>
+                ? <span className="tierlist-empty-row">{pick('วางตรงนี้', 'Drop here')}</span>
                 : row.titleIds
                   .map((id) => titleById.get(Number(id)))
                   .filter(Boolean)
@@ -838,7 +903,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                         type="button"
                         data-row-id={row.id}
                         data-insert-index={titleIndex}
-                        aria-label={pick('Insert here', 'Insert here')}
+                          aria-label={pick('แทรกตรงนี้', 'Insert here')}
                       />,
                       <TierTitleCard
                         key={title.id}
@@ -857,7 +922,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                           type="button"
                           data-row-id={row.id}
                           data-insert-index={arr.length}
-                          aria-label={pick('Insert at end', 'Insert at end')}
+                          aria-label={pick('แทรกท้ายแถว', 'Insert at end')}
                         />
                       );
                     }
@@ -880,13 +945,13 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
         ].filter(Boolean).join(' ')}
       >
         <div className="tiermaker-pool-head">
-          <h2><Layers size={13} /> {pick('Image Pool', 'Image Pool')}</h2>
+          <h2><Layers size={13} /> {pick('คลังรูป', 'Image Pool')}</h2>
           <span>{filteredPoolIds.length}</span>
         </div>
         <div className="tiermaker-pool-rail">
           {filteredPoolIds.length === 0 ? (
             <p className="tierlist-pool-state">
-              {pick('All images ranked!', 'All images ranked!')}
+              {pick('จัดอันดับรูปทั้งหมดแล้ว', 'All images ranked!')}
             </p>
           ) : (
             filteredPoolIds
@@ -972,7 +1037,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
   }, [listId]);
 
   const fireNotifications = (parentEntry) => {
-    const actorName = user?.profile?.name || user?.profile?.username || pick('Someone', 'Someone');
+    const actorName = user?.profile?.name || user?.profile?.username || pick('ใครบางคน', 'Someone');
     const notifInserts = [];
     if (listOwnerId && listOwnerId !== user.id) {
       notifInserts.push(supabase.from('notifications').insert({
@@ -981,8 +1046,8 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
         reference_id: listId,
         actor_user_id: user.id,
         message: parentEntry
-          ? `${actorName} ${pick('replied to a comment on your tierlist', 'replied to a comment on your tierlist')}`
-          : `${actorName} ${pick('commented on your tierlist', 'commented on your tierlist')}`,
+          ? `${actorName} ${pick('ตอบกลับคอมเมนต์บน tierlist ของคุณ', 'replied to a comment on your tierlist')}`
+          : `${actorName} ${pick('คอมเมนต์บน tierlist ของคุณ', 'commented on your tierlist')}`,
       }));
     }
     if (parentEntry?.author_user_id && parentEntry.author_user_id !== user.id && parentEntry.author_user_id !== listOwnerId) {
@@ -991,7 +1056,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
         type: 'comment_reply',
         reference_id: listId,
         actor_user_id: user.id,
-        message: `${actorName} ${pick('replied to your comment', 'replied to your comment')}`,
+        message: `${actorName} ${pick('ตอบกลับคอมเมนต์ของคุณ', 'replied to your comment')}`,
       }));
     }
     if (notifInserts.length) Promise.allSettled(notifInserts);
@@ -1001,7 +1066,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
     e.preventDefault();
     if (!user?.id || !draft.trim() || !supabase) return;
     const body = draft.trim();
-    if (body.length > 500) { setError(pick('Comment too long (max 500 chars)', 'Comment too long (max 500 chars)')); return; }
+    if (body.length > 500) { setError(pick('คอมเมนต์ยาวเกินไป (สูงสุด 500 ตัวอักษร)', 'Comment too long (max 500 chars)')); return; }
     setIsSubmitting(true);
     setError('');
     try {
@@ -1015,7 +1080,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
       setDraft('');
       fireNotifications(null);
     } catch {
-      setError(pick('Failed to post comment', 'Failed to post comment'));
+      setError(pick('โพสต์คอมเมนต์ไม่สำเร็จ', 'Failed to post comment'));
     } finally {
       setIsSubmitting(false);
     }
@@ -1025,7 +1090,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
     e.preventDefault();
     if (!user?.id || !replyDraft.trim() || !supabase) return;
     const body = replyDraft.trim();
-    if (body.length > 500) { setReplyError(pick('Comment too long (max 500 chars)', 'Comment too long (max 500 chars)')); return; }
+    if (body.length > 500) { setReplyError(pick('คอมเมนต์ยาวเกินไป (สูงสุด 500 ตัวอักษร)', 'Comment too long (max 500 chars)')); return; }
     setIsSubmitting(true);
     setReplyError('');
     try {
@@ -1041,7 +1106,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
       setExpandedReplies((prev) => new Set([...prev, parentEntry.id]));
       fireNotifications(parentEntry);
     } catch {
-      setReplyError(pick('Failed to post comment', 'Failed to post comment'));
+      setReplyError(pick('โพสต์คอมเมนต์ไม่สำเร็จ', 'Failed to post comment'));
     } finally {
       setIsSubmitting(false);
     }
@@ -1076,7 +1141,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
 
   const renderThread = (entry) => {
     const author = entry.author_profile || entry.author || {};
-    const authorName = author.name || author.username || pick('User', 'User');
+    const authorName = author.name || author.username || pick('ผู้ใช้', 'User');
     const authorInitial = authorName.charAt(0).toUpperCase();
     const replies = repliesMap[entry.id] || [];
     const hasReplies = replies.length > 0;
@@ -1105,7 +1170,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
                 className="tl-comment-reply-btn"
                 onClick={() => handleReplyClick(entry)}
               >
-                {pick('Reply', 'Reply')}
+                {pick('ตอบกลับ', 'Reply')}
               </button>
             )}
           </div>
@@ -1121,8 +1186,8 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
               >
                 <span className={`tl-reply-chevron${isExpanded ? ' expanded' : ''}`}>▶</span>
                 {isExpanded
-                  ? pick('Hide replies', 'ซ่อนการตอบกลับ')
-                  : pick(`${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`, `${replies.length} การตอบกลับ`)}
+                  ? pick('ซ่อนการตอบกลับ', 'Hide replies')
+                  : pick(`${replies.length} การตอบกลับ`, `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`)}
               </button>
             )}
 
@@ -1130,7 +1195,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
               <div className="tl-comment-replies">
                 {replies.map((reply) => {
                   const rAuthor = reply.author_profile || reply.author || {};
-                  const rAuthorName = rAuthor.name || rAuthor.username || pick('User', 'User');
+                  const rAuthorName = rAuthor.name || rAuthor.username || pick('ผู้ใช้', 'User');
                   const rAuthorInitial = rAuthorName.charAt(0).toUpperCase();
                   return (
                     <div key={reply.id} className="tl-comment tl-comment-reply">
@@ -1160,7 +1225,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
                   ref={replyInputRef}
                   value={replyDraft}
                   onChange={(e) => { setReplyDraft(e.target.value); setReplyError(''); }}
-                  placeholder={pick(`Reply to ${authorName}...`, `ตอบกลับ ${authorName}...`)}
+                  placeholder={pick(`ตอบกลับ ${authorName}...`, `Reply to ${authorName}...`)}
                   maxLength={500}
                   rows={2}
                   disabled={isSubmitting}
@@ -1174,10 +1239,10 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
                     className="tl-comment-cancel-btn"
                     onClick={() => { setActiveReplyId(null); setReplyDraft(''); }}
                   >
-                    {pick('Cancel', 'ยกเลิก')}
+                    {pick('ยกเลิก', 'Cancel')}
                   </button>
                   <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !replyDraft.trim()}>
-                    {isSubmitting ? pick('Posting...', 'กำลังโพสต์...') : pick('Reply', 'ตอบกลับ')}
+                    {isSubmitting ? pick('กำลังโพสต์...', 'Posting...') : pick('ตอบกลับ', 'Reply')}
                   </Button>
                 </div>
               </form>
@@ -1192,7 +1257,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
     <section className="container tl-comments-section">
       <h2 className="tl-comments-title">
         <MessageSquare size={16} />
-        {pick('Comments', 'Comments')}
+        {pick('ความคิดเห็น', 'Comments')}
         <span className="tierlist-count">{comments.length}</span>
       </h2>
 
@@ -1201,7 +1266,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
           <textarea
             value={draft}
             onChange={(e) => { setDraft(e.target.value); setError(''); }}
-            placeholder={pick('Write a comment...', 'Write a comment...')}
+            placeholder={pick('เขียนความคิดเห็น...', 'Write a comment...')}
             maxLength={500}
             rows={3}
             disabled={isSubmitting}
@@ -1210,20 +1275,20 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
             <small>{draft.length}/500</small>
             {error && <span className="tl-comment-error">{error}</span>}
             <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !draft.trim()}>
-              {isSubmitting ? pick('Posting...', 'Posting...') : pick('Post', 'Post')}
+              {isSubmitting ? pick('กำลังโพสต์...', 'Posting...') : pick('โพสต์', 'Post')}
             </Button>
           </div>
         </form>
       ) : (
         <p className="tl-comment-login-hint">
-          <Link to="/login">{pick('Log in', 'Log in')}</Link> {pick('to leave a comment', 'to leave a comment')}
+          <Link to="/login">{pick('เข้าสู่ระบบ', 'Log in')}</Link> {pick('เพื่อแสดงความคิดเห็น', 'to leave a comment')}
         </p>
       )}
 
       {isLoading ? (
         <div className="tl-comment-loading"><Loader2 size={18} className="animate-spin" /></div>
       ) : topLevel.length === 0 ? (
-        <p className="tl-comment-empty">{pick('No comments yet. Be the first!', 'No comments yet. Be the first!')}</p>
+        <p className="tl-comment-empty">{pick('ยังไม่มีความคิดเห็น มาเป็นคนแรกได้เลย', 'No comments yet. Be the first!')}</p>
       ) : (
         <div className="tl-comments-list">
           {topLevel.map((entry) => renderThread(entry))}
@@ -1244,11 +1309,13 @@ export function TierListBrowsePage() {
   const [page, setPage] = useState(1);
   const [library, setLibrary] = useState({ templates: [], lists: [] });
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setIsLoading(true);
+      setLoadError('');
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (cancelled) return;
       setTitles(catalog);
@@ -1257,13 +1324,14 @@ export function TierListBrowsePage() {
       setLibrary(nextLibrary);
       setIsLoading(false);
     }
-    load().catch(() => {
+    load().catch((error) => {
       if (!cancelled) {
+        setLoadError(error?.message || pick('โหลดหน้า Tier List ไม่สำเร็จ', 'Failed to load tier lists'));
         setIsLoading(false);
       }
     });
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [pick, user?.id]);
 
   const publicTemplates = useMemo(
     () => library.templates.filter((template) => template.isPublic),
@@ -1299,57 +1367,68 @@ export function TierListBrowsePage() {
   );
 
   const handlePlayTemplate = async (template) => {
-    const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-    const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
-    const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
-    const list = buildTierListFromTemplate(savedTemplate);
-    const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
-    const ownerUsername = user?.profile?.username || user?.user_metadata?.username || null;
-    const libraryAfterList = await saveTierList({
-      ...seeded,
-      ownerName: ownerUsername || 'You',
-      ownerUsername,
-      ownerUserId: user?.id || null,
-    }, libraryAfterTemplate, { userId: user?.id || null });
-    setLibrary(libraryAfterList);
-    navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
+    try {
+      const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
+      const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
+      const list = buildTierListFromTemplate(savedTemplate);
+      const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
+      const ownerUsername = getCurrentUsername(user);
+      const libraryAfterList = await saveTierList({
+        ...seeded,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
+        ownerUserId: user?.id || null,
+      }, libraryAfterTemplate, { userId: user?.id || null });
+      setLibrary(libraryAfterList);
+      navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
+    } catch (error) {
+      toast.error(error?.message || pick('เริ่มเล่นเทมเพลตไม่สำเร็จ', 'Failed to start this template'));
+    }
   };
 
   const handleRemixList = async (list) => {
-    const remixUsername = user?.profile?.username || user?.user_metadata?.username || null;
-    const remixed = {
-      ...list,
-      id: undefined,
-      ownerName: remixUsername || 'You',
-      ownerUsername: remixUsername,
-      ownerUserId: user?.id || null,
-      isPublic: false,
-      title: `${list.title} (Remix)`,
-      playCount: 0,
-    };
-    const saved = await saveTierList(remixed, library, { userId: user?.id || null });
-    setLibrary(saved);
-    navigate(`/tierlist/play/${saved.lists[0].id}`);
+    try {
+      const saved = await saveTierList(buildRemixedTierList(list, user), library, { userId: user?.id || null });
+      setLibrary(saved);
+      navigate(`/tierlist/play/${saved.lists[0].id}`);
+    } catch (error) {
+      toast.error(error?.message || pick('สร้างรีมิกซ์ไม่สำเร็จ', 'Failed to create remix'));
+    }
   };
 
-  const categoryOptions = ['all', ...new Set(publicTemplates.map((template) => template.category))];
+  const categoryOptions = ['all', ...new Set(publicTemplates.map((template) => template.category).filter(Boolean))];
+  const hasActiveFilters = category !== 'all' || query.trim().length > 0 || sortBy !== 'popular';
+
+  if (loadError && !isLoading) {
+    return (
+      <div className="tierlist-page">
+        <section className="container tierlist-section">
+          <TierListErrorPanel
+            message={loadError}
+            onRetry={() => window.location.reload()}
+            backLabel={pick('กลับหน้าแรก', 'Back home')}
+            backTo="/"
+          />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="tierlist-page">
-      {/* ── Slim header ── */}
       <div className="container tierlist-browse-header">
         <div className="tierlist-browse-header-left">
-          <h1><Compass size={17} /> {pick('Tier Lists', 'Tier Lists')}</h1>
+          <h1><Compass size={17} /> {pick('สำรวจ Tier Lists', 'Explore Tier Lists')}</h1>
           {!isLoading && (
-            <span className="tierlist-count">{filteredTemplates.length} {pick('templates', 'templates')}</span>
+            <span className="tierlist-count">{filteredTemplates.length} {pick('เทมเพลต', 'templates')}</span>
           )}
         </div>
         <Link className="btn btn-primary btn-sm" to="/tierlist/create">
-          <Plus size={13} /> {pick('Create', 'Create')}
+          <Plus size={13} /> {pick('สร้างเทมเพลต', 'Create Template')}
         </Link>
       </div>
 
-      {/* ── Filter bar ── */}
       <div className="container tierlist-browse-filters">
         <div className="tierlist-browse-cats">
           {categoryOptions.map((cat) => (
@@ -1358,31 +1437,75 @@ export function TierListBrowsePage() {
               type="button"
               className={`tierlist-cat-pill${category === cat ? ' is-active' : ''}`}
               onClick={() => { setCategory(cat); setPage(1); }}
+              aria-pressed={category === cat}
             >
-              {cat === 'all' ? pick('All', 'All') : cat}
+              {cat === 'all' ? pick('ทั้งหมด', 'All') : cat}
             </button>
           ))}
         </div>
-        <div className="tierlist-browse-search">
+        <div className="tierlist-browse-search" role="group" aria-label={pick('ควบคุมการค้นหาเทมเพลต', 'Template search controls')}>
+          <Search size={15} aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-            placeholder={pick('Search...', 'Search...')}
+            placeholder={pick('ค้นหาเทมเพลตหรือคำอธิบาย...', 'Search templates or descriptions...')}
+            aria-label={pick('ค้นหาเทมเพลต', 'Search templates')}
           />
-          <select value={sortBy} onChange={(event) => { setSortBy(event.target.value); setPage(1); }}>
-            <option value="popular">{pick('Popular', 'Popular')}</option>
-            <option value="newest">{pick('Newest', 'Newest')}</option>
-            <option value="alphabet">A-Z</option>
-          </select>
+          {query ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => { setQuery(''); setPage(1); }}
+              aria-label={pick('ล้างคำค้นหา', 'Clear search')}
+            >
+              <X size={14} />
+            </Button>
+          ) : null}
+          <SortSelect
+            value={sortBy}
+            onChange={(value) => { setSortBy(value); setPage(1); }}
+            label={pick('เรียงลำดับ', 'Sort')}
+            className="tierlist-browse-sorter"
+          >
+            <option value="popular">{pick('ยอดนิยม', 'Popular')}</option>
+            <option value="newest">{pick('ใหม่ล่าสุด', 'Newest')}</option>
+            <option value="alphabet">{pick('ก-ฮ', 'A-Z')}</option>
+          </SortSelect>
         </div>
       </div>
 
-      {/* ── Template grid ── */}
       <section className="container tierlist-section">
         {isLoading ? (
-          <div className="glass-heavy tierlist-empty-state">{pick('Loading...', 'Loading...')}</div>
+          <TierListEmptyPanel
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title={pick('กำลังโหลดเทมเพลต', 'Loading templates')}
+            message={pick('กำลังเตรียมเทมเพลตและอันดับล่าสุดจากชุมชน', 'Fetching templates and recent community rankings.')}
+          />
         ) : pagedTemplates.items.length === 0 ? (
-          <div className="glass-heavy tierlist-empty-state">{pick('No templates found', 'No templates found')}</div>
+          <TierListEmptyPanel
+            icon={<Compass size={28} />}
+            title={pick('ยังไม่พบเทมเพลตที่ตรง', 'No matching templates')}
+            message={
+              hasActiveFilters
+                ? pick('ลองล้างคำค้นหา เปลี่ยนหมวดหมู่ หรือสลับการเรียงลำดับ', 'Try clearing your search, switching categories, or changing the sort order.')
+                : pick('ยังไม่มีเทมเพลตสาธารณะในตอนนี้', 'There are no public templates yet.')
+            }
+            action={hasActiveFilters ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCategory('all');
+                  setQuery('');
+                  setSortBy('popular');
+                  setPage(1);
+                }}
+              >
+                {pick('ล้างตัวกรอง', 'Clear filters')}
+              </Button>
+            ) : null}
+          />
         ) : (
           <div className="tierlist-browse-grid">
             {pagedTemplates.items.map((template) => {
@@ -1401,13 +1524,19 @@ export function TierListBrowsePage() {
                       : <div className="tierlist-browse-cover-empty" />}
                   </div>
                   <div className="tierlist-browse-card-body">
-                    <small className="tierlist-chip">{template.category}</small>
+                    <small className="tierlist-chip">{template.category || pick('ทั่วไป', 'General')}</small>
                     <h3>{template.title}</h3>
-                    <small className="tierlist-meta">{template.titleIds.length} {pick('titles', 'titles')} · {template.plays || 0} plays</small>
+                    <small className="tierlist-meta">
+                      {template.titleIds.length} {pick('เรื่อง', 'titles')} · {template.plays || 0} {pick('ครั้งที่เล่น', 'plays')}
+                    </small>
+                    {template.description ? <p>{template.description}</p> : null}
                   </div>
                   <div className="tierlist-browse-card-actions">
+                    <Link className="btn btn-ghost btn-sm" to={`/tierlist/template/${template.id}`}>
+                      {pick('ดูรายละเอียด', 'View details')}
+                    </Link>
                     <Button size="sm" variant="primary" onClick={() => handlePlayTemplate(template)}>
-                      {pick('Play', 'Play')}
+                      {pick('เล่นเลย', 'Play now')}
                     </Button>
                   </div>
                 </article>
@@ -1425,7 +1554,7 @@ export function TierListBrowsePage() {
               disabled={pagedTemplates.page <= 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
-              {pick('Prev', 'Prev')}
+              {pick('ก่อนหน้า', 'Previous')}
             </Button>
             <span>{pagedTemplates.page} / {pagedTemplates.totalPages}</span>
             <Button
@@ -1435,19 +1564,18 @@ export function TierListBrowsePage() {
               disabled={pagedTemplates.page >= pagedTemplates.totalPages}
               onClick={() => setPage((current) => Math.min(pagedTemplates.totalPages, current + 1))}
             >
-              {pick('Next', 'Next')}
+              {pick('ถัดไป', 'Next')}
             </Button>
           </div>
         )}
       </section>
 
-      {/* ── Community lists ── */}
       {recentCommunityLists.length > 0 && (
         <section className="container tierlist-section">
           <div className="tierlist-section-head">
-            <h2>{pick('Fresh Community Rankings', 'Fresh Community Rankings')}</h2>
+            <h2>{pick('อันดับชุมชนล่าสุด', 'Fresh Community Rankings')}</h2>
             <Link className="tierlist-inline-link" to="/tierlist">
-              {pick('Explore templates', 'Explore templates')}
+              {pick('ดูเทมเพลตทั้งหมด', 'Explore templates')}
             </Link>
           </div>
           <div className="tierlist-browse-grid">
@@ -1457,9 +1585,9 @@ export function TierListBrowsePage() {
                 list={list}
                 titleById={titleById}
                 pick={pick}
-                primaryLabel={pick('Open', 'Open')}
+                primaryLabel={pick('เปิดอันดับ', 'Open ranking')}
                 primaryTo={`/tierlist/play/${list.id}`}
-                secondaryLabel={pick('Remix', 'Remix')}
+                secondaryLabel={pick('รีมิกซ์', 'Remix')}
                 onSecondaryClick={() => handleRemixList(list)}
               />
             ))}
@@ -1497,7 +1625,7 @@ export function TierListTemplatePage() {
       if (!found) {
         setIsTemplateLoading(false);
         setIsPreviewLoading(false);
-        setLoadError(pick('Template not found', 'Template not found'));
+        setLoadError(pick('ไม่พบเทมเพลต', 'Template not found'));
         return;
       }
 
@@ -1519,11 +1647,11 @@ export function TierListTemplatePage() {
       if (cancelled) return;
       setIsTemplateLoading(false);
       setIsPreviewLoading(false);
-      setLoadError(error?.message || pick('Failed to load template', 'Failed to load template'));
+      setLoadError(error?.message || pick('โหลดเทมเพลตไม่สำเร็จ', 'Failed to load template'));
     });
 
     return () => { cancelled = true; };
-  }, [navigate, pick, templateId, user?.id]);
+  }, [pick, templateId, user?.id]);
 
   const titleById = useMemo(
     () => new Map(titles.map((title) => [Number(title.id), title])),
@@ -1537,11 +1665,47 @@ export function TierListTemplatePage() {
     [library.lists, templateId]
   );
 
+  const handlePlay = async () => {
+    try {
+      const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
+      const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
+      setLibrary(libraryAfterTemplate);
+      setTemplate(savedTemplate);
+      const list = buildTierListFromTemplate(savedTemplate);
+      const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
+      const ownerUsername = getCurrentUsername(user);
+      const libraryAfterList = await saveTierList({
+        ...seeded,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
+        ownerUserId: user?.id || null,
+      }, libraryAfterTemplate, { userId: user?.id || null });
+      navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
+    } catch (error) {
+      toast.error(error?.message || pick('เริ่มเล่นเทมเพลตไม่สำเร็จ', 'Failed to start this template'));
+    }
+  };
+
+  const handleRemix = async (list) => {
+    try {
+      const saved = await saveTierList(buildRemixedTierList(list, user), library, { userId: user?.id || null });
+      setLibrary(saved);
+      navigate(`/tierlist/play/${saved.lists[0].id}`);
+    } catch (error) {
+      toast.error(error?.message || pick('สร้างรีมิกซ์ไม่สำเร็จ', 'Failed to create remix'));
+    }
+  };
+
   if (isTemplateLoading) {
     return (
       <div className="tierlist-page">
         <section className="container tierlist-section">
-          <div className="glass-heavy tierlist-empty-state">{pick('Loading template...', 'Loading template...')}</div>
+          <TierListEmptyPanel
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title={pick('กำลังโหลดเทมเพลต', 'Loading template')}
+            message={pick('กำลังดึงรายละเอียดและรายการเรื่องตัวอย่าง', 'Fetching template details and preview titles.')}
+          />
         </section>
       </div>
     );
@@ -1551,15 +1715,12 @@ export function TierListTemplatePage() {
     return (
       <div className="tierlist-page">
         <section className="container tierlist-section">
-          <div className="glass-heavy tierlist-empty-state">
-            <p>{loadError || pick('Template not found', 'Template not found')}</p>
-            <div className="tierlist-template-actions">
-              <Link className="btn btn-ghost btn-sm" to="/tierlist">{pick('Back to Browse', 'Back to Browse')}</Link>
-              <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
-                {pick('Try Again', 'Try Again')}
-              </Button>
-            </div>
-          </div>
+          <TierListErrorPanel
+            message={loadError || pick('ไม่พบเทมเพลต', 'Template not found')}
+            onRetry={() => window.location.reload()}
+            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+            backTo="/tierlist"
+          />
         </section>
       </div>
     );
@@ -1570,54 +1731,44 @@ export function TierListTemplatePage() {
     .map((id) => titleById.get(Number(id)))
     .filter(Boolean);
 
-  const handlePlay = async () => {
-    const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-    const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
-    const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
-    setLibrary(libraryAfterTemplate);
-    setTemplate(savedTemplate);
-    const list = buildTierListFromTemplate(savedTemplate);
-    const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
-    const ownerUsername2 = user?.profile?.username || user?.user_metadata?.username || null;
-    const libraryAfterList = await saveTierList({
-      ...seeded,
-      ownerName: ownerUsername2 || 'You',
-      ownerUsername: ownerUsername2,
-      ownerUserId: user?.id || null,
-    }, libraryAfterTemplate, { userId: user?.id || null });
-    navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
-  };
-
   return (
     <div className="tierlist-page">
       <section className="container tierlist-hero">
         <div className="tierlist-hero-copy">
-          <span className="tierlist-kicker"><Sparkles size={14} /> {pick('Template Detail', 'Template Detail')}</span>
+          <span className="tierlist-kicker"><Sparkles size={14} /> {pick('รายละเอียดเทมเพลต', 'Template Detail')}</span>
           <h1>{template.title}</h1>
-          <p>{template.description || pick('No description', 'No description')}</p>
+          <p>{template.description || pick('ยังไม่มีคำอธิบาย', 'No description yet.')}</p>
           <div className="tierlist-hero-actions">
-            <Link className="btn btn-ghost" to="/tierlist">{pick('Back to Browse', 'Back to Browse')}</Link>
+            <Link className="btn btn-ghost" to="/tierlist">{pick('กลับไปหน้ารวม', 'Back to Browse')}</Link>
             <Button variant="primary" iconRight={<ArrowRight size={14} />} onClick={handlePlay}>
-              {pick('Play This Template', 'Play This Template')}
+              {pick('เล่นเทมเพลตนี้', 'Play This Template')}
             </Button>
           </div>
         </div>
         <div className="tierlist-hero-panel glass-heavy">
-          <div className="tierlist-stat"><strong>{template.titleIds.length}</strong><span>{pick('Titles', 'Titles')}</span></div>
-          <div className="tierlist-stat"><strong>{template.plays || 0}</strong><span>{pick('Plays', 'Plays')}</span></div>
-          <div className="tierlist-stat"><strong>{relatedPublicLists.length}</strong><span>{pick('Public Remixes', 'Public Remixes')}</span></div>
+          <div className="tierlist-stat"><strong>{template.titleIds.length}</strong><span>{pick('เรื่อง', 'Titles')}</span></div>
+          <div className="tierlist-stat"><strong>{template.plays || 0}</strong><span>{pick('ครั้งที่เล่น', 'Plays')}</span></div>
+          <div className="tierlist-stat"><strong>{relatedPublicLists.length}</strong><span>{pick('รีมิกซ์สาธารณะ', 'Public remixes')}</span></div>
         </div>
       </section>
 
       <section className="container tierlist-section">
         <div className="tierlist-section-head">
-          <h2>{pick('Preview Titles', 'Preview Titles')}</h2>
+          <h2>{pick('ตัวอย่างเรื่อง', 'Preview Titles')}</h2>
         </div>
         <div className="tierlist-preview-gallery">
           {isPreviewLoading ? (
-            <div className="glass-heavy tierlist-empty-state">{pick('Loading previews...', 'Loading previews...')}</div>
+            <TierListEmptyPanel
+              icon={<Loader2 size={24} className="animate-spin" />}
+              title={pick('กำลังโหลดตัวอย่าง', 'Loading previews')}
+              message={pick('กำลังเตรียมรายชื่อเรื่องจากแคตตาล็อก', 'Preparing preview titles from the catalog.')}
+            />
           ) : previewTitles.length === 0 ? (
-            <div className="glass-heavy tierlist-empty-state">{pick('No preview titles available', 'No preview titles available')}</div>
+            <TierListEmptyPanel
+              icon={<Compass size={24} />}
+              title={pick('ยังไม่มีเรื่องตัวอย่าง', 'No preview titles available')}
+              message={pick('เทมเพลตนี้ยังไม่มีรายการเรื่องให้แสดงตัวอย่าง', 'This template does not have any titles to preview yet.')}
+            />
           ) : (
             previewTitles.map((title) => (
               <article key={title.id} className="tierlist-preview-tile">
@@ -1636,14 +1787,16 @@ export function TierListTemplatePage() {
 
       <section className="container tierlist-section">
         <div className="tierlist-section-head">
-          <h2>{pick('Community Rankings For This Template', 'Community Rankings For This Template')}</h2>
-          <span className="tierlist-count">{relatedPublicLists.length} {pick('public lists', 'public lists')}</span>
+          <h2>{pick('อันดับชุมชนของเทมเพลตนี้', 'Community Rankings For This Template')}</h2>
+          <span className="tierlist-count">{relatedPublicLists.length} {pick('ลิสต์สาธารณะ', 'public lists')}</span>
         </div>
 
         {relatedPublicLists.length === 0 ? (
-          <div className="glass-heavy tierlist-empty-state">
-            {pick('No public rankings yet. Be the first to publish one from this template.', 'No public rankings yet. Be the first to publish one from this template.')}
-          </div>
+          <TierListEmptyPanel
+            icon={<Sparkles size={24} />}
+            title={pick('ยังไม่มีอันดับสาธารณะ', 'No public rankings yet')}
+            message={pick('ลองเล่นเทมเพลตนี้แล้วเผยแพร่อันดับของคุณเป็นคนแรก', 'Play this template and publish the first community ranking.')}
+          />
         ) : (
           <div className="tierlist-browse-grid">
             {relatedPublicLists.slice(0, 8).map((list) => (
@@ -1652,23 +1805,10 @@ export function TierListTemplatePage() {
                 list={list}
                 titleById={titleById}
                 pick={pick}
-                primaryLabel={pick('Open Ranking', 'Open Ranking')}
+                primaryLabel={pick('เปิดอันดับ', 'Open Ranking')}
                 primaryTo={`/tierlist/play/${list.id}`}
-                secondaryLabel={pick('Remix', 'Remix')}
-                onSecondaryClick={async () => {
-                  const remixed = {
-                    ...list,
-                    id: undefined,
-                    ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
-                    ownerUsername: user?.profile?.username || user?.user_metadata?.username || null,
-                    ownerUserId: user?.id || null,
-                    isPublic: false,
-                    title: `${list.title} (Remix)`,
-                    playCount: 0,
-                  };
-                  const saved = await saveTierList(remixed, library, { userId: user?.id || null });
-                  navigate(`/tierlist/play/${saved.lists[0].id}`);
-                }}
+                secondaryLabel={pick('รีมิกซ์', 'Remix')}
+                onSecondaryClick={() => handleRemix(list)}
               />
             ))}
           </div>
@@ -1685,9 +1825,10 @@ export function TierListCreatePage() {
   const [titles, setTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [templateDesc, setTemplateDesc] = useState('');
-  const [category, setCategory] = useState('general');
+  const [category, setCategory] = useState('anime');
   const [typeFilter, setTypeFilter] = useState('all');
   const [genreFilter, setGenreFilter] = useState(new Set());
   const [titleQuery, setTitleQuery] = useState('');
@@ -1697,6 +1838,7 @@ export function TierListCreatePage() {
     let cancelled = false;
     async function load() {
       setIsLoading(true);
+      setLoadError('');
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (!cancelled) {
         setTitles(catalog);
@@ -1704,13 +1846,14 @@ export function TierListCreatePage() {
         setIsLoading(false);
       }
     }
-    load().catch(() => {
+    load().catch((error) => {
       if (!cancelled) {
+        setLoadError(error?.message || pick('โหลดแคตตาล็อกสำหรับสร้างเทมเพลตไม่สำเร็จ', 'Failed to load the catalog for template creation'));
         setIsLoading(false);
       }
     });
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [pick, user?.id]);
 
   const availableGenres = useMemo(() => {
     const counts = new Map();
@@ -1727,14 +1870,15 @@ export function TierListCreatePage() {
   const filtered = useMemo(() => {
     let result = typeFilter === 'all' ? titles : titles.filter((title) => title.type === typeFilter);
     if (genreFilter.size > 0) {
-      result = result.filter((title) => (title.genres || []).some((g) => genreFilter.has(g)));
+      result = result.filter((title) => (title.genres || []).some((genre) => genreFilter.has(genre)));
     }
-    const q = titleQuery.trim().toLowerCase();
-    if (q) {
+    const query = titleQuery.trim().toLowerCase();
+    if (query) {
       result = result.filter((title) => {
-        const hay = [title.title_th, title.title_en, title.title_native]
-          .map((s) => String(s || '').toLowerCase()).join(' ');
-        return hay.includes(q);
+        const haystack = [title.title_th, title.title_en, title.title_native]
+          .map((entry) => String(entry || '').toLowerCase())
+          .join(' ');
+        return haystack.includes(query);
       });
     }
     return result.slice(0, 200);
@@ -1744,6 +1888,8 @@ export function TierListCreatePage() {
     () => titles.filter((title) => selectedIds.has(Number(title.id))),
     [titles, selectedIds]
   );
+
+  const hasActiveFilters = typeFilter !== 'all' || genreFilter.size > 0 || titleQuery.trim().length > 0;
 
   const toggleTitle = (id) => {
     setSelectedIds((prev) => {
@@ -1756,14 +1902,14 @@ export function TierListCreatePage() {
 
   const handleCreate = async () => {
     if (selectedIds.size < 8) {
-      toast.error(pick('Please select at least 8 titles', 'Please select at least 8 titles'));
+      toast.error(pick('กรุณาเลือกอย่างน้อย 8 เรื่อง', 'Please select at least 8 titles'));
       return;
     }
 
     setIsSaving(true);
     try {
       const template = createTemplateFromCatalog(selectedTitles, {
-        title: templateName.trim() || pick('New Template', 'New Template'),
+        title: templateName.trim() || pick('เทมเพลตใหม่', 'New Template'),
         description: templateDesc.trim(),
         category,
         isPublic: true,
@@ -1777,67 +1923,82 @@ export function TierListCreatePage() {
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const list = buildTierListFromTemplate(savedTemplate);
       const seeded = seedPoolFromCatalog(list, selectedTitles.map((title) => Number(title.id)));
-      const ownerUsername3 = user?.profile?.username || user?.user_metadata?.username || null;
+      const ownerUsername = getCurrentUsername(user);
       const libraryAfterList = await saveTierList({
         ...seeded,
-        ownerName: ownerUsername3 || 'You',
-        ownerUsername: ownerUsername3,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
         ownerUserId: user?.id || null,
       }, libraryAfterTemplate, { userId: user?.id || null });
       navigate(`/tierlist/play/${libraryAfterList.lists[0].id}`);
     } catch (error) {
-      toast.error(error?.message || pick('Save failed', 'Save failed'));
+      toast.error(error?.message || pick('บันทึกไม่สำเร็จ', 'Save failed'));
     } finally {
       setIsSaving(false);
     }
   };
 
+  if (loadError && !isLoading) {
+    return (
+      <div className="tierlist-page">
+        <section className="container tierlist-section">
+          <TierListErrorPanel
+            message={loadError}
+            onRetry={() => window.location.reload()}
+            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+            backTo="/tierlist"
+          />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="tierlist-page">
       <section className="container tierlist-hero">
         <div className="tierlist-hero-copy">
-          <span className="tierlist-kicker"><Sparkles size={14} /> {pick('Create Tierlist', 'Create Tierlist')}</span>
-          <h1>{pick('Create a template from catalog data', 'Create a template from catalog data')}</h1>
-          <p>{pick('Pick the titles you want to rank, then start playing.', 'Pick the titles you want to rank, then start playing.')}</p>
+          <span className="tierlist-kicker"><Sparkles size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}</span>
+          <h1>{pick('สร้างเทมเพลตจากข้อมูลในแคตตาล็อก', 'Create a template from catalog data')}</h1>
+          <p>{pick('เลือกเรื่องที่อยากจัดอันดับ ตั้งชื่อเทมเพลต แล้วเริ่มเล่นได้ทันที', 'Pick the titles you want to rank, name the template, and start playing right away.')}</p>
         </div>
       </section>
 
       <section className="container tierlist-toolbar glass-heavy">
         <label className="tierlist-field">
-          <span>{pick('Template Name', 'Template Name')}</span>
+          <span>{pick('ชื่อเทมเพลต', 'Template name')}</span>
           <input
             value={templateName}
             onChange={(event) => setTemplateName(event.target.value)}
-            placeholder={pick('e.g. Best Romance 2026', 'e.g. Best Romance 2026')}
+            placeholder={pick('เช่น Best Romance 2026', 'e.g. Best Romance 2026')}
           />
         </label>
 
         <label className="tierlist-field">
-          <span>{pick('Description', 'Description')}</span>
+          <span>{pick('คำอธิบาย', 'Description')}</span>
           <input
             value={templateDesc}
             onChange={(event) => setTemplateDesc(event.target.value)}
-            placeholder={pick('Short description', 'Short description')}
+            placeholder={pick('อธิบายสั้น ๆ ว่าเทมเพลตนี้เหมาะกับอะไร', 'Add a short description for this template')}
           />
         </label>
 
         <label className="tierlist-field">
-          <span>{pick('Category', 'Category')}</span>
+          <span>{pick('หมวดหมู่', 'Category')}</span>
           <input
             value={category}
             onChange={(event) => setCategory(event.target.value)}
-            placeholder="anime / manga / action / romance"
+            placeholder={pick('เช่น anime / manga / action / romance', 'e.g. anime / manga / action / romance')}
           />
         </label>
 
         <div className="tierlist-toolbar-actions">
-          <Link className="btn btn-ghost btn-sm" to="/tierlist">{pick('Back to Browse', 'Back to Browse')}</Link>
+          <Link className="btn btn-ghost btn-sm" to="/tierlist">{pick('กลับไปหน้ารวม', 'Back to Browse')}</Link>
           <Button
             variant="primary"
             onClick={handleCreate}
             disabled={isLoading || isSaving || selectedIds.size < 8}
           >
-            {isSaving ? pick('Creating...', 'Creating...') : `${pick('Create & Play', 'Create & Play')}${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            {isSaving ? pick('กำลังสร้าง...', 'Creating...') : `${pick('สร้างและเล่น', 'Create & Play')}${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </Button>
         </div>
       </section>
@@ -1845,9 +2006,9 @@ export function TierListCreatePage() {
       <section className="container tierlist-section">
         <div className="tierlist-section-head">
           <h2>
-            {pick('Select Titles', 'Select Titles')}
+            {pick('เลือกเรื่อง', 'Select Titles')}
             {selectedIds.size > 0 && (
-              <span className="tierlist-count">&nbsp;· {selectedIds.size} {pick('selected', 'selected')}</span>
+              <span className="tierlist-count">&nbsp;· {selectedIds.size} {pick('รายการที่เลือก', 'selected')}</span>
             )}
           </h2>
           <div className="tierlist-picker-actions">
@@ -1855,8 +2016,9 @@ export function TierListCreatePage() {
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => setSelectedIds(new Set(filtered.map((title) => Number(title.id))))}
+              disabled={filtered.length === 0}
             >
-              {pick('Select All', 'Select All')}
+              {pick('เลือกทั้งหมด', 'Select All')}
             </button>
             <button
               type="button"
@@ -1864,22 +2026,23 @@ export function TierListCreatePage() {
               onClick={() => setSelectedIds(new Set())}
               disabled={selectedIds.size === 0}
             >
-              {pick('Clear', 'Clear')}
+              {pick('ล้าง', 'Clear')}
             </button>
           </div>
         </div>
 
         <div className="tierlist-picker-filterbar">
           <div className="tierlist-picker-filterbar-top">
-            <div className="tierlist-picker-type-pills">
+            <div className="tierlist-picker-type-pills" role="toolbar" aria-label={pick('กรองตามประเภท', 'Filter by type')}>
               {['all', 'anime', 'manga', 'manhwa'].map((type) => (
                 <button
                   key={type}
                   type="button"
                   className={`tierlist-cat-pill${typeFilter === type ? ' is-active' : ''}`}
                   onClick={() => setTypeFilter(type)}
+                  aria-pressed={typeFilter === type}
                 >
-                  {type === 'all' ? pick('All Types', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
                 </button>
               ))}
             </div>
@@ -1888,30 +2051,32 @@ export function TierListCreatePage() {
                 className="tierlist-picker-search"
                 value={titleQuery}
                 onChange={(event) => setTitleQuery(event.target.value)}
-                placeholder={pick('Search titles...', 'Search titles...')}
+                placeholder={pick('ค้นหาเรื่อง...', 'Search titles...')}
+                aria-label={pick('ค้นหาเรื่อง', 'Search titles')}
               />
               {titleQuery && (
                 <button
                   type="button"
                   className="tierlist-picker-search-clear"
                   onClick={() => setTitleQuery('')}
-                  aria-label="Clear search"
-                >×</button>
+                  aria-label={pick('ล้างคำค้นหา', 'Clear search')}
+                ><X size={14} /></button>
               )}
             </div>
             <span className="tierlist-picker-result-count">
-              {filtered.length} {pick('titles', 'titles')}
+              {filtered.length} {pick('เรื่อง', 'titles')}
             </span>
           </div>
 
           {availableGenres.length > 0 && (
-            <div className="tierlist-picker-genre-row">
+            <div className="tierlist-picker-genre-row" role="toolbar" aria-label={pick('กรองตามแนว', 'Filter by genre')}>
               <button
                 type="button"
                 className={`tierlist-cat-pill${genreFilter.size === 0 ? ' is-active' : ''}`}
                 onClick={() => setGenreFilter(new Set())}
+                aria-pressed={genreFilter.size === 0}
               >
-                {pick('All Genres', 'All Genres')}
+                {pick('ทุกแนว', 'All Genres')}
               </button>
               {availableGenres.map((genre) => (
                 <button
@@ -1924,6 +2089,7 @@ export function TierListCreatePage() {
                     else next.add(genre);
                     return next;
                   })}
+                  aria-pressed={genreFilter.has(genre)}
                 >
                   {genre}
                 </button>
@@ -1933,9 +2099,34 @@ export function TierListCreatePage() {
         </div>
 
         {isLoading ? (
-          <div className="glass-heavy tierlist-empty-state">{pick('Loading catalog...', 'Loading catalog...')}</div>
+          <TierListEmptyPanel
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title={pick('กำลังโหลดแคตตาล็อก', 'Loading catalog')}
+            message={pick('กำลังเตรียมรายการเรื่องให้เลือกสำหรับสร้างเทมเพลต', 'Preparing titles you can use in this template.')}
+          />
         ) : filtered.length === 0 ? (
-          <div className="glass-heavy tierlist-empty-state">{pick('No titles found', 'No titles found')}</div>
+          <TierListEmptyPanel
+            icon={<Search size={28} />}
+            title={pick('ไม่พบเรื่องที่ตรง', 'No titles found')}
+            message={
+              hasActiveFilters
+                ? pick('ลองล้างคำค้นหา ปิดตัวกรองบางตัว หรือเลือกทุกประเภท', 'Try clearing search, relaxing filters, or switching back to all types.')
+                : pick('ยังไม่มีข้อมูลเรื่องให้เลือกในตอนนี้', 'There are no titles available to pick right now.')
+            }
+            action={hasActiveFilters ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setTypeFilter('all');
+                  setGenreFilter(new Set());
+                  setTitleQuery('');
+                }}
+              >
+                {pick('ล้างตัวกรอง', 'Clear filters')}
+              </Button>
+            ) : null}
+          />
         ) : (
           <div className="tierlist-picker-grid">
             {filtered.map((title) => {
@@ -1947,10 +2138,11 @@ export function TierListCreatePage() {
                   className={`tierlist-picker-card${selected ? ' is-selected' : ''}`}
                   onClick={() => toggleTitle(Number(title.id))}
                   title={getDisplayName(title)}
+                  aria-pressed={selected}
                 >
                   <div className="tierlist-picker-thumb">
                     <img src={getTitleArtwork(title)} alt="" loading="lazy" />
-                    {selected && <div className="tierlist-picker-check">✓</div>}
+                    {selected && <div className="tierlist-picker-check">{pick('เลือกแล้ว', 'Selected')}</div>}
                   </div>
                 </button>
               );
@@ -1978,11 +2170,11 @@ export function TierListPlayPage() {
     async function load() {
       setLoadError('');
 
-      const library = await loadTierLibrary([], { userId: user?.id || null });
+      const initialLibrary = await loadTierLibrary([], { userId: user?.id || null });
       if (!cancelled) {
-        setLibrary(library);
+        setLibrary(initialLibrary);
       }
-      const quickList = findTierList(listId, library);
+      const quickList = findTierList(listId, initialLibrary);
       if (!cancelled && quickList) {
         setTierList(quickList);
       }
@@ -1996,7 +2188,7 @@ export function TierListPlayPage() {
       }
       const list = findTierList(listId, hydratedLibrary);
       if (!list) {
-        setLoadError(pick('Tierlist not found', 'Tierlist not found'));
+        setLoadError(pick('ไม่พบ Tier List', 'Tier list not found'));
         return;
       }
       const sourceTemplate = list.templateId
@@ -2012,10 +2204,10 @@ export function TierListPlayPage() {
     }
     load().catch((error) => {
       if (cancelled) return;
-      setLoadError(error?.message || pick('Failed to load tierlist', 'Failed to load tierlist'));
+      setLoadError(error?.message || pick('โหลด Tier List ไม่สำเร็จ', 'Failed to load tier list'));
     });
     return () => { cancelled = true; };
-  }, [listId, navigate, pick, user?.id]);
+  }, [listId, pick, user?.id]);
 
   const titleById = useMemo(
     () => new Map(titles.map((title) => [Number(title.id), title])),
@@ -2034,21 +2226,47 @@ export function TierListPlayPage() {
     )
     : [];
 
+  const handleToggleVisibility = async () => {
+    const next = { ...tierList, isPublic: !tierList.isPublic };
+    setTierList(next);
+    try {
+      const savedLibrary = await saveTierList(next, null, { userId: user?.id || null });
+      setLibrary(savedLibrary);
+      setTierList(findTierList(next.id, savedLibrary) || savedLibrary.lists[0] || next);
+    } catch (error) {
+      setTierList(tierList);
+      toast.error(error?.message || pick('บันทึกไม่สำเร็จ', 'Save failed'));
+    }
+  };
+
+  const handleRemixTierList = async (list) => {
+    try {
+      const saved = await saveTierList(buildRemixedTierList(list, user), library, { userId: user?.id || null });
+      setLibrary(saved);
+      navigate(`/tierlist/play/${saved.lists[0].id}`);
+    } catch (error) {
+      toast.error(error?.message || pick('สร้างรีมิกซ์ไม่สำเร็จ', 'Failed to create remix'));
+    }
+  };
+
   if (!tierList) {
     return (
       <div className="tierlist-play-page">
         <section className="container tierlist-section">
-          <div className="glass-heavy tierlist-empty-state">
-            <p>{loadError || pick('Loading tierlist...', 'Loading tierlist...')}</p>
-            {loadError && (
-              <div className="tierlist-template-actions">
-                <Link className="btn btn-ghost btn-sm" to="/tierlist">{pick('Back to Browse', 'Back to Browse')}</Link>
-                <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
-                  {pick('Try Again', 'Try Again')}
-                </Button>
-              </div>
-            )}
-          </div>
+          {loadError ? (
+            <TierListErrorPanel
+              message={loadError}
+              onRetry={() => window.location.reload()}
+              backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+              backTo="/tierlist"
+            />
+          ) : (
+            <TierListEmptyPanel
+              icon={<Loader2 size={28} className="animate-spin" />}
+              title={pick('กำลังโหลด Tier List', 'Loading tier list')}
+              message={pick('กำลังเตรียมข้อมูลการจัดอันดับและเรื่องในพูล', 'Preparing the ranking board and title pool.')}
+            />
+          )}
         </section>
       </div>
     );
@@ -2056,18 +2274,17 @@ export function TierListPlayPage() {
 
   return (
     <div className="tierlist-play-page">
-      {/* Slim topbar: back link + visibility toggle */}
       <div className="container tierlist-play-topbar">
         <div className="tierlist-play-topbar-left">
           <Link className="btn btn-ghost btn-sm" to={sourceTemplate ? `/tierlist/template/${sourceTemplate.id}` : '/tierlist'}>
-            <ChevronLeft size={14} /> {sourceTemplate ? pick('Back to Template', 'Back to Template') : pick('Browse', 'Browse')}
+            <ChevronLeft size={14} /> {sourceTemplate ? pick('กลับไปเทมเพลต', 'Back to Template') : pick('กลับไปหน้ารวม', 'Back to Browse')}
           </Link>
           {!canEdit && (() => {
             const slug = tierList.ownerUsername || tierList.ownerName;
-            const label = tierList.ownerName || tierList.ownerUsername;
+            const label = tierList.ownerName || tierList.ownerUsername || pick('ผู้ใช้', 'User');
             return slug && slug !== 'You' ? (
               <span className="tierlist-by-line">
-                {pick('by', 'by')}{' '}
+                {pick('โดย', 'by')}{' '}
                 <Link to={`/u/${slug}`} className="tierlist-owner-link">{label}</Link>
               </span>
             ) : null;
@@ -2077,42 +2294,17 @@ export function TierListPlayPage() {
           <Button
             size="sm"
             variant={tierList.isPublic ? 'secondary' : 'ghost'}
-            onClick={async () => {
-              const next = { ...tierList, isPublic: !tierList.isPublic };
-              setTierList(next);
-              try {
-                const savedLibrary = await saveTierList(next, null, { userId: user?.id || null });
-                setLibrary(savedLibrary);
-                setTierList(findTierList(next.id, savedLibrary) || savedLibrary.lists[0] || next);
-              } catch (error) {
-                setTierList(tierList);
-                toast.error(error?.message || pick('Save failed', 'Save failed'));
-              }
-            }}
+            onClick={handleToggleVisibility}
           >
-            {tierList.isPublic ? pick('Public: ON', 'Public: ON') : pick('Make Public', 'Make Public')}
+            {tierList.isPublic ? pick('สาธารณะ: เปิด', 'Public: ON') : pick('ทำเป็นสาธารณะ', 'Make Public')}
           </Button>
         ) : (
           <Button
             size="sm"
             variant="primary"
-            onClick={async () => {
-              const remixed = {
-                ...tierList,
-                id: undefined,
-                ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
-                ownerUsername: user?.profile?.username || user?.user_metadata?.username || null,
-                ownerUserId: user?.id || null,
-                isPublic: false,
-                title: `${tierList.title} (Remix)`,
-                playCount: 0,
-              };
-              const saved = await saveTierList(remixed, library, { userId: user?.id || null });
-              setLibrary(saved);
-              navigate(`/tierlist/play/${saved.lists[0].id}`);
-            }}
+            onClick={() => handleRemixTierList(tierList)}
           >
-            {pick('Remix This Ranking', 'Remix This Ranking')}
+            {pick('รีมิกซ์อันดับนี้', 'Remix This Ranking')}
           </Button>
         )}
       </div>
@@ -2131,70 +2323,42 @@ export function TierListPlayPage() {
         <section className="container tierlist-section">
           <div className="tierlist-community-banner glass-heavy">
             <div className="tierlist-community-banner-copy">
-              <small className="tierlist-chip">{pick('Template Community', 'Template Community')}</small>
-              <h2>{pick('See how other people ranked this same template', 'See how other people ranked this same template')}</h2>
+              <small className="tierlist-chip">{pick('ชุมชนของเทมเพลต', 'Template Community')}</small>
+              <h2>{pick('ดูว่าคนอื่นจัดอันดับเทมเพลตเดียวกันนี้อย่างไร', 'See how other people ranked this same template')}</h2>
               <p>
                 {canEdit
-                  ? pick('Publish your version, compare tier choices, or remix a community ranking to start your own branch.', 'Publish your version, compare tier choices, or remix a community ranking to start your own branch.')
-                  : pick('This ranking is view-only. Compare tier choices here, then remix it to create your own editable version.', 'This ranking is view-only. Compare tier choices here, then remix it to create your own editable version.')}
+                  ? pick('เผยแพร่อันดับของคุณ เปรียบเทียบลำดับกับคนอื่น หรือรีมิกซ์จากลิสต์ชุมชนเพื่อแตกกิ่งแนวคิดใหม่ได้เลย', 'Publish your version, compare tier choices, or remix a community ranking to start your own branch.')
+                  : pick('ลิสต์นี้แก้ไขไม่ได้ แต่คุณยังดูความต่างของแต่ละอันดับ แล้วรีมิกซ์เป็นเวอร์ชันที่แก้ไขได้ของตัวเองต่อได้', 'This ranking is view-only. Compare tier choices here, then remix it to create your own editable version.')}
               </p>
             </div>
             <div className="tierlist-community-banner-actions">
               <Link className="btn btn-ghost" to={`/tierlist/template/${sourceTemplate.id}`}>
-                {pick('Template Page', 'Template Page')}
+                {pick('หน้าเทมเพลต', 'Template Page')}
               </Link>
               {canEdit && !tierList.isPublic ? (
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    const next = { ...tierList, isPublic: true };
-                    setTierList(next);
-                    try {
-                      const savedLibrary = await saveTierList(next, null, { userId: user?.id || null });
-                      setLibrary(savedLibrary);
-                      setTierList(findTierList(next.id, savedLibrary) || savedLibrary.lists[0] || next);
-                    } catch (error) {
-                      setTierList(tierList);
-                      toast.error(error?.message || pick('Save failed', 'Save failed'));
-                    }
-                  }}
-                >
-                  {pick('Publish Your Ranking', 'Publish Your Ranking')}
+                <Button variant="primary" onClick={handleToggleVisibility}>
+                  {pick('เผยแพร่อันดับของคุณ', 'Publish Your Ranking')}
                 </Button>
               ) : null}
               {!canEdit ? (
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    const remixed = {
-                      ...tierList,
-                      id: undefined,
-                      ownerName: user?.profile?.username || user?.user_metadata?.username || 'You',
-                      ownerUserId: user?.id || null,
-                      isPublic: false,
-                      title: `${tierList.title} (Remix)`,
-                      playCount: 0,
-                    };
-                    const saved = await saveTierList(remixed, library, { userId: user?.id || null });
-                    setLibrary(saved);
-                    navigate(`/tierlist/play/${saved.lists[0].id}`);
-                  }}
-                >
-                  {pick('Remix To Edit', 'Remix To Edit')}
+                <Button variant="primary" onClick={() => handleRemixTierList(tierList)}>
+                  {pick('รีมิกซ์เพื่อแก้ไข', 'Remix To Edit')}
                 </Button>
               ) : null}
             </div>
           </div>
 
           <div className="tierlist-section-head">
-            <h2>{pick('Community Rankings', 'Community Rankings')}</h2>
-            <span className="tierlist-count">{relatedPublicLists.length} {pick('related lists', 'related lists')}</span>
+            <h2>{pick('อันดับจากชุมชน', 'Community Rankings')}</h2>
+            <span className="tierlist-count">{relatedPublicLists.length} {pick('ลิสต์ที่เกี่ยวข้อง', 'related lists')}</span>
           </div>
 
           {relatedPublicLists.length === 0 ? (
-            <div className="glass-heavy tierlist-empty-state">
-              {pick('No other public rankings for this template yet.', 'No other public rankings for this template yet.')}
-            </div>
+            <TierListEmptyPanel
+              icon={<Compass size={24} />}
+              title={pick('ยังไม่มีอันดับสาธารณะอื่น', 'No other public rankings yet')}
+              message={pick('ยังไม่มีอันดับสาธารณะอื่นสำหรับเทมเพลตนี้ในตอนนี้', 'There are no other public rankings for this template yet.')}
+            />
           ) : (
             <div className="tierlist-browse-grid">
               {relatedPublicLists.slice(0, 8).map((list) => (
@@ -2203,23 +2367,10 @@ export function TierListPlayPage() {
                   list={list}
                   titleById={titleById}
                   pick={pick}
-                  primaryLabel={pick('Open Ranking', 'Open Ranking')}
+                  primaryLabel={pick('เปิดอันดับ', 'Open Ranking')}
                   primaryTo={`/tierlist/play/${list.id}`}
-                  secondaryLabel={pick('Remix', 'Remix')}
-                  onSecondaryClick={async () => {
-                    const remixed = {
-                      ...list,
-                      id: undefined,
-                      ownerName: 'You',
-                      ownerUserId: user?.id || null,
-                      isPublic: false,
-                      title: `${list.title} (Remix)`,
-                      playCount: 0,
-                    };
-                    const saved = await saveTierList(remixed, library, { userId: user?.id || null });
-                    setLibrary(saved);
-                    navigate(`/tierlist/play/${saved.lists[0].id}`);
-                  }}
+                  secondaryLabel={pick('รีมิกซ์', 'Remix')}
+                  onSecondaryClick={() => handleRemixTierList(list)}
                 />
               ))}
             </div>
@@ -2239,3 +2390,4 @@ export function TierListPlayPage() {
 }
 
 export default TierListBrowsePage;
+

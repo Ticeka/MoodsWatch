@@ -19,14 +19,14 @@ function getPercent(part, total) {
   return Math.round((part / total) * 100);
 }
 
-function formatDate(value) {
+function formatDate(value, locale = 'en-US') {
   if (!value) return '-';
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(value).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, locale = 'en-US') {
   if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(value).toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function isWithinRange(value, dateFrom, dateTo) {
@@ -66,7 +66,8 @@ function MetricCard({ label, value, hint, tone = 'var(--primary-600)' }) {
 }
 
 export function AdminAnalytics() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === 'th' ? 'th-TH' : 'en-US';
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -103,7 +104,7 @@ export function AdminAnalytics() {
 
   async function fetchAnalytics() {
     if (!supabase) {
-      setErrorMessage('Supabase is not available.');
+      setErrorMessage(t('admin.analytics.supabaseUnavailable'));
       setIsLoading(false);
       return;
     }
@@ -193,7 +194,7 @@ export function AdminAnalytics() {
       });
     } catch (err) {
       console.error('Analytics fetch error:', err);
-      setErrorMessage(err.message || 'Unable to load analytics.');
+      setErrorMessage(err.message || t('admin.analytics.loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -261,7 +262,7 @@ export function AdminAnalytics() {
   if (isLoading) {
     return (
       <div className="admin-page-content" style={{ padding: 'var(--space-10)' }}>
-        <AdminStatePanel title="Loading analytics" description="Collecting catalog, editorial, report, and duplicate metrics." />
+        <AdminStatePanel title={t('admin.analytics.loadingTitle')} description={t('admin.analytics.loadingHint')} />
       </div>
     );
   }
@@ -270,9 +271,9 @@ export function AdminAnalytics() {
     return (
       <div className="admin-page-content" style={{ padding: 'var(--space-10)' }}>
         <AdminStatePanel
-          title="Unable to load analytics"
-          description={errorMessage || 'Analytics data could not be loaded.'}
-          actionLabel="Retry"
+          title={t('admin.analytics.errorTitle')}
+          description={errorMessage || t('admin.analytics.errorHint')}
+          actionLabel={t('common.retry')}
           onAction={fetchAnalytics}
           tone="error"
         />
@@ -411,17 +412,17 @@ export function AdminAnalytics() {
         </div>
 
         <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statTitles')} value={data.catalog.totalTitles} hint="All canonical titles" />
-          <MetricCard label={t('admin.analytics.statAnime')} value={data.catalog.totalAnime} hint="Type split" tone="#3b82f6" />
-          <MetricCard label={t('admin.analytics.statManga')} value={data.catalog.totalManga} hint="Subtype = manga" tone="#ec4899" />
-          <MetricCard label={t('admin.analytics.statManhwa')} value={data.catalog.totalManhwa} hint="Subtype = manhwa" tone="#22c55e" />
-          <MetricCard label={t('admin.analytics.statUsers')} value={data.catalog.totalUsers} hint="Profiles in system" tone="var(--success)" />
-          <MetricCard label={t('admin.analytics.statLists')} value={data.catalog.totalLists} hint="Tracked list entries" tone="var(--warning)" />
+          <MetricCard label={t('admin.analytics.statTitles')} value={data.catalog.totalTitles} hint={t('admin.analytics.hintAllCanonicalTitles')} />
+          <MetricCard label={t('admin.analytics.statAnime')} value={data.catalog.totalAnime} hint={t('admin.analytics.hintTypeSplit')} tone="#3b82f6" />
+          <MetricCard label={t('admin.analytics.statManga')} value={data.catalog.totalManga} hint={t('admin.analytics.hintSubtypeManga')} tone="#ec4899" />
+          <MetricCard label={t('admin.analytics.statManhwa')} value={data.catalog.totalManhwa} hint={t('admin.analytics.hintSubtypeManhwa')} tone="#22c55e" />
+          <MetricCard label={t('admin.analytics.statUsers')} value={data.catalog.totalUsers} hint={t('admin.analytics.hintProfilesInSystem')} tone="var(--success)" />
+          <MetricCard label={t('admin.analytics.statLists')} value={data.catalog.totalLists} hint={t('admin.analytics.hintTrackedListEntries')} tone="var(--warning)" />
         </div>
 
         <div className="admin-analytics-two-up">
           <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">Top rated titles</h3>
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.topRatedTitles')}</h3>
             <div className="admin-list-stack">
               {data.catalog.topTitles.map((title, index) => {
                 const typeMeta = getTitleTypeMeta(title.type);
@@ -435,7 +436,7 @@ export function AdminAnalytics() {
                         <span className={`badge ${typeMeta.badgeClass}`}>{typeMeta.label}</span>
                       </div>
                     </div>
-                    <strong style={{ color: 'var(--warning)' }}>{title.score ? (title.score / 10).toFixed(1) : 'N/A'}</strong>
+                    <strong style={{ color: 'var(--warning)' }}>{title.score ? (title.score / 10).toFixed(1) : '-'}</strong>
                   </div>
                 );
               })}
@@ -443,7 +444,7 @@ export function AdminAnalytics() {
           </div>
 
           <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">Recently added</h3>
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentlyAddedTitles')}</h3>
             <div className="admin-list-stack">
               {data.catalog.recentTitles.map((title) => {
                 const typeMeta = getTitleTypeMeta(title.type);
@@ -456,7 +457,7 @@ export function AdminAnalytics() {
                         <span className={`badge ${typeMeta.badgeClass}`}>{typeMeta.label}</span>
                       </div>
                     </div>
-                    <span className="admin-queue-pill subtle">{formatDate(title.created_at)}</span>
+                    <span className="admin-queue-pill subtle">{new Date(title.created_at).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                   </div>
                 );
               })}
@@ -477,37 +478,37 @@ export function AdminAnalytics() {
         </div>
 
         <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label="Collections" value={derived.filteredCollections.length} hint={`${editorialPublishedRatio}% published`} />
+          <MetricCard label={t('admin.analytics.collectionsLabel')} value={derived.filteredCollections.length} hint={t('admin.analytics.publishedRatioHint', { value: editorialPublishedRatio })} />
           <MetricCard
-            label="Homepage blocks"
+            label={t('admin.analytics.homepageBlocksLabel')}
             value={derived.filteredBlocks.length}
-            hint={`${blocksPublishedRatio}% published`}
+            hint={t('admin.analytics.publishedRatioHint', { value: blocksPublishedRatio })}
             tone="#3b82f6"
           />
           <MetricCard
             label={t('admin.analytics.statPublishedCollections')}
             value={derived.filteredCollections.filter((collection) => collection.status === 'published').length}
-            hint="Ready for public surfaces"
+            hint={t('admin.analytics.readyForPublicHint')}
             tone="#10b981"
           />
           <MetricCard
             label={t('admin.analytics.statFeaturedCollections')}
             value={derived.filteredCollections.filter((collection) => collection.is_featured).length}
-            hint="Marked as featured"
+            hint={t('admin.analytics.featuredHint')}
             tone="#f59e0b"
           />
           <MetricCard
             label={t('admin.analytics.statCollectionItems')}
             value={data.editorial.collectionItems}
-            hint="Total items across collections"
+            hint={t('admin.analytics.totalItemsHint')}
             tone="var(--secondary-600)"
           />
-          <MetricCard label={t('admin.analytics.statMoodTags')} value={data.catalog.totalMoods} hint="Catalog mood vocabulary" tone="#8b5cf6" />
+          <MetricCard label={t('admin.analytics.statMoodTags')} value={data.catalog.totalMoods} hint={t('admin.analytics.moodVocabularyHint')} tone="#8b5cf6" />
         </div>
 
         <div className="admin-analytics-two-up">
           <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">Collection status mix</h3>
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.collectionStatusMix')}</h3>
             <div className="admin-stat-list">
               {EDITORIAL_STATUS_OPTIONS.filter((option) => option.value !== 'all').map((option) => {
                 const count = derived.filteredCollections.filter((collection) => collection.status === option.value).length;
@@ -522,7 +523,7 @@ export function AdminAnalytics() {
           </div>
 
           <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">Homepage block types</h3>
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.homepageBlockTypes')}</h3>
             <div className="admin-stat-list">
               {HOMEPAGE_BLOCK_TYPE_OPTIONS.filter((option) => option.value !== 'all').map((option) => (
                 <div key={option.value}>
@@ -547,15 +548,15 @@ export function AdminAnalytics() {
         </div>
 
         <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statMatchingReports')} value={derived.filteredReports.length} hint="Rows in current filter set" />
+          <MetricCard label={t('admin.analytics.statMatchingReports')} value={derived.filteredReports.length} hint={t('admin.analytics.rowsInCurrentFilterSet')} />
           <MetricCard label={t('admin.analytics.statOpen')} value={derived.reportStatusCounts.open || 0} hint={t('admin.analytics.needsTriage')} tone="#f59e0b" />
           <MetricCard label={t('admin.analytics.statInReview')} value={derived.reportStatusCounts.in_review || 0} hint={t('admin.analytics.activeModeration')} tone="#3b82f6" />
           <MetricCard label={t('admin.analytics.statResolved')} value={derived.reportStatusCounts.resolved || 0} hint={t('admin.analytics.closedWithAction')} tone="#10b981" />
           <MetricCard label={t('admin.analytics.statDismissed')} value={derived.reportStatusCounts.dismissed || 0} hint={t('admin.analytics.closedWithoutAction')} tone="#64748b" />
           <MetricCard
             label={t('admin.analytics.statOldestOpen')}
-            value={derived.oldestOpenReport ? formatDate(derived.oldestOpenReport.createdAt) : '-'}
-            hint={derived.oldestOpenReport ? derived.oldestOpenReport.title.name : 'No open reports in current filters'}
+            value={derived.oldestOpenReport ? formatDate(derived.oldestOpenReport.createdAt, locale) : '-'}
+            hint={derived.oldestOpenReport ? derived.oldestOpenReport.title.name : t('admin.analytics.noOpenReportsInFilters')}
             tone="#ef4444"
           />
         </div>
@@ -576,7 +577,7 @@ export function AdminAnalytics() {
           <div className="glass-panel">
             <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentReportQueue')}</h3>
             {derived.filteredReports.length === 0 ? (
-              <AdminStatePanel title="No reports in view" description="Adjust the report filters or date range to inspect moderation activity." />
+              <AdminStatePanel title={t('admin.analytics.noReportsInViewTitle')} description={t('admin.analytics.noReportsInViewHint')} />
             ) : (
               <div className="admin-list-stack">
                 {derived.filteredReports.slice(0, 6).map((report) => (
@@ -587,7 +588,7 @@ export function AdminAnalytics() {
                     </div>
                     <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
                       <span className={`admin-queue-pill status-${report.status}`}>{report.statusLabel}</span>
-                      <span className="admin-queue-pill subtle">{formatDateTime(report.createdAt)}</span>
+                      <span className="admin-queue-pill subtle">{formatDateTime(report.createdAt, locale)}</span>
                     </div>
                   </div>
                 ))}
@@ -609,7 +610,7 @@ export function AdminAnalytics() {
         </div>
 
         <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statMatchingCandidates')} value={derived.filteredDuplicates.length} hint="Rows in current filter set" />
+          <MetricCard label={t('admin.analytics.statMatchingCandidates')} value={derived.filteredDuplicates.length} hint={t('admin.analytics.rowsInCurrentFilterSet')} />
           <MetricCard label={t('admin.analytics.statPending')} value={derived.duplicateStatusCounts.pending || 0} hint={t('admin.analytics.awaitingReview')} tone="#f59e0b" />
           <MetricCard label={t('admin.analytics.statApproved')} value={derived.duplicateStatusCounts.approved || 0} hint={t('admin.analytics.readyToMerge')} tone="#3b82f6" />
           <MetricCard label={t('admin.analytics.statRejected')} value={derived.duplicateStatusCounts.rejected || 0} hint={t('admin.analytics.reviewedDeclined')} tone="#64748b" />
@@ -617,7 +618,7 @@ export function AdminAnalytics() {
           <MetricCard
             label={t('admin.analytics.statAvgConfidence')}
             value={`${derived.averageDuplicateConfidence}%`}
-            hint="Across filtered candidates"
+            hint={t('admin.analytics.acrossFilteredCandidates')}
             tone="#8b5cf6"
           />
         </div>
@@ -635,7 +636,7 @@ export function AdminAnalytics() {
           <div className="glass-panel">
             <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentDuplicateDecisions')}</h3>
             {derived.filteredDuplicates.length === 0 ? (
-              <AdminStatePanel title="No duplicate candidates in view" description="Adjust duplicate filters or date range to inspect review activity." />
+              <AdminStatePanel title={t('admin.analytics.noDuplicateCandidatesTitle')} description={t('admin.analytics.noDuplicateCandidatesHint')} />
             ) : (
               <div className="admin-list-stack">
                 {derived.filteredDuplicates.slice(0, 6).map((candidate) => (
@@ -646,8 +647,8 @@ export function AdminAnalytics() {
                     </div>
                     <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
                       <span className={`admin-queue-pill status-${candidate.status}`}>{candidate.statusLabel}</span>
-                      <span className="admin-queue-pill subtle">{candidate.confidence.toFixed(0)} confidence</span>
-                      <span className="admin-queue-pill subtle">{formatDateTime(candidate.reviewedAt || candidate.createdAt)}</span>
+                      <span className="admin-queue-pill subtle">{candidate.confidence.toFixed(0)} {t('admin.analytics.confidenceSuffix')}</span>
+                      <span className="admin-queue-pill subtle">{formatDateTime(candidate.reviewedAt || candidate.createdAt, locale)}</span>
                     </div>
                   </div>
                 ))}

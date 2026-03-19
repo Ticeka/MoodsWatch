@@ -192,7 +192,7 @@ export function AdminTitles() {
 
   const fetchTitles = useCallback(async () => {
     if (!supabase) {
-      toast.error('Unable to connect to Supabase');
+      toast.error(t('admin.titles.supabaseUnavailable'));
       setIsLoading(false);
       return;
     }
@@ -279,11 +279,11 @@ export function AdminTitles() {
       setTotalCount(count);
     } catch (error) {
       console.error('Error fetching titles:', error);
-      toast.error(error.message || 'Failed to load catalog titles');
+      toast.error(error.message || t('admin.titles.loadFailed'));
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filters]);
+  }, [currentPage, filters, t]);
 
   useEffect(() => {
     fetchTitles();
@@ -307,20 +307,20 @@ export function AdminTitles() {
     filters.sortDirection,
   ]);
 
-  const handleDelete = async (id, title) => {
+  const handleDelete = async (id) => {
     if (!supabase) {
-      toast.error('Unable to connect to Supabase');
+      toast.error(t('admin.titles.supabaseUnavailable'));
       return;
     }
 
     if (!window.confirm(t('admin.titles.confirmDelete'))) return;
 
-    const toastId = toast.loading('Deleting...');
+    const toastId = toast.loading(t('admin.titles.deleting'));
     try {
       const { error } = await supabase.from('canonical_titles').delete().eq('id', id);
       if (error) throw error;
 
-      toast.success('Deleted', { id: toastId });
+      toast.success(t('admin.titles.deleted'), { id: toastId });
       if (titles.length === 1 && currentPage > 1) {
         setCurrentPage((page) => page - 1);
       } else {
@@ -401,7 +401,7 @@ export function AdminTitles() {
         }}
       >
         <label>
-          <span className="form-label">Search</span>
+          <span className="form-label">{t('admin.titles.filterSearch')}</span>
           <input
             type="text"
             placeholder={t('admin.titles.searchPlaceholder')}
@@ -411,15 +411,15 @@ export function AdminTitles() {
           />
         </label>
         <label>
-          <span className="form-label">Type</span>
+          <span className="form-label">{t('admin.titles.filterType')}</span>
           <select className="form-select" value={filters.type} onChange={handleFilterChange('type')}>
-            <option value="all">All types</option>
-            <option value="anime">Anime</option>
-            <option value="manga">Manga</option>
+            <option value="all">{t('admin.titles.allTypes')}</option>
+            <option value="anime">{t('admin.titles.typeAnime')}</option>
+            <option value="manga">{t('admin.titles.typeManga')}</option>
           </select>
         </label>
         <label>
-          <span className="form-label">Subtype</span>
+          <span className="form-label">{t('admin.titles.filterSubtype')}</span>
           <select className="form-select" value={filters.subtype} onChange={handleFilterChange('subtype')}>
             {SUBTYPE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -427,7 +427,7 @@ export function AdminTitles() {
           </select>
         </label>
         <label>
-          <span className="form-label">Status</span>
+          <span className="form-label">{t('admin.titles.filterStatus')}</span>
           <select className="form-select" value={filters.status} onChange={handleFilterChange('status')}>
             {STATUS_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -435,7 +435,7 @@ export function AdminTitles() {
           </select>
         </label>
         <label>
-          <span className="form-label">Country</span>
+          <span className="form-label">{t('admin.titles.filterCountry')}</span>
           <select className="form-select" value={filters.originCountry} onChange={handleFilterChange('originCountry')}>
             {ORIGIN_COUNTRY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -443,7 +443,7 @@ export function AdminTitles() {
           </select>
         </label>
         <label>
-          <span className="form-label">Rating</span>
+          <span className="form-label">{t('admin.titles.filterRating')}</span>
           <select className="form-select" value={filters.isAdult} onChange={handleFilterChange('isAdult')}>
             {ADULT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -451,11 +451,11 @@ export function AdminTitles() {
           </select>
         </label>
         <label>
-          <span className="form-label">Links</span>
+          <span className="form-label">{t('admin.titles.filterLinks')}</span>
           <select className="form-select" value={filters.hasLinks} onChange={handleFilterChange('hasLinks')}>
-            <option value="all">All</option>
-            <option value="yes">Has links</option>
-            <option value="no">No links</option>
+            <option value="all">{t('admin.titles.linkAll')}</option>
+            <option value="yes">{t('admin.titles.linkHas')}</option>
+            <option value="no">{t('admin.titles.linkNone')}</option>
           </select>
         </label>
         <label>
@@ -465,7 +465,7 @@ export function AdminTitles() {
             className="form-input"
             min="1900"
             max="2100"
-            placeholder="2000"
+            placeholder={t('admin.titles.yearFromPlaceholder')}
             value={filters.yearFrom}
             onChange={handleFilterChange('yearFrom')}
           />
@@ -477,7 +477,7 @@ export function AdminTitles() {
             className="form-input"
             min="1900"
             max="2100"
-            placeholder="2026"
+            placeholder={t('admin.titles.yearToPlaceholder')}
             value={filters.yearTo}
             onChange={handleFilterChange('yearTo')}
           />
@@ -489,7 +489,7 @@ export function AdminTitles() {
             className="form-input"
             min="0"
             max="100"
-            placeholder="70"
+            placeholder={t('admin.titles.scoreMinPlaceholder')}
             value={filters.scoreMin}
             onChange={handleFilterChange('scoreMin')}
           />
@@ -501,13 +501,13 @@ export function AdminTitles() {
             className="form-input"
             min="0"
             max="100"
-            placeholder="100"
+            placeholder={t('admin.titles.scoreMaxPlaceholder')}
             value={filters.scoreMax}
             onChange={handleFilterChange('scoreMax')}
           />
         </label>
         <label>
-          <span className="form-label">Sort</span>
+          <span className="form-label">{t('admin.titles.filterSort')}</span>
           <select className="form-select" value={filters.sortBy} onChange={handleFilterChange('sortBy')}>
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -515,7 +515,7 @@ export function AdminTitles() {
           </select>
         </label>
         <label>
-          <span className="form-label">Direction</span>
+          <span className="form-label">{t('admin.titles.filterDirection')}</span>
           <select className="form-select" value={filters.sortDirection} onChange={handleFilterChange('sortDirection')}>
             {SORT_DIRECTION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -539,7 +539,7 @@ export function AdminTitles() {
         <span className="admin-list-summary">
           {isLoading
             ? t('admin.titles.loading')
-            : `${totalCount} results • page ${currentPage} of ${totalPages}`}
+            : t('admin.titles.results', { total: totalCount, page: currentPage, pages: totalPages, s: totalCount === 1 ? '' : 's' })}
         </span>
         <span className="admin-list-summary subtle">{t('admin.titles.perPage')}</span>
       </div>
@@ -588,8 +588,8 @@ export function AdminTitles() {
                             {title.title_th}
                           </div>
                         )}
-                        <div className="admin-title-meta" title={`Slug: ${title.slug} • ID: ${title.id}`}>
-                          {title.slug} • ID: {title.id}
+                        <div className="admin-title-meta" title={t('admin.titles.slugId', { slug: title.slug, id: title.id })}>
+                          {t('admin.titles.slugId', { slug: title.slug, id: title.id })}
                         </div>
                       </div>
                     </td>
@@ -599,11 +599,11 @@ export function AdminTitles() {
                     <td>
                       <div>{title.year || '-'}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
-                        {title.status || 'unknown'}
+                        {title.status || t('admin.titles.statusUnknown')}
                       </div>
                     </td>
                     <td>
-                      <strong style={{ color: 'var(--warning)' }}>{title.score ? (title.score / 10).toFixed(1) : 'N/A'}</strong>
+                      <strong style={{ color: 'var(--warning)' }}>{title.score ? (title.score / 10).toFixed(1) : t('admin.titles.notAvailable')}</strong>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -613,7 +613,7 @@ export function AdminTitles() {
                         <button
                           className="action-btn"
                           style={{ color: 'var(--error)' }}
-                          onClick={() => handleDelete(title.id, title.title_en)}
+                          onClick={() => handleDelete(title.id)}
                           type="button"
                         >
                           {t('admin.common.delete')}
@@ -638,7 +638,7 @@ export function AdminTitles() {
           >
             {t('common.previous')}
           </button>
-          <span className="admin-list-summary">Page {currentPage} / {totalPages}</span>
+          <span className="admin-list-summary">{t('common.page')} {currentPage} / {totalPages}</span>
           <button
             className="action-btn"
             type="button"
@@ -654,3 +654,6 @@ export function AdminTitles() {
 }
 
 export default AdminTitles;
+
+
+

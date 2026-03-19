@@ -77,7 +77,7 @@ export function AdminHomepage() {
 
   const fetchData = useCallback(async () => {
     if (!supabase) {
-      const message = 'Unable to connect to Supabase';
+      const message = t('admin.homepage.supabaseUnavailable');
       setErrorMessage(message);
       toast.error(message);
       setIsLoading(false);
@@ -111,12 +111,13 @@ export function AdminHomepage() {
       }
     } catch (error) {
       console.error('Failed to load homepage blocks', error);
-      setErrorMessage(error.message || 'Failed to load homepage blocks');
-      toast.error(error.message || 'Failed to load homepage blocks');
+      const message = error.message || t('admin.homepage.loadFailed');
+      setErrorMessage(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedId]);
+  }, [selectedId, t]);
 
   useEffect(() => {
     fetchData();
@@ -152,12 +153,12 @@ export function AdminHomepage() {
     }, user?.id);
 
     if (!payload.block_key || !payload.title) {
-      toast.error('Block key and title are required');
+      toast.error(t('admin.homepage.blockKeyTitleRequired'));
       return;
     }
 
     setIsSaving(true);
-    const toastId = toast.loading(selectedId ? 'Saving block...' : 'Creating block...');
+    const toastId = toast.loading(selectedId ? t('admin.homepage.savingBlock') : t('admin.homepage.creatingBlock'));
     try {
       if (selectedId) {
         const { error } = await supabase.from('homepage_content_blocks').update(payload).eq('id', selectedId);
@@ -170,11 +171,11 @@ export function AdminHomepage() {
         if (error) throw error;
       }
 
-      toast.success('Homepage block saved', { id: toastId });
+      toast.success(t('admin.homepage.blockSaved'), { id: toastId });
       await fetchData();
     } catch (error) {
       console.error('Failed to save homepage block', error);
-      toast.error(error.message || 'Failed to save homepage block', { id: toastId });
+      toast.error(error.message || t('admin.homepage.saveFailed'), { id: toastId });
     } finally {
       setIsSaving(false);
     }
@@ -182,17 +183,17 @@ export function AdminHomepage() {
 
   const handleDelete = async (block) => {
     if (!supabase) return;
-    if (!window.confirm(`Delete block "${block.title}"?`)) return;
+    if (!window.confirm(t('admin.homepage.confirmDelete', { title: block.title }))) return;
 
-    const toastId = toast.loading('Deleting block...');
+    const toastId = toast.loading(t('admin.homepage.deletingBlock'));
     try {
       const { error } = await supabase.from('homepage_content_blocks').delete().eq('id', block.id);
       if (error) throw error;
-      toast.success('Block deleted', { id: toastId });
+      toast.success(t('admin.homepage.blockDeleted'), { id: toastId });
       await fetchData();
     } catch (error) {
       console.error('Failed to delete block', error);
-      toast.error(error.message || 'Failed to delete block', { id: toastId });
+      toast.error(error.message || t('admin.homepage.deleteFailed'), { id: toastId });
     }
   };
 
@@ -233,7 +234,7 @@ export function AdminHomepage() {
           {isLoading ? (
             <AdminStatePanel title={t('admin.homepage.loadingTitle')} description={t('admin.homepage.loadingHint')} />
           ) : errorMessage ? (
-            <AdminStatePanel title={t('admin.homepage.errorTitle')} description={errorMessage} actionLabel="Retry" onAction={fetchData} tone="error" />
+            <AdminStatePanel title={t('admin.homepage.errorTitle')} description={errorMessage} actionLabel={t('common.retry')} onAction={fetchData} tone="error" />
           ) : blocks.length === 0 ? (
             <AdminStatePanel title={t('admin.homepage.noBlocks')} description={t('admin.homepage.noBlocksHint')} />
           ) : (
@@ -282,7 +283,7 @@ export function AdminHomepage() {
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldKey')}</span>
-              <input className="form-input" value={form.blockKey} onChange={handleFormChange('blockKey')} placeholder="hero-main" />
+              <input className="form-input" value={form.blockKey} onChange={handleFormChange('blockKey')} placeholder={t('admin.homepage.fieldKeyPlaceholder')} />
             </label>
             <label className="admin-form-grid-wide">
               <span className="form-label">{t('admin.homepage.fieldSubtitle')}</span>
@@ -336,19 +337,19 @@ export function AdminHomepage() {
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldCtaLabel')}</span>
-              <input className="form-input" value={form.ctaLabel} onChange={handleFormChange('ctaLabel')} placeholder="See all" />
+              <input className="form-input" value={form.ctaLabel} onChange={handleFormChange('ctaLabel')} placeholder={t('admin.homepage.fieldCtaLabelPlaceholder')} />
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldCtaHref')}</span>
-              <input className="form-input" value={form.ctaHref} onChange={handleFormChange('ctaHref')} placeholder="/discover" />
+              <input className="form-input" value={form.ctaHref} onChange={handleFormChange('ctaHref')} placeholder={t('admin.homepage.fieldCtaHrefPlaceholder')} />
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldAccent')}</span>
-              <input className="form-input" value={form.accent} onChange={handleFormChange('accent')} placeholder="sunrise" />
+              <input className="form-input" value={form.accent} onChange={handleFormChange('accent')} placeholder={t('admin.homepage.fieldAccentPlaceholder')} />
             </label>
             <label className="admin-form-grid-wide">
               <span className="form-label">{t('admin.homepage.fieldEmptyState')}</span>
-              <input className="form-input" value={form.emptyState} onChange={handleFormChange('emptyState')} placeholder="No titles available right now." />
+              <input className="form-input" value={form.emptyState} onChange={handleFormChange('emptyState')} placeholder={t('admin.homepage.fieldEmptyStatePlaceholder')} />
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldStartsAt')}</span>
@@ -363,17 +364,17 @@ export function AdminHomepage() {
           <div className="admin-preview-card">
             <span className="badge badge-editor">{form.blockType}</span>
             <h3>{form.title || t('admin.homepage.untitledBlock')}</h3>
-            <p>{form.subtitle || 'Subtitle preview will appear here.'}</p>
+            <p>{form.subtitle || t('admin.homepage.subtitlePreviewFallback')}</p>
             <div className="admin-preview-meta">
-              <span>Position #{form.position || 0}</span>
+              <span>{t('admin.homepage.positionPreview', { position: form.position || 0 })}</span>
               <span>{form.collectionId ? t('admin.homepage.collectionLinked') : t('admin.homepage.standaloneBlock')}</span>
-              <span>{form.ctaLabel ? `CTA: ${form.ctaLabel}` : t('admin.homepage.noCta')}</span>
+              <span>{form.ctaLabel ? t('admin.homepage.ctaPreview', { label: form.ctaLabel }) : t('admin.homepage.noCta')}</span>
             </div>
           </div>
 
           <div className="admin-form-actions">
             <button className="primary-btn" type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving...' : selectedId ? t('admin.homepage.saveChanges') : t('admin.homepage.createTitle')}
+              {isSaving ? t('admin.common.saving') : selectedId ? t('admin.homepage.saveChanges') : t('admin.homepage.createTitle')}
             </button>
           </div>
         </form>

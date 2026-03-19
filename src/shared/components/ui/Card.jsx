@@ -80,6 +80,12 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
     setShowStatusMenu((current) => !current);
   };
 
+  const handleStatusMenuKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setShowStatusMenu(false);
+    }
+  };
+
   const toggleFavoriteTitle = async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -157,41 +163,43 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
               {primaryAction === 'favorite' ? null : (
                 <button
                   className={`save-btn ${saved ? 'active' : ''}`}
+                  aria-label={saved ? t('card.removeFromList') : t('card.saveToList')}
                   onClick={toggleSave}
-                  title={saved ? t('card.removeFromList') : t('card.saveToList')}
                 >
-                  {saved ? <Bookmark fill="currentColor" size={20} /> : <Bookmark size={20} />}
+                  {saved ? <Bookmark fill="currentColor" size={20} aria-hidden="true" /> : <Bookmark size={20} aria-hidden="true" />}
                 </button>
               )}
               <button
                 className={`favorite-btn ${favorite ? 'active' : ''}`}
+                aria-label={favorite ? t('card.removeFromFavorites') : t('card.addToFavorites')}
                 onClick={toggleFavoriteTitle}
-                title={favorite ? t('card.removeFromFavorites') : t('card.addToFavorites')}
               >
-                <Heart fill={favorite ? 'currentColor' : 'none'} size={20} />
+                <Heart fill={favorite ? 'currentColor' : 'none'} size={20} aria-hidden="true" />
               </button>
               <button
                 className={`top-title-btn ${topTitle ? 'active' : ''}`}
+                aria-label={topTitle ? t('card.removeFromTopTitles', { type: title.type }) : t('card.addToTopTitles', { type: title.type })}
                 onClick={toggleTopTitle}
-                title={topTitle ? t('card.removeFromTopTitles', { type: title.type }) : t('card.addToTopTitles', { type: title.type })}
               >
-                <Trophy fill={topTitle ? 'currentColor' : 'none'} size={18} />
+                <Trophy fill={topTitle ? 'currentColor' : 'none'} size={18} aria-hidden="true" />
               </button>
               {primaryAction !== 'favorite' && (
                 <button
                   className={`quick-status-btn ${showStatusMenu ? 'active' : ''}`}
+                  aria-label={t('card.changeStatus')}
+                  aria-haspopup="menu"
+                  aria-expanded={showStatusMenu}
                   onClick={toggleStatusMenu}
-                  title={t('card.changeStatus')}
                 >
-                  <ListPlus size={20} />
+                  <ListPlus size={20} aria-hidden="true" />
                 </button>
               )}
               <button
                 className={`hide-title-btn ${hidden ? 'active' : ''}`}
+                aria-label={hidden ? t('card.showTitleAgain') : t('card.hideTitle')}
                 onClick={toggleHidden}
-                title={hidden ? t('card.showTitleAgain') : t('card.hideTitle')}
               >
-                {hidden ? <Eye size={20} /> : <EyeOff size={20} />}
+                {hidden ? <Eye size={20} aria-hidden="true" /> : <EyeOff size={20} aria-hidden="true" />}
               </button>
             </div>
           )}
@@ -217,10 +225,16 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
       </div>
 
       {showStatusMenu && (
-        <div className="quick-status-menu" onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+        <div
+          className="quick-status-menu"
+          role="menu"
+          onKeyDown={handleStatusMenuKeyDown}
+          onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        >
           {LIST_STATUS_OPTIONS.map((option) => (
             <button
               key={option.id}
+              role="menuitem"
               className={`quick-status-item ${currentStatus === option.id ? 'active' : ''}`}
               onClick={(event) => handleQuickStatus(event, option.id)}
               style={{ '--status-color': option.color }}

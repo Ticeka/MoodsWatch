@@ -529,7 +529,7 @@
 .mobile-drawer {
   position: fixed;
   inset: 0 0 0 auto;
-  width: 300px;
+  width: min(300px, calc(100vw - 3rem));
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -919,7 +919,7 @@
 }
 
 .notif-panel {
-  width: 300px;
+  width: min(300px, calc(100vw - 2rem));
   max-height: 400px;
   overflow-y: auto;
   border-radius: 10px;

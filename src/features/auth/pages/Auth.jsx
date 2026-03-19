@@ -77,12 +77,12 @@ export function Auth() {
           </span>
           <h1>{isLogin ? t('auth.signIn') : t('auth.signUp')}</h1>
           <p>
-            Cute, friendly recommendations feel better when your list, favorites, and progress follow you everywhere.
+            {t('auth.storyDescription')}
           </p>
           <div className="auth-story-pills">
-            <span>Save your watchlist</span>
-            <span>Sync favorites</span>
-            <span>Shape recommendations</span>
+            <span>{t('auth.storyPillWatchlist')}</span>
+            <span>{t('auth.storyPillFavorites')}</span>
+            <span>{t('auth.storyPillRecommendations')}</span>
           </div>
           <Link to="/" className="auth-back-link">
             {t('titleDetail.backHome')}
@@ -94,13 +94,13 @@ export function Auth() {
 
           <div className="auth-mobile-brand">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
           </div>
 
           <div className="auth-shell-head">
             <div>
               <span className="auth-panel-eyebrow">{isLogin ? t('auth.signIn') : t('auth.signUp')}</span>
-              <h2>{isLogin ? 'Welcome back' : 'Create your cozy account'}</h2>
+              <h2>{isLogin ? t('auth.welcomeBack') : t('auth.createCozyAccount')}</h2>
             </div>
             <button
               type="button"
@@ -124,7 +124,7 @@ export function Auth() {
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     required={!isLogin}
-                    placeholder="AnimeFan99"
+                    placeholder={t('auth.usernamePlaceholder')}
                   />
                 </div>
               </label>
@@ -139,7 +139,7 @@ export function Auth() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   required
-                  placeholder="you@example.com"
+                  placeholder={t('auth.emailPlaceholder')}
                 />
               </div>
             </label>

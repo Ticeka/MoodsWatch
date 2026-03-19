@@ -275,10 +275,14 @@
   flex: 1;
   min-width: 120px;
   max-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .tiermaker-toolbar-search input {
   width: 100%;
+  flex: 1;
   height: 34px;
   padding: 0.35rem 0.65rem;
   border-radius: 7px;
@@ -941,6 +945,34 @@
   border: 1px dashed color-mix(in srgb, var(--border-default) 65%, transparent);
 }
 
+.tierlist-empty-state .empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+}
+
+.tierlist-empty-state .empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+}
+
+.tierlist-empty-state h3,
+.tierlist-empty-state p {
+  margin: 0;
+}
+
+.tierlist-empty-state h3 {
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.tierlist-empty-state p {
+  max-width: 42ch;
+}
+
 /* Save status (legacy, kept for compat) */
 .tierlist-save-status {
   min-height: 18px;
@@ -1302,6 +1334,30 @@
 }
 
 .tierlist-browse-search select {
+  height: 36px;
+  padding: 0 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-elevated) 95%, transparent);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.tierlist-browse-sorter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.tierlist-browse-sorter > span {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tierlist-browse-sorter select {
   height: 36px;
   padding: 0 0.7rem;
   border-radius: 10px;

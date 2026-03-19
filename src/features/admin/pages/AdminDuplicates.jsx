@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { CopyPlus, GitMerge, RefreshCw, ScanSearch, ListCollapse, GitPullRequest } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
+import { ErrorState } from '@/shared/components/ui/ErrorState';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import {
   buildDuplicateCandidates,
   DUPLICATE_CANDIDATE_SELECT,
@@ -27,7 +30,8 @@ const TITLE_SCAN_SELECT = `
 `;
 
 export function AdminDuplicates() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === 'th' ? 'th-TH' : 'en-US';
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -64,7 +68,7 @@ export function AdminDuplicates() {
 
   const fetchCandidates = useCallback(async () => {
     if (!supabase) {
-      setErrorMessage('Unable to connect to Supabase');
+      setErrorMessage(t('admin.duplicates.supabaseUnavailable'));
       setIsLoading(false);
       return;
     }
@@ -118,12 +122,12 @@ export function AdminDuplicates() {
       syncEditorState(mapped.find((candidate) => candidate.id === nextSelectedId));
     } catch (error) {
       console.error('Failed to load duplicate candidates:', error);
-      setErrorMessage(error.message || 'Failed to load duplicate candidates');
-      toast.error('Failed to load duplicate candidates');
+      setErrorMessage(error.message || t('admin.duplicates.loadFailed'));
+      toast.error(t('admin.duplicates.loadFailed'));
     } finally {
       setIsLoading(false);
     }
-  }, [filters.searchTerm, filters.status, selectedId, syncEditorState]);
+  }, [filters.searchTerm, filters.status, selectedId, syncEditorState, t]);
 
   useEffect(() => {
     fetchCandidates();
@@ -174,7 +178,7 @@ export function AdminDuplicates() {
       );
 
       if (generated.length === 0) {
-        toast('No duplicate candidates found from current heuristic scan');
+        toast(t('admin.duplicates.noScanCandidates'));
         setIsScanning(false);
         return;
       }
@@ -184,11 +188,11 @@ export function AdminDuplicates() {
         .upsert(generated, { onConflict: 'title_a_id,title_b_id' });
       if (upsertError) throw upsertError;
 
-      toast.success(`Scanned and upserted ${generated.length} duplicate candidates`);
+      toast.success(t('admin.duplicates.scanUpserted', { count: generated.length }));
       await fetchCandidates();
     } catch (error) {
       console.error('Failed to run duplicate scan:', error);
-      toast.error('Failed to run duplicate scan');
+      toast.error(t('admin.duplicates.scanFailed'));
     } finally {
       setIsScanning(false);
     }
@@ -215,7 +219,7 @@ export function AdminDuplicates() {
       await fetchCandidates();
     } catch (error) {
       console.error('Failed to save duplicate review:', error);
-      toast.error('Failed to save duplicate review');
+      toast.error(t('admin.duplicates.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -230,7 +234,7 @@ export function AdminDuplicates() {
       : selectedCandidate.titleAId;
 
     if (!primaryTitleId || !duplicateTitleId) {
-      toast.error('Select a primary title first');
+      toast.error(t('admin.duplicates.selectPrimaryFirst'));
       return;
     }
 
@@ -245,13 +249,13 @@ export function AdminDuplicates() {
         p_note: editorState.reviewNote.trim() || null,
       });
       if (error) throw error;
-      if (data?.ok !== true) throw new Error('Merge action did not complete');
+      if (data?.ok !== true) throw new Error(t('admin.duplicates.mergeNotCompleted'));
 
       toast.success(t('admin.duplicates.mergeSuccess'));
       await fetchCandidates();
     } catch (error) {
       console.error('Failed to merge duplicate titles:', error);
-      toast.error(error.message || 'Failed to merge duplicate titles');
+      toast.error(error.message || t('admin.duplicates.mergeFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -287,9 +291,9 @@ export function AdminDuplicates() {
       </div>
 
       <section className="glass-panel" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="admin-form-grid">
+        <div className="admin-form-grid" role="toolbar" aria-label={t('admin.duplicates.filtersToolbar')}>
           <label>
-            <span className="form-label">Search titles</span>
+            <span className="form-label">{t('admin.duplicates.searchTitles')}</span>
             <input
               className="form-input"
               value={filters.searchTerm}
@@ -297,19 +301,17 @@ export function AdminDuplicates() {
               placeholder={t('admin.duplicates.searchPlaceholder')}
             />
           </label>
-          <label>
-            <span className="form-label">Status</span>
-            <select
-              className="form-select"
-              value={filters.status}
-              onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-            >
-              <option value="all">All statuses</option>
+          <SortSelect
+            value={filters.status}
+            onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
+            label={t('admin.duplicates.filterStatus')}
+            className="results-sorter"
+          >
+              <option value="all">{t('admin.duplicates.allStatuses')}</option>
               {DUPLICATE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
-          </label>
+          </SortSelect>
         </div>
       </section>
 
@@ -328,9 +330,9 @@ export function AdminDuplicates() {
           {isLoading ? (
             <AdminStatePanel title={t('admin.duplicates.loadingTitle')} description={t('admin.duplicates.loadingHint')} />
           ) : errorMessage ? (
-            <AdminStatePanel title={t('admin.duplicates.errorTitle')} description={errorMessage} actionLabel="Retry" onAction={fetchCandidates} tone="error" />
+            <ErrorState message={errorMessage} onRetry={fetchCandidates} />
           ) : candidates.length === 0 ? (
-            <AdminStatePanel title={t('admin.duplicates.noResults')} description={t('admin.duplicates.noFilterResults')} />
+            <EmptyState title={t('admin.duplicates.noResults')} message={t('admin.duplicates.noFilterResults')} />
           ) : (
             <div className="admin-list-stack">
               {candidates.map((candidate) => (
@@ -345,7 +347,7 @@ export function AdminDuplicates() {
                     <span className="admin-queue-card-subtitle">{candidate.titleB.name}</span>
                     <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
                       <span className={`admin-queue-pill status-${candidate.status}`}>{candidate.statusLabel}</span>
-                      <span className="admin-queue-pill">{candidate.confidence.toFixed(0)} confidence</span>
+                      <span className="admin-queue-pill">{candidate.confidence.toFixed(0)} {t('admin.duplicates.confidenceSuffix')}</span>
                       {candidate.heuristicFlags.slice(0, 2).map((flag) => (
                         <span key={flag} className="admin-queue-pill subtle">{flag}</span>
                       ))}
@@ -354,7 +356,7 @@ export function AdminDuplicates() {
                   </div>
                   <div className="admin-record-meta">
                     <span>#{candidate.id}</span>
-                    <span>{new Date(candidate.createdAt).toLocaleDateString('en-US')}</span>
+                    <span>{new Date(candidate.createdAt).toLocaleDateString(locale)}</span>
                   </div>
                 </button>
               ))}
@@ -473,7 +475,7 @@ export function AdminDuplicates() {
 
               <div className="admin-action-bar">
                 <button className="action-btn" type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : t('admin.duplicates.saveReview')}
+                  {isSaving ? t('admin.common.saving') : t('admin.duplicates.saveReview')}
                 </button>
                 <button
                   className="primary-btn"

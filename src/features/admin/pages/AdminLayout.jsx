@@ -31,7 +31,7 @@ export function AdminLayout() {
   const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const userName = user?.email?.split('@')[0] || 'Admin';
+  const userName = user?.email?.split('@')[0] || t('admin.nav.adminPanel');
 
   const close = () => setSidebarOpen(false);
 
@@ -40,23 +40,24 @@ export function AdminLayout() {
       <div
         className={`admin-overlay ${sidebarOpen ? 'open' : ''}`}
         onClick={close}
+        aria-hidden="true"
       />
 
       <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
           <div className="sidebar-logo">
-            <ShieldCheck className="sidebar-logo-icon" size={24} />
-            <div>
-              <h2>Admin</h2>
-              <span className="sidebar-user">{userName}</span>
+              <ShieldCheck className="sidebar-logo-icon" size={24} />
+              <div>
+                <h2>{t('admin.nav.adminPanel')}</h2>
+                <span className="sidebar-user">{userName}</span>
+              </div>
             </div>
-          </div>
-          <button className="sidebar-close-btn" onClick={close} type="button">
+          <button className="sidebar-close-btn" onClick={close} type="button" aria-label={t('admin.nav.closeSidebar')}>
             <X size={18} />
           </button>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label={t('admin.nav.sidebarNav')}>
 
           <div className="nav-group">
             <h3 className="nav-group-title">{t('admin.nav.overview')}</h3>
@@ -77,7 +78,7 @@ export function AdminLayout() {
               <Tags className="sidebar-link-icon" size={18} /> {t('admin.nav.moodsAndTags')}
             </NavLink>
             <NavLink to="/admin/links" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
-              <Link2 className="sidebar-link-icon" size={18} /> Platform Links
+              <Link2 className="sidebar-link-icon" size={18} /> {t('admin.nav.platformLinks')}
             </NavLink>
             <NavLink to="/admin/fetch" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Download className="sidebar-link-icon" size={18} /> {t('admin.nav.fetchData')}
@@ -139,11 +140,16 @@ export function AdminLayout() {
 
       <main className="admin-main">
         <div className="admin-topbar">
-          <button className="admin-menu-btn" onClick={() => setSidebarOpen(true)} type="button">
+          <button
+            className="admin-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            type="button"
+            aria-label={t('admin.nav.openSidebar')}
+          >
             <Menu size={20} />
           </button>
-          <span className="admin-topbar-title">Admin</span>
-          <Link to="/" className="admin-topbar-back">
+          <span className="admin-topbar-title">{t('admin.nav.adminPanel')}</span>
+          <Link to="/" className="admin-topbar-back" aria-label={t('admin.nav.backToSite')}>
             <ArrowLeft size={20} />
           </Link>
         </div>
