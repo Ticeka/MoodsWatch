@@ -1619,6 +1619,7 @@ export function BattleSessionPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [session, setSession] = useState(() => getBattleSession(sessionId));
   const [communityRollup, setCommunityRollup] = useState(null);
   const [isCommunityLoading, setIsCommunityLoading] = useState(false);
