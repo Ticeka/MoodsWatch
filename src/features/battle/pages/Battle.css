@@ -1817,20 +1817,80 @@
 @media (max-width: 980px) {
   .battle-hero,
   .battle-builder-grid,
-  .battle-match-grid,
   .battle-session-head,
   .battle-result-hero {
     grid-template-columns: 1fr;
   }
 
+  /* Keep match grid side-by-side on all screen sizes */
+  .battle-match-grid {
+    grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .battle-match-grid .battle-card-cover {
+    height: 300px;
+  }
+
+  .battle-match-grid .battle-card-body {
+    padding: 1.2rem 1rem;
+    gap: 0.5rem;
+  }
+
+  .battle-match-grid .battle-card-body h2 {
+    font-size: 1.15rem;
+  }
+
+  .battle-match-grid .battle-card-body .btn-primary {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.88rem;
+  }
+
+  .battle-match-grid .battle-card-tags {
+    display: none;
+  }
+
+  .battle-match-grid .battle-vs-badge {
+    width: 56px;
+    height: 56px;
+    font-size: 0.95rem;
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--accent-500) 18%, transparent),
+      0 0 0 8px color-mix(in srgb, var(--accent-500) 8%, transparent),
+      0 12px 28px rgba(245, 158, 11, 0.35);
+  }
+
+  .battle-match-grid .battle-vs-column {
+    padding-top: 1.5rem;
+    gap: 0.65rem;
+    position: static;
+  }
+
+  .battle-match-grid .battle-center-actions {
+    grid-template-columns: 1fr;
+    padding: 0.55rem;
+    gap: 0.35rem;
+    border-radius: 14px;
+    width: 100%;
+  }
+
+  .battle-match-grid .battle-center-actions .btn {
+    font-size: 0.78rem;
+    padding: 0.45rem 0.4rem;
+    min-height: 34px;
+  }
+
   .battle-vs-column {
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 1rem;
+    justify-content: center;
+    gap: 0.75rem;
+    padding-top: 0;
   }
 
   .battle-center-actions {
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+    padding: 0.65rem;
   }
 
   .battle-builder-actions {
@@ -1919,28 +1979,67 @@
 
 @media (max-width: 720px) {
   .battle-page {
-    padding-top: 1rem;
+    padding-top: 0.75rem;
   }
 
-  .battle-section-head,
+  .battle-section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.65rem;
+  }
+
   .battle-preview-head,
-  .battle-progress-copy,
-  .battle-ranking-row,
-  .battle-result-actions,
+  .battle-progress-copy {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
   .battle-session-actions,
   .battle-deck-card-actions {
     flex-direction: column;
     align-items: flex-start;
   }
 
+  .battle-result-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .battle-result-actions-right {
+    margin-left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .battle-result-actions .btn,
+  .battle-result-actions-right .btn {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+
   .battle-card-cover {
-    height: 380px;
+    height: 340px;
   }
 
   .battle-builder-toolbar,
-  .battle-builder-summary,
   .battle-catalog-grid {
     grid-template-columns: 1fr;
+  }
+
+  .battle-builder-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .battle-builder-summary-card {
+    padding: 0.55rem 0.6rem;
+  }
+
+  .battle-builder-summary-card strong {
+    font-size: 0.9rem;
   }
 
   .battle-deck-card-compact {
@@ -1967,6 +2066,12 @@
   .battle-catalog-pagination {
     flex-direction: column;
     align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .battle-catalog-pagination-actions .btn {
+    min-width: unset;
+    flex: 1;
   }
 
   .battle-slot-card,
@@ -1997,6 +2102,11 @@
     max-height: none;
   }
 
+  .battle-ranking-row {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
   .battle-ranking-metrics {
     text-align: left;
     justify-items: start;
@@ -2004,11 +2114,18 @@
     flex-direction: row;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
+    width: 100%;
   }
 
   .battle-card {
     max-width: 100%;
+  }
+
+  .battle-vs-badge {
+    width: 64px;
+    height: 64px;
+    font-size: 1.1rem;
   }
 
   .battle-center-actions {
@@ -2020,7 +2137,12 @@
   }
 
   .battle-community-toggle .btn {
-    flex: 1 1 160px;
+    flex: 1 1 140px;
+  }
+
+  .battle-hero-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .battle-hero-actions .btn,
@@ -2028,5 +2150,184 @@
   .battle-builder-actions a {
     width: 100%;
     justify-content: center;
+  }
+
+  .battle-recent-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .battle-recent-actions .btn {
+    flex: 1 1 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .battle-hero-copy h1,
+  .battle-session-head h1,
+  .battle-result-hero h2 {
+    font-size: clamp(1.65rem, 8vw, 2.4rem);
+  }
+
+  .battle-card-cover {
+    height: 280px;
+  }
+
+  .battle-card-body {
+    padding: 1.2rem 1.1rem;
+  }
+
+  .battle-card-body h2 {
+    font-size: 1.25rem;
+  }
+
+  /* Match grid — tighter on small phones */
+  .battle-match-grid {
+    grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+
+  .battle-match-grid .battle-card-cover {
+    height: 230px;
+  }
+
+  .battle-match-grid .battle-card-body {
+    padding: 0.85rem 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .battle-match-grid .battle-card-body h2 {
+    font-size: 0.9rem;
+    line-height: 1.2;
+  }
+
+  .battle-match-grid .battle-card-body .btn-primary {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .battle-match-grid .battle-vs-column {
+    padding-top: 1rem;
+    gap: 0.45rem;
+  }
+
+  .battle-match-grid .battle-vs-badge {
+    width: 44px;
+    height: 44px;
+    font-size: 0.8rem;
+  }
+
+  .battle-match-grid .battle-center-actions {
+    padding: 0.4rem;
+    gap: 0.28rem;
+    border-radius: 10px;
+  }
+
+  .battle-match-grid .battle-center-actions .btn {
+    font-size: 0.7rem;
+    padding: 0.38rem 0.3rem;
+    min-height: 30px;
+  }
+
+  .battle-vs-badge {
+    width: 52px;
+    height: 52px;
+    font-size: 0.95rem;
+  }
+
+  .battle-vs-column {
+    gap: 0.65rem;
+    padding-top: 0;
+  }
+
+  .battle-builder-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .battle-builder-summary-card {
+    padding: 0.45rem 0.5rem;
+  }
+
+  .battle-builder-summary-card strong {
+    font-size: 0.82rem;
+  }
+
+  .battle-hero-panel,
+  .battle-builder-panel,
+  .battle-builder-preview,
+  .battle-progress-panel,
+  .battle-card,
+  .battle-ranking-list,
+  .battle-empty-state,
+  .battle-recent-card,
+  .battle-preset-card {
+    padding: 0.85rem;
+    border-radius: 16px;
+  }
+
+  .battle-leaderboard {
+    padding: 0.65rem;
+    border-radius: 16px;
+  }
+
+  .battle-result-spotlight {
+    gap: 1rem;
+  }
+
+  .battle-result-cover {
+    max-width: 160px;
+    height: 224px;
+  }
+
+  .battle-podium-card {
+    padding: 0.75rem 1rem;
+  }
+
+  .battle-community-card {
+    padding: 0.9rem;
+  }
+
+  .battle-deck-card-actions .btn {
+    flex: 1 1 120px;
+    font-size: 0.82rem;
+  }
+
+  .battle-slot-card {
+    min-height: 72px;
+    padding: 0.5rem 0.7rem 0.5rem 2rem;
+  }
+
+  .battle-slot-thumb,
+  .battle-catalog-thumb {
+    width: 48px;
+    height: 68px;
+  }
+
+  .battle-section-head h2 {
+    font-size: 1.25rem;
+  }
+
+  .battle-kicker {
+    font-size: 0.72rem;
+  }
+
+  .battle-ranking-position {
+    min-width: 40px;
+    font-size: 0.95rem;
+  }
+
+  .battle-ranking-row {
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+  }
+
+  .battle-leader-row {
+    padding: 0.45rem 0.55rem;
+  }
+
+  .battle-leader-thumb {
+    width: 32px;
+    height: 46px;
   }
 }

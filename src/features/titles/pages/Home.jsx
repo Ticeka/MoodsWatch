@@ -497,23 +497,10 @@ export function Home() {
             </Link>
           </div>
 
-          <div className="animate-fade-in-up" style={{ animationDelay: '0.3s', marginTop: 'var(--space-4)' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.5rem 0.875rem',
-                borderRadius: '999px',
-                background: 'rgba(34, 197, 94, 0.14)',
-                color: 'var(--text-primary)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-              }}
-            >
-              Catalog: canonical_titles
-              <span style={{ opacity: 0.8, fontWeight: 500 }}>
+          <div className="catalog-badge-wrap animate-fade-in-up" style={{ animationDelay: '0.3s', marginTop: 'var(--space-4)' }}>
+            <span className="catalog-badge">
+              Catalog
+              <span className="catalog-badge-count">
                 {catalogInfo.count > 0 ? t('home.catalogLoaded', { count: catalogInfo.count }) : t('common.loading')}
               </span>
             </span>
