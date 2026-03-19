@@ -13,9 +13,11 @@ function LanguageToggle() {
   const { language, setLanguage, t } = useLanguage();
 
   return (
-    <div className="language-toggle" role="group" aria-label={t('layout.language')}>
+    <div className="language-toggle" role="radiogroup" aria-label={t('layout.language')}>
       <button
         type="button"
+        role="radio"
+        aria-checked={language === 'en'}
         className={`language-toggle-btn ${language === 'en' ? 'active' : ''}`}
         onClick={(e) => { e.stopPropagation(); setLanguage('en'); }}
       >
@@ -23,6 +25,8 @@ function LanguageToggle() {
       </button>
       <button
         type="button"
+        role="radio"
+        aria-checked={language === 'th'}
         className={`language-toggle-btn ${language === 'th' ? 'active' : ''}`}
         onClick={(e) => { e.stopPropagation(); setLanguage('th'); }}
       >
@@ -106,7 +110,7 @@ function NotificationBell({ userId }) {
         ref={bellRef}
         className="notif-bell-btn"
         onClick={handleOpen}
-        title={t('layout.notifications') || 'Notifications'}
+        title={t('layout.notifications')}
         type="button"
       >
         <Bell size={18} />
@@ -120,10 +124,10 @@ function NotificationBell({ userId }) {
           style={{ position: 'fixed', top: pos.top, right: pos.right }}
         >
           <div className="notif-panel-head">
-            <strong>{t('layout.notifications') || 'Notifications'}</strong>
+            <strong>{t('layout.notifications')}</strong>
           </div>
           {notifications.length === 0 ? (
-            <p className="notif-empty">{t('layout.notificationsEmpty') || 'No notifications'}</p>
+            <p className="notif-empty">{t('layout.notificationsEmpty')}</p>
           ) : (
             <ul className="notif-list">
               {notifications.map((n) => {
@@ -168,10 +172,12 @@ export function Header() {
   const dropdownRef = useRef(null);
   const chipRef = useRef(null);
   const portalRef = useRef(null);
+  const drawerCloseRef = useRef(null);
+  const menuBtnRef = useRef(null);
 
   const isActive = (path) => location.pathname === path;
   const isTierListActive = location.pathname.startsWith('/tierlist');
-  const userLabel = user?.profile?.name || user?.email?.split('@')[0] || 'User';
+  const userLabel = user?.profile?.name || user?.email?.split('@')[0] || t('layout.userFallback');
   const userRole = user?.profile?.role;
   const canAccessAdmin = userRole === 'admin' || userRole === 'editor';
   const closeMobileMenu = () => setMobileMenuOpen(false);
@@ -227,6 +233,14 @@ export function Header() {
     }
   }, [dropdownOpen]);
 
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      drawerCloseRef.current?.focus();
+    } else {
+      menuBtnRef.current?.focus();
+    }
+  }, [mobileMenuOpen]);
+
   return (
     <>
       <header className={`header glass ${scrolled ? 'header-scrolled' : ''}`}>
@@ -235,10 +249,10 @@ export function Header() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
           </Link>
 
-          <nav className="desktop-nav">
+          <nav className="desktop-nav" aria-label={t('layout.mainNav')}>
             <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <Home size={16} /><span className="nav-link-label">{t('layout.home')}</span>
             </Link>
@@ -261,9 +275,10 @@ export function Header() {
               <div className="guest-actions-desktop">
                 <LanguageToggle />
                 <button
+                  type="button"
                   className="theme-toggle"
                   onClick={toggleTheme}
-                  title={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+                  aria-label={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
                 >
                   {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
@@ -275,10 +290,15 @@ export function Header() {
             {user ? (
               <div className="user-dropdown-container" ref={dropdownRef}>
                 <button
+                  id="user-chip-btn"
                   ref={chipRef}
                   className={`user-chip ${dropdownOpen ? 'ring-active' : ''}`}
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  title={t('layout.accountMenu')}
+                  aria-label={t('layout.accountMenu')}
+                  aria-expanded={dropdownOpen}
+                  aria-haspopup="menu"
+                  aria-controls="user-account-menu"
+                  type="button"
                 >
                   {user?.profile?.avatar_url ? (
                     <img src={user.profile.avatar_url} alt="" className="user-avatar" />
@@ -298,10 +318,12 @@ export function Header() {
             )}
 
             <button
+              ref={menuBtnRef}
               className={`mobile-menu-btn ${mobileMenuOpen ? 'active' : ''}`}
               type="button"
               aria-label={t('layout.openMenu')}
               aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-drawer-nav"
               onClick={() => setMobileMenuOpen((current) => !current)}
             >
               {mobileMenuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
@@ -310,14 +332,16 @@ export function Header() {
         </div>
       </header>
 
-      <div className={`mobile-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)}></div>
-      <nav className={`mobile-drawer ${mobileMenuOpen ? 'open' : ''}`}>
+      <div className={`mobile-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)} aria-hidden="true"></div>
+      <nav id="mobile-drawer-nav" className={`mobile-drawer ${mobileMenuOpen ? 'open' : ''}`} aria-label={t('layout.mobileNav')}>
         <div className="drawer-header">
           <span className="drawer-title">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
           </span>
-          <button className="drawer-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+          <button ref={drawerCloseRef} className="drawer-close" onClick={() => setMobileMenuOpen(false)} aria-label={t('layout.closeMenu')} type="button">
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
         <div className="drawer-links">
           <Link to="/" className={`drawer-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -358,7 +382,7 @@ export function Header() {
                   <ShieldAlert size={18} /> {t('layout.admin')}
                 </Link>
               )}
-              <button onClick={signOut} className="drawer-link logout">
+              <button type="button" onClick={signOut} className="drawer-link logout">
                 <LogOut size={18} /> {t('layout.logout')}
               </button>
             </>
@@ -367,14 +391,14 @@ export function Header() {
               <User size={18} /> {t('layout.login')}
             </Link>
           )}
-          <button onClick={toggleTheme} className="drawer-link theme">
+          <button type="button" onClick={toggleTheme} className="drawer-link theme">
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             {theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
           </button>
         </div>
       </nav>
 
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label={t('layout.bottomNav')}>
         <Link to="/" className={`bottom-nav-item ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
           <Home size={20} className="bottom-nav-icon" />
           <span className="bottom-nav-label">{t('layout.home')}</span>
@@ -397,7 +421,7 @@ export function Header() {
             <span className="bottom-nav-label">{t('layout.profile')}</span>
           </Link>
         )}
-        <button onClick={toggleTheme} className="bottom-nav-item">
+        <button type="button" onClick={toggleTheme} className="bottom-nav-item">
           {theme === 'dark' ? <Sun size={20} className="bottom-nav-icon" /> : <Moon size={20} className="bottom-nav-icon" />}
           <span className="bottom-nav-label">{theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}</span>
         </button>
@@ -405,10 +429,13 @@ export function Header() {
 
       {dropdownOpen && user && createPortal(
         <div
+          id="user-account-menu"
           ref={portalRef}
           className="user-dropdown-menu glass-heavy"
           style={{ position: 'fixed', top: dropdownPos.top, right: dropdownPos.right }}
           onMouseDown={(e) => e.stopPropagation()}
+          role="menu"
+          aria-labelledby="user-chip-btn"
         >
           <div className="dropdown-header mobile-only">
             <strong>{userLabel}</strong>
@@ -420,18 +447,18 @@ export function Header() {
             <LanguageToggle />
           </div>
 
-          <button className="dropdown-item" onClick={toggleTheme}>
+          <button className="dropdown-item" onClick={toggleTheme} role="menuitem" type="button">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             <span>{theme === 'dark' ? t('layout.lightMode') : t('layout.darkMode')}</span>
           </button>
 
-          <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+          <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)} role="menuitem">
             <Settings size={16} />
             <span>{t('layout.profile')}</span>
           </Link>
 
           {canAccessAdmin && (
-            <Link to="/admin" className="dropdown-item admin-item" onClick={() => setDropdownOpen(false)}>
+            <Link to="/admin" className="dropdown-item admin-item" onClick={() => setDropdownOpen(false)} role="menuitem">
               <ShieldAlert size={16} />
               <span>{t('layout.adminDesktop')}</span>
             </Link>
@@ -442,6 +469,8 @@ export function Header() {
           <button
             className="dropdown-item logout-item"
             onClick={() => { setDropdownOpen(false); signOut(); }}
+            role="menuitem"
+            type="button"
           >
             <LogOut size={16} />
             <span>{t('layout.logout')}</span>
@@ -464,7 +493,7 @@ export function Footer() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Watch</span></span>
+            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
           </Link>
           <p className="footer-desc">{t('layout.footerDesc')}</p>
         </div>
@@ -488,7 +517,7 @@ export function Footer() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <p>&copy; {new Date().getFullYear()} MoodWatch | {t('layout.copyright')}</p>
+          <p>&copy; {new Date().getFullYear()} MoodToon | {t('layout.copyright')}</p>
         </div>
       </div>
     </footer>

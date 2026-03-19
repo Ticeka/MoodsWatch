@@ -1,4 +1,5 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X as XIcon } from 'lucide-react';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { listTitles, getCacheInfo, clearTitlesCache } from '@/features/discover/lib/recommend';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
@@ -13,20 +14,24 @@ import {
   prioritizeUnseenTitles,
 } from '@/features/profile/lib/profileStore';
 import { TITLE_SORT_OPTIONS } from '@/shared/lib/titleSorting';
+import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
+import { ErrorState } from '@/shared/components/ui/ErrorState';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
 import './Discover.css';
 
 const TYPE_TABS = [
-  { id: 'all', labelTh: 'ทั้งหมด', labelEn: 'All', icon: '🌐' },
-  { id: 'anime', labelTh: 'อนิเมะ', labelEn: 'Anime', icon: '📺' },
-  { id: 'manga', labelTh: 'มังงะ', labelEn: 'Manga', icon: '📖' },
-  { id: 'manhwa', labelTh: 'มันฮวา', labelEn: 'Manhwa', icon: '🇰🇷' },
+  { id: 'all',    labelKey: 'discover.typeAll',    icon: '🌐' },
+  { id: 'anime',  labelKey: 'discover.typeAnime',  icon: '📺' },
+  { id: 'manga',  labelKey: 'discover.typeManga',  icon: '📚' },
+  { id: 'manhwa', labelKey: 'discover.typeManhwa', icon: '🇰🇷' },
 ];
 
 const QUICK_TAGS = ['manhwa', 'action', 'romance', 'isekai', 'comedy', 'horror'];
 const PAGE_SIZE = 20;
 
 export function Discover() {
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState('');
   const [browseResults, setBrowseResults] = useState([]);
@@ -40,17 +45,28 @@ export function Discover() {
   const [errorMessage, setErrorMessage] = useState('');
   const [sortBy, setSortBy] = useState('popularity');
   const browseSectionRef = useRef(null);
+  const loadBrowseRequestRef = useRef(0);
 
   const { watchlist } = useWatchlist();
   const { hiddenFromDiscoveryIds } = useHiddenTitles();
   const { prefs } = useProfilePreferences();
-  const recommendationState = buildRecommendationState(watchlist, prefs, hiddenFromDiscoveryIds);
+  const recommendationState = useMemo(
+    () => buildRecommendationState(watchlist, prefs, hiddenFromDiscoveryIds),
+    [watchlist, prefs, hiddenFromDiscoveryIds]
+  );
 
   useEffect(() => {
     setHideSeen(prefs.hideSeenByDefault);
   }, [prefs.hideSeenByDefault]);
 
-  const loadBrowse = useCallback(async ({ page = 1, type = activeTab, searchValue = query, tagValue = activeTag, sortValue = sortBy } = {}) => {
+  const loadBrowse = useCallback(async ({
+    page = 1,
+    type = activeTab,
+    searchValue = query,
+    tagValue = activeTag,
+    sortValue = sortBy,
+  } = {}) => {
+    const requestId = ++loadBrowseRequestRef.current;
     setIsLoading(true);
     setErrorMessage('');
 
@@ -64,6 +80,7 @@ export function Discover() {
         pageSize: PAGE_SIZE,
       });
 
+      if (requestId !== loadBrowseRequestRef.current) return null;
       startTransition(() => {
         setBrowseResults(response.items);
         setTotalResults(response.total);
@@ -71,8 +88,10 @@ export function Discover() {
         setCurrentPage(response.page);
         setCatalogInfo(getCacheInfo());
       });
+
       return response;
     } catch (error) {
+      if (requestId !== loadBrowseRequestRef.current) return null;
       console.error(error);
       startTransition(() => {
         setBrowseResults([]);
@@ -84,7 +103,7 @@ export function Discover() {
       });
       return null;
     } finally {
-      setIsLoading(false);
+      if (requestId === loadBrowseRequestRef.current) setIsLoading(false);
     }
   }, [activeTab, query, activeTag, sortBy, t]);
 
@@ -128,8 +147,8 @@ export function Discover() {
 
   const activeTabLabel = useMemo(() => {
     const activeTabItem = TYPE_TABS.find((tab) => tab.id === activeTab) || TYPE_TABS[0];
-    return language === 'th' ? activeTabItem.labelTh : activeTabItem.labelEn;
-  }, [activeTab, language]);
+    return t(activeTabItem.labelKey);
+  }, [activeTab, t]);
 
   const hasSearchQuery = query.trim().length >= 2;
   const hasActiveTag = Boolean(activeTag);
@@ -154,9 +173,10 @@ export function Discover() {
           </p>
 
           <div className="search-box glass animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
-            <span className="search-icon">🔍</span>
+            <span className="search-icon" aria-hidden="true">🔍</span>
             <input
-              type="text"
+              type="search"
+              aria-label={t('discover.searchPlaceholder')}
               placeholder={t('discover.searchPlaceholder')}
               value={query}
               onChange={(event) => {
@@ -167,23 +187,35 @@ export function Discover() {
               autoFocus
             />
             {query && (
-              <button className="search-clear" onClick={() => { setQuery(''); setCurrentPage(1); }} aria-label={t('discover.clearSearch')}>
-                ×
+              <button
+                className="search-clear"
+                onClick={() => { setQuery(''); setCurrentPage(1); }}
+                aria-label={t('discover.clearSearch')}
+                type="button"
+              >
+                X
               </button>
             )}
           </div>
 
-          <div className="type-tabs animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+          <div
+            className="type-tabs animate-fade-in-up"
+            style={{ animationDelay: '0.2s' }}
+            role="toolbar"
+            aria-label={t('discover.typeTabsAria')}
+          >
             {TYPE_TABS.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
+                aria-pressed={activeTab === tab.id}
                 className={`type-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => {
                   setActiveTab(tab.id);
                   setCurrentPage(1);
                 }}
               >
-                <span>{tab.icon}</span> {language === 'th' ? tab.labelTh : tab.labelEn}
+                <span>{tab.icon}</span> {t(tab.labelKey)}
               </button>
             ))}
           </div>
@@ -194,9 +226,10 @@ export function Discover() {
                 key={tag}
                 className={`quick-tag ${activeTag === tag ? 'active' : ''}`}
                 onClick={() => {
-                  setActiveTag((currentTag) => currentTag === tag ? '' : tag);
+                  setActiveTag((currentTag) => (currentTag === tag ? '' : tag));
                   setCurrentPage(1);
                 }}
+                type="button"
               >
                 {tag}
               </button>
@@ -207,8 +240,8 @@ export function Discover() {
             <div className="discover-active-filters animate-fade-in-up" style={{ animationDelay: '0.28s' }}>
               {hasSearchQuery && <span className="discover-filter-pill">{t('discover.searchLabel')}: {query}</span>}
               {hasActiveTag && (
-                <button className="discover-filter-pill is-removable" onClick={() => setActiveTag('')}>
-                  {t('discover.tagLabel')}: {activeTag} ×
+                <button className="discover-filter-pill is-removable" onClick={() => setActiveTag('')} type="button">
+                  {t('discover.tagLabel')}: {activeTag} <XIcon size={12} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -216,7 +249,7 @@ export function Discover() {
 
           <div className="discover-catalog-wrap animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
             <span className="catalog-pill">
-              Catalog: canonical_titles
+              {t('discover.catalogLabel')}
               <span className="catalog-pill-meta">
                 {catalogInfo.count > 0 ? t('discover.loaded', { count: catalogInfo.count }) : t('common.loading').toLowerCase()}
               </span>
@@ -227,49 +260,41 @@ export function Discover() {
 
       <section className="section discover-content">
         <div className="container">
-          {errorMessage && (
-            <div className="empty-discover">
-              <span className="empty-emoji">⚠️</span>
-              <p>{errorMessage}</p>
-            </div>
-          )}
+          {errorMessage && <ErrorState message={errorMessage} />}
 
           {!errorMessage && (
             <div ref={browseSectionRef} className="browse-context animate-fade-in-up">
-	              <div className="browse-toolbar">
-	                <h3 className="browse-heading">
-	                  {resultHeading}
-	                  <span className="browse-count">{t('discover.resultCount', { count: totalResults })}</span>
-	                </h3>
-	                <div className="browse-toolbar-actions">
-                    {totalResults > 0 && (
-                      <span className="browse-visible-count">
-                        {t('discover.showingResultCount', { shown: shownBrowseCount, count: totalResults })}
-                      </span>
-                    )}
-	                  <label className="discover-sorter">
-	                    <span>{t('watchlist.sort')}</span>
-		                    <select value={sortBy} onChange={(event) => {
-		                      setSortBy(event.target.value);
-		                      setCurrentPage(1);
-		                    }}>
-	                      {TITLE_SORT_OPTIONS.filter((option) => option.id !== 'match').map((option) => (
-	                        <option key={option.id} value={option.id}>{option.label}</option>
-	                      ))}
-	                    </select>
-	                  </label>
-	                  <label className="hide-seen-toggle">
-	                    <input type="checkbox" checked={hideSeen} onChange={(event) => setHideSeen(event.target.checked)} />
-	                    <span className="toggle-track"><span className="toggle-thumb"></span></span>
-	                    <span className="toggle-label">{t('discover.hideSeen')}</span>
-	                  </label>
-	                </div>
-	              </div>
+              <div className="browse-toolbar">
+                <h3 className="browse-heading">
+                  {resultHeading}
+                  <span className="browse-count">{t('discover.resultCount', { count: totalResults })}</span>
+                </h3>
+                <div className="browse-toolbar-actions" role="toolbar" aria-label={t('discover.resultsToolbarAria')}>
+                  {totalResults > 0 && (
+                    <span className="browse-visible-count">
+                      {t('discover.showingResultCount', { shown: shownBrowseCount, count: totalResults })}
+                    </span>
+                  )}
+                  <SortSelect
+                    value={sortBy}
+                    onChange={(value) => { setSortBy(value); setCurrentPage(1); }}
+                    label={t('watchlist.sort')}
+                    className="discover-sorter"
+                  >
+                    {TITLE_SORT_OPTIONS.filter((option) => option.id !== 'match').map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </SortSelect>
+                  <label className="hide-seen-toggle">
+                    <input type="checkbox" checked={hideSeen} onChange={(event) => setHideSeen(event.target.checked)} />
+                    <span className="toggle-track"><span className="toggle-thumb"></span></span>
+                    <span className="toggle-label">{t('discover.hideSeen')}</span>
+                  </label>
+                </div>
+              </div>
 
               {isLoading ? (
-                <div className="loading-grid">
-                  {[1, 2, 3, 4, 5, 6].map((n) => <div key={n} className="skeleton-card"></div>)}
-                </div>
+                <SkeletonGrid />
               ) : filteredBrowse.length > 0 ? (
                 <>
                   <div className="results-grid stagger-children">
@@ -280,9 +305,10 @@ export function Discover() {
 
                   <div className="discover-pagination">
                     <button
-	                      onClick={() => handleBrowsePageChange(currentPage - 1)}
+                      onClick={() => handleBrowsePageChange(currentPage - 1)}
                       className="primary-btn discover-page-btn"
                       disabled={currentPage <= 1}
+                      type="button"
                     >
                       {t('common.previous')}
                     </button>
@@ -290,27 +316,21 @@ export function Discover() {
                       {t('discover.pageIndicator', { page: currentPage, total: totalPages })}
                     </span>
                     <button
-	                      onClick={() => handleBrowsePageChange(currentPage + 1)}
+                      onClick={() => handleBrowsePageChange(currentPage + 1)}
                       className="primary-btn discover-page-btn"
                       disabled={currentPage >= totalPages}
+                      type="button"
                     >
                       {t('common.next')}
                     </button>
                   </div>
                 </>
               ) : (
-                <div className="empty-discover">
-                  <div className="empty-illustration">
-                    <span className="empty-main-icon">🔍</span>
-                    <div className="empty-floating">
-                      <span>📺</span>
-                      <span>📖</span>
-                      <span>🇰🇷</span>
-                    </div>
-                  </div>
-                  <h3>{t('discover.noResults')}</h3>
-                  <p>{t('discover.noResultsHint')}</p>
-                </div>
+                <EmptyState
+                  className="empty-discover"
+                  title={t('discover.noResults')}
+                  message={t('discover.noResultsHint')}
+                />
               )}
             </div>
           )}

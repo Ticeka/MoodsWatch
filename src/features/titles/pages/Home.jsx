@@ -1,4 +1,4 @@
-import React, { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
@@ -25,6 +25,10 @@ import {
   prioritizeUnseenTitles,
 } from '@/features/profile/lib/profileStore';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
+import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
+import { EmptyState } from '@/shared/components/ui/EmptyState';
+import { SectionHeader } from '@/shared/components/ui/SectionHeader';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import './Home.css';
 
 const RESULTS_PAGE_SIZE = 16;
@@ -50,13 +54,20 @@ export function Home() {
   const [resultSortBy, setResultSortBy] = useState('match');
   const [trendingSortBy, setTrendingSortBy] = useState('popularity');
   const resultsSectionRef = useRef(null);
+  const recommendRequestRef = useRef(0);
 
   const { watchlist, advanceProgress, updateItem, setConsumptionTarget, catchUpToTarget } = useWatchlist();
   const { favoriteTitleIds } = useFavoriteTitles();
   const { hiddenFromRecommendationIds, hiddenFromDiscoveryIds } = useHiddenTitles();
   const { prefs } = useProfilePreferences();
-  const recommendationState = buildRecommendationState(watchlist, prefs, hiddenFromRecommendationIds);
-  const discoveryState = buildRecommendationState(watchlist, prefs, hiddenFromDiscoveryIds);
+  const recommendationState = useMemo(
+    () => buildRecommendationState(watchlist, prefs, hiddenFromRecommendationIds),
+    [watchlist, prefs, hiddenFromRecommendationIds]
+  );
+  const discoveryState = useMemo(
+    () => buildRecommendationState(watchlist, prefs, hiddenFromDiscoveryIds),
+    [watchlist, prefs, hiddenFromDiscoveryIds]
+  );
   const effectiveMoodFilters = moods.length > 0 ? moods : prefs.favoriteMoods;
   const canRequestRecommendations = moods.length > 0 || prefs.favoriteMoods.length > 0 || !!timeOption || type !== 'all';
 
@@ -157,6 +168,7 @@ export function Home() {
   }, [watchlist, hiddenFromDiscoveryIds]);
 
   const handleRecommend = async () => {
+    const requestId = ++recommendRequestRef.current;
     setIsLoading(true);
     try {
       const recs = await recommend({
@@ -169,19 +181,24 @@ export function Home() {
         preferences: prefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
       });
+      if (requestId !== recommendRequestRef.current) return;
       startTransition(() => {
         setResults(recs);
         setResultsPage(1);
         setCatalogInfo(getCacheInfo());
       });
     } catch (err) {
+      if (requestId !== recommendRequestRef.current) return;
       console.error('Failed to fetch recommendations', err);
+      toast.error(t('home.recommendError'));
       setCatalogInfo(getCacheInfo());
     } finally {
-      setIsLoading(false);
-      setTimeout(() => {
-        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      if (requestId === recommendRequestRef.current) {
+        setIsLoading(false);
+        setTimeout(() => {
+          document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
     }
   };
 
@@ -243,14 +260,18 @@ export function Home() {
     return () => window.removeEventListener('moodtoon:recommendations-rebuild', handleRebuild);
   }, []);
 
-  const applyRecommendationFilters = (list) => (
-    filterTitlesByRecommendationPreferences(
-      filterHiddenTitles(list, discoveryState),
-      discoveryState
-    )
+  const applyRecommendationFilters = useCallback(
+    (list) => filterTitlesByRecommendationPreferences(filterHiddenTitles(list, discoveryState), discoveryState),
+    [discoveryState]
   );
-  const filterSeen = (list) => filterSeenTitles(applyRecommendationFilters(list), recommendationState, hideSeen);
-  const orderTitles = (list) => prioritizeUnseenTitles(list, recommendationState);
+  const filterSeen = useCallback(
+    (list) => filterSeenTitles(applyRecommendationFilters(list), recommendationState, hideSeen),
+    [applyRecommendationFilters, recommendationState, hideSeen]
+  );
+  const orderTitles = useCallback(
+    (list) => prioritizeUnseenTitles(list, recommendationState),
+    [recommendationState]
+  );
 
   const displayResults = useMemo(
     () => sortTitlesCollection(filterSeen(orderTitles(results)), resultSortBy),
@@ -289,6 +310,7 @@ export function Home() {
   );
 
   const handleQuickMood = async (moodId) => {
+    const requestId = ++recommendRequestRef.current;
     setMoods([moodId]);
     setIsLoading(true);
     try {
@@ -300,19 +322,24 @@ export function Home() {
         preferences: prefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
       });
+      if (requestId !== recommendRequestRef.current) return;
       startTransition(() => {
         setResults(recs);
         setResultsPage(1);
         setCatalogInfo(getCacheInfo());
       });
     } catch (err) {
+      if (requestId !== recommendRequestRef.current) return;
       console.error(err);
+      toast.error(t('home.recommendError'));
       setCatalogInfo(getCacheInfo());
     } finally {
-      setIsLoading(false);
-      setTimeout(() => {
-        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-      }, 200);
+      if (requestId === recommendRequestRef.current) {
+        setIsLoading(false);
+        setTimeout(() => {
+          document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+        }, 200);
+      }
     }
   };
 
@@ -403,8 +430,11 @@ export function Home() {
   return (
     <div className="home-page animate-fade-in">
       {isRandomModalOpen && (
-        <div className="random-modal-overlay" onClick={() => setIsRandomModalOpen(false)}>
+        <div className="random-modal-overlay" onClick={() => setIsRandomModalOpen(false)} aria-hidden="true">
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('home.randomPick')}
             className="random-modal animate-scale-in"
             onClick={(event) => event.stopPropagation()}
           >
@@ -417,11 +447,11 @@ export function Home() {
                 <TitleCard title={randomPick} />
               </div>
             ) : (
-              <div className="empty-state random-modal-empty">
-                <span className="empty-icon">Random</span>
-                <h3>{t('home.noRandomTitle')}</h3>
-                <p>{t('home.tryRandomAgain')}</p>
-              </div>
+              <EmptyState
+                className="empty-state random-modal-empty"
+                title={t('home.noRandomTitle')}
+                message={t('home.tryRandomAgain')}
+              />
             )}
 
             <div className="random-modal-actions">
@@ -463,6 +493,7 @@ export function Home() {
             {quickMoods.map((mood) => (
               <button
                 key={mood.id}
+                type="button"
                 className={`quick-mood-chip ${moods.includes(mood.id) ? 'active' : ''}`}
                 onClick={() => handleQuickMood(mood.id)}
                 style={{ '--chip-color': mood.color }}
@@ -472,20 +503,20 @@ export function Home() {
             ))}
           </div>
 
-	            <div className="hero-actions animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-	            {heroCtaHref ? (
-                <Link to={heroCtaHref} className="hero-link-btn">
-                  <span className="btn-icon"><Sparkles size={18} /></span>
-                  <span className="btn-text">{heroCtaLabel}</span>
-                </Link>
-              ) : (
-	              <Button size="lg" icon={<Sparkles size={18} />} onClick={() => document.getElementById('finder-section').scrollIntoView({ behavior: 'smooth' })}>
-	                {heroCtaLabel}
-	              </Button>
-              )}
-	            <Button size="lg" variant="secondary" onClick={handleRandomPick} icon={<Dices size={18} />}>
-	              {t('home.randomPick')}
-	            </Button>
+          <div className="hero-actions animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            {heroCtaHref ? (
+              <Link to={heroCtaHref} className="hero-link-btn">
+                <span className="btn-icon"><Sparkles size={18} /></span>
+                <span className="btn-text">{heroCtaLabel}</span>
+              </Link>
+            ) : (
+              <Button size="lg" icon={<Sparkles size={18} />} onClick={() => document.getElementById('finder-section').scrollIntoView({ behavior: 'smooth' })}>
+                {heroCtaLabel}
+              </Button>
+            )}
+            <Button size="lg" variant="secondary" onClick={handleRandomPick} icon={<Dices size={18} />}>
+              {t('home.randomPick')}
+            </Button>
           </div>
 
           <div className="hero-quick-links animate-fade-in-up" style={{ animationDelay: '0.25s' }}>
@@ -499,7 +530,7 @@ export function Home() {
 
           <div className="catalog-badge-wrap animate-fade-in-up" style={{ animationDelay: '0.3s', marginTop: 'var(--space-4)' }}>
             <span className="catalog-badge">
-              Catalog
+              {t('home.catalogLabel')}
               <span className="catalog-badge-count">
                 {catalogInfo.count > 0 ? t('home.catalogLoaded', { count: catalogInfo.count }) : t('common.loading')}
               </span>
@@ -527,10 +558,12 @@ export function Home() {
               </label>
             </div>
 
-            <div className="type-selector stagger-children">
+            <div className="type-selector stagger-children" role="toolbar" aria-label={t('home.typeTabsAria')}>
               {TYPE_OPTIONS.map((opt) => (
                 <button
                   key={opt.id}
+                  type="button"
+                  aria-pressed={type === opt.id}
                   className={`type-btn ${type === opt.id ? 'active' : ''}`}
                   onClick={() => setType(opt.id)}
                 >
@@ -558,6 +591,7 @@ export function Home() {
 
               {(moods.length > 0 || timeOption || type !== 'all') && (
                 <button
+                  type="button"
                   className="clear-all-btn"
                   onClick={() => {
                     setMoods([]);
@@ -581,20 +615,22 @@ export function Home() {
                 {t('home.recommendationsForYou')}
                 {displayResults.length > 0 && <span className="results-count">{t('home.titlesCount', { count: displayResults.length })}</span>}
               </h2>
-              <div className="results-toolbar-actions">
+              <div className="results-toolbar-actions" role="toolbar" aria-label={t('home.resultsToolbarAria')}>
                 {displayResults.length > 0 && (
                   <span className="results-visible-count">
                     {t('home.showingTitlesCount', { shown: shownResultsCount, count: displayResults.length })}
                   </span>
                 )}
-                <label className="results-sorter">
-                  <span>{t('watchlist.sort')}</span>
-                  <select value={resultSortBy} onChange={(event) => setResultSortBy(event.target.value)}>
-                    {TITLE_SORT_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
+                <SortSelect
+                  value={resultSortBy}
+                  onChange={setResultSortBy}
+                  label={t('watchlist.sort')}
+                  className="results-sorter"
+                >
+                  {TITLE_SORT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </SortSelect>
                 {results.length > 0 && (
                   <Button variant="ghost" size="sm" onClick={handleRecommend} icon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}>
                     {t('common.refresh')}
@@ -604,11 +640,7 @@ export function Home() {
             </div>
 
             {isLoading ? (
-              <div className="loading-grid">
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <div key={n} className="skeleton-card"></div>
-                ))}
-              </div>
+              <SkeletonGrid />
             ) : displayResults.length > 0 ? (
               <>
                 <div className="results-grid stagger-children">
@@ -619,6 +651,7 @@ export function Home() {
                 {resultsTotalPages > 1 && (
                   <div className="results-pagination">
                     <button
+                      type="button"
                       className="results-page-btn"
                       onClick={() => handleResultsPageChange(Math.max(1, resultsPage - 1))}
                       disabled={resultsPage <= 1}
@@ -629,6 +662,7 @@ export function Home() {
                       {t('common.page')} {resultsPage} / {resultsTotalPages}
                     </span>
                     <button
+                      type="button"
                       className="results-page-btn"
                       onClick={() => handleResultsPageChange(Math.min(resultsTotalPages, resultsPage + 1))}
                       disabled={resultsPage >= resultsTotalPages}
@@ -639,14 +673,16 @@ export function Home() {
                 )}
               </>
             ) : (
-              <div className="empty-state">
-                <span className="empty-icon">No Match</span>
-                <h3>{t('home.noMatchingTitles')}</h3>
-                <p>{t('home.relaxFilters')}{hideSeen ? t('home.hideSeenHint') : ''}.</p>
-                <Button variant="outline" onClick={() => { setMoods([]); setTimeOption(null); }}>
-                  {t('home.clearFilters')}
-                </Button>
-              </div>
+              <EmptyState
+                icon="No Match"
+                title={t('home.noMatchingTitles')}
+                message={`${t('home.relaxFilters')}${hideSeen ? t('home.hideSeenHint') : ''}.`}
+                action={
+                  <Button variant="outline" onClick={() => { setMoods([]); setTimeOption(null); }}>
+                    {t('home.clearFilters')}
+                  </Button>
+                }
+              />
             )}
           </div>
         </section>
@@ -665,15 +701,13 @@ export function Home() {
             return (
               <section key={block.id} className="section editorial-section">
                 <div className="container">
-                  <div className="section-header-row">
-                    <div>
-                      <h2 className="section-heading">{block.title}</h2>
-                      {block.subtitle && <p className="editorial-subtitle">{block.subtitle}</p>}
-                    </div>
-                    {block.collection?.slug && (
+                  <SectionHeader
+                    title={block.title}
+                    subtitle={block.subtitle && <p className="editorial-subtitle">{block.subtitle}</p>}
+                    action={block.collection?.slug && (
                       <span className="editorial-chip">{block.collection.badgeLabel || block.collection.slug}</span>
                     )}
-                  </div>
+                  />
                   <div className="results-grid stagger-children">
                     {collectionTitles.map((title) => (
                       <TitleCard key={`${block.id}-${title.id}`} title={title} />
@@ -689,12 +723,14 @@ export function Home() {
       {showContinueSection && (
         <section className="section">
           <div className="container">
-            <div className="section-header-row">
-              <h2 className="section-heading">{t('home.continueSection')}</h2>
-              <Link to="/watchlist" className="quick-link">
-                <span>{t('common.list')}</span> {t('home.openWatchlist')}
-              </Link>
-            </div>
+            <SectionHeader
+              title={t('home.continueSection')}
+              action={
+                <Link to="/watchlist" className="quick-link">
+                  <span>{t('common.list')}</span> {t('home.openWatchlist')}
+                </Link>
+              }
+            />
             <div className="continue-grid stagger-children">
               {continueCards.map((title) => (
                 <div key={title.id} className="continue-card-shell">
@@ -742,18 +778,21 @@ export function Home() {
       {showTrendingSection && (
         <section className="section trending-section">
           <div className="container">
-            <div className="section-header-row">
-              <h2 className="section-heading">{t('home.trendingNow')}</h2>
-              <div className="results-toolbar-actions">
-                <label className="results-sorter">
-                  <span>{t('watchlist.sort')}</span>
-                  <select value={trendingSortBy} onChange={(event) => setTrendingSortBy(event.target.value)}>
+            <SectionHeader
+              title={t('home.trendingNow')}
+              action={
+                <div className="results-toolbar-actions" role="toolbar" aria-label={t('home.trendingToolbarAria')}>
+                  <SortSelect
+                    value={trendingSortBy}
+                    onChange={setTrendingSortBy}
+                    label={t('watchlist.sort')}
+                    className="results-sorter"
+                  >
                     {TITLE_SORT_OPTIONS.filter((option) => option.id !== 'match').map((option) => (
                       <option key={option.id} value={option.id}>{option.label}</option>
                     ))}
-                  </select>
-                </label>
-                <label className="hide-seen-toggle alt">
+                  </SortSelect>
+                  <label className="hide-seen-toggle alt">
                   <input
                     type="checkbox"
                     checked={hideSeen}
@@ -765,12 +804,11 @@ export function Home() {
                   <span className="toggle-label">{t('home.hideSeen')}</span>
                 </label>
               </div>
-            </div>
+              }
+            />
 
             {isInitialLoad ? (
-              <div className="loading-grid">
-                {[1, 2, 3, 4, 5, 6].map((n) => <div key={n} className="skeleton-card"></div>)}
-              </div>
+              <SkeletonGrid />
             ) : (
               <div className="results-grid stagger-children">
                 {displayTrending.map((title) => (
