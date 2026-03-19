@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Download, Play, Square, RefreshCw,
   CheckCircle2, XCircle, SkipForward, Info,
@@ -301,12 +301,13 @@ export function AdminFetch() {
   const addLog = useCallback((type, message) => {
     const entry = { id: `${Date.now()}-${Math.random()}`, type, message, time: new Date().toLocaleTimeString('th-TH') };
     setLogs((p) => { const n = [...p, entry]; return n.length > 200 ? n.slice(-200) : n; });
-    setTimeout(() => {
-      if (logContainerRef.current) {
-        logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-      }
-    }, 40);
   }, []);
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs]);
 
   // Build AniList variables from config
   const buildVars = useCallback((page) => {
@@ -656,6 +657,7 @@ export function AdminFetch() {
           background: 'linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent))',
           border: '1px solid color-mix(in srgb, var(--ink-900) 8%, transparent)',
           borderRadius: 24, padding: 'var(--space-5)',
+          overflowAnchor: 'none',
         }}>
           <p style={{ margin: '0 0 var(--space-3)', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
             {t('admin.fetch.logTitle')}
@@ -665,6 +667,7 @@ export function AdminFetch() {
             background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
             borderRadius: 'var(--radius-lg)', padding: 'var(--space-3)',
             fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace', fontSize: '0.76rem',
+            overflowAnchor: 'none',
           }}>
             {logs.map((log) => (
               <div key={log.id} style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', padding: '0.18rem 0.2rem', color: LOG_COLOR[log.type] }}>
