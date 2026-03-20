@@ -14,7 +14,7 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, Flag, Link as LinkIcon, Plus, Trash2, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flag, Link as LinkIcon, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import './TitleDetail.css';
 
 const PLATFORM_OPTIONS = [
@@ -57,7 +57,13 @@ export function TitleDetail() {
   const [showAddLinkForm, setShowAddLinkForm] = useState(false);
   const [addLinkForm, setAddLinkForm] = useState({ platform_name: '', url: '', region_code: '' });
   const [isSavingLink, setIsSavingLink] = useState(false);
+  const [castTab, setCastTab] = useState('characters');
+  const [titleStats, setTitleStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [canScrollCastPrev, setCanScrollCastPrev] = useState(false);
+  const [canScrollCastNext, setCanScrollCastNext] = useState(false);
   const similarRailRef = useRef(null);
+  const castRailRef = useRef(null);
 
   const status = title ? getStatus(title.id) : null;
   const watchlistItem = title ? watchlist.find((item) => item.titleId === title.id) : null;
@@ -126,6 +132,64 @@ export function TitleDetail() {
   }, [title?.id, watchlist, prefs, hiddenFromRecommendationIds]);
 
   useEffect(() => {
+    if (castTab !== 'stats' || !title?.id) return undefined;
+    let cancelled = false;
+
+    async function fetchStats() {
+      setStatsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('user_lists')
+          .select('list_status')
+          .eq('title_id', title.id);
+        if (error) throw error;
+        if (!cancelled && data) {
+          const counts = {};
+          data.forEach((row) => {
+            const s = row.list_status || 'planned';
+            counts[s] = (counts[s] || 0) + 1;
+          });
+          setTitleStats(counts);
+        }
+      } catch (err) {
+        console.error('Failed to load title stats:', err);
+        if (!cancelled) setTitleStats({});
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    }
+
+    fetchStats();
+    return () => { cancelled = true; };
+  }, [castTab, title?.id]);
+
+  useEffect(() => {
+    if (castTab === 'stats') return undefined;
+    const rail = castRailRef.current;
+    if (!rail) return undefined;
+
+    const updateCastNavState = () => {
+      const max = rail.scrollWidth - rail.clientWidth;
+      setCanScrollCastPrev(rail.scrollLeft > 8);
+      setCanScrollCastNext(max - rail.scrollLeft > 8);
+    };
+
+    updateCastNavState();
+    rail.addEventListener('scroll', updateCastNavState, { passive: true });
+    window.addEventListener('resize', updateCastNavState);
+    return () => {
+      rail.removeEventListener('scroll', updateCastNavState);
+      window.removeEventListener('resize', updateCastNavState);
+    };
+  }, [castTab, title?.characters, title?.staff]);
+
+  const scrollCastRail = (direction) => {
+    const rail = castRailRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: rail.clientWidth * 0.85 * direction, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
     const rail = similarRailRef.current;
     if (!rail) return undefined;
 
@@ -188,6 +252,7 @@ export function TitleDetail() {
   const progressChapter = watchlistItem?.progressChapter ?? '';
   const targetEpisode = watchlistItem?.targetEpisode ?? '';
   const targetChapter = watchlistItem?.targetChapter ?? '';
+  const userScore = watchlistItem?.score != null ? Math.round(watchlistItem.score / 10) : null;
   const inTopTitles = isInTopTitles(title);
   const topTitleRank = getRank(title);
 
@@ -486,113 +551,32 @@ export function TitleDetail() {
                 )}
               </div>
 
-              <div className={`platforms-card${orderedPlatforms.length === 0 ? ' platforms-card--empty' : ''}`}>
-                <div className="platforms-card-head">
-                  <div>
-                    <span className="platform-label">{t('titleDetail.availableOn')}</span>
-                    {orderedPlatforms.length > 0 && (
-                      <div className="platform-caption">{t('titleDetail.linksAvailable', { count: orderedPlatforms.length })}</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    {orderedPlatforms.length > 0 && <span className="platform-count-pill">{orderedPlatforms.length}</span>}
-                    {isAdmin && (
+              {user && (
+                <div className="score-editor">
+                  <span className="score-editor-label">
+                    <Star size={13} aria-hidden="true" />
+                    {t('titleDetail.myScore')}
+                    {userScore !== null && <span className="score-editor-value">{userScore}/10</span>}
+                  </span>
+                  <div className="score-pips">
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                       <button
+                        key={n}
                         type="button"
-                        className="platform-admin-add-btn"
-                        onClick={() => setShowAddLinkForm((current) => !current)}
-                        title={t('titleDetail.addPlatformLink')}
+                        className={`score-pip${userScore !== null && n <= userScore ? ' active' : ''}${userScore === n ? ' selected' : ''}`}
+                        onClick={async () => {
+                          if (!status) await addToList(title.id, 'planned');
+                          await updateItem(title.id, { score: n === userScore ? null : n * 10 }, { title });
+                        }}
+                        aria-label={`${t('titleDetail.myScore')} ${n}`}
+                        aria-pressed={userScore === n}
                       >
-                        <Plus size={14} />
+                        {n}
                       </button>
-                    )}
+                    ))}
                   </div>
                 </div>
-
-                {isAdmin && showAddLinkForm && (
-                  <div className="platform-add-form">
-                    <select
-                      className="platform-add-select"
-                      value={addLinkForm.platform_name}
-                      onChange={(event) => setAddLinkForm((current) => ({ ...current, platform_name: event.target.value }))}
-                    >
-                      <option value="">{t('titleDetail.selectPlatform')}</option>
-                      {PLATFORM_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="platform-add-input"
-                      placeholder="URL"
-                      value={addLinkForm.url}
-                      onChange={(event) => setAddLinkForm((current) => ({ ...current, url: event.target.value }))}
-                    />
-                    <input
-                      className="platform-add-input platform-add-input--sm"
-                      placeholder={t('titleDetail.regionPlaceholder')}
-                      value={addLinkForm.region_code}
-                      onChange={(event) => setAddLinkForm((current) => ({ ...current, region_code: event.target.value.toUpperCase() }))}
-                    />
-                    <button type="button" className="platform-admin-save-btn" onClick={handleSaveLink} disabled={isSavingLink}>
-                      {isSavingLink ? t('common.loading') : t('common.save')}
-                    </button>
-                    <button
-                      type="button"
-                      className="platform-admin-cancel-btn"
-                      onClick={() => {
-                        setShowAddLinkForm(false);
-                        setAddLinkForm({ platform_name: '', url: '', region_code: '' });
-                      }}
-                    >
-                      {t('common.cancel')}
-                    </button>
-                  </div>
-                )}
-
-                {orderedPlatforms.length > 0 ? (
-                  <div className="platform-groups">
-                    {officialPlatforms.length > 0 && (
-                      <div className="platform-group">
-                        <span className="platform-group-label">{t('titleDetail.officialLabel')}</span>
-                        <div className="platforms">
-                          {officialPlatforms.map((platform) => (
-                            <div key={`${platform.name}-${platform.url}`} className="platform-link-wrap">
-                              <a href={platform.url} target="_blank" rel="noreferrer" className="platform-link">
-                                <span className="platform-link-name">{platform.displayName}</span>
-                                {platform.region && <span className="platform-link-region">{platform.region}</span>}
-                              </a>
-                              {isAdmin && (
-                                <button type="button" className="platform-admin-del-btn" onClick={() => handleDeleteLink(platform)} title={t('titleDetail.remove')}>
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {fallbackPlatforms.length > 0 && (
-                      <div className="platform-group">
-                        <span className="platform-group-label">{t('titleDetail.searchLabel')}</span>
-                        <div className="platforms">
-                          {fallbackPlatforms.map((platform) => (
-                            <a key={`${platform.name}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="platform-link platform-link-fallback">
-                              <span className="platform-link-name">{platform.displayName}</span>
-                              <span className="platform-link-tag">{t('titleDetail.searchLabel')}</span>
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="platforms-empty-state">
-                    <span className="platforms-empty-icon"><LinkIcon size={15} /></span>
-                    <span className="platforms-empty-text">{t('titleDetail.noPlatformLinks')}</span>
-                  </div>
-                )}
-              </div>
+              )}
 
               {showReportForm && (
                 <section className="report-panel">
@@ -631,9 +615,9 @@ export function TitleDetail() {
           </div>
         </div>
 
-        {rawSynopsis && (
-          <section className="detail-synopsis-panel">
-            <div className="synopsis-wrapper">
+        <div className="detail-body-row">
+          {rawSynopsis && (
+            <section className="detail-synopsis-panel">
               <h3 className="detail-section-heading">{t('titleDetail.synopsis')}</h3>
               <div className="synopsis-copy">
                 {synopsisParagraphs.map((paragraph, index) => (
@@ -645,7 +629,339 @@ export function TitleDetail() {
                   {showFullSynopsis ? t('titleDetail.showLess') : t('titleDetail.readMore')}
                 </button>
               )}
+            </section>
+          )}
+
+          <aside className="detail-body-aside">
+            <div className={`platforms-card${orderedPlatforms.length === 0 ? ' platforms-card--empty' : ''}`}>
+              <div className="platforms-card-head">
+                <span className="platform-label">{t('titleDetail.availableOn')}</span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="platform-admin-add-btn"
+                    onClick={() => setShowAddLinkForm((current) => !current)}
+                    title={t('titleDetail.addPlatformLink')}
+                  >
+                    <Plus size={13} />
+                  </button>
+                )}
+              </div>
+
+              {isAdmin && showAddLinkForm && (
+                <div className="platform-add-form">
+                  <select
+                    className="platform-add-select"
+                    value={addLinkForm.platform_name}
+                    onChange={(event) => setAddLinkForm((current) => ({ ...current, platform_name: event.target.value }))}
+                  >
+                    <option value="">{t('titleDetail.selectPlatform')}</option>
+                    {PLATFORM_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="platform-add-input"
+                    placeholder="URL"
+                    value={addLinkForm.url}
+                    onChange={(event) => setAddLinkForm((current) => ({ ...current, url: event.target.value }))}
+                  />
+                  <input
+                    className="platform-add-input platform-add-input--sm"
+                    placeholder={t('titleDetail.regionPlaceholder')}
+                    value={addLinkForm.region_code}
+                    onChange={(event) => setAddLinkForm((current) => ({ ...current, region_code: event.target.value.toUpperCase() }))}
+                  />
+                  <button type="button" className="platform-admin-save-btn" onClick={handleSaveLink} disabled={isSavingLink}>
+                    {isSavingLink ? t('common.loading') : t('common.save')}
+                  </button>
+                  <button
+                    type="button"
+                    className="platform-admin-cancel-btn"
+                    onClick={() => {
+                      setShowAddLinkForm(false);
+                      setAddLinkForm({ platform_name: '', url: '', region_code: '' });
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </div>
+              )}
+
+              {orderedPlatforms.length > 0 ? (
+                <div className="platform-groups">
+                  {officialPlatforms.length > 0 && (
+                    <div className="platform-group">
+                      {fallbackPlatforms.length > 0 && (
+                        <span className="platform-group-label">{t('titleDetail.officialLabel')}</span>
+                      )}
+                      <div className="platforms">
+                        {officialPlatforms.map((platform) => (
+                          <div key={`${platform.name}-${platform.url}`} className="platform-link-wrap">
+                            <a href={platform.url} target="_blank" rel="noreferrer" className="platform-link">
+                              <span className="platform-link-name">{platform.displayName}</span>
+                              {platform.region && <span className="platform-link-region">{platform.region}</span>}
+                            </a>
+                            {isAdmin && (
+                              <button type="button" className="platform-admin-del-btn" onClick={() => handleDeleteLink(platform)} title={t('titleDetail.remove')}>
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {fallbackPlatforms.length > 0 && (
+                    <div className="platform-group">
+                      {officialPlatforms.length > 0 && (
+                        <span className="platform-group-label">{t('titleDetail.searchLabel')}</span>
+                      )}
+                      <div className="platforms">
+                        {fallbackPlatforms.map((platform) => (
+                          <a key={`${platform.name}-${platform.url}`} href={platform.url} target="_blank" rel="noreferrer" className="platform-link platform-link-fallback">
+                            <span className="platform-link-name">{platform.displayName}</span>
+                            <span className="platform-link-tag">{t('titleDetail.searchLabel')}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="platforms-empty-state">
+                  <span className="platforms-empty-icon"><LinkIcon size={14} /></span>
+                  <span className="platforms-empty-text">{t('titleDetail.noPlatformLinks')}</span>
+                </div>
+              )}
             </div>
+          </aside>
+        </div>
+
+        {/* ─── Cast & Staff Tabbed Section ─── */}
+        {(title.characters?.length > 0 || title.staff?.length > 0) && (
+          <section className="detail-cast-section">
+            <div className="cast-header">
+              <div className="cast-tabs" role="tablist">
+                {title.characters?.length > 0 && (
+                  <button
+                    role="tab"
+                    type="button"
+                    className={`cast-tab${castTab === 'characters' ? ' cast-tab--active' : ''}`}
+                    aria-selected={castTab === 'characters'}
+                    onClick={() => setCastTab('characters')}
+                  >
+                    {t('titleDetail.characters')}
+                    <span className="cast-tab-count">{title.characters.length}</span>
+                  </button>
+                )}
+                {title.staff?.length > 0 && (
+                  <button
+                    role="tab"
+                    type="button"
+                    className={`cast-tab${castTab === 'staff' ? ' cast-tab--active' : ''}`}
+                    aria-selected={castTab === 'staff'}
+                    onClick={() => setCastTab('staff')}
+                  >
+                    {t('titleDetail.staff')}
+                    <span className="cast-tab-count">{title.staff.length}</span>
+                  </button>
+                )}
+                <button
+                  role="tab"
+                  type="button"
+                  className={`cast-tab${castTab === 'stats' ? ' cast-tab--active' : ''}`}
+                  aria-selected={castTab === 'stats'}
+                  onClick={() => setCastTab('stats')}
+                >
+                  {t('titleDetail.statsTab')}
+                </button>
+              </div>
+
+              {castTab !== 'stats' && (
+                <div className="cast-nav">
+                  <button
+                    type="button"
+                    className="cast-nav-btn"
+                    onClick={() => scrollCastRail(-1)}
+                    disabled={!canScrollCastPrev}
+                    aria-label="Previous"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="cast-nav-btn"
+                    onClick={() => scrollCastRail(1)}
+                    disabled={!canScrollCastNext}
+                    aria-label="Next"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {castTab === 'characters' && title.characters?.length > 0 && (
+              <div className="cast-rail" role="tabpanel" ref={castRailRef}>
+                {title.characters.map((char) => (
+                  <div
+                    key={char.anilist_id ?? char.name_full}
+                    className={`cast-card${char.role === 'MAIN' ? ' cast-card--main' : ''}`}
+                  >
+                    <div className="cast-img-wrap">
+                      {char.image_url
+                        ? <img src={char.image_url} alt={char.name_full} className="cast-img" loading="lazy" />
+                        : <div className="cast-img cast-img--placeholder" aria-hidden="true" />
+                      }
+                      {char.role === 'MAIN' && (
+                        <span className="cast-role-badge">{t('titleDetail.roleMain')}</span>
+                      )}
+                    </div>
+                    <div className="cast-body">
+                      <span className="cast-name">{char.name_full}</span>
+                      {char.name_native && <span className="cast-sub">{char.name_native}</span>}
+                    </div>
+                    {char.voice_actor_name && (
+                      <div className="cast-va">
+                        {char.voice_actor_image
+                          ? <img src={char.voice_actor_image} alt={char.voice_actor_name} className="va-avatar" loading="lazy" />
+                          : <div className="va-avatar va-avatar--placeholder" aria-hidden="true" />
+                        }
+                        <div className="va-info">
+                          <span className="va-label">{t('titleDetail.voiceActor')}</span>
+                          <span className="va-name">{char.voice_actor_name}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {castTab === 'staff' && title.staff?.length > 0 && (
+              <div className="cast-rail" role="tabpanel" ref={castRailRef}>
+                {title.staff.map((person) => (
+                  <div key={person.anilist_id ?? person.name_full} className="cast-card">
+                    <div className="cast-img-wrap">
+                      {person.image_url
+                        ? <img src={person.image_url} alt={person.name_full} className="cast-img" loading="lazy" />
+                        : <div className="cast-img cast-img--placeholder" aria-hidden="true" />
+                      }
+                    </div>
+                    <div className="cast-body">
+                      <span className="cast-name">{person.name_full}</span>
+                      {person.role && <span className="cast-sub">{person.role}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {castTab === 'stats' && (() => {
+              const STATUS_ROWS = [
+                { key: 'planned',   labelKey: 'statusPlanned',   color: '#60a5fa' },
+                { key: 'watching',  labelKey: 'statusCurrent',   color: '#34d399' },
+                { key: 'reading',   labelKey: 'statusCurrent',   color: '#34d399' },
+                { key: 'completed', labelKey: 'statusCompleted', color: '#a78bfa' },
+                { key: 'paused',    labelKey: 'statusPaused',    color: '#fbbf24' },
+                { key: 'dropped',   labelKey: 'statusDropped',   color: '#f87171' },
+              ];
+              const counts = titleStats || {};
+              const totalUsers = Object.values(counts).reduce((s, n) => s + n, 0);
+              const maxCount = Math.max(1, ...Object.values(counts));
+              const topTags = [...(title.tagDetails || [])]
+                .filter((tag) => tag.weight)
+                .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+                .slice(0, 8);
+              const activeRows = STATUS_ROWS.filter((row) => counts[row.key] > 0);
+
+              return (
+                <div className="stats-panel" role="tabpanel">
+                  {statsLoading ? (
+                    <div className="stats-loading">{t('common.loading')}</div>
+                  ) : (
+                    <>
+                      {/* Score & Popularity chips */}
+                      {(title.score || title.popularity || title.favorites_count) && (
+                        <div className="stats-scores">
+                          {title.score && (
+                            <div className="stats-score-chip">
+                              <span className="stats-score-value">{title.score}</span>
+                              <span className="stats-score-label">{t('titleDetail.metaScore')}</span>
+                            </div>
+                          )}
+                          {title.popularity > 0 && (
+                            <div className="stats-score-chip">
+                              <span className="stats-score-value">
+                                {title.popularity >= 1000 ? `${(title.popularity / 1000).toFixed(1)}K` : title.popularity}
+                              </span>
+                              <span className="stats-score-label">{t('titleDetail.metaPopularity')}</span>
+                            </div>
+                          )}
+                          {title.favorites_count > 0 && (
+                            <div className="stats-score-chip">
+                              <span className="stats-score-value">{title.favorites_count.toLocaleString()}</span>
+                              <span className="stats-score-label">{t('titleDetail.metaFavorites')}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Community status distribution */}
+                      <div className="stats-block">
+                        <div className="stats-block-header">
+                          <span className="stats-block-title">{t('titleDetail.statusDistribution')}</span>
+                          {totalUsers > 0 && (
+                            <span className="stats-block-total">{totalUsers.toLocaleString()} {t('titleDetail.communityUsers')}</span>
+                          )}
+                        </div>
+                        {totalUsers === 0 ? (
+                          <p className="stats-empty">{t('titleDetail.statsNoData')}</p>
+                        ) : (
+                          <div className="stats-status-list">
+                            {activeRows.map((row) => {
+                              const count = counts[row.key] || 0;
+                              const pct = totalUsers > 0 ? Math.round((count / totalUsers) * 100) : 0;
+                              const barPct = Math.round((count / maxCount) * 100);
+                              return (
+                                <div key={row.key} className="stats-status-row">
+                                  <span className="stats-status-dot" style={{ background: row.color }} />
+                                  <span className="stats-status-label">{t(`titleDetail.${row.labelKey}`)}</span>
+                                  <div className="stats-bar-wrap">
+                                    <div className="stats-bar" style={{ width: `${barPct}%`, background: row.color }} />
+                                  </div>
+                                  <span className="stats-status-count">{count.toLocaleString()}</span>
+                                  <span className="stats-status-pct">{pct}%</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Top tags */}
+                      {topTags.length > 0 && (
+                        <div className="stats-block">
+                          <span className="stats-block-title">{t('titleDetail.tagsHeading')}</span>
+                          <div className="stats-tags">
+                            {topTags.map((tag) => {
+                              const maxWeight = topTags[0].weight ?? 1;
+                              const opacity = 0.45 + 0.55 * ((tag.weight ?? 0) / maxWeight);
+                              return (
+                                <span key={tag.name} className="stats-tag" style={{ opacity }}>
+                                  {tag.name}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </section>
         )}
 

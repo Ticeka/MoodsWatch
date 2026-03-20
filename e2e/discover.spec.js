@@ -62,8 +62,6 @@ test.describe('Discover — type filter tabs', () => {
     const tabs = page.locator('.type-tab');
     await tabs.nth(2).click(); // Manga
     await page.waitForTimeout(500);
-    // Page counter should show "1 / ..." or pagination should start fresh
-    const pageDisplay = page.locator('.page-display, .discover-pagination');
     // We just assert no JS error and page is still mounted
     await expect(page.locator('header')).toBeVisible();
   });

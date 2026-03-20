@@ -392,7 +392,7 @@ function getBattleCoverageTarget(titleCount) {
     Math.max(MIN_COMPARISONS_PER_TITLE, Math.ceil(Math.log2(Math.max(2, Number(titleCount || 0))) - 1)))
 }
 
-function getDynamicTargetRounds(titleCount) {
+function _getDynamicTargetRounds(titleCount) {
   const count = Math.max(MIN_DECK_SIZE, Number(titleCount || 0));
   const pairCap = Math.max(DEFAULT_TARGET_ROUNDS, Math.floor((count * (count - 1)) / 2));
   const coverageTarget = getBattleCoverageTarget(count);

@@ -221,6 +221,17 @@ export async function upsertNormalizedTitle(provider, normalized) {
     ),
   );
 
+  if (normalized.studios?.length) {
+    await replaceChildRows(
+      'title_studios',
+      titleId,
+      dedupeRows(
+        normalized.studios.map((studio) => ({ canonical_title_id: titleId, ...studio })),
+        (row) => String(row.studio_name || '').toLowerCase(),
+      ),
+    );
+  }
+
   if (normalized.availability?.length) {
     await replaceChildRows(
       'title_availability',
@@ -228,6 +239,28 @@ export async function upsertNormalizedTitle(provider, normalized) {
       dedupeRows(
         normalized.availability.map((row) => ({ canonical_title_id: titleId, ...row })),
         (row) => [row.platform_name, row.region_code || '', row.url].join('|'),
+      ),
+    );
+  }
+
+  if (normalized.characters?.length) {
+    await replaceChildRows(
+      'title_characters',
+      titleId,
+      dedupeRows(
+        normalized.characters.map((char) => ({ canonical_title_id: titleId, ...char })),
+        (row) => String(row.anilist_id || row.name_full || '').toLowerCase(),
+      ),
+    );
+  }
+
+  if (normalized.staff?.length) {
+    await replaceChildRows(
+      'title_staff',
+      titleId,
+      dedupeRows(
+        normalized.staff.map((member) => ({ canonical_title_id: titleId, ...member })),
+        (row) => String(row.anilist_id || row.name_full || '').toLowerCase(),
       ),
     );
   }

@@ -42,6 +42,9 @@ const MEDIA_QUERY = `
         isAdult
         popularity
         averageScore
+        meanScore
+        favourites
+        hashtag
         description(asHtml: false)
         siteUrl
         title {
@@ -59,6 +62,56 @@ const MEDIA_QUERY = `
         tags {
           name
           rank
+        }
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        studios {
+          nodes {
+            name
+            isAnimationStudio
+          }
+        }
+        trailer {
+          id
+          site
+        }
+        nextAiringEpisode {
+          airingAt
+          timeUntilAiring
+          episode
+        }
+        characters(sort: ROLE, perPage: 12) {
+          edges {
+            role
+            node {
+              id
+              name { full native }
+              image { large }
+            }
+            voiceActors(language: JAPANESE) {
+              id
+              name { full native }
+              image { large }
+            }
+          }
+        }
+        staff(perPage: 8) {
+          edges {
+            role
+            node {
+              id
+              name { full native }
+              image { large }
+            }
+          }
         }
       }
     }

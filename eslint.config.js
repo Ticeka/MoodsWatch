@@ -24,6 +24,11 @@ export default defineConfig([globalIgnores(['dist']), {
     },
   },
   rules: {
-    'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
   },
-}, ...storybook.configs["flat/recommended"]])
+},
+{
+  files: ['e2e/**/*.{js,ts}'],
+  languageOptions: { globals: { ...globals.browser, ...globals.node } },
+},
+...storybook.configs["flat/recommended"]])

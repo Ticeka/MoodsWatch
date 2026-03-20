@@ -28,8 +28,6 @@ vi.mock('@/shared/lib/supabase', () => ({
 }));
 
 // ── Mock user objects ──────────────────────────────────────────────────────
-const guestAuth = { user: null, signOut: fn() };
-
 const loggedInAuth = {
   user: {
     email: 'demo@moodtoon.app',

@@ -33,6 +33,20 @@ function parseArgs(argv) {
   };
 }
 
+function buildDate(d) {
+  if (!d?.year) return null;
+  const mm = String(d.month || 1).padStart(2, '0');
+  const dd = String(d.day || 1).padStart(2, '0');
+  return `${d.year}-${mm}-${dd}`;
+}
+
+function buildTrailerUrl(trailer) {
+  if (!trailer?.id) return null;
+  if (trailer.site === 'youtube') return `https://www.youtube.com/watch?v=${trailer.id}`;
+  if (trailer.site === 'dailymotion') return `https://www.dailymotion.com/video/${trailer.id}`;
+  return null;
+}
+
 function normalizeAniListMedia(media) {
   const mediaType = media.type === 'ANIME' ? 'anime' : 'manga';
   const { type, subtype } = inferSubtype({
@@ -63,7 +77,16 @@ function normalizeAniListMedia(media) {
       banner_image: media.bannerImage || null,
       synopsis: media.description || null,
       avg_score: media.averageScore || null,
+      mean_score: media.meanScore || null,
       popularity_score: media.popularity || null,
+      favorites_count: media.favourites || null,
+      format: media.format || null,
+      season: media.season || null,
+      season_year: media.seasonYear || null,
+      hashtag: media.hashtag || null,
+      trailer_url: buildTrailerUrl(media.trailer),
+      start_date: buildDate(media.startDate),
+      end_date: buildDate(media.endDate),
       raw_payload: media,
       last_synced_at: new Date().toISOString(),
     },
@@ -77,6 +100,28 @@ function normalizeAniListMedia(media) {
     tags: (media.tags || []).map((tag) => ({ tag_name: tag.name, weight: tag.rank || null, source_provider: 'anilist' })),
     moods: deriveMoodIds([media.description, ...(media.genres || []), ...(media.tags || []).map((tag) => tag.name)]),
     availability: [],
+    studios: (media.studios?.nodes || []).map((s) => ({
+      studio_name: s.name,
+      is_animation_studio: Boolean(s.isAnimationStudio),
+    })),
+    characters: (media.characters?.edges || []).map((edge, index) => ({
+      anilist_id: edge.node?.id || null,
+      name_full: edge.node?.name?.full || null,
+      name_native: edge.node?.name?.native || null,
+      image_url: edge.node?.image?.large || null,
+      role: edge.role || null,
+      voice_actor_name: edge.voiceActors?.[0]?.name?.full || null,
+      voice_actor_image: edge.voiceActors?.[0]?.image?.large || null,
+      sort_order: index,
+    })),
+    staff: (media.staff?.edges || []).map((edge, index) => ({
+      anilist_id: edge.node?.id || null,
+      name_full: edge.node?.name?.full || null,
+      name_native: edge.node?.name?.native || null,
+      image_url: edge.node?.image?.large || null,
+      role: edge.role || null,
+      sort_order: index,
+    })),
     sourceRef: {
       provider: 'anilist',
       external_id: String(media.id),

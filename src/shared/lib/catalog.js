@@ -8,6 +8,9 @@ const CANONICAL_TITLE_LIST_SELECT = `
   origin_language,
   status,
   release_year,
+  format,
+  season,
+  season_year,
   episodes,
   chapters,
   volumes,
@@ -17,7 +20,13 @@ const CANONICAL_TITLE_LIST_SELECT = `
   banner_image,
   synopsis,
   avg_score,
+  mean_score,
   popularity_score,
+  favorites_count,
+  hashtag,
+  trailer_url,
+  start_date,
+  end_date,
   editorial_score,
   created_at,
   updated_at,
@@ -25,7 +34,8 @@ const CANONICAL_TITLE_LIST_SELECT = `
   aliases:title_aliases(alias, language_code, alias_type, is_primary),
   genres:title_genres(genre_name),
   tags:title_tags(tag_name, weight),
-  moods:title_moods(mood_id)
+  moods:title_moods(mood_id),
+  studios:title_studios(studio_name, is_animation_studio)
 `;
 
 const CANONICAL_TITLE_BROWSE_SELECT = `
@@ -54,7 +64,9 @@ const CANONICAL_TITLE_BROWSE_SELECT = `
 const CANONICAL_TITLE_DETAIL_SELECT = `
   ${CANONICAL_TITLE_LIST_SELECT},
   availability:title_availability(platform_name, region_code, url, is_official),
-  source_refs:title_source_refs(provider, external_id, source_priority)
+  source_refs:title_source_refs(provider, external_id, source_priority),
+  characters:title_characters(anilist_id, name_full, name_native, image_url, role, voice_actor_name, voice_actor_image, sort_order),
+  staff:title_staff(anilist_id, name_full, name_native, image_url, role, sort_order)
 `;
 
 const CANONICAL_TITLE_SELECT = CANONICAL_TITLE_DETAIL_SELECT;
@@ -160,11 +172,26 @@ export function mapCanonicalTitle(record) {
     duration: record.duration_minutes,
     status: record.status,
     is_adult: record.is_adult,
+    origin_country: record.origin_country || null,
+    origin_language: record.origin_language || null,
+    format: record.format || null,
+    season: record.season || null,
+    season_year: record.season_year || null,
+    mean_score: record.mean_score ?? null,
+    favorites_count: record.favorites_count ?? null,
+    hashtag: record.hashtag || null,
+    trailer_url: record.trailer_url || null,
+    start_date: record.start_date || null,
+    end_date: record.end_date || null,
     genres: record.genres?.map((genre) => genre.genre_name) || [],
     tags: record.tags?.map((tag) => tag.tag_name) || [],
+    tagDetails: record.tags?.map((tag) => ({ name: tag.tag_name, weight: tag.weight ?? null })) || [],
     moods: record.moods?.map((mood) => mood.mood_id) || [],
+    studios: record.studios?.filter((s) => s.is_animation_studio).map((s) => s.studio_name) || [],
     platforms: dedupePlatforms([...officialPlatforms, ...fallbackPlatforms]),
     source_refs: record.source_refs || [],
+    characters: (record.characters || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    staff: (record.staff || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
   };
 }
 

@@ -279,6 +279,13 @@
   box-shadow: var(--shadow-lg);
 }
 
+.watchlist-item-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .status-indicator {
   padding: 0.25rem 0.75rem;
   border-radius: var(--radius-full);
@@ -288,6 +295,18 @@
   color: white;
   width: fit-content;
 }
+
+.watchlist-score-badge {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--accent, #e85d75);
+  background: color-mix(in srgb, var(--accent, #e85d75) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #e85d75) 28%, transparent);
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
 
 .watchlist-item-meta {
   display: flex;

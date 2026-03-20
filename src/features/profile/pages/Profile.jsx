@@ -96,7 +96,7 @@ function normalizeUsername(value = '') {
 
 export function Profile() {
   const { user, isLoading: isAuthLoading, updateUserProfile } = useAuth();
-  const { watchlist, isLoading: isWatchlistLoading, watchlistTitles } = useWatchlist();
+  const { watchlist, watchlistTitles } = useWatchlist();
   const { prefs: storedPrefs, savePreferences } = useProfilePreferences();
   const { hiddenTitleIds, getHiddenEntry, setHiddenScopes, unhideTitle, bulkUnhideTitles, error: hiddenTitlesError } = useHiddenTitles();
   const { theme, toggleTheme } = useTheme();
@@ -261,7 +261,7 @@ export function Profile() {
     return next;
   }, [libraryTitles, watchlistTitles]);
 
-  const continueTitles = useMemo(() => continueIds.map((id) => {
+  const _continueTitles = useMemo(() => continueIds.map((id) => {
     const title = titleMap.get(id);
     const item = watchlistMap.get(id);
     return title ? {

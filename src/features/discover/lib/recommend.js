@@ -172,7 +172,7 @@ function applySort(query, sortBy) {
     .order('id', { ascending: true });
 }
 
-async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
   ensureSupabaseConnected();
 
   const safePage = Math.max(1, page);

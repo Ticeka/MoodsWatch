@@ -133,7 +133,7 @@ function normalizePlatformLinks(platformLinks = []) {
 
 function buildRelationSnapshot({ titleId, formData, selectedMoods, genreInput, tagInput, platformLinks }) {
   return {
-    aliases: sortByJsonValue(buildAliasRows(titleId, formData).map(({ canonical_title_id, ...item }) => item)),
+    aliases: sortByJsonValue(buildAliasRows(titleId, formData).map(({ canonical_title_id: _canonical_title_id, ...item }) => item)),
     moods: [...new Set((selectedMoods || []).map((item) => String(item).trim()).filter(Boolean))]
       .sort((left, right) => left.localeCompare(right)),
     genres: normalizeStringList(genreInput),

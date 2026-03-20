@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Download, Play, Square, RefreshCw,
   CheckCircle2, XCircle, SkipForward, Info,
-  TrendingUp, Star, Flame, Clock, CalendarDays, Hash,
+  TrendingUp, Star, Flame, Clock, CalendarDays, Hash, Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/shared/lib/supabase';
@@ -82,7 +82,7 @@ function normalizeMedia(media) {
 
 // ─── AniList ─────────────────────────────────────────────────────────────────
 
-const ANILIST_URL = 'https://graphql.anilist.co';
+const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
 const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank}}}}`;
 
 async function fetchAniListPage(vars, signal) {
@@ -96,6 +96,23 @@ async function fetchAniListPage(vars, signal) {
   const json = await res.json();
   if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
   return json.data.Page;
+}
+
+// ─── AniList characters & staff query ────────────────────────────────────────
+
+const CHAR_STAFF_GQL = `query($id:Int!){Media(id:$id){characters(sort:[ROLE,RELEVANCE],perPage:25){edges{role node{id name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
+
+async function fetchAniListCharStaff(anilistId, signal) {
+  const res = await fetch(ANILIST_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ query: CHAR_STAFF_GQL, variables: { id: anilistId } }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`AniList ${res.status}`);
+  const json = await res.json();
+  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
+  return json.data?.Media || null;
 }
 
 // ─── Supabase upsert ─────────────────────────────────────────────────────────
@@ -140,6 +157,39 @@ async function upsertTitle(norm, skipDuplicates) {
   );
   if (refErr && refErr.code !== 'PGRST205') throw refErr;
   return wasExisting ? 'updated' : 'imported';
+}
+
+async function upsertCharStaff(titleId, media) {
+  const { error: delCharErr } = await supabase.from('title_characters').delete().eq('canonical_title_id', titleId);
+  if (delCharErr) throw delCharErr;
+  const { error: delStaffErr } = await supabase.from('title_staff').delete().eq('canonical_title_id', titleId);
+  if (delStaffErr) throw delStaffErr;
+
+  const chars = (media?.characters?.edges || []).map((edge, i) => ({
+    canonical_title_id: titleId,
+    anilist_id: edge.node?.id ?? null,
+    name_full: edge.node?.name?.full ?? null,
+    name_native: edge.node?.name?.native ?? null,
+    image_url: edge.node?.image?.medium ?? null,
+    role: edge.role ?? null,
+    voice_actor_name: edge.voiceActors?.[0]?.name?.full ?? null,
+    voice_actor_image: edge.voiceActors?.[0]?.image?.medium ?? null,
+    sort_order: i,
+  }));
+
+  const staff = (media?.staff?.edges || []).map((edge, i) => ({
+    canonical_title_id: titleId,
+    anilist_id: edge.node?.id ?? null,
+    name_full: edge.node?.name?.full ?? null,
+    name_native: edge.node?.name?.native ?? null,
+    image_url: edge.node?.image?.medium ?? null,
+    role: edge.role ?? null,
+    sort_order: i,
+  }));
+
+  if (chars.length) { const { error } = await supabase.from('title_characters').insert(chars); if (error) throw error; }
+  if (staff.length) { const { error } = await supabase.from('title_staff').insert(staff); if (error) throw error; }
+  return { chars: chars.length, staff: staff.length };
 }
 
 // ─── Config options ───────────────────────────────────────────────────────────
@@ -290,6 +340,8 @@ export function AdminFetch() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState('titles');
+  const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
   const abortRef = useRef(null);
   const logContainerRef = useRef(null);
 
@@ -393,6 +445,64 @@ export function AdminFetch() {
     }
   };
 
+  const handleCharStaff = async () => {
+    if (!supabase) { toast.error('Supabase unavailable'); return; }
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress(null);
+
+    try {
+      addLog('info', t('admin.fetch.cs.logStart'));
+
+      const { data: refs, error: refsError } = await supabase
+        .from('title_source_refs')
+        .select('canonical_title_id, external_id')
+        .eq('provider', 'anilist');
+      if (refsError) throw refsError;
+
+      let targets = refs || [];
+
+      if (csConfig.onlyMissing) {
+        const { data: existing } = await supabase.from('title_characters').select('canonical_title_id');
+        const existingSet = new Set((existing || []).map((r) => r.canonical_title_id));
+        targets = targets.filter((r) => !existingSet.has(r.canonical_title_id));
+      }
+
+      if (csConfig.limit > 0) targets = targets.slice(0, csConfig.limit);
+
+      addLog('info', t('admin.fetch.cs.logTotal', { count: targets.length }));
+      setProgress({ total: targets.length, done: 0, chars: 0, staff: 0, errors: 0 });
+
+      for (const ref of targets) {
+        if (abortRef.current.signal.aborted) break;
+        try {
+          const media = await fetchAniListCharStaff(Number(ref.external_id), abortRef.current.signal);
+          const result = await upsertCharStaff(ref.canonical_title_id, media);
+          setProgress((p) => ({ ...p, done: p.done + 1, chars: p.chars + result.chars, staff: p.staff + result.staff }));
+          addLog('imported', `[${ref.canonical_title_id}] chars:${result.chars} staff:${result.staff}`);
+        } catch (err) {
+          if (err.name === 'AbortError') break;
+          setProgress((p) => ({ ...p, done: p.done + 1, errors: p.errors + 1 }));
+          addLog('error', `[${ref.canonical_title_id}] ${err.message}`);
+        }
+        if (!abortRef.current.signal.aborted) await new Promise((r) => setTimeout(r, 750));
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', t('admin.fetch.cs.logFinished'));
+        toast.success(t('admin.fetch.cs.finished'));
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') { addLog('error', err.message); toast.error(err.message); }
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const totalEstimate = config.pages * config.perPage;
   const pageProgress = progress ? Math.min(((progress.page - 1) / progress.totalPages) * 100, 100) : 0;
 
@@ -406,9 +516,34 @@ export function AdminFetch() {
             <Download size={24} /> {t('admin.fetch.pageTitle')}
           </h1>
           <p style={{ margin: '0.3rem 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-            {t('admin.fetch.pageSubtitle')}
+            {activeTab === 'titles' ? t('admin.fetch.pageSubtitle') : t('admin.fetch.cs.tabSubtitle')}
           </p>
         </div>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-5)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-3)' }}>
+        {[
+          { id: 'titles', label: t('admin.fetch.tabTitles'), Icon: Download },
+          { id: 'charstaff', label: t('admin.fetch.cs.tabTitle'), Icon: Users },
+        ].map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            disabled={running}
+            onClick={() => { setActiveTab(id); setProgress(null); setLogs([]); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.45rem 1rem', borderRadius: 999, border: 'none',
+              background: activeTab === id ? 'var(--primary-500)' : 'transparent',
+              color: activeTab === id ? 'white' : 'var(--text-secondary)',
+              fontWeight: 700, fontSize: '0.88rem',
+              cursor: running ? 'default' : 'pointer', opacity: running ? 0.6 : 1,
+            }}
+          >
+            <Icon size={14} /> {label}
+          </button>
+        ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 'var(--space-5)', alignItems: 'start' }}>
@@ -416,179 +551,234 @@ export function AdminFetch() {
         {/* ── Left: Config ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
 
-          {/* 1. Type */}
-          <Section title={t('admin.fetch.typeLabel')}>
-            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-              {[
-                { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '🎌' },
-                { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '📚' },
-              ].map((tp) => (
-                <button
-                  key={tp.value}
-                  type="button"
-                  disabled={running}
-                  onClick={() => setConfig((p) => ({ ...p, type: tp.value, animeFormat: '', mangaSubtype: '' }))}
-                  style={{
-                    flex: 1, padding: 'var(--space-4)', borderRadius: 18, cursor: 'pointer',
-                    border: `2px solid ${config.type === tp.value ? 'var(--primary-500)' : 'var(--border-default)'}`,
-                    background: config.type === tp.value
-                      ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
-                      : 'var(--bg-primary)',
-                    textAlign: 'left', transition: 'all 0.15s',
-                    opacity: running ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>{tp.emoji}</div>
-                  <div style={{ fontWeight: 700, color: config.type === tp.value ? 'var(--primary-700)' : 'var(--text-primary)', fontSize: '0.92rem' }}>
-                    {tp.label}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Section>
+          {activeTab === 'titles' ? (
+            <>
+              {/* 1. Type */}
+              <Section title={t('admin.fetch.typeLabel')}>
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                  {[
+                    { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '🎌' },
+                    { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '📚' },
+                  ].map((tp) => (
+                    <button
+                      key={tp.value}
+                      type="button"
+                      disabled={running}
+                      onClick={() => setConfig((p) => ({ ...p, type: tp.value, animeFormat: '', mangaSubtype: '' }))}
+                      style={{
+                        flex: 1, padding: 'var(--space-4)', borderRadius: 18, cursor: 'pointer',
+                        border: `2px solid ${config.type === tp.value ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: config.type === tp.value
+                          ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                          : 'var(--bg-primary)',
+                        textAlign: 'left', transition: 'all 0.15s',
+                        opacity: running ? 0.5 : 1,
+                      }}
+                    >
+                      <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>{tp.emoji}</div>
+                      <div style={{ fontWeight: 700, color: config.type === tp.value ? 'var(--primary-700)' : 'var(--text-primary)', fontSize: '0.92rem' }}>
+                        {tp.label}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
 
-          {/* 2. Subtype / Format */}
-          <Section title={config.type === 'ANIME' ? t('admin.fetch.formatLabel') : t('admin.fetch.subtypeLabel')}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-              {config.type === 'ANIME'
-                ? ANIME_FORMATS.map((f) => (
-                    <Chip key={f.value} active={config.animeFormat === f.value} disabled={running}
-                      onClick={() => set('animeFormat', f.value)}>
-                      {t(f.labelKey)}
-                    </Chip>
-                  ))
-                : MANGA_SUBTYPES.map((s) => (
-                    <Chip key={s.value} active={config.mangaSubtype === s.value} disabled={running}
-                      onClick={() => set('mangaSubtype', s.value)}>
+              {/* 2. Subtype / Format */}
+              <Section title={config.type === 'ANIME' ? t('admin.fetch.formatLabel') : t('admin.fetch.subtypeLabel')}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {config.type === 'ANIME'
+                    ? ANIME_FORMATS.map((f) => (
+                        <Chip key={f.value} active={config.animeFormat === f.value} disabled={running}
+                          onClick={() => set('animeFormat', f.value)}>
+                          {t(f.labelKey)}
+                        </Chip>
+                      ))
+                    : MANGA_SUBTYPES.map((s) => (
+                        <Chip key={s.value} active={config.mangaSubtype === s.value} disabled={running}
+                          onClick={() => set('mangaSubtype', s.value)}>
+                          {t(s.labelKey)}
+                        </Chip>
+                      ))
+                  }
+                </div>
+                {config.type === 'MANGA' && config.mangaSubtype && (
+                  <p style={{ margin: 'var(--space-3) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {config.mangaSubtype === 'KR' && t('admin.fetch.subtypeHintKr')}
+                    {config.mangaSubtype === 'CN' && t('admin.fetch.subtypeHintCn')}
+                    {config.mangaSubtype === 'JP' && t('admin.fetch.subtypeHintJp')}
+                    {config.mangaSubtype === 'NOVEL' && t('admin.fetch.subtypeHintNovel')}
+                    {config.mangaSubtype === 'ONE_SHOT' && t('admin.fetch.subtypeHintOneShot')}
+                  </p>
+                )}
+              </Section>
+
+              {/* 3. Sort */}
+              <Section title={t('admin.fetch.sortLabel')}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {SORT_OPTIONS.map((s) => {
+                    const Icon = s.icon;
+                    return (
+                      <Chip key={s.value} active={config.sort === s.value} disabled={running}
+                        onClick={() => set('sort', s.value)}>
+                        <Icon size={13} />
+                        {t(s.labelKey)}
+                      </Chip>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              {/* 4. Status */}
+              <Section title={t('admin.fetch.statusLabel')}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {STATUS_OPTIONS.map((s) => (
+                    <Chip key={s.value} active={config.status === s.value} disabled={running}
+                      onClick={() => set('status', s.value)}>
                       {t(s.labelKey)}
                     </Chip>
-                  ))
-              }
-            </div>
-            {config.type === 'MANGA' && config.mangaSubtype && (
-              <p style={{ margin: 'var(--space-3) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
-                {config.mangaSubtype === 'KR' && t('admin.fetch.subtypeHintKr')}
-                {config.mangaSubtype === 'CN' && t('admin.fetch.subtypeHintCn')}
-                {config.mangaSubtype === 'JP' && t('admin.fetch.subtypeHintJp')}
-                {config.mangaSubtype === 'NOVEL' && t('admin.fetch.subtypeHintNovel')}
-                {config.mangaSubtype === 'ONE_SHOT' && t('admin.fetch.subtypeHintOneShot')}
-              </p>
-            )}
-          </Section>
+                  ))}
+                </div>
+              </Section>
 
-          {/* 3. Sort */}
-          <Section title={t('admin.fetch.sortLabel')}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-              {SORT_OPTIONS.map((s) => {
-                const Icon = s.icon;
-                return (
-                  <Chip key={s.value} active={config.sort === s.value} disabled={running}
-                    onClick={() => set('sort', s.value)}>
-                    <Icon size={13} />
-                    {t(s.labelKey)}
-                  </Chip>
-                );
-              })}
-            </div>
-          </Section>
+              {/* 5. Score / Popularity filter */}
+              <Section title={t('admin.fetch.extraFilters')}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                  <div>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Star size={13} /> {t('admin.fetch.scoreMin')}
+                      <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(0–100)</span>
+                    </label>
+                    <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
+                      min={0} max={100} value={config.minScore} disabled={running}
+                      onChange={(e) => set('minScore', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <TrendingUp size={13} /> {t('admin.fetch.popularityMin')}
+                    </label>
+                    <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
+                      min={0} value={config.minPopularity} disabled={running}
+                      onChange={(e) => set('minPopularity', e.target.value)} />
+                  </div>
+                </div>
+              </Section>
+            </>
+          ) : (
+            <>
+              {/* Characters & Staff — Mode */}
+              <Section title={t('admin.fetch.cs.modeLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {[
+                    { key: true,  label: t('admin.fetch.cs.onlyMissing'), hint: t('admin.fetch.cs.onlyMissingHint') },
+                    { key: false, label: t('admin.fetch.cs.refetchAll'),  hint: t('admin.fetch.cs.refetchAllHint') },
+                  ].map(({ key, label, hint }) => (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      disabled={running}
+                      onClick={() => setCsConfig((p) => ({ ...p, onlyMissing: key }))}
+                      style={{
+                        padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
+                        border: `2px solid ${csConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: csConfig.onlyMissing === key
+                          ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                          : 'var(--bg-primary)',
+                        textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: csConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
 
-          {/* 4. Status */}
-          <Section title={t('admin.fetch.statusLabel')}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-              {STATUS_OPTIONS.map((s) => (
-                <Chip key={s.value} active={config.status === s.value} disabled={running}
-                  onClick={() => set('status', s.value)}>
-                  {t(s.labelKey)}
-                </Chip>
-              ))}
-            </div>
-          </Section>
-
-          {/* 5. Score / Popularity filter */}
-          <Section title={t('admin.fetch.extraFilters')}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-              <div>
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Star size={13} /> {t('admin.fetch.scoreMin')}
-                  <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(0–100)</span>
-                </label>
-                <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
-                  min={0} max={100} value={config.minScore} disabled={running}
-                  onChange={(e) => set('minScore', e.target.value)} />
-              </div>
-              <div>
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <TrendingUp size={13} /> {t('admin.fetch.popularityMin')}
-                </label>
-                <input type="number" className="form-input" placeholder={t('admin.fetch.noLimitPlaceholder')}
-                  min={0} value={config.minPopularity} disabled={running}
-                  onChange={(e) => set('minPopularity', e.target.value)} />
-              </div>
-            </div>
-          </Section>
+              {/* Characters & Staff — Limit */}
+              <Section title={t('admin.fetch.cs.limitLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={csConfig.limit}
+                    onChange={(v) => setCsConfig((p) => ({ ...p, limit: v }))}
+                    min={0} max={500} disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.cs.limitHint')}
+                  </p>
+                </div>
+              </Section>
+            </>
+          )}
 
         </div>
 
         {/* ── Right: Options + Action ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
 
-          {/* Pages + Per page */}
-          <Section title={t('admin.fetch.volumeLabel')}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <div>
-                <label className="form-label">{t('admin.fetch.pages')}</label>
-                <Stepper value={config.pages} onChange={(v) => set('pages', v)} min={1} max={20} disabled={running} />
-              </div>
-              <div>
-                <label className="form-label">{t('admin.fetch.perPage')}</label>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  {[10, 25, 50].map((n) => (
-                    <Chip key={n} active={config.perPage === n} disabled={running} onClick={() => set('perPage', n)}>
-                      {n}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <div style={{
-                padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
-                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                textAlign: 'center',
-              }}>
-                <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>~{totalEstimate}</span>
-                <p style={{ margin: '2px 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>{t('admin.fetch.willFetch')}</p>
-              </div>
-            </div>
-          </Section>
-
-          {/* Duplicate mode */}
-          <Section title={t('admin.fetch.duplicateLabel')}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', cursor: running ? 'default' : 'pointer' }}>
+          {/* Pages + Per page (titles tab only) */}
+          {activeTab === 'titles' && (
+            <Section title={t('admin.fetch.volumeLabel')}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('admin.fetch.skipDuplicates')}</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                    {skipDuplicates ? t('admin.fetch.skipOn') : t('admin.fetch.skipOff')}
+                  <label className="form-label">{t('admin.fetch.pages')}</label>
+                  <Stepper value={config.pages} onChange={(v) => set('pages', v)} min={1} max={20} disabled={running} />
+                </div>
+                <div>
+                  <label className="form-label">{t('admin.fetch.perPage')}</label>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    {[10, 25, 50].map((n) => (
+                      <Chip key={n} active={config.perPage === n} disabled={running} onClick={() => set('perPage', n)}>
+                        {n}
+                      </Chip>
+                    ))}
                   </div>
                 </div>
-                <Toggle checked={skipDuplicates} onChange={setSkipDuplicates} disabled={running} />
-              </label>
-              <div style={{
-                fontSize: '0.78rem', color: 'var(--text-tertiary)',
-                padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
-                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                lineHeight: 1.55,
-              }}>
-                {skipDuplicates ? t('admin.fetch.skipHintOn') : t('admin.fetch.skipHintOff')}
+                <div style={{
+                  padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
+                  textAlign: 'center',
+                }}>
+                  <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>~{totalEstimate}</span>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>{t('admin.fetch.willFetch')}</p>
+                </div>
               </div>
-            </div>
-          </Section>
+            </Section>
+          )}
+
+          {/* Duplicate mode (titles tab only) */}
+          {activeTab === 'titles' && (
+            <Section title={t('admin.fetch.duplicateLabel')}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', cursor: running ? 'default' : 'pointer' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('admin.fetch.skipDuplicates')}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                      {skipDuplicates ? t('admin.fetch.skipOn') : t('admin.fetch.skipOff')}
+                    </div>
+                  </div>
+                  <Toggle checked={skipDuplicates} onChange={setSkipDuplicates} disabled={running} />
+                </label>
+                <div style={{
+                  fontSize: '0.78rem', color: 'var(--text-tertiary)',
+                  padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
+                  lineHeight: 1.55,
+                }}>
+                  {skipDuplicates ? t('admin.fetch.skipHintOn') : t('admin.fetch.skipHintOff')}
+                </div>
+              </div>
+            </Section>
+          )}
 
           {/* Action button */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {!running ? (
-              <button type="button" className="primary-btn" onClick={handleFetch}
+              <button type="button" className="primary-btn"
+                onClick={activeTab === 'titles' ? handleFetch : handleCharStaff}
                 style={{ width: '100%', justifyContent: 'center', padding: 'var(--space-4)' }}>
-                <Play size={16} /> {t('admin.fetch.fetchBtn')}
+                <Play size={16} /> {activeTab === 'titles' ? t('admin.fetch.fetchBtn') : t('admin.fetch.cs.startBtn')}
               </button>
             ) : (
               <button type="button" onClick={() => abortRef.current?.abort()}
@@ -612,7 +802,7 @@ export function AdminFetch() {
           {/* Progress stats */}
           {progress && (
             <Section title={running ? t('admin.fetch.runningTitle') : t('admin.fetch.resultTitle')}>
-              {running && (
+              {activeTab === 'titles' && running && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
                     <span>{t('admin.fetch.pageProgress', { page: progress.page, total: progress.totalPages })}</span>
@@ -627,19 +817,41 @@ export function AdminFetch() {
                   </div>
                 </div>
               )}
+              {activeTab === 'charstaff' && running && progress.total > 0 && (
+                <div style={{ marginBottom: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                    <span>{progress.done}/{progress.total}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999,
+                      background: 'linear-gradient(90deg, var(--primary-500), var(--accent-500))',
+                      width: `${Math.round((progress.done / progress.total) * 100)}%`, transition: 'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-                {[
-                  { label: t('admin.fetch.statNew'),     value: progress.imported, color: '#16a34a' },
-                  { label: t('admin.fetch.statUpdated'), value: progress.updated,  color: '#2563eb' },
-                  { label: t('admin.fetch.statSkipped'), value: progress.skipped,  color: 'var(--text-tertiary)' },
-                  { label: t('admin.fetch.statErrors'),  value: progress.errors,   color: '#dc2626' },
-                ].map((stat) => (
+                {(activeTab === 'titles'
+                  ? [
+                      { label: t('admin.fetch.statNew'),     value: progress.imported, color: '#16a34a' },
+                      { label: t('admin.fetch.statUpdated'), value: progress.updated,  color: '#2563eb' },
+                      { label: t('admin.fetch.statSkipped'), value: progress.skipped,  color: 'var(--text-tertiary)' },
+                      { label: t('admin.fetch.statErrors'),  value: progress.errors,   color: '#dc2626' },
+                    ]
+                  : [
+                      { label: t('admin.fetch.cs.statDone'),   value: progress.done,   color: '#2563eb' },
+                      { label: t('admin.fetch.cs.statChars'),  value: progress.chars,  color: '#16a34a' },
+                      { label: t('admin.fetch.cs.statStaff'),  value: progress.staff,  color: '#7c3aed' },
+                      { label: t('admin.fetch.cs.statErrors'), value: progress.errors, color: '#dc2626' },
+                    ]
+                ).map((stat) => (
                   <div key={stat.label} style={{
                     padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
                     background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
                     textAlign: 'center',
                   }}>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: stat.color }}>{stat.value ?? 0}</div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 1 }}>{stat.label}</div>
                   </div>
                 ))}

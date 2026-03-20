@@ -13,6 +13,15 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/anilist-gql': {
+        target: 'https://graphql.anilist.co',
+        changeOrigin: true,
+        rewrite: () => '',
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(rootDir, './src')

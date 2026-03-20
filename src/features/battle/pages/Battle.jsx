@@ -680,7 +680,7 @@ export function BattleHub() {
     await startBattle(presetDeck);
   };
 
-  const handleDeleteRecent = async (sessionId) => {
+  const _handleDeleteRecent = async (sessionId) => {
     deleteBattleSession(sessionId);
     if (user?.id) {
       try {

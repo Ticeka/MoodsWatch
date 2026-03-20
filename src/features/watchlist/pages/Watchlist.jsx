@@ -113,6 +113,7 @@ export function Watchlist() {
           _lastConsumedAt: item.lastConsumedAt ?? null,
           _targetEpisode: item.targetEpisode ?? null,
           _targetChapter: item.targetChapter ?? null,
+          _userScore: item.score ?? null,
         } : null;
       })
       .filter(Boolean);
@@ -158,7 +159,7 @@ export function Watchlist() {
 	      }
 
 	      if (sortBy === 'score') {
-	        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+	        const scoreDiff = Number(b._userScore || 0) - Number(a._userScore || 0);
 	        if (scoreDiff !== 0) return scoreDiff;
 	      }
 
@@ -558,13 +559,20 @@ export function Watchlist() {
 
                   return (
                     <div key={title.id} className="watchlist-item-wrapper">
-                      <div
-                        className="status-indicator"
-                        style={{
-                          backgroundColor: statusOptionMap.get(title._listStatus)?.color,
-                        }}
-                      >
-                        {getLocalizedLabel(statusOptionMap.get(title._listStatus), language)}
+                      <div className="watchlist-item-top-row">
+                        <div
+                          className="status-indicator"
+                          style={{
+                            backgroundColor: statusOptionMap.get(title._listStatus)?.color,
+                          }}
+                        >
+                          {getLocalizedLabel(statusOptionMap.get(title._listStatus), language)}
+                        </div>
+                        {title._userScore != null && (
+                          <span className="watchlist-score-badge">
+                            ★ {Math.round(title._userScore / 10)}/10
+                          </span>
+                        )}
                       </div>
                       <TitleCard title={title} />
                       {(title._targetEpisode || title._targetChapter || title._lastConsumedAt) && (

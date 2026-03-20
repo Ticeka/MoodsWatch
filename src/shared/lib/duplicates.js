@@ -147,7 +147,7 @@ export function buildDuplicateCandidates(titles) {
   const pairs = new Map();
 
   groups.forEach((bucket, groupKey) => {
-    const [typeId, key] = groupKey.split(':');
+    const [_typeId, key] = groupKey.split(':');
     if (bucket.length < 2 || bucket.length > 12) return;
 
     for (let index = 0; index < bucket.length; index += 1) {
