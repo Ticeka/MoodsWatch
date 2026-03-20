@@ -380,8 +380,8 @@ export function TitleDetail() {
                 type="button"
                 className={`report-icon-btn ${showReportForm ? 'active' : ''}`}
                 onClick={() => setShowReportForm((current) => !current)}
-                aria-label={showReportForm ? t('titleDetail.closeReportForm') : t('titleDetail.openReportForm')}
-                title={showReportForm ? t('titleDetail.closeReportForm') : t('titleDetail.reportIssue')}
+                aria-label={showReportForm ? t('titleDetail.hideReportFormForTitle', { title: primaryTitle }) : t('titleDetail.reportIssueForTitle', { title: primaryTitle })}
+                title={showReportForm ? t('titleDetail.hideReportFormForTitle', { title: primaryTitle }) : t('titleDetail.reportIssueForTitle', { title: primaryTitle })}
               >
                 <Flag size={15} />
               </button>
@@ -416,7 +416,7 @@ export function TitleDetail() {
                           <option key={option.id} value={option.id}>{option.icon} {getLocalizedLabel(option, language)}</option>
                         ))}
                       </select>
-                      <button className="remove-btn" onClick={() => removeFromList(title.id)} type="button">
+                      <button className="remove-btn" onClick={() => removeFromList(title.id)} type="button" aria-label={t('titleDetail.removeFromListForTitle', { title: primaryTitle })}>
                         {t('titleDetail.remove')}
                       </button>
                     </div>
@@ -428,6 +428,7 @@ export function TitleDetail() {
                           <input
                             type="number"
                             min="0"
+                            aria-label={status === 'watching' ? t('titleDetail.progressInputEpisode', { title: primaryTitle }) : t('titleDetail.progressInputChapter', { title: primaryTitle })}
                             value={status === 'watching' ? progressEpisode : progressChapter}
                             onChange={(event) => updateItem(
                               title.id,
@@ -449,6 +450,7 @@ export function TitleDetail() {
                         <button
                           className="progress-chip"
                           type="button"
+                          aria-label={status === 'watching' ? t('titleDetail.addOneEpisode', { title: primaryTitle }) : t('titleDetail.addOneChapter', { title: primaryTitle })}
                           onClick={async () => {
                             try {
                               await advanceProgress(title, 1);
@@ -465,6 +467,7 @@ export function TitleDetail() {
                           <input
                             type="number"
                             min="0"
+                            aria-label={t('titleDetail.targetInputForTitle', { title: primaryTitle })}
                             value={status === 'watching' ? targetEpisode : targetChapter}
                             onChange={(event) => setConsumptionTarget(title, event.target.value === '' ? null : Number(event.target.value))}
                           />
@@ -611,6 +614,7 @@ export function TitleDetail() {
                         value={reportForm.description}
                         onChange={(event) => setReportForm((current) => ({ ...current, description: event.target.value }))}
                         placeholder={t('titleDetail.reportDescriptionPlaceholder')}
+                        aria-label={t('titleDetail.reportDescriptionForTitle', { title: primaryTitle })}
                         rows={4}
                       />
                     </label>
@@ -656,6 +660,7 @@ export function TitleDetail() {
                   onClick={() => scrollSimilarByPage(-1)}
                   disabled={!canScrollSimilarPrev}
                   aria-label={t('titleDetail.previousSimilar')}
+                  title={t('titleDetail.previousSimilar')}
                 >
                   <ChevronLeft size={18} />
                 </button>
@@ -665,6 +670,7 @@ export function TitleDetail() {
                   onClick={() => scrollSimilarByPage(1)}
                   disabled={!canScrollSimilarNext}
                   aria-label={t('titleDetail.nextSimilar')}
+                  title={t('titleDetail.nextSimilar')}
                 >
                   <ChevronRight size={18} />
                 </button>

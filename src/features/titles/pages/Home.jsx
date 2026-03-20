@@ -275,11 +275,11 @@ export function Home() {
 
   const displayResults = useMemo(
     () => sortTitlesCollection(filterSeen(orderTitles(results)), resultSortBy),
-    [results, resultSortBy, recommendationState, discoveryState, hideSeen]
+    [results, resultSortBy, filterSeen, orderTitles]
   );
   const displayTrending = useMemo(
     () => sortTitlesCollection(filterSeen(orderTitles(trending)), trendingSortBy),
-    [trending, trendingSortBy, recommendationState, discoveryState, hideSeen]
+    [trending, trendingSortBy, filterSeen, orderTitles]
   );
   const resultsTotalPages = useMemo(
     () => Math.max(1, Math.ceil(displayResults.length / RESULTS_PAGE_SIZE)),
@@ -434,7 +434,7 @@ export function Home() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={t('home.randomPick')}
+            aria-label={t('home.randomDialogLabel')}
             className="random-modal animate-scale-in"
             onClick={(event) => event.stopPropagation()}
           >
@@ -628,7 +628,7 @@ export function Home() {
                   className="results-sorter"
                 >
                   {TITLE_SORT_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
+                    <option key={option.id} value={option.id}>{t(option.labelKey)}</option>
                   ))}
                 </SortSelect>
                 {results.length > 0 && (
@@ -789,7 +789,7 @@ export function Home() {
                     className="results-sorter"
                   >
                     {TITLE_SORT_OPTIONS.filter((option) => option.id !== 'match').map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
+                      <option key={option.id} value={option.id}>{t(option.labelKey)}</option>
                     ))}
                   </SortSelect>
                   <label className="hide-seen-toggle alt">

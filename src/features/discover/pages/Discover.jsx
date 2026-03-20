@@ -1,5 +1,5 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X as XIcon } from 'lucide-react';
+import { BookOpen, Clapperboard, Globe2, ScrollText, Search, X as XIcon } from 'lucide-react';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { listTitles, getCacheInfo, clearTitlesCache } from '@/features/discover/lib/recommend';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
@@ -21,10 +21,10 @@ import { EmptyState } from '@/shared/components/ui/EmptyState';
 import './Discover.css';
 
 const TYPE_TABS = [
-  { id: 'all',    labelKey: 'discover.typeAll',    icon: '🌐' },
-  { id: 'anime',  labelKey: 'discover.typeAnime',  icon: '📺' },
-  { id: 'manga',  labelKey: 'discover.typeManga',  icon: '📚' },
-  { id: 'manhwa', labelKey: 'discover.typeManhwa', icon: '🇰🇷' },
+  { id: 'all', labelKey: 'discover.typeAll', icon: Globe2 },
+  { id: 'anime', labelKey: 'discover.typeAnime', icon: Clapperboard },
+  { id: 'manga', labelKey: 'discover.typeManga', icon: BookOpen },
+  { id: 'manhwa', labelKey: 'discover.typeManhwa', icon: ScrollText },
 ];
 
 const QUICK_TAGS = ['manhwa', 'action', 'romance', 'isekai', 'comedy', 'horror'];
@@ -163,7 +163,7 @@ export function Discover() {
     <div className="discover-page animate-fade-in">
       <section className="section discover-header">
         <div className="container text-center">
-          <div className="discover-hero-badge animate-fade-in-up">🔍 {t('discover.badge')}</div>
+          <div className="discover-hero-badge animate-fade-in-up"><Search size={14} aria-hidden="true" /> {t('discover.badge')}</div>
           <h1 className="discover-title animate-fade-in-up">
             {t('discover.title').replace(t('discover.accent'), '')}
             <span className="text-gradient">{t('discover.accent')}</span>
@@ -173,10 +173,10 @@ export function Discover() {
           </p>
 
           <div className="search-box glass animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
-            <span className="search-icon" aria-hidden="true">🔍</span>
+            <span className="search-icon" aria-hidden="true"><Search size={16} /></span>
             <input
               type="search"
-              aria-label={t('discover.searchPlaceholder')}
+              aria-label={t('discover.searchInputLabel')}
               placeholder={t('discover.searchPlaceholder')}
               value={query}
               onChange={(event) => {
@@ -191,9 +191,10 @@ export function Discover() {
                 className="search-clear"
                 onClick={() => { setQuery(''); setCurrentPage(1); }}
                 aria-label={t('discover.clearSearch')}
+                title={t('discover.clearSearch')}
                 type="button"
               >
-                X
+                <XIcon size={14} aria-hidden="true" />
               </button>
             )}
           </div>
@@ -204,20 +205,23 @@ export function Discover() {
             role="toolbar"
             aria-label={t('discover.typeTabsAria')}
           >
-            {TYPE_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                aria-pressed={activeTab === tab.id}
-                className={`type-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setCurrentPage(1);
-                }}
-              >
-                <span>{tab.icon}</span> {t(tab.labelKey)}
-              </button>
-            ))}
+            {TYPE_TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={activeTab === tab.id}
+                  className={`type-tab ${activeTab === tab.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <span aria-hidden="true"><Icon size={16} /></span> {t(tab.labelKey)}
+                </button>
+              );
+            })}
           </div>
 
           <div className="quick-search-tags animate-fade-in-up" style={{ animationDelay: '0.25s' }}>
@@ -280,9 +284,10 @@ export function Discover() {
                     onChange={(value) => { setSortBy(value); setCurrentPage(1); }}
                     label={t('watchlist.sort')}
                     className="discover-sorter"
+                    selectAriaLabel={t('discover.sortResultsAria')}
                   >
                     {TITLE_SORT_OPTIONS.filter((option) => option.id !== 'match').map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
+                      <option key={option.id} value={option.id}>{t(option.labelKey)}</option>
                     ))}
                   </SortSelect>
                   <label className="hide-seen-toggle">

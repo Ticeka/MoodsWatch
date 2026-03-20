@@ -6,7 +6,7 @@ import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useTopTitles } from '@/features/profile/hooks/useTopTitles';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { LIST_STATUS_OPTIONS, MOODS, getLocalizedMoodName, getLocalizedLabel } from '@/shared/data/moods';
-import { Bookmark, ListPlus, EyeOff, Eye, Heart, Trophy } from 'lucide-react';
+import { Bookmark, Eye, EyeOff, Heart, ListPlus, Star, Trophy, TrendingUp } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTitleFormatBadge } from '@/shared/lib/titleType';
 import './Card.css';
@@ -35,9 +35,9 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
   const progressEpisode = title._listProgressEpisode ?? listItem?.progressEpisode ?? null;
   const progressChapter = title._listProgressChapter ?? listItem?.progressChapter ?? null;
   const progressLabel = progressEpisode
-    ? `EP ${progressEpisode}${title.episodes ? ` / ${title.episodes}` : ''}`
+    ? `${t('card.episodeShort')} ${progressEpisode}${title.episodes ? ` / ${title.episodes}` : ''}`
     : progressChapter
-      ? `CH ${progressChapter}${title.chapters ? ` / ${title.chapters}` : ''}`
+      ? `${t('card.chapterShort')} ${progressChapter}${title.chapters ? ` / ${title.chapters}` : ''}`
       : null;
   const displayScore = Number(title.score || 0);
   const displayPopularity = Number(title.popularity || 0);
@@ -164,6 +164,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
                 <button
                   className={`save-btn ${saved ? 'active' : ''}`}
                   aria-label={saved ? t('card.removeFromList') : t('card.saveToList')}
+                  title={saved ? t('card.removeFromList') : t('card.saveToList')}
                   onClick={toggleSave}
                 >
                   {saved ? <Bookmark fill="currentColor" size={20} aria-hidden="true" /> : <Bookmark size={20} aria-hidden="true" />}
@@ -172,6 +173,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
               <button
                 className={`favorite-btn ${favorite ? 'active' : ''}`}
                 aria-label={favorite ? t('card.removeFromFavorites') : t('card.addToFavorites')}
+                title={favorite ? t('card.removeFromFavorites') : t('card.addToFavorites')}
                 onClick={toggleFavoriteTitle}
               >
                 <Heart fill={favorite ? 'currentColor' : 'none'} size={20} aria-hidden="true" />
@@ -179,6 +181,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
               <button
                 className={`top-title-btn ${topTitle ? 'active' : ''}`}
                 aria-label={topTitle ? t('card.removeFromTopTitles', { type: title.type }) : t('card.addToTopTitles', { type: title.type })}
+                title={topTitle ? t('card.removeFromTopTitles', { type: title.type }) : t('card.addToTopTitles', { type: title.type })}
                 onClick={toggleTopTitle}
               >
                 <Trophy fill={topTitle ? 'currentColor' : 'none'} size={18} aria-hidden="true" />
@@ -187,6 +190,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
                 <button
                   className={`quick-status-btn ${showStatusMenu ? 'active' : ''}`}
                   aria-label={t('card.changeStatus')}
+                  title={t('card.changeStatus')}
                   aria-haspopup="menu"
                   aria-expanded={showStatusMenu}
                   onClick={toggleStatusMenu}
@@ -197,6 +201,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
               <button
                 className={`hide-title-btn ${hidden ? 'active' : ''}`}
                 aria-label={hidden ? t('card.showTitleAgain') : t('card.hideTitle')}
+                title={hidden ? t('card.showTitleAgain') : t('card.hideTitle')}
                 onClick={toggleHidden}
               >
                 {hidden ? <Eye size={20} aria-hidden="true" /> : <EyeOff size={20} aria-hidden="true" />}
@@ -207,8 +212,8 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
           <div className="card-overlay-bottom">
             {(displayScore > 0 || popularityLabel) && (
               <div className="score-badge">
-                {displayScore > 0 && <span>★ {displayScore}</span>}
-                {popularityLabel && <span>• {popularityLabel}</span>}
+                {displayScore > 0 && <span><Star size={12} aria-hidden="true" /> {displayScore}</span>}
+                {popularityLabel && <span><TrendingUp size={12} aria-hidden="true" /> {popularityLabel}</span>}
               </div>
             )}
           </div>
@@ -251,7 +256,7 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
         <div className="card-meta">
           <span className="badge type-badge">{getTitleFormatBadge(title)}</span>
           <span className="badge year-badge">{title.year}</span>
-          {displayScore > 0 && <span className="badge score-meta-badge">★ {displayScore}</span>}
+          {displayScore > 0 && <span className="badge score-meta-badge"><Star size={12} aria-hidden="true" /> {displayScore}</span>}
           {popularityLabel && <span className="badge popularity-meta-badge">{t('card.popularity', { value: popularityLabel })}</span>}
           {progressLabel && <span className="badge progress-badge">{progressLabel}</span>}
           {title.status === 'completed' && <span className="badge status-badge">{t('card.completed')}</span>}

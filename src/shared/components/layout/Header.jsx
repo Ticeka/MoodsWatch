@@ -110,7 +110,8 @@ function NotificationBell({ userId }) {
         ref={bellRef}
         className="notif-bell-btn"
         onClick={handleOpen}
-        title={t('layout.notifications')}
+        aria-label={t('layout.openNotifications')}
+        title={t('layout.openNotifications')}
         type="button"
       >
         <Bell size={18} />
@@ -279,6 +280,7 @@ export function Header() {
                   className="theme-toggle"
                   onClick={toggleTheme}
                   aria-label={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+                  title={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
                 >
                   {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
@@ -294,7 +296,8 @@ export function Header() {
                   ref={chipRef}
                   className={`user-chip ${dropdownOpen ? 'ring-active' : ''}`}
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  aria-label={t('layout.accountMenu')}
+                  aria-label={t('layout.accountMenuFor', { name: userLabel })}
+                  title={t('layout.accountMenuFor', { name: userLabel })}
                   aria-expanded={dropdownOpen}
                   aria-haspopup="menu"
                   aria-controls="user-account-menu"
@@ -321,7 +324,8 @@ export function Header() {
               ref={menuBtnRef}
               className={`mobile-menu-btn ${mobileMenuOpen ? 'active' : ''}`}
               type="button"
-              aria-label={t('layout.openMenu')}
+              aria-label={mobileMenuOpen ? t('layout.closeMenu') : t('layout.openMenu')}
+              title={mobileMenuOpen ? t('layout.closeMenu') : t('layout.openMenu')}
               aria-expanded={mobileMenuOpen}
               aria-controls="mobile-drawer-nav"
               onClick={() => setMobileMenuOpen((current) => !current)}

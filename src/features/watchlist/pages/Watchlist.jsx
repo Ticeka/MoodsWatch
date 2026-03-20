@@ -402,6 +402,7 @@ export function Watchlist() {
               <button
                 role="tab"
                 aria-selected={activeTab === 'list'}
+                aria-controls="watchlist-list-panel"
                 className={`watchlist-tab ${activeTab === 'list' ? 'active' : ''}`}
                 onClick={() => setActiveTab('list')}
               >
@@ -410,6 +411,7 @@ export function Watchlist() {
               <button
                 role="tab"
                 aria-selected={activeTab === 'favorites'}
+                aria-controls="watchlist-favorites-panel"
                 className={`watchlist-tab ${activeTab === 'favorites' ? 'active' : ''}`}
                 onClick={() => setActiveTab('favorites')}
               >
@@ -419,7 +421,7 @@ export function Watchlist() {
 
             {activeTab === 'list' && (
               <>
-                <div className="watchlist-filter-row">
+                <div id="watchlist-list-panel" role="tabpanel" className="watchlist-filter-row">
                   <div className="status-filters scrollbar-hide" role="group" aria-label={t('watchlist.filterByStatus')}>
                     <button
                       className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
@@ -440,7 +442,7 @@ export function Watchlist() {
                           onClick={() => setFilter(option.id)}
                           style={filter === option.id ? { '--filter-color': option.color } : {}}
                         >
-                          <span className="mr-1" aria-hidden="true">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge" aria-label={`${count} ${t('watchlist.titles')}`}>{count}</span>
+                          <span className="mr-1" aria-hidden="true">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge" aria-label={t('watchlist.titlesInStatus', { count, status: getLocalizedLabel(option, language) })}>{count}</span>
                         </button>
                       );
                     })}
@@ -453,13 +455,13 @@ export function Watchlist() {
                       label={t('watchlist.sort')}
                       className="watchlist-sorter"
                     >
-                      <option value="recent">{t('watchlist.recentlyConsumed')}</option>
-                      <option value="progress">{t('watchlist.highestProgress')}</option>
-                      <option value="status">{t('watchlist.statusPriority')}</option>
-                      <option value="score">{t('watchlist.scoreSort')}</option>
-                      <option value="popularity">{t('watchlist.popularitySort')}</option>
-                      <option value="year">{t('watchlist.newestSort')}</option>
-                      <option value="title">{t('watchlist.titleSort')}</option>
+                      <option value="recent">{t('watchlist.sortOption.recent')}</option>
+                      <option value="progress">{t('watchlist.sortOption.progress')}</option>
+                      <option value="status">{t('watchlist.sortOption.status')}</option>
+                      <option value="score">{t('watchlist.sortOption.score')}</option>
+                      <option value="popularity">{t('watchlist.sortOption.popularity')}</option>
+                      <option value="year">{t('watchlist.sortOption.year')}</option>
+                      <option value="title">{t('watchlist.sortOption.title')}</option>
                     </SortSelect>
                   </div>
                 </div>
@@ -470,7 +472,7 @@ export function Watchlist() {
                     <p>{t('watchlist.entriesSummary', { count: displayList.length, filter: currentFilterLabel.toLowerCase() })}</p>
                   </div>
                   <span className="watchlist-list-pill">
-                    {sortBy === 'recent' ? t('watchlist.sortedByRecent') : t('watchlist.sortedBy', { value: sortBy })}
+                    {sortBy === 'recent' ? t('watchlist.sortedByRecent') : t('watchlist.sortedBy', { value: t(`watchlist.sortOption.${sortBy}`) })}
                   </span>
                 </div>
               </>
@@ -478,7 +480,7 @@ export function Watchlist() {
           </div>
 
           {activeTab === 'favorites' && (
-            <div className="watchlist-favorites glass-heavy">
+            <div id="watchlist-favorites-panel" role="tabpanel" className="watchlist-favorites glass-heavy">
               <div className="watchlist-favorites-header">
                 <div>
                   <h2><Heart size={18} /> {t('watchlist.favoritesHeader')}</h2>

@@ -1,9 +1,9 @@
 export const TITLE_SORT_OPTIONS = [
-  { id: 'match', label: 'Best Match' },
-  { id: 'popularity', label: 'Popularity' },
-  { id: 'score', label: 'Score' },
-  { id: 'year', label: 'Newest' },
-  { id: 'title', label: 'Title A-Z' },
+  { id: 'match', labelKey: 'sorting.match' },
+  { id: 'popularity', labelKey: 'sorting.popularity' },
+  { id: 'score', labelKey: 'sorting.score' },
+  { id: 'year', labelKey: 'sorting.newest' },
+  { id: 'title', labelKey: 'sorting.title' },
 ];
 
 function compareText(a, b) {
