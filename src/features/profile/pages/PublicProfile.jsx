@@ -7,6 +7,9 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { getTitleDisplayName, TOP_TITLE_TYPE_OPTIONS } from '@/features/profile/lib/profileStore';
 import { supabase } from '@/shared/lib/supabase';
+import { FollowButton } from '@/features/social/components/FollowButton';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import './PublicProfile.css';
 
 const TYPE_LABELS = {
@@ -51,6 +54,7 @@ export function PublicProfile() {
   const { user } = useAuth();
   const { username: routeUsername = '' } = useParams();
   const { language, t } = useLanguage();
+  const { showAdult } = useAgeGate();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
   const normalizedUsername = String(routeUsername || '').trim().toLowerCase();
 
@@ -70,6 +74,9 @@ export function PublicProfile() {
   const [replyError, setReplyError] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [overlap, setOverlap] = useState(null);
+  const [overlapTitles, setOverlapTitles] = useState([]);
+  const [isOverlapLoading, setIsOverlapLoading] = useState(false);
   const replyInputRef = useRef(null);
 
   useEffect(() => {
@@ -127,9 +134,9 @@ export function PublicProfile() {
         const nextSections = TOP_TITLE_TYPE_OPTIONS.map((typeId) => ({
           typeId,
           label: TYPE_LABELS[typeId]?.[language] || typeId,
-          titles: (topTitlesPayload[typeId] || [])
+          titles: filterTitlesForAgeGate((topTitlesPayload[typeId] || [])
             .map((titleId) => titleMap.get(Number(titleId)))
-            .filter(Boolean),
+            .filter(Boolean), showAdult),
         }));
 
         if (!cancelled) {
@@ -152,7 +159,7 @@ export function PublicProfile() {
 
     loadProfile();
     return () => { cancelled = true; };
-  }, [language, normalizedUsername, t]);
+  }, [language, normalizedUsername, showAdult, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +199,35 @@ export function PublicProfile() {
     loadComments();
     return () => { cancelled = true; };
   }, [profile?.allow_profile_comments, profile?.id, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOverlap() {
+      if (!user?.id || !profile?.id || user.id === profile.id || !supabase) return;
+      setIsOverlapLoading(true);
+      try {
+        const { data, error } = await supabase.rpc('get_watchlist_overlap', {
+          p_user_a: user.id,
+          p_user_b: profile.id,
+        });
+        if (error) throw error;
+        const rows = data || [];
+        if (cancelled) return;
+        setOverlap(rows);
+        const ids = [...new Set(rows.map((r) => r.title_id).filter(Boolean))];
+        if (ids.length) {
+          const titles = await getTitlesByIds(ids.slice(0, 20));
+          if (!cancelled) setOverlapTitles(filterTitlesForAgeGate(titles, showAdult));
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        if (!cancelled) setIsOverlapLoading(false);
+      }
+    }
+    loadOverlap();
+    return () => { cancelled = true; };
+  }, [user?.id, profile?.id, showAdult]);
 
   const totalPinned = useMemo(
     () => sections.reduce((count, section) => count + section.titles.length, 0),
@@ -390,6 +426,7 @@ export function PublicProfile() {
               <span>{t('profile.memberSince', { date: formatJoinDate(profile.created_at, locale) })}</span>
               <span>{t('profile.publicPinnedCount', { count: totalPinned })}</span>
             </div>
+            <FollowButton profileUserId={profile.id} profileUsername={profile.username} />
           </div>
         </header>
 
@@ -451,6 +488,44 @@ export function PublicProfile() {
             ))}
           </div>
         </article>
+
+        {user?.id && user.id !== profile.id && (
+          <article className="public-profile-card">
+            <div className="public-profile-card-head">
+              <h2>{t('social.watchlistOverlapTitle')}</h2>
+              {overlap !== null && <span>{t('social.watchlistOverlapCount').replace('{count}', overlapTitles.length)}</span>}
+            </div>
+            {isOverlapLoading && (
+              <div className="public-profile-state compact">
+                <Loader2 size={18} className="animate-spin" />
+              </div>
+            )}
+            {!isOverlapLoading && overlap !== null && overlapTitles.length === 0 && (
+              <div className="public-profile-empty">
+                <span>{t('social.watchlistOverlapEmpty')}</span>
+              </div>
+            )}
+            {!isOverlapLoading && overlapTitles.length > 0 && (
+              <div className="public-profile-title-list">
+                {overlapTitles.slice(0, 10).map((title) => {
+                  const row = overlap.find((r) => r.title_id === Number(title.id));
+                  return (
+                    <Link key={title.id} to={`/title/${title.slug}`} className="public-profile-title-row overlap-row">
+                      <img src={title.cover || ''} alt="" className="public-profile-thumb" />
+                      <div>
+                        <strong>{getTitleDisplayName(title)}</strong>
+                        <small className="overlap-statuses">
+                          {row?.status_a && <span className="overlap-badge">{t('social.youLabel')}: {row.status_a}</span>}
+                          {row?.status_b && <span className="overlap-badge">{profile.name || profile.username}: {row.status_b}</span>}
+                        </small>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+        )}
 
         <article className="public-profile-card">
           <div className="public-profile-card-head">

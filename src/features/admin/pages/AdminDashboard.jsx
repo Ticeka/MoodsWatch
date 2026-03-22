@@ -12,6 +12,8 @@ import {
   CopyPlus,
   ShieldAlert,
   CheckCircle,
+  Trophy,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -37,6 +39,7 @@ export function AdminDashboard() {
   const [recentUsers, setRecentUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [cacheInfo, setCacheInfo] = useState(null);
+  const [backfilling, setBackfilling] = useState(false);
 
   useEffect(() => {
     async function loadStats() {
@@ -91,6 +94,20 @@ export function AdminDashboard() {
 
     loadStats();
   }, []);
+
+  const handleBackfillAchievements = async () => {
+    if (!supabase) return;
+    setBackfilling(true);
+    try {
+      const { data, error } = await supabase.rpc('backfill_achievements');
+      if (error) throw error;
+      toast.success(`Backfill complete — ${data} total achievements in DB`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBackfilling(false);
+    }
+  };
 
   const handleClearCache = () => {
     clearTitlesCache();
@@ -164,6 +181,20 @@ export function AdminDashboard() {
               <button onClick={handleClearCache} className="admin-cache-clear" type="button">{t('admin.dashboard.clearCache')}</button>
             </div>
           )}
+
+          {/* Maintenance Actions */}
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <button
+              className="admin-cache-clear"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              onClick={handleBackfillAchievements}
+              disabled={backfilling}
+              type="button"
+            >
+              {backfilling ? <Loader2 size={13} className="animate-spin" /> : <Trophy size={13} />}
+              Backfill Achievements
+            </button>
+          </div>
 
           {/* Primary Stats */}
           <div className="admin-stat-row">

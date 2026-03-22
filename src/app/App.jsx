@@ -7,12 +7,15 @@ import { WatchlistProvider } from '@/features/watchlist/contexts/WatchlistContex
 import { Layout } from '@/shared/components/layout/Layout';
 import { LanguageProvider, useLanguage } from '@/shared/contexts/LanguageContext';
 import { ThemeProvider } from '@/shared/contexts/ThemeContext';
+import { AgeGateProvider } from '@/shared/contexts/AgeGateContext';
 
 const Home = lazy(() => import('@/features/titles/pages/Home').then((module) => ({ default: module.Home })));
 const BattleHub = lazy(() => import('@/features/battle/pages/Battle').then((module) => ({ default: module.BattleHub })));
 const BattleBuilderPage = lazy(() => import('@/features/battle/pages/Battle').then((module) => ({ default: module.BattleBuilderPage })));
 const BattleDeckLibraryPage = lazy(() => import('@/features/battle/pages/Battle').then((module) => ({ default: module.BattleDeckLibraryPage })));
 const BattleSessionPage = lazy(() => import('@/features/battle/pages/Battle').then((module) => ({ default: module.BattleSessionPage })));
+const BattleLeaderboard = lazy(() => import('@/features/battle/pages/BattleLeaderboard').then((module) => ({ default: module.BattleLeaderboard })));
+const DailyChallenge = lazy(() => import('@/features/battle/pages/DailyChallenge').then((module) => ({ default: module.DailyChallenge })));
 const TierListBrowsePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListBrowsePage })));
 const TierListCreatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListCreatePage })));
 const TierListPlayPage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListPlayPage })));
@@ -22,6 +25,8 @@ const TitleDetail = lazy(() => import('@/features/titles/pages/TitleDetail').the
 const Watchlist = lazy(() => import('@/features/watchlist/pages/Watchlist').then((module) => ({ default: module.Watchlist })));
 const Profile = lazy(() => import('@/features/profile/pages/Profile'));
 const PublicProfile = lazy(() => import('@/features/profile/pages/PublicProfile').then((module) => ({ default: module.PublicProfile })));
+const Feed = lazy(() => import('@/features/social/pages/Feed').then((module) => ({ default: module.Feed })));
+const Stats = lazy(() => import('@/features/stats/pages/Stats').then((module) => ({ default: module.Stats })));
 const Auth = lazy(() => import('@/features/auth/pages/Auth').then((module) => ({ default: module.Auth })));
 const AdminLayout = lazy(() => import('@/features/admin/pages/AdminLayout').then((module) => ({ default: module.AdminLayout })));
 const AdminDashboard = lazy(() => import('@/features/admin/pages/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
@@ -38,6 +43,7 @@ const AdminRecommendationPreview = lazy(() => import('@/features/admin/pages/Adm
 const AdminFetch = lazy(() => import('@/features/admin/pages/AdminFetch').then((module) => ({ default: module.AdminFetch })));
 const AdminGuide = lazy(() => import('@/features/admin/pages/AdminGuide').then((module) => ({ default: module.AdminGuide })));
 const AdminLinks = lazy(() => import('@/features/admin/pages/AdminLinks').then((module) => ({ default: module.AdminLinks })));
+const AdminDailyChallenge = lazy(() => import('@/features/admin/pages/AdminDailyChallenge').then((module) => ({ default: module.AdminDailyChallenge })));
 
 function PageLoader() {
   const { t } = useLanguage();
@@ -67,6 +73,7 @@ function App() {
   return (
     <LanguageProvider>
       <ThemeProvider>
+        <AgeGateProvider>
         <AuthProvider>
           <WatchlistProvider>
             <BrowserRouter>
@@ -88,6 +95,8 @@ function App() {
                     <Route path="battle" element={<BattleHub />} />
                     <Route path="battle/build" element={<BattleBuilderPage />} />
                     <Route path="battle/decks" element={<BattleDeckLibraryPage />} />
+                    <Route path="battle/leaderboard" element={<BattleLeaderboard />} />
+                    <Route path="battle/daily" element={<DailyChallenge />} />
                     <Route path="battle/:sessionId" element={<BattleSessionPage />} />
                     <Route path="tierlist" element={<TierListBrowsePage />} />
                     <Route path="tierlist/create" element={<TierListCreatePage />} />
@@ -105,6 +114,15 @@ function App() {
                       )}
                     />
                     <Route path="u/:username" element={<PublicProfile />} />
+                    <Route
+                      path="feed"
+                      element={(
+                        <ProtectedRoute>
+                          <Feed />
+                        </ProtectedRoute>
+                      )}
+                    />
+                    <Route path="stats" element={<Stats />} />
                     <Route path="login" element={<Auth />} />
                     <Route
                       path="admin"
@@ -127,6 +145,7 @@ function App() {
                       <Route path="recommendations" element={<AdminRecommendationPreview />} />
                       <Route path="fetch" element={<AdminFetch />} />
                       <Route path="links" element={<AdminLinks />} />
+                      <Route path="daily" element={<AdminDailyChallenge />} />
                       <Route path="guide" element={<AdminGuide />} />
                       <Route path="*" element={<AdminFallback />} />
                     </Route>
@@ -137,6 +156,7 @@ function App() {
             </BrowserRouter>
           </WatchlistProvider>
         </AuthProvider>
+        </AgeGateProvider>
       </ThemeProvider>
     </LanguageProvider>
   );

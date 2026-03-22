@@ -11,10 +11,13 @@ import { useTopTitles } from '@/features/profile/hooks/useTopTitles';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { buildContentReportPayload, CONTENT_REPORT_ISSUE_OPTIONS } from '@/shared/lib/contentReports';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
+import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
 import { ChevronLeft, ChevronRight, Flag, Link as LinkIcon, Plus, Star, Trash2, Trophy } from 'lucide-react';
+import { TitleReviews } from '@/features/titles/components/TitleReviews';
 import './TitleDetail.css';
 
 const PLATFORM_OPTIONS = [
@@ -39,6 +42,7 @@ export function TitleDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { language, t } = useLanguage();
+  const { showAdult } = useAgeGate();
   const { user } = useAuth();
   const { watchlist, addToList, removeFromList, updateItem, getStatus, advanceProgress, setConsumptionTarget } = useWatchlist();
   const { hiddenFromRecommendationIds } = useHiddenTitles();
@@ -48,6 +52,7 @@ export function TitleDetail() {
   const [title, setTitle] = useState(null);
   const [similar, setSimilar] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAgeGateBlocked, setIsAgeGateBlocked] = useState(false);
   const [showFullSynopsis, setShowFullSynopsis] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
@@ -79,15 +84,22 @@ export function TitleDetail() {
 
     async function fetchData() {
       setIsLoading(true);
+      setIsAgeGateBlocked(false);
       try {
         const nextTitle = await getTitleBySlug(slug);
         if (!cancelled) {
-          setTitle(nextTitle);
+          if (nextTitle && !matchesAgeGateMode(nextTitle, showAdult)) {
+            setTitle(null);
+            setIsAgeGateBlocked(true);
+          } else {
+            setTitle(nextTitle);
+          }
         }
       } catch (error) {
         console.error('Failed to load title:', error);
         if (!cancelled) {
           setTitle(null);
+          setIsAgeGateBlocked(false);
         }
       } finally {
         if (!cancelled) {
@@ -98,7 +110,7 @@ export function TitleDetail() {
 
     fetchData();
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [showAdult, slug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +126,7 @@ export function TitleDetail() {
           watchlist,
           preferences: prefs,
           hiddenTitleIds: hiddenFromRecommendationIds,
+          showAdult,
         });
 
         if (!cancelled) {
@@ -129,7 +142,7 @@ export function TitleDetail() {
 
     loadSimilarTitles();
     return () => { cancelled = true; };
-  }, [title?.id, watchlist, prefs, hiddenFromRecommendationIds]);
+  }, [title?.id, watchlist, prefs, hiddenFromRecommendationIds, showAdult]);
 
   useEffect(() => {
     if (castTab !== 'stats' || !title?.id) return undefined;
@@ -221,9 +234,9 @@ export function TitleDetail() {
   if (!title) {
     return (
       <div className="detail-not-found">
-        <span className="not-found-icon">{t('titleDetail.titleNotFoundLabel')}</span>
-        <h2>{t('titleDetail.titleNotFound')}</h2>
-        <p>{t('titleDetail.titleNotFoundHint')}</p>
+        <span className="not-found-icon">{t(isAgeGateBlocked ? 'titleDetail.ageGateBlockedLabel' : 'titleDetail.titleNotFoundLabel')}</span>
+        <h2>{t(isAgeGateBlocked ? 'titleDetail.ageGateBlockedTitle' : 'titleDetail.titleNotFound')}</h2>
+        <p>{t(isAgeGateBlocked ? 'titleDetail.ageGateBlockedHint' : 'titleDetail.titleNotFoundHint')}</p>
         <Button onClick={() => navigate('/')}>{t('titleDetail.backHome')}</Button>
       </div>
     );
@@ -963,6 +976,10 @@ export function TitleDetail() {
               );
             })()}
           </section>
+        )}
+
+        {title?.id && (
+          <TitleReviews titleId={title.id} />
         )}
 
         {similar.length > 0 && (

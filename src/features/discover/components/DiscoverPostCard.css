@@ -1,0 +1,164 @@
+.discover-post-card {
+  gap: 1rem;
+}
+
+.discover-post-head,
+.discover-post-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.discover-post-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.discover-post-author-copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.discover-post-author-copy strong {
+  font-size: 0.98rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.discover-post-author-copy span {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discover-post-content {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.discover-post-title-link {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.75rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  color: inherit;
+  text-decoration: none;
+}
+
+.discover-post-title-cover {
+  width: 3rem;
+  height: 4.15rem;
+  border-radius: 0.9rem;
+  object-fit: cover;
+}
+
+.discover-post-title-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.discover-post-title-copy strong {
+  font-size: 0.94rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discover-post-title-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.discover-post-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.discover-post-meta {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.discover-post-date {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.discover-post-link {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.discover-post-link:hover,
+.discover-post-author:hover .discover-post-author-copy strong,
+.discover-post-title-link:hover strong {
+  color: var(--text-primary);
+}
+
+.discover-inline-tag-neutral {
+  gap: 0.35rem;
+  background: color-mix(in srgb, var(--paper-tint) 72%, transparent);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 639px) {
+  .discover-post-head {
+    gap: 0.65rem;
+  }
+
+  .discover-post-content {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .discover-post-foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .discover-post-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+[data-theme="dark"] .discover-post-title-link {
+  border-top-color: rgba(255, 255, 255, 0.08);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .discover-inline-tag-neutral {
+  background: rgba(255, 255, 255, 0.06);
+}

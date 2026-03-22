@@ -484,3 +484,27 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Watchlist Overlap ─────────────────────── */
+.overlap-row {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.overlap-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.overlap-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}

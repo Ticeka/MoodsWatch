@@ -1,4 +1,4 @@
-// MoodToon recommendation engine backed only by canonical_titles in Supabase
+// MoodsWatch recommendation engine backed only by canonical_titles in Supabase
 import { MOODS, isExplicitMood } from '@/shared/data/moods';
 import {
   CANONICAL_TITLE_BROWSE_SELECT,
@@ -8,11 +8,13 @@ import {
 } from '@/shared/lib/catalog';
 import { supabase, isSupabaseConnected } from '@/shared/lib/supabase';
 import { sortTitlesCollection } from '@/shared/lib/titleSorting';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import {
   buildRecommendationState,
   DEFAULT_PROFILE_PREFERENCES,
   filterTitlesByRecommendationPreferences,
 } from '@/features/profile/lib/profileStore';
+import { getSearchIntent, sortBySearchRelevance, textMatchesQuery } from '@/features/discover/lib/searchMatch';
 
 // Dynamic weights ตาม context ที่มี เพื่อไม่ให้ weight ที่ใช้งานไม่ได้ไป cap คะแนน
 function resolveWeights(hasMoods, hasLikedTitles) {
@@ -33,7 +35,7 @@ function resolveWeights(hasMoods, hasLikedTitles) {
 
 const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
-const DEFAULT_CATALOG_MAX_ROWS = 750;
+const DEFAULT_CATALOG_MAX_ROWS = null;
 
 let cachedTitles = null;
 let cachedTitlesPromise = null;
@@ -49,6 +51,25 @@ const moodGenres = {};
 MOODS.forEach((mood) => {
   moodGenres[mood.id] = mood.tags || [];
 });
+
+const EXPLICIT_MOOD_FALLBACKS = {
+  'adult-ecchi': {
+    tagKeywords: ['erotica', 'ecchi', 'fanservice', 'adult', 'mature'],
+    textKeywords: ['erotic', 'naughty', 'sensual', 'one-night', 'heat'],
+  },
+  'adult-harem': {
+    tagKeywords: ['harem', 'reverse harem'],
+    textKeywords: ['harem', 'reverse harem', 'multiple lovers', 'many men', 'many women'],
+  },
+  'adult-romance': {
+    tagKeywords: ['drama', 'romance', 'historical', 'reverse harem'],
+    textKeywords: ['love', 'romance', 'romantic', 'marriage', 'married', 'wedding', 'bride', 'groom', 'husband', 'wife', 'dating', 'kiss', 'affair'],
+  },
+  'adult-dark': {
+    tagKeywords: ['psychological', 'drama', 'thriller', 'horror'],
+    textKeywords: ['revenge', 'curse', 'cursed', 'murder', 'kill', 'killer', 'obsession', 'obsessed', 'abuse', 'violent', 'violence', 'dark', 'secret', 'midnight', 'blood', 'blackmail', 'prison', 'trauma'],
+  },
+};
 
 function normalizeTitleType(title) {
   if (title.type === 'manga' && /manhwa/i.test(title.title_en || '')) {
@@ -67,15 +88,15 @@ function resolveRequestedRowLimit(maxRows) {
 }
 
 async function fetchSupabaseTitles({ maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) {
-  const rowLimit = resolveRequestedRowLimit(maxRows) ?? DEFAULT_CATALOG_MAX_ROWS;
+  const rowLimit = resolveRequestedRowLimit(maxRows);
   const step = 1000; // Supabase max per request
   let allData = [];
   let lastId = null;
   let hasMore = true;
 
   while (hasMore) {
-    const remaining = Math.min(step, rowLimit - allData.length);
-    if (remaining <= 0) break;
+    const remaining = rowLimit === null ? step : Math.min(step, rowLimit - allData.length);
+    if (rowLimit !== null && remaining <= 0) break;
 
     let query = supabase
       .from('canonical_titles')
@@ -94,7 +115,7 @@ async function fetchSupabaseTitles({ maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) 
       allData = allData.concat(data);
       lastId = data[data.length - 1].id;
       if (data.length < remaining) hasMore = false;
-      if (allData.length >= rowLimit) hasMore = false;
+      if (rowLimit !== null && allData.length >= rowLimit) hasMore = false;
     } else {
       hasMore = false;
     }
@@ -111,6 +132,49 @@ function ensureSupabaseConnected() {
 
 function mapRecords(records) {
   return (records || []).map((title) => normalizeTitleType(mapCanonicalTitle(title)));
+}
+
+function getTitleSignalBag(title = {}) {
+  const tags = [...(title.genres || []), ...(title.tags || [])]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  const text = [
+    title.title_en,
+    title.title_th,
+    title.title_romaji,
+    title.title_native,
+    title.synopsis,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+
+  return { tags, text };
+}
+
+function matchesExplicitMoodFallback(title, moodId) {
+  if (!title?.is_adult) {
+    return false;
+  }
+
+  if ((title.moods || []).includes(moodId)) {
+    return true;
+  }
+
+  const fallback = EXPLICIT_MOOD_FALLBACKS[moodId];
+  if (!fallback) {
+    return false;
+  }
+
+  const { tags, text } = getTitleSignalBag(title);
+  const hasTagMatch = fallback.tagKeywords.some((keyword) => tags.includes(keyword));
+  const hasTextMatch = fallback.textKeywords.some((keyword) => text.includes(keyword));
+
+  if (moodId === 'adult-ecchi') {
+    return hasTagMatch || hasTextMatch;
+  }
+
+  return hasTagMatch || hasTextMatch;
 }
 
 function storeTitlesInCaches(titles) {
@@ -172,7 +236,7 @@ function applySort(query, sortBy) {
     .order('id', { ascending: true });
 }
 
-async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = {}) {
   ensureSupabaseConnected();
 
   const safePage = Math.max(1, page);
@@ -185,6 +249,12 @@ async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag
     .select(CANONICAL_TITLE_BROWSE_SELECT, { count: 'planned' });
 
   titleQuery = applyTypeFilter(titleQuery, type);
+
+  if (showAdult) {
+    titleQuery = titleQuery.eq('is_adult', true);
+  } else {
+    titleQuery = titleQuery.eq('is_adult', false);
+  }
 
   const normalizedQuery = query.trim();
   if (normalizedQuery.length >= 2) {
@@ -290,6 +360,7 @@ function filterTitlesByQuery(titles, query) {
   if (!query || query.trim().length < 2) return titles;
 
   const lower = query.toLowerCase().trim();
+  const intent = getSearchIntent(lower);
   const typeKeywords = {
     manhwa: 'manhwa',
     'มันฮวา': 'manhwa',
@@ -301,17 +372,21 @@ function filterTitlesByQuery(titles, query) {
   const matchedType = typeKeywords[lower];
 
   return titles.filter((title) => {
-    const nameMatch =
-      (title.title_en && title.title_en.toLowerCase().includes(lower)) ||
-      (title.title_th && title.title_th.toLowerCase().includes(lower)) ||
-      (title.title_native && title.title_native.toLowerCase().includes(lower)) ||
-      (title.slug && title.slug.toLowerCase().includes(lower));
-
     const typeMatch = matchedType ? title.type === matchedType : false;
-    const genreMatch = (title.genres || []).some((genre) => genre.toLowerCase().includes(lower));
-    const tagMatch = (title.tags || []).some((tag) => tag.toLowerCase().includes(lower));
+    const titleMatch = [
+      title.title_en,
+      title.title_th,
+      title.title_romaji,
+      title.title_native,
+      title.slug,
+      ...(title.aliases || []),
+    ].some((value) => textMatchesQuery(value, query, { allowTypo: true }));
+    const genreMatch = (title.genres || []).some((genre) => textMatchesQuery(genre, query));
+    const tagMatch = (title.tags || []).some((tag) => textMatchesQuery(tag, query));
+    const moodMatch = (title.moods || []).some((mood) => textMatchesQuery(mood, query));
+    const synopsisMatch = !intent.isBroad && textMatchesQuery(title.synopsis, query);
 
-    return nameMatch || typeMatch || genreMatch || tagMatch;
+    return titleMatch || typeMatch || genreMatch || tagMatch || moodMatch || synopsisMatch;
   });
 }
 
@@ -331,35 +406,162 @@ function filterTitlesByTag(titles, tag) {
 
   return titles.filter((title) => {
     const typeMatch = matchedType ? title.type === matchedType : false;
-    const genreMatch = (title.genres || []).some((genre) => genre.toLowerCase().includes(lower));
-    const tagMatch = (title.tags || []).some((item) => item.toLowerCase().includes(lower));
-    const moodMatch = (title.moods || []).some((item) => String(item).toLowerCase().includes(lower));
+    const genreMatch = (title.genres || []).some((genre) => textMatchesQuery(genre, lower));
+    const tagMatch = (title.tags || []).some((item) => textMatchesQuery(item, lower));
+    const moodMatch = (title.moods || []).some((item) => textMatchesQuery(item, lower));
 
     return typeMatch || genreMatch || tagMatch || moodMatch;
   });
 }
 
-export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
-  if (!tag.trim()) {
-    return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize });
+export function buildTitleSearchCandidates(title, intent = getSearchIntent('')) {
+  return [
+    {
+      weight: 5.3,
+      texts: [title.title_en, title.title_th, title.title_native],
+      allowTypo: true,
+      matchWeights: {
+        exactPhrase: 328,
+        prefixPhrase: 202,
+        containsPhrase: 112,
+        exactToken: 102,
+        wordBoundary: 66,
+        prefixToken: 44,
+        containsToken: 18,
+        typoToken: 18,
+      },
+    },
+    {
+      weight: 4.8,
+      texts: [title.title_romaji, ...(title.aliases || [])],
+      allowTypo: true,
+      matchWeights: {
+        exactPhrase: 304,
+        prefixPhrase: 188,
+        containsPhrase: 104,
+        exactToken: 94,
+        wordBoundary: 60,
+        prefixToken: 40,
+        containsToken: 16,
+        typoToken: 16,
+      },
+    },
+    {
+      weight: 4.6,
+      texts: [title.slug],
+      allowTypo: true,
+      matchWeights: {
+        exactPhrase: 292,
+        prefixPhrase: 184,
+        containsPhrase: 98,
+        exactToken: 94,
+        wordBoundary: 58,
+        prefixToken: 38,
+        containsToken: 16,
+        typoToken: 16,
+      },
+    },
+    {
+      weight: intent.isBroad ? 1.9 : 1.3,
+      texts: [title.type, title.subtype, title.format],
+      matchWeights: {
+        exactPhrase: 204,
+        prefixPhrase: 132,
+        containsPhrase: 74,
+        exactToken: 58,
+        wordBoundary: 36,
+        prefixToken: 22,
+        containsToken: 10,
+      },
+    },
+    {
+      weight: intent.isBroad ? 2.8 : 1.8,
+      texts: title.genres || [],
+      matchWeights: {
+        exactPhrase: 224,
+        prefixPhrase: 138,
+        containsPhrase: 80,
+        exactToken: 66,
+        wordBoundary: 44,
+        prefixToken: 24,
+        containsToken: 12,
+      },
+    },
+    {
+      weight: intent.isBroad ? 2.5 : 1.5,
+      texts: title.tags || [],
+      matchWeights: {
+        exactPhrase: 214,
+        prefixPhrase: 132,
+        containsPhrase: 76,
+        exactToken: 62,
+        wordBoundary: 40,
+        prefixToken: 22,
+        containsToken: 10,
+      },
+    },
+    {
+      weight: intent.isBroad ? 2.2 : 1.35,
+      texts: title.moods || [],
+      matchWeights: {
+        exactPhrase: 196,
+        prefixPhrase: 124,
+        containsPhrase: 72,
+        exactToken: 58,
+        wordBoundary: 36,
+        prefixToken: 20,
+        containsToken: 10,
+      },
+    },
+    {
+      weight: 0.55,
+      texts: [title.synopsis],
+      longTextPenalty: {
+        threshold: 96,
+        floor: 0.22,
+      },
+      matchWeights: {
+        containsPhrase: 54,
+        exactToken: 40,
+        wordBoundary: 24,
+        prefixToken: 14,
+        containsToken: 7,
+      },
+    },
+  ];
+}
+
+export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = {}) {
+  const normalizedQuery = query.trim();
+  const shouldUseCatalogSearch = tag.trim() || normalizedQuery.length >= 2;
+
+  if (!shouldUseCatalogSearch) {
+    return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize, showAdult });
   }
 
-  // tag filter requires client-side — genres/tags/moods are in separate joined tables
-  const titles = await getAllTitles();
+  // Query/tag discovery requires client-side matching because genres/tags/moods are joined data.
+  let titles = await getAllTitles();
+  titles = filterTitlesForAgeGate(titles, showAdult);
   const filtered = sortTitlesCollection(sortTitles(
     filterTitlesByQuery(
       filterTitlesByTag(filterByDisplayType(titles, type), tag),
-      query
+      normalizedQuery
     )
   ), sortBy);
+  const searchIntent = getSearchIntent(normalizedQuery);
+  const ranked = normalizedQuery.length >= 2
+    ? sortBySearchRelevance(filtered, normalizedQuery, (title) => buildTitleSearchCandidates(title, searchIntent), (left, right) => (
+      Number(right.popularity || 0) - Number(left.popularity || 0)
+    ))
+    : filtered;
   const safePage = Math.max(1, page);
   const safePageSize = Math.max(1, pageSize);
-  const total = filtered.length;
+  const total = ranked.length;
   const totalPages = Math.max(1, Math.ceil(total / safePageSize));
   const start = (safePage - 1) * safePageSize;
 
   return {
-    items: filtered.slice(start, start + safePageSize),
+    items: ranked.slice(start, start + safePageSize),
     total,
     page: Math.min(safePage, totalPages),
     pageSize: safePageSize,
@@ -369,8 +571,11 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
 
 function scoreMoodMatch(title, moods) {
   if (!moods || moods.length === 0) return 0;
-  const titleMoods = title.moods || [];
-  const matched = moods.filter((m) => titleMoods.includes(m)).length;
+  const matched = moods.filter((moodId) => (
+    isExplicitMood(moodId)
+      ? matchesExplicitMoodFallback(title, moodId)
+      : (title.moods || []).includes(moodId)
+  )).length;
   return matched / moods.length;
 }
 
@@ -392,7 +597,7 @@ function matchesRequestedMoods(title, moods) {
   const titleMoodIds = new Set(title.moods || []);
   const { explicit, fuzzy } = splitRequestedMoods(moods);
 
-  if (explicit.some((mood) => titleMoodIds.has(mood))) {
+  if (explicit.some((mood) => titleMoodIds.has(mood) || matchesExplicitMoodFallback(title, mood))) {
     return true;
   }
 
@@ -612,12 +817,14 @@ export async function recommend({
   preferences = DEFAULT_PROFILE_PREFERENCES,
   hiddenTitleIds = [],
   debug = false,
+  showAdult = true,
 } = {}) {
   const allTitles = await getAllTitles({ maxRows: DEFAULT_CATALOG_MAX_ROWS });
   const recommendationState = buildRecommendationState(watchlist, preferences, hiddenTitleIds);
   const resolvedLikedTitleIds = resolveLikedTitleIds(likedTitleId, likedTitleIds);
 
   let pool = [...allTitles];
+  pool = filterTitlesForAgeGate(pool, showAdult);
 
   if (type && type !== 'all') {
     pool = pool.filter((title) => title.type === type);
@@ -687,8 +894,8 @@ export async function recommend({
 }
 
 export async function searchTitles(query, options = {}) {
-  const { type = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
-  return listTitles({ type, query, page, pageSize });
+  const { type = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = options;
+  return listTitles({ type, query, page, pageSize, showAdult });
 }
 
 export async function getTitleBySlug(slug) {
@@ -728,14 +935,15 @@ export async function getTitleBySlug(slug) {
 }
 
 export async function getSimilarTitles(titleId, limit = 6, options = {}) {
+  const { showAdult = true, ...rest } = options;
   const titles = await getAllTitles({ maxRows: DEFAULT_CATALOG_MAX_ROWS });
   const base = titles.find((title) => title.id === titleId);
   if (!base) return [];
-  return recommend({ likedTitleId: titleId, limit, ...options });
+  return recommend({ likedTitleId: titleId, limit, showAdult, ...rest });
 }
 
-export async function getTrendingTitles(limit = 8) {
-  const response = await fetchTitlesPageFromSupabase({ page: 1, pageSize: limit });
+export async function getTrendingTitles(limit = 8, { showAdult = true } = {}) {
+  const response = await fetchTitlesPageFromSupabase({ page: 1, pageSize: limit, showAdult });
   return response.items;
 }
 

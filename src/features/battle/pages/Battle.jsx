@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, BarChart3, Copy, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarDays, Copy, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
@@ -41,6 +41,7 @@ import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import './Battle.css';
 
 const TYPE_OPTIONS = [
@@ -561,6 +562,7 @@ export function BattleHub() {
   const { t } = useLanguage();
   const { prefs } = useProfilePreferences();
   const { hiddenTitleIds } = useHiddenTitles();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -613,11 +615,12 @@ export function BattleHub() {
 
   const deckOptions = useMemo(() => ({
     hiddenTitleIds,
-    excludeAdult: prefs.hideAdultContent,
-  }), [hiddenTitleIds, prefs.hideAdultContent]);
+    excludeAdult: !showAdult,
+    onlyAdult: showAdult,
+  }), [hiddenTitleIds, showAdult]);
   const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenTitleIds.includes(title.id) && (!prefs.hideAdultContent || !title.is_adult)),
-    [hiddenTitleIds, prefs.hideAdultContent, titles]
+    () => titles.filter((title) => !hiddenTitleIds.includes(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
+    [hiddenTitleIds, showAdult, titles]
   );
   const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
   const presets = useMemo(() => getBattlePresets(), []);
@@ -663,7 +666,7 @@ export function BattleHub() {
     const session = saveBattleSession(createBattleSession(deck, {
       catalogCount: visibleCatalogTitles.length,
       hiddenExcludedCount,
-      excludesAdultContent: prefs.hideAdultContent,
+      excludesAdultContent: !showAdult,
     }));
     if (user?.id) {
       try {
@@ -739,6 +742,26 @@ export function BattleHub() {
         </div>
       </section>
 
+      {/* ── Hub Shortcuts ── */}
+      <section className="container battle-hub-shortcuts">
+        <Link to="/battle/daily" className="battle-hub-shortcut-card battle-hub-shortcut-daily">
+          <CalendarDays size={28} className="battle-hub-shortcut-icon" />
+          <div className="battle-hub-shortcut-body">
+            <span className="battle-hub-shortcut-eyebrow">{t('dailyChallenge.eyebrow')}</span>
+            <span className="battle-hub-shortcut-title">{t('dailyChallenge.todayTheme')}</span>
+          </div>
+          <span className="battle-hub-shortcut-arrow">→</span>
+        </Link>
+        <Link to="/battle/leaderboard" className="battle-hub-shortcut-card battle-hub-shortcut-leaderboard">
+          <Trophy size={28} className="battle-hub-shortcut-icon" />
+          <div className="battle-hub-shortcut-body">
+            <span className="battle-hub-shortcut-eyebrow">{t('leaderboard.eyebrow')}</span>
+            <span className="battle-hub-shortcut-title">{t('leaderboard.title')}</span>
+          </div>
+          <span className="battle-hub-shortcut-arrow">→</span>
+        </Link>
+      </section>
+
       <section className="container battle-section">
         <div className="battle-section-head">
           <h2>{t('battle.quickPresets')}</h2>
@@ -805,6 +828,7 @@ export function BattleBuilderPage() {
   const { t } = useLanguage();
   const { prefs } = useProfilePreferences();
   const { hiddenTitleIds } = useHiddenTitles();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -860,8 +884,8 @@ export function BattleBuilderPage() {
     [hiddenTitleIds]
   );
   const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenTitleIdSet.has(title.id) && (!prefs.hideAdultContent || !title.is_adult)),
-    [hiddenTitleIdSet, prefs.hideAdultContent, titles]
+    () => titles.filter((title) => !hiddenTitleIdSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
+    [hiddenTitleIdSet, showAdult, titles]
   );
   const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
   const filterOptions = useMemo(() => collectBattleFilters(visibleCatalogTitles), [visibleCatalogTitles]);
@@ -883,7 +907,7 @@ export function BattleBuilderPage() {
     return filteredCatalogTitles.slice(start, start + BATTLE_CATALOG_PAGE_SIZE);
   }, [catalogPage, filteredCatalogTitles]);
   const tagOptions = useMemo(
-    () => [...filterOptions.genres, ...filterOptions.tags].slice(0, 80),
+    () => [...new Set([...filterOptions.genres, ...filterOptions.tags])].slice(0, 80),
     [filterOptions.genres, filterOptions.tags]
   );
   const battleDeck = useMemo(
@@ -1126,7 +1150,7 @@ export function BattleBuilderPage() {
         const session = saveBattleSession(createBattleSession(storedDeck, {
           catalogCount: visibleCatalogTitles.length,
           hiddenExcludedCount,
-          excludesAdultContent: prefs.hideAdultContent,
+          excludesAdultContent: !showAdult,
         }));
         if (user?.id) {
           try {

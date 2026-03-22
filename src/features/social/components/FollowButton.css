@@ -1,0 +1,55 @@
+.follow-block {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.follow-counts {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.follow-counts strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.follow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  border: 1.5px solid var(--accent-primary, #7c3aed);
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+}
+
+.follow-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.follow-btn--following {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.follow-btn--following:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--text-secondary);
+  opacity: 1;
+}
+
+.follow-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

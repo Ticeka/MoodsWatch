@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, Lock, UserRound, Sparkles } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
+import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import './Auth.css';
@@ -73,7 +74,7 @@ export function Auth() {
         <div className="auth-story animate-fade-in-up">
           <span className="auth-kicker">
             <Sparkles size={14} />
-            MoodToon
+            {BRAND_NAME}
           </span>
           <h1>{isLogin ? t('auth.signIn') : t('auth.signUp')}</h1>
           <p>
@@ -94,7 +95,7 @@ export function Auth() {
 
           <div className="auth-mobile-brand">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
           </div>
 
           <div className="auth-shell-head">

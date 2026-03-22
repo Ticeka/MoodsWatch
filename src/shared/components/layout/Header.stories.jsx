@@ -30,7 +30,7 @@ vi.mock('@/shared/lib/supabase', () => ({
 // ── Mock user objects ──────────────────────────────────────────────────────
 const loggedInAuth = {
   user: {
-    email: 'demo@moodtoon.app',
+    email: 'demo@moodswatch.app',
     profile: { name: 'Demo User', role: 'user', avatar_url: null },
   },
   signOut: fn(),
@@ -38,7 +38,7 @@ const loggedInAuth = {
 
 const adminAuth = {
   user: {
-    email: 'admin@moodtoon.app',
+    email: 'admin@moodswatch.app',
     profile: { name: 'Admin', role: 'admin', avatar_url: null },
   },
   signOut: fn(),

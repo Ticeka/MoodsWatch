@@ -1,0 +1,145 @@
+.daily-challenge-page { padding-bottom: 6rem; }
+
+.daily-challenge-hero {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2xl);
+  padding: 2.5rem;
+  display: grid;
+  gap: 2rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.daily-challenge-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.daily-challenge-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.daily-challenge-date {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.daily-challenge-loading { color: var(--text-tertiary); text-align: center; padding: 2rem; }
+
+.daily-challenge-no-challenge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 1.5rem 0;
+  color: var(--text-secondary);
+}
+
+.daily-challenge-no-challenge h2 { font-size: 1.25rem; }
+
+.daily-challenge-theme {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.daily-challenge-theme-icon { font-size: 3rem; line-height: 1; }
+
+.daily-challenge-theme-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 0.35rem;
+}
+
+.daily-challenge-theme-name {
+  font-size: 1.6rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.daily-challenge-completed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.daily-challenge-check { color: #10b981; }
+
+.daily-challenge-completed h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.daily-challenge-play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 1rem;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, var(--primary-600, #c2455b), var(--primary-500, #e85d75));
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.daily-challenge-play-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-2px);
+}
+
+.daily-challenge-play-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.daily-streak-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.5rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-elevated));
+  max-width: 640px;
+  margin: 1.5rem auto 0;
+}
+
+.daily-streak-icon { color: var(--primary); flex-shrink: 0; }
+
+.daily-streak-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 0.15rem;
+}
+
+.daily-streak-count {
+  font-size: 1.2rem;
+  font-weight: 900;
+  color: var(--primary);
+}

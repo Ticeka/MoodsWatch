@@ -1,11 +1,18 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation } from 'react-router-dom';
-import { Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, X } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BarChart2, Bell, BookMarked, ChevronDown, Eye, EyeOff, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useSearchAutocomplete } from '@/features/discover/hooks/useSearchAutocomplete';
+import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
+import { trackDiscoverEvent } from '@/features/discover/lib/discoverAnalytics';
+import { readRecentSearches, removeRecentSearch, writeRecentSearches } from '@/features/discover/lib/discoverSearchState';
+import { SearchAutocomplete } from '@/shared/components/ui/SearchAutocomplete';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { supabase } from '@/shared/lib/supabase';
 import './Layout.css';
 
@@ -163,25 +170,244 @@ function NotificationBell({ userId }) {
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
+  const { showAdult, toggleAdult } = useAgeGate();
   const { t } = useLanguage();
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const [globalSearch, setGlobalSearch] = useState(() => (
+    location.pathname === '/discover'
+      ? new URLSearchParams(location.search).get('q') || ''
+      : ''
+  ));
+  const [recentSearches, setRecentSearches] = useState(() => readRecentSearches());
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef(null);
   const chipRef = useRef(null);
   const portalRef = useRef(null);
   const drawerCloseRef = useRef(null);
   const menuBtnRef = useRef(null);
+  const headerSearchRef = useRef(null);
+  const drawerSearchRef = useRef(null);
+  const [activeSearchSurface, setActiveSearchSurface] = useState(null);
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
 
   const isActive = (path) => location.pathname === path;
+  const isDiscoverActive = location.pathname === '/discover';
   const isTierListActive = location.pathname.startsWith('/tierlist');
   const userLabel = user?.profile?.name || user?.email?.split('@')[0] || t('layout.userFallback');
   const userRole = user?.profile?.role;
   const canAccessAdmin = userRole === 'admin' || userRole === 'editor';
   const closeMobileMenu = () => setMobileMenuOpen(false);
+  const refreshRecentSearches = useCallback(() => {
+    setRecentSearches(readRecentSearches());
+  }, []);
+  const rememberRecentSearch = useCallback((term) => {
+    const normalizedTerm = String(term || '').trim();
+    if (normalizedTerm.length < 2) {
+      return;
+    }
+
+    setRecentSearches((current) => writeRecentSearches([
+      normalizedTerm,
+      ...current.filter((entry) => entry.toLowerCase() !== normalizedTerm.toLowerCase()),
+    ]));
+  }, []);
+  const handleRemoveRecentSearch = useCallback((term) => {
+    setRecentSearches(removeRecentSearch(term));
+  }, []);
+  const {
+    groups: autocompleteGroups,
+    flatItems: autocompleteItems,
+    isLoading: isAutocompleteLoading,
+    hasQuery: hasAutocompleteQuery,
+    crossLaneNote: autocompleteCrossLaneNote,
+  } = useSearchAutocomplete(globalSearch, {
+    enabled: activeSearchSurface !== null,
+    userId: user?.id || null,
+    recentSearches,
+    surface: 'header',
+    showAdult,
+  });
+
+  // reason: 'select' | 'submit' | 'dismiss'
+  const closeAutocomplete = useCallback((reason = 'dismiss') => {
+    if (reason === 'dismiss' && globalSearch.trim().length >= 2) {
+      void trackDiscoverEvent({
+        eventType: 'search_abandon',
+        userId: user?.id || null,
+        query: globalSearch,
+        metadata: {
+          surface: activeSearchSurface || 'header',
+          query_length: globalSearch.trim().length,
+        },
+      });
+    }
+    setActiveSearchSurface(null);
+    setHighlightedSuggestionIndex(-1);
+  }, [activeSearchSurface, globalSearch, user?.id]);
+
+  const performGlobalSearch = useCallback((nextQuery = globalSearch.trim()) => {
+    const normalizedQuery = String(nextQuery || '').trim();
+    const nextParams = new URLSearchParams();
+    if (normalizedQuery) {
+      nextParams.set('q', normalizedQuery);
+      rememberRecentSearch(normalizedQuery);
+      void trackDiscoverEvent({
+        eventType: 'search_submit',
+        userId: user?.id || null,
+        query: normalizedQuery,
+        metadata: {
+          surface: activeSearchSurface || 'header',
+          query_length: normalizedQuery.length,
+        },
+      });
+    }
+
+    navigate(
+      {
+        pathname: '/discover',
+        search: nextParams.toString() ? `?${nextParams.toString()}` : '',
+      },
+      {
+        state: {
+          globalSearch: {
+            query: normalizedQuery,
+            submittedAt: Date.now(),
+          },
+        },
+      }
+    );
+    closeAutocomplete('submit');
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+  }, [activeSearchSurface, closeAutocomplete, globalSearch, navigate, rememberRecentSearch, user?.id]);
+
+  const submitGlobalSearch = useCallback((event) => {
+    event.preventDefault();
+    performGlobalSearch();
+  }, [performGlobalSearch]);
+
+  const clearGlobalSearch = useCallback(() => {
+    setGlobalSearch('');
+    closeAutocomplete('submit');
+
+    if (isDiscoverActive) {
+      performGlobalSearch('');
+      setDropdownOpen(false);
+    }
+  }, [closeAutocomplete, isDiscoverActive, performGlobalSearch]);
+
+  const handleSuggestionSelect = useCallback((item = null, surface = activeSearchSurface || 'header') => {
+    const nextRecentTerm = item?.searchTerm || globalSearch.trim();
+    if (nextRecentTerm) {
+      rememberRecentSearch(nextRecentTerm);
+    }
+    if (item?.id) {
+      recordAutocompleteSelection({ query: globalSearch, itemId: item.id });
+      void trackDiscoverEvent({
+        eventType: 'autocomplete_select',
+        userId: user?.id || null,
+        query: globalSearch,
+        scope: 'all',
+        resultType: item.groupId || item.kind || 'unknown',
+        resultId: item.entityId || item.id,
+        metadata: {
+          surface,
+          href: item.href || null,
+          isRecent: item.groupId === 'recent',
+          selected_group: item.groupId || item.kind || null,
+          query_length: globalSearch.trim().length,
+        },
+      });
+    }
+    closeAutocomplete('select');
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+  }, [activeSearchSurface, closeAutocomplete, globalSearch, rememberRecentSearch, user?.id]);
+
+  const handleGlobalSearchKeyDown = useCallback((event, surface) => {
+    const hasSuggestions = autocompleteItems.length > 0;
+
+    if (event.key === 'Escape') {
+      closeAutocomplete();
+      return;
+    }
+
+    if (event.key === 'Tab' && hasSuggestions) {
+      // Cycle through items with Tab/Shift+Tab instead of leaving the input
+      event.preventDefault();
+      setActiveSearchSurface(surface);
+      if (event.shiftKey) {
+        setHighlightedSuggestionIndex((current) => (current <= 0 ? autocompleteItems.length - 1 : current - 1));
+      } else {
+        setHighlightedSuggestionIndex((current) => (current + 1) % autocompleteItems.length);
+      }
+      return;
+    }
+
+    if (!hasSuggestions) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSearchSurface(surface);
+      setHighlightedSuggestionIndex((current) => (current + 1) % autocompleteItems.length);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSearchSurface(surface);
+      setHighlightedSuggestionIndex((current) => (current <= 0 ? autocompleteItems.length - 1 : current - 1));
+      return;
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      setActiveSearchSurface(surface);
+      setHighlightedSuggestionIndex(0);
+      return;
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault();
+      setActiveSearchSurface(surface);
+      setHighlightedSuggestionIndex(autocompleteItems.length - 1);
+      return;
+    }
+
+    if (event.key === 'Enter' && highlightedSuggestionIndex >= 0) {
+      event.preventDefault();
+      const selectedItem = autocompleteItems[highlightedSuggestionIndex];
+      if (selectedItem?.href) {
+        navigate(
+          selectedItem.href,
+          selectedItem.navigateState ? { state: selectedItem.navigateState } : undefined,
+        );
+        handleSuggestionSelect(selectedItem, surface);
+      }
+    }
+  }, [autocompleteItems, closeAutocomplete, handleSuggestionSelect, highlightedSuggestionIndex, navigate]);
+
+  useEffect(() => {
+    const handleRecentSearchSync = () => {
+      refreshRecentSearches();
+    };
+
+    window.addEventListener('focus', handleRecentSearchSync);
+    window.addEventListener('storage', handleRecentSearchSync);
+
+    return () => {
+      window.removeEventListener('focus', handleRecentSearchSync);
+      window.removeEventListener('storage', handleRecentSearchSync);
+    };
+  }, [refreshRecentSearches]);
 
   useEffect(() => {
     let frameId = null;
@@ -209,6 +435,13 @@ export function Header() {
       ) {
         setDropdownOpen(false);
       }
+
+      if (
+        headerSearchRef.current && !headerSearchRef.current.contains(event.target) &&
+        drawerSearchRef.current && !drawerSearchRef.current.contains(event.target)
+      ) {
+        closeAutocomplete();
+      }
     };
 
     updateScrolled();
@@ -222,7 +455,7 @@ export function Header() {
       window.removeEventListener('scroll', handleScroll);
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [closeAutocomplete]);
 
   useEffect(() => {
     if (dropdownOpen && chipRef.current) {
@@ -234,6 +467,7 @@ export function Header() {
     }
   }, [dropdownOpen]);
 
+
   useEffect(() => {
     if (mobileMenuOpen) {
       drawerCloseRef.current?.focus();
@@ -241,6 +475,17 @@ export function Header() {
       menuBtnRef.current?.focus();
     }
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    setHighlightedSuggestionIndex(-1);
+  }, [globalSearch, activeSearchSurface]);
+
+  useEffect(() => {
+    const nextSearch = location.pathname === '/discover'
+      ? new URLSearchParams(location.search).get('q') || ''
+      : '';
+    setGlobalSearch(nextSearch);
+  }, [location.pathname, location.search]);
 
   return (
     <>
@@ -250,14 +495,80 @@ export function Header() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
           </Link>
+
+          <form
+            ref={headerSearchRef}
+            className={`header-search ${isDiscoverActive ? 'is-active' : ''}`}
+            onSubmit={submitGlobalSearch}
+            role="search"
+            aria-label={t('discover.searchInputLabel')}
+          >
+            <label htmlFor="header-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
+            <input
+              id="header-global-search"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="header-search-listbox"
+              aria-expanded={activeSearchSurface === 'header' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading) ? true : false}
+              aria-activedescendant={
+                activeSearchSurface === 'header' && highlightedSuggestionIndex >= 0
+                  ? (autocompleteItems[highlightedSuggestionIndex]?.id || undefined)
+                  : undefined
+              }
+              value={globalSearch}
+              onChange={(event) => {
+                setGlobalSearch(event.target.value);
+                setActiveSearchSurface('header');
+              }}
+              onFocus={() => {
+                refreshRecentSearches();
+                setActiveSearchSurface('header');
+              }}
+              onKeyDown={(event) => handleGlobalSearchKeyDown(event, 'header')}
+              className="header-search-input"
+              placeholder={t('discover.searchPlaceholder')}
+              autoComplete="off"
+            />
+            <Search size={16} className="header-search-icon" aria-hidden="true" />
+            {globalSearch ? (
+              <button
+                type="button"
+                className="header-search-clear"
+                onClick={clearGlobalSearch}
+                aria-label={t('discover.clearSearch')}
+                title={t('discover.clearSearch')}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            ) : null}
+            <button type="submit" className="header-search-submit" aria-label={t('discover.searchLabel')} title={t('discover.searchLabel')}>
+              <Search size={17} aria-hidden="true" />
+            </button>
+            <SearchAutocomplete
+              groups={autocompleteGroups}
+              flatItems={autocompleteItems}
+              isLoading={isAutocompleteLoading}
+              isOpen={activeSearchSurface === 'header' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading)}
+              highlightedIndex={highlightedSuggestionIndex}
+              query={globalSearch}
+              variant="header"
+              listboxId="header-search-listbox"
+              t={t}
+              crossLaneNote={autocompleteCrossLaneNote}
+              onSelect={handleSuggestionSelect}
+              onSearchAll={() => performGlobalSearch()}
+              onRemoveRecent={handleRemoveRecentSearch}
+            />
+          </form>
 
           <nav className="desktop-nav" aria-label={t('layout.mainNav')}>
             <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <Home size={16} /><span className="nav-link-label">{t('layout.home')}</span>
             </Link>
-            <Link to="/discover" className={`nav-link ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <Link to="/discover" className={`nav-link nav-link-discover ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <Search size={16} /><span className="nav-link-label">{t('layout.discover')}</span>
             </Link>
             <Link to="/battle" className={`nav-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -269,12 +580,28 @@ export function Header() {
             <Link to="/watchlist" className={`nav-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <BookMarked size={16} /><span className="nav-link-label">{t('layout.watchlist')}</span>
             </Link>
+            {user && (
+              <Link to="/feed" className={`nav-link ${isActive('/feed') ? 'active' : ''}`} onClick={closeMobileMenu}>
+                <Users size={16} /><span className="nav-link-label">{t('layout.feed')}</span>
+              </Link>
+            )}
           </nav>
 
           <div className="header-actions">
+
             {!user && (
               <div className="guest-actions-desktop">
                 <LanguageToggle />
+                <button
+                  type="button"
+                  className="theme-toggle"
+                  onClick={toggleAdult}
+                  aria-label={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+                  title={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+                  style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}
+                >
+                  {showAdult ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
                 <button
                   type="button"
                   className="theme-toggle"
@@ -341,11 +668,72 @@ export function Header() {
         <div className="drawer-header">
           <span className="drawer-title">
             <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
           </span>
           <button ref={drawerCloseRef} className="drawer-close" onClick={() => setMobileMenuOpen(false)} aria-label={t('layout.closeMenu')} type="button">
             <X size={18} aria-hidden="true" />
           </button>
+        </div>
+        <div ref={drawerSearchRef} className="drawer-search-wrap">
+          <form className="drawer-search" onSubmit={submitGlobalSearch} role="search" aria-label={t('discover.searchInputLabel')}>
+            <Search size={16} className="drawer-search-icon" aria-hidden="true" />
+            <label htmlFor="drawer-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
+            <input
+              id="drawer-global-search"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="drawer-search-listbox"
+              aria-expanded={activeSearchSurface === 'drawer' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading) ? true : false}
+              aria-activedescendant={
+                activeSearchSurface === 'drawer' && highlightedSuggestionIndex >= 0
+                  ? (autocompleteItems[highlightedSuggestionIndex]?.id || undefined)
+                  : undefined
+              }
+              className="drawer-search-input"
+              value={globalSearch}
+              onChange={(event) => {
+                setGlobalSearch(event.target.value);
+                setActiveSearchSurface('drawer');
+              }}
+              onFocus={() => {
+                refreshRecentSearches();
+                setActiveSearchSurface('drawer');
+              }}
+              onKeyDown={(event) => handleGlobalSearchKeyDown(event, 'drawer')}
+              placeholder={t('discover.searchPlaceholder')}
+              autoComplete="off"
+            />
+            {globalSearch ? (
+              <button
+                type="button"
+                className="drawer-search-clear"
+                onClick={clearGlobalSearch}
+                aria-label={t('discover.clearSearch')}
+                title={t('discover.clearSearch')}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            ) : null}
+            <button type="submit" className="drawer-search-submit">
+              {t('discover.searchLabel')}
+            </button>
+          </form>
+          <SearchAutocomplete
+            groups={autocompleteGroups}
+            flatItems={autocompleteItems}
+            isLoading={isAutocompleteLoading}
+            isOpen={activeSearchSurface === 'drawer' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading)}
+            highlightedIndex={highlightedSuggestionIndex}
+            query={globalSearch}
+            variant="drawer"
+            listboxId="drawer-search-listbox"
+            t={t}
+            crossLaneNote={autocompleteCrossLaneNote}
+            onSelect={handleSuggestionSelect}
+            onSearchAll={() => performGlobalSearch()}
+            onRemoveRecent={handleRemoveRecentSearch}
+          />
         </div>
         <div className="drawer-links">
           <Link to="/" className={`drawer-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -362,6 +750,14 @@ export function Header() {
           </Link>
           <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BookMarked size={18} /> {t('layout.watchlist')}
+          </Link>
+          {user && (
+            <Link to="/feed" className={`drawer-link ${isActive('/feed') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Users size={18} /> {t('layout.feed')}
+            </Link>
+          )}
+          <Link to="/stats" className={`drawer-link ${isActive('/stats') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <BarChart2 size={18} /> {t('layout.stats')}
           </Link>
           {user && (
             <Link to="/profile" className={`drawer-link ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -395,6 +791,11 @@ export function Header() {
               <User size={18} /> {t('layout.login')}
             </Link>
           )}
+          <button type="button" onClick={toggleAdult} className="drawer-link theme"
+            style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
+            {showAdult ? <Eye size={18} /> : <EyeOff size={18} />}
+            {showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+          </button>
           <button type="button" onClick={toggleTheme} className="drawer-link theme">
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             {theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
@@ -425,11 +826,17 @@ export function Header() {
             <span className="bottom-nav-label">{t('layout.profile')}</span>
           </Link>
         )}
+        <button type="button" onClick={toggleAdult} className="bottom-nav-item"
+          style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
+          {showAdult ? <Eye size={20} className="bottom-nav-icon" /> : <EyeOff size={20} className="bottom-nav-icon" />}
+          <span className="bottom-nav-label">{showAdult ? '18+ ON' : '18+ OFF'}</span>
+        </button>
         <button type="button" onClick={toggleTheme} className="bottom-nav-item">
           {theme === 'dark' ? <Sun size={20} className="bottom-nav-icon" /> : <Moon size={20} className="bottom-nav-icon" />}
           <span className="bottom-nav-label">{theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}</span>
         </button>
       </nav>
+
 
       {dropdownOpen && user && createPortal(
         <div
@@ -451,6 +858,11 @@ export function Header() {
             <LanguageToggle />
           </div>
 
+          <button className="dropdown-item" onClick={toggleAdult} role="menuitem" type="button"
+            style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
+            {showAdult ? <Eye size={16} /> : <EyeOff size={16} />}
+            <span>{showAdult ? 'ปิด 18+' : 'เปิด 18+'}</span>
+          </button>
           <button className="dropdown-item" onClick={toggleTheme} role="menuitem" type="button">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             <span>{theme === 'dark' ? t('layout.lightMode') : t('layout.darkMode')}</span>
@@ -459,6 +871,16 @@ export function Header() {
           <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)} role="menuitem">
             <Settings size={16} />
             <span>{t('layout.profile')}</span>
+          </Link>
+
+          <Link to="/feed" className="dropdown-item" onClick={() => setDropdownOpen(false)} role="menuitem">
+            <Users size={16} />
+            <span>{t('layout.feed')}</span>
+          </Link>
+
+          <Link to="/stats" className="dropdown-item" onClick={() => setDropdownOpen(false)} role="menuitem">
+            <BarChart2 size={16} />
+            <span>{t('layout.stats')}</span>
           </Link>
 
           {canAccessAdmin && (
@@ -497,7 +919,7 @@ export function Footer() {
             <span className="logo-icon">
               <Sparkles size={19} />
             </span>
-            <span className="logo-wordmark">Mood<span className="logo-accent">Toon</span></span>
+            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
           </Link>
           <p className="footer-desc">{t('layout.footerDesc')}</p>
         </div>
@@ -510,6 +932,7 @@ export function Footer() {
             <Link to="/tierlist">{t('layout.tierlist')}</Link>
             <Link to="/discover">{t('layout.discover')}</Link>
             <Link to="/watchlist">{t('layout.watchlist')}</Link>
+            <Link to="/stats">{t('layout.stats')}</Link>
             <Link to="/profile">{t('layout.profile')}</Link>
           </div>
           <div className="link-group">
@@ -521,7 +944,7 @@ export function Footer() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <p>&copy; {new Date().getFullYear()} MoodToon | {t('layout.copyright')}</p>
+          <p>&copy; {new Date().getFullYear()} {BRAND_NAME} | {t('layout.copyright')}</p>
         </div>
       </div>
     </footer>

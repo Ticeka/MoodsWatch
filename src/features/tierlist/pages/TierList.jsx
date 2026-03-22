@@ -24,8 +24,11 @@ import { Button } from '@/shared/components/ui/Button';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { ErrorState } from '@/shared/components/ui/ErrorState';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
+import { BRAND_NAME } from '@/shared/config/brand';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getAllTitles } from '@/features/discover/lib/recommend';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
   addTierRow,
   buildTierListFromTemplate,
@@ -143,6 +146,19 @@ function getTierListPreviewTitles(list, titleById, limit = 4) {
     .map((id) => titleById.get(Number(id)))
     .filter(Boolean)
     .slice(0, limit);
+}
+
+function hasVisibleTemplateTitles(template, titleById) {
+  return (template?.titleIds || []).some((id) => titleById.has(Number(id)));
+}
+
+function hasVisibleTierListTitles(list, titleById) {
+  const ids = [
+    ...(list?.rows || []).flatMap((row) => row.titleIds || []),
+    ...(list?.poolTitleIds || []),
+  ];
+
+  return ids.some((id) => titleById.has(Number(id)));
 }
 
 function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo, onPrimaryClick, secondaryLabel, onSecondaryClick }) {
@@ -581,7 +597,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       context.fillText(tierList.title || 'Tier List', boardPadding + 14, boardPadding + 32);
       context.fillStyle = 'rgba(255,255,255,0.72)';
       context.font = '14px Arial';
-      context.fillText(pick('Ranked with MoodToon Tier List', 'Ranked with MoodToon Tier List'), boardPadding + 14, boardPadding + 47);
+      context.fillText(pick(`Ranked with ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`), boardPadding + 14, boardPadding + 47);
 
       const imageEntries = await Promise.all(
         tierList.rows.flatMap((row) => row.titleIds).map(async (titleId) => {
@@ -818,7 +834,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       <div className="tiermaker-export-board">
         <div className="tiermaker-export-head">
           <strong>{tierList.title}</strong>
-          <span>{pick('จัดอันดับด้วย MoodToon Tier List', 'Ranked with MoodToon Tier List')}</span>
+          <span>{pick(`จัดอันดับด้วย ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`)}</span>
         </div>
         <div className="tiermaker-board" ref={boardRef}>
           {tierList.rows.map((row, index) => (
@@ -1302,6 +1318,7 @@ export function TierListBrowsePage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -1318,8 +1335,9 @@ export function TierListBrowsePage() {
       setLoadError('');
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (cancelled) return;
-      setTitles(catalog);
-      const nextLibrary = await loadTierLibrary(catalog, { userId: user?.id || null });
+      const filtered = filterTitlesForAgeGate(catalog, showAdult);
+      setTitles(filtered);
+      const nextLibrary = await loadTierLibrary(filtered, { userId: user?.id || null });
       if (cancelled) return;
       setLibrary(nextLibrary);
       setIsLoading(false);
@@ -1331,15 +1349,19 @@ export function TierListBrowsePage() {
       }
     });
     return () => { cancelled = true; };
-  }, [pick, user?.id]);
+  }, [pick, showAdult, user?.id]);
 
+  const titleById = useMemo(
+    () => new Map(titles.map((title) => [Number(title.id), title])),
+    [titles]
+  );
   const publicTemplates = useMemo(
-    () => library.templates.filter((template) => template.isPublic),
-    [library.templates]
+    () => library.templates.filter((template) => template.isPublic && hasVisibleTemplateTitles(template, titleById)),
+    [library.templates, titleById]
   );
   const publicLists = useMemo(
-    () => library.lists.filter((list) => list.isPublic),
-    [library.lists]
+    () => library.lists.filter((list) => list.isPublic && hasVisibleTierListTitles(list, titleById)),
+    [library.lists, titleById]
   );
   const recentCommunityLists = useMemo(
     () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
@@ -1360,11 +1382,6 @@ export function TierListBrowsePage() {
     const sorted = sortTemplates(filteredTemplates, sortBy);
     return paginate(sorted, page, BROWSE_PAGE_SIZE);
   }, [filteredTemplates, page, sortBy]);
-
-  const titleById = useMemo(
-    () => new Map(titles.map((title) => [Number(title.id), title])),
-    [titles]
-  );
 
   const handlePlayTemplate = async (template) => {
     try {
@@ -1603,6 +1620,7 @@ export function TierListTemplatePage() {
   const { templateId } = useParams();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [library, setLibrary] = useState({ templates: [], lists: [] });
   const [template, setTemplate] = useState(null);
@@ -1634,9 +1652,10 @@ export function TierListTemplatePage() {
 
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (cancelled) return;
-      setTitles(catalog);
+      const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
+      setTitles(filteredCatalog);
 
-      const hydratedLibrary = await loadTierLibrary(catalog, { userId: user?.id || null });
+      const hydratedLibrary = await loadTierLibrary(filteredCatalog, { userId: user?.id || null });
       if (cancelled) return;
       setLibrary(hydratedLibrary);
       setTemplate(findTierTemplate(templateId, hydratedLibrary) || found);
@@ -1651,7 +1670,7 @@ export function TierListTemplatePage() {
     });
 
     return () => { cancelled = true; };
-  }, [pick, templateId, user?.id]);
+  }, [pick, templateId, showAdult, user?.id]);
 
   const titleById = useMemo(
     () => new Map(titles.map((title) => [Number(title.id), title])),
@@ -1660,9 +1679,13 @@ export function TierListTemplatePage() {
 
   const relatedPublicLists = useMemo(
     () => sortListsByRecentAndPopularity(
-      library.lists.filter((list) => list.isPublic && String(list.templateId || '') === String(templateId))
+      library.lists.filter((list) => (
+        list.isPublic &&
+        String(list.templateId || '') === String(templateId) &&
+        hasVisibleTierListTitles(list, titleById)
+      ))
     ),
-    [library.lists, templateId]
+    [library.lists, templateId, titleById]
   );
 
   const handlePlay = async () => {
@@ -1822,6 +1845,7 @@ export function TierListCreatePage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -1841,8 +1865,9 @@ export function TierListCreatePage() {
       setLoadError('');
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (!cancelled) {
-        setTitles(catalog);
-        await loadTierLibrary(catalog, { userId: user?.id || null });
+        const filtered = filterTitlesForAgeGate(catalog, showAdult);
+        setTitles(filtered);
+        await loadTierLibrary(filtered, { userId: user?.id || null });
         setIsLoading(false);
       }
     }
@@ -1853,7 +1878,7 @@ export function TierListCreatePage() {
       }
     });
     return () => { cancelled = true; };
-  }, [pick, user?.id]);
+  }, [pick, showAdult, user?.id]);
 
   const availableGenres = useMemo(() => {
     const counts = new Map();
@@ -2159,6 +2184,7 @@ export function TierListPlayPage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [library, setLibrary] = useState({ templates: [], lists: [] });
   const [tierList, setTierList] = useState(null);
@@ -2181,8 +2207,9 @@ export function TierListPlayPage() {
 
       const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
       if (cancelled) return;
-      setTitles(catalog);
-      const hydratedLibrary = await loadTierLibrary(catalog, { userId: user?.id || null });
+      const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
+      setTitles(filteredCatalog);
+      const hydratedLibrary = await loadTierLibrary(filteredCatalog, { userId: user?.id || null });
       if (!cancelled) {
         setLibrary(hydratedLibrary);
       }
@@ -2207,7 +2234,7 @@ export function TierListPlayPage() {
       setLoadError(error?.message || pick('โหลด Tier List ไม่สำเร็จ', 'Failed to load tier list'));
     });
     return () => { cancelled = true; };
-  }, [listId, pick, user?.id]);
+  }, [listId, pick, showAdult, user?.id]);
 
   const titleById = useMemo(
     () => new Map(titles.map((title) => [Number(title.id), title])),
@@ -2221,7 +2248,8 @@ export function TierListPlayPage() {
       library.lists.filter((list) => (
         list.isPublic &&
         list.id !== tierList.id &&
-        String(list.templateId || '') === String(tierList.templateId)
+        String(list.templateId || '') === String(tierList.templateId) &&
+        hasVisibleTierListTitles(list, titleById)
       ))
     )
     : [];

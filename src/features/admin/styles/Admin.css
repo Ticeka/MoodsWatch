@@ -1643,3 +1643,214 @@ textarea.form-input {
 .admin-section-link:hover {
   color: var(--primary-700);
 }
+
+/* ============================================
+   Admin Daily Challenge
+   ============================================ */
+.admin-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-page-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: var(--text-primary);
+}
+
+.admin-page-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.admin-daily-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-daily-card {
+  background: var(--surface-1, var(--bg-elevated));
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: border-color 0.15s;
+}
+
+.admin-daily-card.today {
+  border-color: var(--primary, #7c3aed);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.admin-daily-card.past {
+  opacity: 0.55;
+}
+
+.admin-daily-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-daily-date-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-daily-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-daily-today-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--primary, #7c3aed);
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.admin-daily-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.admin-daily-challenge-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.admin-daily-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.admin-daily-theme-th {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.admin-daily-theme-en {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 2px 0 0;
+}
+
+.admin-daily-deck-name {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  margin: 4px 0 0;
+}
+
+.admin-daily-empty {
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Modal */
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.admin-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: var(--shadow-xl);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.admin-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-modal-header h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.admin-daily-modal-date {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+  padding: 0.3rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+.admin-daily-emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-daily-emoji-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-default);
+  background: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.admin-daily-emoji-btn:hover {
+  background: var(--bg-secondary);
+}
+
+.admin-daily-emoji-btn.selected {
+  border-color: var(--primary, #7c3aed);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.admin-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-default);
+}

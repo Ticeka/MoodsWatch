@@ -1,4 +1,4 @@
-// MoodToon — Sample Titles Database
+// MoodsWatch — Sample Titles Database
 const TITLES = [
   {
     id: 1, slug: 'frieren', type: 'anime', title_en: 'Frieren: Beyond Journey\'s End', title_th: 'ฟรีเรน ผู้กล้าในตอนจบ',

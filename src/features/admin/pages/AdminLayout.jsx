@@ -20,6 +20,7 @@ import {
   X,
   Download,
   BookOpen,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -112,6 +113,9 @@ export function AdminLayout() {
             <h3 className="nav-group-title">{t('admin.nav.users')}</h3>
             <NavLink to="/admin/users" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Users className="sidebar-link-icon" size={18} /> {t('admin.nav.userDirectory')}
+            </NavLink>
+            <NavLink to="/admin/daily" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
+              <CalendarDays className="sidebar-link-icon" size={18} /> {t('admin.nav.dailyChallenge')}
             </NavLink>
           </div>
 

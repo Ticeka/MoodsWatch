@@ -120,6 +120,77 @@
   font-size: 1.75rem;
 }
 
+/* ── Hub Shortcuts ───────────────────────────────────── */
+.battle-hub-shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.battle-hub-shortcut-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: #fff;
+  font-weight: 600;
+  transition: transform 0.15s, filter 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.battle-hub-shortcut-card:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+.battle-hub-shortcut-daily {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+}
+
+.battle-hub-shortcut-leaderboard {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+.battle-hub-shortcut-icon {
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.battle-hub-shortcut-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.battle-hub-shortcut-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.8;
+}
+
+.battle-hub-shortcut-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.battle-hub-shortcut-arrow {
+  font-size: 1.1rem;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* ── Battle Section ──────────────────────────────────── */
 .battle-section {
   margin-top: 0.9rem;
 }
@@ -2179,6 +2250,10 @@
 
   .battle-card-body h2 {
     font-size: 1.25rem;
+  }
+
+  .battle-hub-shortcuts {
+    grid-template-columns: 1fr;
   }
 
   /* Match grid — tighter on small phones */

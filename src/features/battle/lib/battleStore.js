@@ -1,3 +1,5 @@
+import { BRAND_NAME } from '@/shared/config/brand';
+
 const BATTLE_SESSIONS_KEY = 'moodtoon-battle-sessions';
 const BATTLE_DECKS_KEY = 'moodtoon-battle-decks';
 const RECENT_BATTLE_SESSION_LIMIT = 4;
@@ -88,6 +90,7 @@ function buildDeckLabel(filters) {
 function applyBattleVisibilityRules(titles, options = {}) {
   const hiddenTitleIds = new Set((options.hiddenTitleIds || []).map(Number).filter(Boolean));
   const excludeAdult = Boolean(options.excludeAdult);
+  const onlyAdult = Boolean(options.onlyAdult);
 
   return (titles || []).filter((title) => {
     if (hiddenTitleIds.has(title.id)) {
@@ -95,6 +98,10 @@ function applyBattleVisibilityRules(titles, options = {}) {
     }
 
     if (excludeAdult && title.is_adult) {
+      return false;
+    }
+
+    if (onlyAdult && !title.is_adult) {
       return false;
     }
 
@@ -974,7 +981,7 @@ export function buildBattleShareText(session) {
   const topLine = summary.topThree
     .map((title, index) => `${index + 1}. ${title.title_th || title.title_en}`)
     .join('\n');
-  return `My MoodToon Battle Result\nDeck: ${summary.deckLabel}\nWinner: ${summary.winner?.title_th || summary.winner?.title_en || '-'}\nRounds: ${summary.comparisonCount}\n${topLine}`;
+  return `My ${BRAND_NAME} Battle Result\nDeck: ${summary.deckLabel}\nWinner: ${summary.winner?.title_th || summary.winner?.title_en || '-'}\nRounds: ${summary.comparisonCount}\n${topLine}`;
 }
 
 export function collectBattleFilters(titles) {

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { BarChart3, CopyPlus, Flag, Layers, Library, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart3, CopyPlus, Flag, Layers, Library, RefreshCw, Search } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
 import { mapCanonicalTitle } from '@/shared/lib/catalog';
 import {
@@ -55,6 +55,32 @@ function buildCountMap(rows, key, options) {
   }, {});
 }
 
+function isMissingTableError(error, tableName) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes(tableName.toLowerCase()) && (
+      message.includes('schema cache') ||
+      message.includes('relation') ||
+      message.includes('does not exist')
+    )
+  );
+}
+
+function buildTopItems(items = [], getKey) {
+  const counts = new Map();
+
+  items.forEach((item) => {
+    const key = String(getKey(item) || '').trim();
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 6);
+}
+
 function MetricCard({ label, value, hint, tone = 'var(--primary-600)' }) {
   return (
     <div className="stat-card">
@@ -81,14 +107,14 @@ export function AdminAnalytics() {
     blockType: 'all',
   });
 
-  const EDITORIAL_STATUS_OPTIONS = [
+  const EDITORIAL_STATUS_OPTIONS = useMemo(() => ([
     { value: 'all', label: t('admin.analytics.allStatuses') },
     { value: 'draft', label: t('admin.analytics.statusDraft') },
     { value: 'published', label: t('admin.analytics.statusPublished') },
     { value: 'archived', label: t('admin.analytics.statusArchived') },
-  ];
+  ]), [t]);
 
-  const HOMEPAGE_BLOCK_TYPE_OPTIONS = [
+  const HOMEPAGE_BLOCK_TYPE_OPTIONS = useMemo(() => ([
     { value: 'all', label: t('admin.analytics.allBlockTypes') },
     { value: 'hero', label: t('admin.analytics.blockHero') },
     { value: 'collection', label: t('admin.analytics.blockCollection') },
@@ -96,13 +122,9 @@ export function AdminAnalytics() {
     { value: 'recommendation', label: t('admin.analytics.blockRecommendation') },
     { value: 'continue', label: t('admin.analytics.blockContinue') },
     { value: 'trending', label: t('admin.analytics.blockTrending') },
-  ];
+  ]), [t]);
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, []);
-
-  async function fetchAnalytics() {
+  const fetchAnalytics = useCallback(async () => {
     if (!supabase) {
       setErrorMessage(t('admin.analytics.supabaseUnavailable'));
       setIsLoading(false);
@@ -128,6 +150,7 @@ export function AdminAnalytics() {
         blocksRes,
         reportsRes,
         duplicatesRes,
+        discoverEventsRes,
       ] = await Promise.all([
         supabase.from('canonical_titles').select('*', { count: 'exact', head: true }),
         supabase.from('canonical_titles').select('*', { count: 'exact', head: true }).eq('type', 'anime'),
@@ -149,6 +172,7 @@ export function AdminAnalytics() {
         supabase.from('homepage_content_blocks').select('id, status, visibility, block_type, created_at, updated_at'),
         supabase.from('content_reports').select(CONTENT_REPORT_SELECT).order('created_at', { ascending: false }).limit(1000),
         supabase.from('duplicate_candidates').select(DUPLICATE_CANDIDATE_SELECT).order('created_at', { ascending: false }).limit(1000),
+        supabase.from('discover_search_events').select('*').order('created_at', { ascending: false }).limit(1000),
       ]);
 
       const responseErrors = [
@@ -166,6 +190,9 @@ export function AdminAnalytics() {
         blocksRes.error,
         reportsRes.error,
         duplicatesRes.error,
+        discoverEventsRes.error && !isMissingTableError(discoverEventsRes.error, 'discover_search_events')
+          ? discoverEventsRes.error
+          : null,
       ].filter(Boolean);
 
       if (responseErrors.length > 0) {
@@ -189,6 +216,9 @@ export function AdminAnalytics() {
           collectionItems: collectionItemsRes.count || 0,
           blocks: blocksRes.data || [],
         },
+        discoverEvents: (discoverEventsRes.error && isMissingTableError(discoverEventsRes.error, 'discover_search_events'))
+          ? []
+          : (discoverEventsRes.data || []),
         reports: (reportsRes.data || []).map((row) => mapContentReport(row)),
         duplicates: (duplicatesRes.data || []).map((row) => mapDuplicateCandidate(row)),
       });
@@ -198,7 +228,11 @@ export function AdminAnalytics() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [t]);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
   const derived = useMemo(() => {
     if (!data) return null;
@@ -218,6 +252,10 @@ export function AdminAnalytics() {
       (filters.reportStatus === 'all' || report.status === filters.reportStatus) &&
       (filters.reportIssueType === 'all' || report.issueType === filters.reportIssueType) &&
       isWithinRange(report.createdAt, filters.dateFrom, filters.dateTo)
+    ));
+
+    const filteredDiscoverEvents = data.discoverEvents.filter((event) => (
+      isWithinRange(event.created_at, filters.dateFrom, filters.dateTo)
     ));
 
     const filteredDuplicates = data.duplicates.filter((candidate) => (
@@ -244,7 +282,68 @@ export function AdminAnalytics() {
       low: filteredDuplicates.filter((candidate) => candidate.confidence < 60).length,
     };
 
+    const discoverSearchViews = filteredDiscoverEvents.filter((event) => event.event_type === 'search_view');
+    const discoverSearchSubmits = filteredDiscoverEvents.filter((event) => event.event_type === 'search_submit');
+    const discoverSearchAbandons = filteredDiscoverEvents.filter((event) => event.event_type === 'search_abandon');
+    const discoverResultClicks = filteredDiscoverEvents.filter((event) => event.event_type === 'result_click');
+    const discoverPresetApplies = filteredDiscoverEvents.filter((event) => event.event_type === 'preset_apply');
+    const discoverNoResults = filteredDiscoverEvents.filter((event) => event.event_type === 'no_results_view');
+    const discoverRecoveries = filteredDiscoverEvents.filter((event) => event.event_type === 'recovery_apply');
+    const discoverAutocompleteSelects = filteredDiscoverEvents.filter((event) => event.event_type === 'autocomplete_select');
+
+    const discoverClickTypeCounts = buildTopItems(discoverResultClicks, (event) => event.result_type);
+    const discoverPresetSourceCounts = buildTopItems(discoverPresetApplies, (event) => event.preset_source || 'manual');
+    const topQueries = buildTopItems(discoverSearchViews, (event) => event.normalized_query || event.query);
+    const noResultQueries = buildTopItems(discoverNoResults, (event) => event.normalized_query || event.query);
+    const topAutocompleteClicks = buildTopItems(discoverAutocompleteSelects, (event) => event.result_id || event.result_type || 'unknown');
+    const distinctQueryCount = new Set(discoverSearchViews.map((event) => String(event.normalized_query || event.query || '').trim()).filter(Boolean)).size;
+
+    // Recovery rate = recoveries / no-result sessions (sessions that got no_results_view)
+    const noResultSessionIds = new Set(discoverNoResults.map((e) => e.session_id).filter(Boolean));
+    const recoverySessionIds = new Set(discoverRecoveries.map((e) => e.session_id).filter(Boolean));
+    const recoveredCount = [...recoverySessionIds].filter((id) => noResultSessionIds.has(id)).length;
+    const recoveryRate = noResultSessionIds.size > 0
+      ? Math.round((recoveredCount / noResultSessionIds.size) * 100)
+      : null;
+
+    // KPI rates
+    const autocompleteCtaRate = discoverSearchViews.length > 0
+      ? Math.round((discoverAutocompleteSelects.length / discoverSearchViews.length) * 100)
+      : null;
+    const submitPlusAbandon = discoverSearchSubmits.length + discoverSearchAbandons.length;
+    const submitRate = submitPlusAbandon > 0
+      ? Math.round((discoverSearchSubmits.length / submitPlusAbandon) * 100)
+      : null;
+    const zeroResultRate = discoverSearchViews.length > 0
+      ? Math.round((discoverNoResults.length / discoverSearchViews.length) * 100)
+      : null;
+
+    // Header vs Discover autocomplete split (metadata.surface)
+    const headerAutocompleteSelects = discoverAutocompleteSelects.filter((e) => e.metadata?.surface === 'header').length;
+    const discoverSurfaceAutocompleteSelects = discoverAutocompleteSelects.filter((e) => e.metadata?.surface !== 'header').length;
+
     return {
+      filteredDiscoverEvents,
+      discoverSearchViews,
+      discoverSearchSubmits,
+      discoverSearchAbandons,
+      discoverResultClicks,
+      discoverPresetApplies,
+      discoverNoResults,
+      discoverRecoveries,
+      discoverAutocompleteSelects,
+      discoverClickTypeCounts,
+      discoverPresetSourceCounts,
+      topQueries,
+      noResultQueries,
+      topAutocompleteClicks,
+      distinctQueryCount,
+      recoveryRate,
+      autocompleteCtaRate,
+      submitRate,
+      zeroResultRate,
+      headerAutocompleteSelects,
+      discoverSurfaceAutocompleteSelects,
       filteredCollections,
       filteredBlocks,
       filteredReports,
@@ -257,7 +356,7 @@ export function AdminAnalytics() {
       averageDuplicateConfidence,
       confidenceBuckets,
     };
-  }, [data, filters]);
+  }, [HOMEPAGE_BLOCK_TYPE_OPTIONS, data, filters]);
 
   if (isLoading) {
     return (
@@ -532,6 +631,203 @@ export function AdminAnalytics() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="admin-analytics-section" style={{ marginBottom: 'var(--space-8)' }}>
+        <div className="admin-panel-heading">
+          <div>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <Search size={20} color="var(--primary-500)" />
+              {t('admin.analytics.discoverTitle')}
+            </h2>
+            <p>{t('admin.analytics.discoverHint')}</p>
+          </div>
+        </div>
+
+        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
+          <MetricCard label={t('admin.analytics.discoverSearchViews')} value={derived.discoverSearchViews.length} hint={t('admin.analytics.discoverSearchViewsHint')} />
+          <MetricCard label={t('admin.analytics.discoverResultClicks')} value={derived.discoverResultClicks.length} hint={t('admin.analytics.discoverResultClicksHint')} tone="#3b82f6" />
+          <MetricCard label={t('admin.analytics.discoverDistinctQueries')} value={derived.distinctQueryCount} hint={t('admin.analytics.discoverDistinctQueriesHint')} tone="#10b981" />
+          <MetricCard
+            label={t('admin.analytics.discoverTopQuery')}
+            value={derived.topQueries[0]?.label || '-'}
+            hint={derived.topQueries[0] ? t('admin.analytics.discoverTopQueryHint', { count: derived.topQueries[0].count }) : t('admin.analytics.discoverNoDataHint')}
+            tone="#f59e0b"
+          />
+          <MetricCard
+            label={t('admin.analytics.discoverNoResults')}
+            value={derived.discoverNoResults.length}
+            hint={t('admin.analytics.discoverNoResultsHint')}
+            tone="#ef4444"
+          />
+          <MetricCard
+            label={t('admin.analytics.discoverRecoveryRate')}
+            value={derived.recoveryRate !== null ? `${derived.recoveryRate}%` : '-'}
+            hint={derived.recoveryRate !== null
+              ? t('admin.analytics.discoverRecoveryRateHint', { recovered: derived.discoverRecoveries.length, total: derived.discoverNoResults.length })
+              : t('admin.analytics.discoverNoDataHint')}
+            tone="#8b5cf6"
+          />
+          <MetricCard
+            label={t('admin.analytics.discoverAutocompleteCtaRate')}
+            value={derived.autocompleteCtaRate !== null ? `${derived.autocompleteCtaRate}%` : '-'}
+            hint={t('admin.analytics.discoverAutocompleteCtaRateHint', { selects: derived.discoverAutocompleteSelects.length, views: derived.discoverSearchViews.length })}
+            tone="#06b6d4"
+          />
+          <MetricCard
+            label={t('admin.analytics.discoverSubmitRate')}
+            value={derived.submitRate !== null ? `${derived.submitRate}%` : '-'}
+            hint={t('admin.analytics.discoverSubmitRateHint', { submits: derived.discoverSearchSubmits.length, abandons: derived.discoverSearchAbandons.length })}
+            tone="#f97316"
+          />
+          <MetricCard
+            label={t('admin.analytics.discoverZeroResultRate')}
+            value={derived.zeroResultRate !== null ? `${derived.zeroResultRate}%` : '-'}
+            hint={t('admin.analytics.discoverZeroResultRateHint', { noResults: derived.discoverNoResults.length, views: derived.discoverSearchViews.length })}
+            tone="#e11d48"
+          />
+        </div>
+
+        <div className="admin-analytics-two-up">
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopQueries')}</h3>
+            {derived.topQueries.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.topQueries.map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverNoResultQueries')}</h3>
+            {derived.noResultQueries.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.noResultQueries.map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong style={{ color: '#ef4444' }}>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverClickMix')}</h3>
+            {derived.discoverClickTypeCounts.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.discoverClickTypeCounts.map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopAutocompleteClicks')}</h3>
+            {derived.topAutocompleteClicks.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.topAutocompleteClicks.map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverAutocompleteSurfaceSplit')}</h3>
+            <div className="admin-stat-list">
+              <div>
+                <span>{t('admin.analytics.discoverSurfaceHeader')}</span>
+                <strong>{derived.headerAutocompleteSelects}</strong>
+              </div>
+              <div>
+                <span>{t('admin.analytics.discoverSurfaceDiscover')}</span>
+                <strong>{derived.discoverSurfaceAutocompleteSelects}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopSuggestionIds')}</h3>
+            {derived.topAutocompleteClicks.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.topAutocompleteClicks.slice(0, 8).map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverPresetMix')}</h3>
+            {derived.discoverPresetSourceCounts.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-stat-list">
+                {derived.discoverPresetSourceCounts.map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="glass-panel">
+            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverRecentEvents')}</h3>
+            {derived.filteredDiscoverEvents.length === 0 ? (
+              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
+            ) : (
+              <div className="admin-list-stack">
+                {derived.filteredDiscoverEvents.slice(0, 6).map((event) => (
+                  <div key={event.id} className="admin-analytics-queue-card">
+                    <div className="admin-record-main">
+                      <strong className="admin-queue-card-title">{event.event_type}</strong>
+                      <span className="admin-queue-card-subtitle">{event.query || event.tag || '-'}</span>
+                    </div>
+                    <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
+                      <span className="admin-queue-pill subtle">{event.scope}</span>
+                      <span className="admin-queue-pill subtle">{event.result_type || event.preset_source || '-'}</span>
+                      <span className="admin-queue-pill subtle">{formatDateTime(event.created_at, locale)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>

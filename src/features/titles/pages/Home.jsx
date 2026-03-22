@@ -11,6 +11,7 @@ import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { TYPE_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
 import { HOMEPAGE_BLOCK_PUBLIC_SELECT, mapHomepagePublicBlock } from '@/shared/lib/editorial';
 import { supabase } from '@/shared/lib/supabase';
@@ -22,19 +23,24 @@ import {
   filterHiddenTitles,
   filterSeenTitles,
   filterTitlesByRecommendationPreferences,
+  normalizeProfilePreferences,
   prioritizeUnseenTitles,
+  RECOMMENDATION_SUBTYPE_OPTIONS,
+  RECOMMENDATION_TYPE_OPTIONS,
 } from '@/features/profile/lib/profileStore';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
 import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { SectionHeader } from '@/shared/components/ui/SectionHeader';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import './Home.css';
 
 const RESULTS_PAGE_SIZE = 16;
 
 export function Home() {
   const { language, t } = useLanguage();
+  const { showAdult } = useAgeGate();
   const [moods, setMoods] = useState([]);
   const [timeOption, setTimeOption] = useState(null);
   const [type, setType] = useState('all');
@@ -55,31 +61,86 @@ export function Home() {
   const [trendingSortBy, setTrendingSortBy] = useState('popularity');
   const resultsSectionRef = useRef(null);
   const recommendRequestRef = useRef(0);
+  const adultAutoLoadRef = useRef(false);
 
   const { watchlist, advanceProgress, updateItem, setConsumptionTarget, catchUpToTarget } = useWatchlist();
   const { favoriteTitleIds } = useFavoriteTitles();
   const { hiddenFromRecommendationIds, hiddenFromDiscoveryIds } = useHiddenTitles();
   const { prefs } = useProfilePreferences();
+  const effectivePrefs = useMemo(
+    () => normalizeProfilePreferences(showAdult
+      ? {
+          ...prefs,
+          hideAdultContent: false,
+          recommendationTypes: [...RECOMMENDATION_TYPE_OPTIONS],
+          recommendationSubtypes: [...RECOMMENDATION_SUBTYPE_OPTIONS],
+          recommendationLength: 'any',
+          minRecommendationScore: 0,
+          recommendationProgressStates: ['untracked', 'planned', 'reading', 'on-hold', 'completed', 'dropped'],
+          excludeCompletedFromRecs: false,
+          excludeDroppedFromRecs: false,
+          forceUnseenOnly: false,
+        }
+      : prefs),
+    [prefs, showAdult]
+  );
   const recommendationState = useMemo(
-    () => buildRecommendationState(watchlist, prefs, hiddenFromRecommendationIds),
-    [watchlist, prefs, hiddenFromRecommendationIds]
+    () => buildRecommendationState(watchlist, effectivePrefs, hiddenFromRecommendationIds),
+    [watchlist, effectivePrefs, hiddenFromRecommendationIds]
   );
   const discoveryState = useMemo(
-    () => buildRecommendationState(watchlist, prefs, hiddenFromDiscoveryIds),
-    [watchlist, prefs, hiddenFromDiscoveryIds]
+    () => buildRecommendationState(watchlist, effectivePrefs, hiddenFromDiscoveryIds),
+    [watchlist, effectivePrefs, hiddenFromDiscoveryIds]
   );
-  const effectiveMoodFilters = moods.length > 0 ? moods : prefs.favoriteMoods;
-  const canRequestRecommendations = moods.length > 0 || prefs.favoriteMoods.length > 0 || !!timeOption || type !== 'all';
+  const visibleMoods = useMemo(
+    () => MOODS.filter((mood) => (showAdult ? mood.isAdult : !mood.isAdult)),
+    [showAdult]
+  );
+  const visibleMoodIds = useMemo(
+    () => new Set(visibleMoods.map((mood) => mood.id)),
+    [visibleMoods]
+  );
+  const selectedVisibleMoods = useMemo(
+    () => moods.filter((moodId) => visibleMoodIds.has(moodId)),
+    [moods, visibleMoodIds]
+  );
+  const profileMoodFallbacks = useMemo(
+    () => prefs.favoriteMoods.filter((moodId) => visibleMoodIds.has(moodId)),
+    [prefs.favoriteMoods, visibleMoodIds]
+  );
+  const shouldShowTypeSelector = !showAdult;
+  const effectiveMoodFilters = useMemo(
+    () => (selectedVisibleMoods.length > 0 ? selectedVisibleMoods : (showAdult ? [] : profileMoodFallbacks)),
+    [profileMoodFallbacks, selectedVisibleMoods, showAdult]
+  );
+  const canRequestRecommendations = showAdult
+    || selectedVisibleMoods.length > 0
+    || profileMoodFallbacks.length > 0
+    || !!timeOption
+    || (shouldShowTypeSelector && type !== 'all');
 
   useEffect(() => {
-    setHideSeen(prefs.hideSeenByDefault);
-  }, [prefs.hideSeenByDefault]);
+    setHideSeen(showAdult ? false : prefs.hideSeenByDefault);
+  }, [prefs.hideSeenByDefault, showAdult]);
+
+  useEffect(() => {
+    setMoods((current) => {
+      const next = current.filter((moodId) => visibleMoodIds.has(moodId));
+      return next.length === current.length ? current : next;
+    });
+  }, [visibleMoodIds]);
+
+  useEffect(() => {
+    if (showAdult && type !== 'all') {
+      setType('all');
+    }
+  }, [showAdult, type]);
 
   useEffect(() => {
     async function fetchInitial() {
       try {
         const [nextTrending, homepageBlocks] = await Promise.all([
-          getTrendingTitles(8),
+          getTrendingTitles(8, { showAdult }),
           (async () => {
             if (!supabase) return [];
             const { data, error } = await supabase
@@ -109,7 +170,7 @@ export function Home() {
     }
 
     fetchInitial();
-  }, [refreshToken]);
+  }, [refreshToken, showAdult]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,21 +197,21 @@ export function Home() {
       try {
         const titles = await getTitlesByIds(continueItems.map((item) => item.titleId));
         if (!cancelled) {
-          setContinueTitles(
-            continueItems
-              .map((item) => {
-                const title = titles.find((entry) => entry.id === item.titleId);
-                return title ? {
-                  ...title,
-                  _listProgressEpisode: item.progressEpisode ?? null,
-                  _listProgressChapter: item.progressChapter ?? null,
-                  _lastConsumedAt: item.lastConsumedAt ?? null,
-                  _targetEpisode: item.targetEpisode ?? null,
-                  _targetChapter: item.targetChapter ?? null,
-                } : null;
-              })
-              .filter(Boolean)
-          );
+          const hydratedContinueTitles = continueItems
+            .map((item) => {
+              const title = titles.find((entry) => entry.id === item.titleId);
+              return title ? {
+                ...title,
+                _listProgressEpisode: item.progressEpisode ?? null,
+                _listProgressChapter: item.progressChapter ?? null,
+                _lastConsumedAt: item.lastConsumedAt ?? null,
+                _targetEpisode: item.targetEpisode ?? null,
+                _targetChapter: item.targetChapter ?? null,
+              } : null;
+            })
+            .filter(Boolean);
+
+          setContinueTitles(filterTitlesForAgeGate(hydratedContinueTitles, showAdult));
         }
       } catch (error) {
         if (!cancelled) {
@@ -165,9 +226,9 @@ export function Home() {
     return () => {
       cancelled = true;
     };
-  }, [watchlist, hiddenFromDiscoveryIds]);
+  }, [watchlist, hiddenFromDiscoveryIds, showAdult]);
 
-  const handleRecommend = async () => {
+  const handleRecommend = useCallback(async ({ scrollToResults = true } = {}) => {
     const requestId = ++recommendRequestRef.current;
     setIsLoading(true);
     try {
@@ -178,8 +239,9 @@ export function Home() {
         likedTitleIds: favoriteTitleIds,
         limit: null,
         watchlist,
-        preferences: prefs,
+        preferences: effectivePrefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
+        showAdult,
       });
       if (requestId !== recommendRequestRef.current) return;
       startTransition(() => {
@@ -195,12 +257,24 @@ export function Home() {
     } finally {
       if (requestId === recommendRequestRef.current) {
         setIsLoading(false);
-        setTimeout(() => {
-          document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-        }, 100);
+        if (scrollToResults) {
+          setTimeout(() => {
+            document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
       }
     }
-  };
+  }, [
+    effectiveMoodFilters,
+    effectivePrefs,
+    favoriteTitleIds,
+    hiddenFromRecommendationIds,
+    showAdult,
+    t,
+    timeOption,
+    type,
+    watchlist,
+  ]);
 
   const handleRandomPick = async () => {
     setIsRandomLoading(true);
@@ -208,12 +282,13 @@ export function Home() {
     try {
       const recs = await recommend({
         type: 'all',
-        moods: prefs.favoriteMoods,
+        moods: effectiveMoodFilters,
         likedTitleIds: favoriteTitleIds,
         limit: 80,
         watchlist,
-        preferences: prefs,
+        preferences: effectivePrefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
+        showAdult,
       });
       const visibleRecs = filterSeen(recs);
       const pool = visibleRecs.length > 0 ? visibleRecs : recs;
@@ -260,6 +335,20 @@ export function Home() {
     return () => window.removeEventListener('moodtoon:recommendations-rebuild', handleRebuild);
   }, []);
 
+  useEffect(() => {
+    if (!showAdult) {
+      adultAutoLoadRef.current = false;
+      return;
+    }
+
+    if (adultAutoLoadRef.current) {
+      return;
+    }
+
+    adultAutoLoadRef.current = true;
+    handleRecommend({ scrollToResults: false });
+  }, [handleRecommend, showAdult]);
+
   const applyRecommendationFilters = useCallback(
     (list) => filterTitlesByRecommendationPreferences(filterHiddenTitles(list, discoveryState), discoveryState),
     [discoveryState]
@@ -274,8 +363,8 @@ export function Home() {
   );
 
   const displayResults = useMemo(
-    () => sortTitlesCollection(filterSeen(orderTitles(results)), resultSortBy),
-    [results, resultSortBy, filterSeen, orderTitles]
+    () => sortTitlesCollection(filterTitlesForAgeGate(filterSeen(orderTitles(results)), showAdult), resultSortBy),
+    [results, resultSortBy, filterSeen, orderTitles, showAdult]
   );
   const displayTrending = useMemo(
     () => sortTitlesCollection(filterSeen(orderTitles(trending)), trendingSortBy),
@@ -291,7 +380,7 @@ export function Home() {
   );
   const shownResultsCount = pagedResults.length;
 
-  const quickMoods = MOODS.slice(0, 6);
+  const quickMoods = visibleMoods.slice(0, 6);
   const heroBlock = useMemo(
     () => editorialBlocks.find((block) => block.blockType === 'hero') || null,
     [editorialBlocks]
@@ -319,8 +408,9 @@ export function Home() {
         likedTitleIds: favoriteTitleIds,
         limit: null,
         watchlist,
-        preferences: prefs,
+        preferences: effectivePrefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
+        showAdult,
       });
       if (requestId !== recommendRequestRef.current) return;
       startTransition(() => {
@@ -558,20 +648,22 @@ export function Home() {
               </label>
             </div>
 
-            <div className="type-selector stagger-children" role="toolbar" aria-label={t('home.typeTabsAria')}>
-              {TYPE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  aria-pressed={type === opt.id}
-                  className={`type-btn ${type === opt.id ? 'active' : ''}`}
-                  onClick={() => setType(opt.id)}
-                >
-                  <span className="type-icon"><TypeIcon option={opt} /></span>
-                  {getLocalizedLabel(opt, language)}
-                </button>
-              ))}
-            </div>
+            {shouldShowTypeSelector && (
+              <div className="type-selector stagger-children" role="toolbar" aria-label={t('home.typeTabsAria')}>
+                {TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={type === opt.id}
+                    className={`type-btn ${type === opt.id ? 'active' : ''}`}
+                    onClick={() => setType(opt.id)}
+                  >
+                    <span className="type-icon"><TypeIcon option={opt} /></span>
+                    {getLocalizedLabel(opt, language)}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <MoodSelector selected={moods} onChange={setMoods} />
             <div className="divider"></div>
@@ -589,7 +681,7 @@ export function Home() {
                 {isLoading ? t('home.findingMatches') : t('home.findMyMatch')}
               </Button>
 
-              {(moods.length > 0 || timeOption || type !== 'all') && (
+              {(selectedVisibleMoods.length > 0 || timeOption || (shouldShowTypeSelector && type !== 'all')) && (
                 <button
                   type="button"
                   className="clear-all-btn"
@@ -695,8 +787,9 @@ export function Home() {
               .slice(0, Math.max(1, Number(block.config?.maxItems || block.collection.itemLimit || 12)))
               .map((item) => item.title)
               .filter(Boolean);
+            const visibleCollectionTitles = filterTitlesForAgeGate(collectionTitles, showAdult);
 
-            if (collectionTitles.length === 0) return null;
+            if (visibleCollectionTitles.length === 0) return null;
 
             return (
               <section key={block.id} className="section editorial-section">
@@ -709,7 +802,7 @@ export function Home() {
                     )}
                   />
                   <div className="results-grid stagger-children">
-                    {collectionTitles.map((title) => (
+                    {visibleCollectionTitles.map((title) => (
                       <TitleCard key={`${block.id}-${title.id}`} title={title} />
                     ))}
                   </div>

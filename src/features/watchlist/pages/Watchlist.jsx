@@ -1,20 +1,99 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useFavoriteTitles } from '@/features/profile/hooks/useFavoriteTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
 import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
-import { Plus, Target, FastForward, Play, CheckCircle2, Heart, List } from 'lucide-react';
+import { Plus, Target, FastForward, Play, CheckCircle2, Heart, List, Share2, BookOpen } from 'lucide-react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
 import { ErrorState } from '@/shared/components/ui/ErrorState';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
+import { StarRating } from '@/features/watchlist/components/StarRating';
+import { ShareCardModal } from '@/features/watchlist/components/ShareCardModal';
+import { MoodJournal } from '@/features/watchlist/components/MoodJournal';
 import './Watchlist.css';
+
+function WatchlistProgressRow({ title, onUpdate }) {
+  const isEp = isEpisodeBasedType(title.type);
+  const current = Number(isEp ? title._listProgressEpisode : title._listProgressChapter) || 0;
+  const total = isEp ? title.episodes : title.chapters;
+  const unit = getTitleTypeMeta(title.type).unitLabel;
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(current);
+  const inputRef = useRef(null);
+
+  const clamp = (val) => {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return total ? Math.min(n, total) : n;
+  };
+
+  const commit = (val) => {
+    const next = clamp(val);
+    setEditing(false);
+    if (next !== current) onUpdate(next);
+  };
+
+  const decrement = () => onUpdate(clamp(current - 1));
+  const increment = () => onUpdate(clamp(current + 1));
+
+  return (
+    <div className="watchlist-progress-row">
+      <span className="watchlist-progress-unit">{unit}</span>
+      <button
+        className="watchlist-progress-stepper"
+        onClick={decrement}
+        aria-label={`Decrease ${unit}`}
+        disabled={current <= 0}
+      >
+        –
+      </button>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="watchlist-progress-input"
+          type="number"
+          value={inputVal}
+          min={0}
+          max={total || undefined}
+          onChange={(e) => setInputVal(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit(inputVal);
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      ) : (
+        <button
+          className="watchlist-progress-value"
+          onClick={() => { setInputVal(current); setEditing(true); }}
+          aria-label={`Edit ${unit} progress, currently ${current}`}
+        >
+          {current}
+        </button>
+      )}
+      {total != null && (
+        <span className="watchlist-progress-total">/ {total}</span>
+      )}
+      <button
+        className="watchlist-progress-stepper"
+        onClick={increment}
+        aria-label={`Increase ${unit}`}
+        disabled={total != null && current >= total}
+      >
+        +
+      </button>
+    </div>
+  );
+}
 
 function buildStableIdList(items = []) {
   return [...new Set(items.map((value) => Number(value)).filter(Boolean))].sort((a, b) => a - b);
@@ -25,6 +104,7 @@ export function Watchlist() {
     () => new Map(LIST_STATUS_OPTIONS.map((option) => [option.id, option])),
     []
   );
+  const { showAdult } = useAgeGate();
   const { language, t } = useLanguage();
   const {
     watchlist,
@@ -43,6 +123,7 @@ export function Watchlist() {
   const [isTitlesLoading, setIsTitlesLoading] = useState(true);
   const [isSavingMoods, setIsSavingMoods] = useState(false);
   const [activeTab, setActiveTab] = useState('list');
+  const [shareTarget, setShareTarget] = useState(null);
   const hydratedTitleMap = useMemo(
     () => new Map((watchlistTitles || []).map((entry) => [entry.id, entry])),
     [watchlistTitles]
@@ -118,6 +199,10 @@ export function Watchlist() {
       })
       .filter(Boolean);
   }, [mergedTitleMap, watchlist]);
+  const visiblePopulatedList = useMemo(
+    () => filterTitlesForAgeGate(populatedList, showAdult),
+    [populatedList, showAdult]
+  );
 
   const watchlistItemMap = useMemo(
     () => new Map(watchlist.map((item) => [item.titleId, item])),
@@ -125,17 +210,17 @@ export function Watchlist() {
   );
 
   const statusCounts = useMemo(
-    () => watchlist.reduce((acc, item) => {
-      acc[item.status] = (acc[item.status] || 0) + 1;
+    () => visiblePopulatedList.reduce((acc, item) => {
+      acc[item._listStatus] = (acc[item._listStatus] || 0) + 1;
       return acc;
     }, {}),
-    [watchlist]
+    [visiblePopulatedList]
   );
 
   const displayList = useMemo(() => {
     const filtered = filter === 'all'
-      ? populatedList
-      : populatedList.filter((title) => title._listStatus === filter);
+      ? visiblePopulatedList
+      : visiblePopulatedList.filter((title) => title._listStatus === filter);
 
     const statusPriority = {
       watching: 0,
@@ -183,7 +268,7 @@ export function Watchlist() {
 
       return String(a.title_th || a.title_en || '').localeCompare(String(b.title_th || b.title_en || ''));
     });
-  }, [filter, populatedList, sortBy]);
+  }, [filter, visiblePopulatedList, sortBy]);
 
   const favoriteList = useMemo(() => {
     return favoriteTitleIds
@@ -205,10 +290,14 @@ export function Watchlist() {
       })
       .filter(Boolean);
   }, [favoriteTitleIds, mergedTitleMap, watchlistItemMap]);
+  const visibleFavoriteList = useMemo(
+    () => filterTitlesForAgeGate(favoriteList, showAdult),
+    [favoriteList, showAdult]
+  );
 
   const favoriteMoodDetails = useMemo(
-    () => MOODS.filter((mood) => prefs.favoriteMoods.includes(mood.id)),
-    [prefs.favoriteMoods]
+    () => MOODS.filter((mood) => prefs.favoriteMoods.includes(mood.id) && (showAdult || !mood.isAdult)),
+    [prefs.favoriteMoods, showAdult]
   );
   const inProgressCount = (statusCounts.watching || 0) + (statusCounts.reading || 0);
   const planningCount = (statusCounts.planned || 0) + (statusCounts['on-hold'] || 0);
@@ -266,6 +355,40 @@ export function Watchlist() {
     } catch (error) {
       console.error(error);
       toast.error(t('watchlist.failedCatchUp'));
+    }
+  };
+
+  const handleRate = async (title, score) => {
+    try {
+      await updateItem(title.id, { score });
+      if (score != null) {
+        toast.success(t('watchlist.ratedSuccess', { score: Math.round(score / 10) }));
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(t('watchlist.rateFailed'));
+    }
+  };
+
+  const handleProgressSet = async (title, value) => {
+    const isEp = isEpisodeBasedType(title.type);
+    const total = isEp ? title.episodes : title.chapters;
+    const updates = {
+      [isEp ? 'progressEpisode' : 'progressChapter']: value,
+      lastConsumedAt: new Date().toISOString(),
+      metadata: { sessionSource: 'manual-input' },
+    };
+    if (total && value >= total) {
+      updates.status = 'completed';
+    } else if (title._listStatus === 'planned' || title._listStatus === 'on-hold') {
+      updates.status = isEp ? 'watching' : 'reading';
+    }
+    try {
+      await updateItem(title.id, updates, { title });
+      toast.success(t('watchlist.updatedProgress', { unit: getTitleTypeMeta(title.type).unitLabel }));
+    } catch (error) {
+      console.error(error);
+      toast.error(t('watchlist.failedUpdateProgress'));
     }
   };
 
@@ -362,7 +485,7 @@ export function Watchlist() {
 
             <div className="watchlist-stats glass-heavy">
               <div className="stat-item">
-                <span className="stat-value">{watchlist.length}</span>
+                <span className="stat-value">{visiblePopulatedList.length}</span>
                 <span className="stat-label">{t('watchlist.total')}</span>
               </div>
               <div className="stat-item">
@@ -374,7 +497,7 @@ export function Watchlist() {
                 <span className="stat-label">{t('watchlist.completed')}</span>
               </div>
               <div className="stat-item">
-                <span className="stat-value">{favoriteList.length}</span>
+                <span className="stat-value">{visibleFavoriteList.length}</span>
                 <span className="stat-label">{t('watchlist.favoritesStat')}</span>
               </div>
             </div>
@@ -417,6 +540,15 @@ export function Watchlist() {
                 onClick={() => setActiveTab('favorites')}
               >
                 <Heart size={18} aria-hidden="true" /> {t('watchlist.favoritesAndMoods')}
+              </button>
+              <button
+                role="tab"
+                aria-selected={activeTab === 'journal'}
+                aria-controls="watchlist-journal-panel"
+                className={`watchlist-tab ${activeTab === 'journal' ? 'active' : ''}`}
+                onClick={() => setActiveTab('journal')}
+              >
+                <BookOpen size={18} aria-hidden="true" /> {t('moodJournal.tabLabel')}
               </button>
             </div>
 
@@ -487,7 +619,7 @@ export function Watchlist() {
                   <h2><Heart size={18} /> {t('watchlist.favoritesHeader')}</h2>
                   <p>{t('watchlist.favoritesHint')}</p>
                 </div>
-                <span>{t('watchlist.pinnedCount', { count: favoriteList.length })}</span>
+                  <span>{t('watchlist.pinnedCount', { count: visibleFavoriteList.length })}</span>
               </div>
 
               {favoritesError && <ErrorState message={favoritesError} />}
@@ -498,7 +630,7 @@ export function Watchlist() {
                   <span>{isSavingMoods ? t('watchlist.savingTags') : t('watchlist.selectedCount', { count: prefs.favoriteMoods.length })}</span>
                 </div>
                 <div className="watchlist-mood-grid" role="group" aria-label={t('watchlist.favoriteTags')}>
-                  {MOODS.map((mood) => {
+                  {MOODS.filter((mood) => showAdult || !mood.isAdult).map((mood) => {
                     const active = prefs.favoriteMoods.includes(mood.id);
                     return (
                       <button
@@ -525,15 +657,15 @@ export function Watchlist() {
                 )}
               </div>
 
-              <div className="watchlist-favorites-subheader">
-                <h3>{t('watchlist.favoriteTitles')}</h3>
-                <span>{t('watchlist.pinnedCount', { count: favoriteList.length })}</span>
-              </div>
-              {isFavoritesLoading && favoriteList.length === 0 ? (
+                <div className="watchlist-favorites-subheader">
+                  <h3>{t('watchlist.favoriteTitles')}</h3>
+                  <span>{t('watchlist.pinnedCount', { count: visibleFavoriteList.length })}</span>
+                </div>
+              {isFavoritesLoading && visibleFavoriteList.length === 0 ? (
                 <div className="watchlist-favorites-empty">{t('watchlist.favoriteTitlesLoading')}</div>
-              ) : favoriteList.length > 0 ? (
+              ) : visibleFavoriteList.length > 0 ? (
                 <div className="results-grid stagger-children">
-                  {favoriteList.map((title) => (
+                  {visibleFavoriteList.map((title) => (
                     <div key={`favorite-${title.id}`} className="watchlist-item-wrapper">
                       <TitleCard title={title} primaryAction="favorite" />
                     </div>
@@ -546,6 +678,14 @@ export function Watchlist() {
           )}
         </div>
       </section>
+
+      {activeTab === 'journal' && (
+        <section id="watchlist-journal-panel" role="tabpanel" className="section">
+          <div className="container">
+            <MoodJournal />
+          </div>
+        </section>
+      )}
 
       {activeTab === 'list' && (
         <section className="section watchlist-results-section min-h-screen">
@@ -568,13 +708,21 @@ export function Watchlist() {
                         >
                           {getLocalizedLabel(statusOptionMap.get(title._listStatus), language)}
                         </div>
-                        {title._userScore != null && (
-                          <span className="watchlist-score-badge">
-                            ★ {Math.round(title._userScore / 10)}/10
-                          </span>
-                        )}
+                        <button
+                          className="watchlist-share-btn"
+                          onClick={() => setShareTarget({ title, listItem: watchlistItemMap.get(title.id) })}
+                          aria-label="Share card"
+                        >
+                          <Share2 size={14} />
+                        </button>
                       </div>
                       <TitleCard title={title} />
+                      {(title._listStatus === 'watching' || title._listStatus === 'reading') && (
+                        <WatchlistProgressRow
+                          title={title}
+                          onUpdate={(val) => handleProgressSet(title, val)}
+                        />
+                      )}
                       {(title._targetEpisode || title._targetChapter || title._lastConsumedAt) && (
                         <div className="watchlist-item-meta">
                           {title._targetEpisode || title._targetChapter ? (
@@ -589,6 +737,11 @@ export function Watchlist() {
                           ) : null}
                         </div>
                       )}
+                      <StarRating
+                        score={title._userScore}
+                        onRate={(score) => handleRate(title, score)}
+                        label={t('watchlist.myScoreFor', { title: title.title_en || title.title_th || '' })}
+                      />
                       {quickActions.length > 0 && (
                         <div className="watchlist-quick-actions">
                           {quickActions.map((action) => (
@@ -616,9 +769,17 @@ export function Watchlist() {
           </div>
         </section>
       )}
+
+      {shareTarget && (
+        <ShareCardModal
+          title={shareTarget.title}
+          listItem={shareTarget.listItem}
+          language={language}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </div>
   );
 }
 
 export default Watchlist;
-

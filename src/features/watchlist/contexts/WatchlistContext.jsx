@@ -12,7 +12,7 @@ import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
 
 const WatchlistContext = createContext();
 const WATCHLIST_STORAGE_KEY = 'moodtoon-watchlist';
-const WATCHLIST_REQUEST_TIMEOUT_MS = 10000;
+const WATCHLIST_REQUEST_TIMEOUT_MS = 20000;
 
 function getWatchlistStorageKey(userId) {
   return userId ? `${WATCHLIST_STORAGE_KEY}:${userId}` : WATCHLIST_STORAGE_KEY;
@@ -391,6 +391,20 @@ export function WatchlistProvider({ children }) {
     }
   }, [userId]);
 
+  const recordActivity = useCallback(async (actionType, titleId, metadata = {}) => {
+    if (!userId || !supabase || !titleId) return;
+    try {
+      await supabase.from('user_activity').insert({
+        user_id: userId,
+        action_type: actionType,
+        title_id: titleId,
+        metadata,
+      });
+    } catch (err) {
+      console.warn('Failed to record activity:', err.message);
+    }
+  }, [userId]);
+
   const recordConsumptionSession = useCallback(async (payload) => {
     if (!payload || !userId || !supabase) {
       return;
@@ -665,11 +679,18 @@ export function WatchlistProvider({ children }) {
           });
 
       void recordHistory(historyItem);
+
+      if (previousItem) {
+        if (status === 'completed') void recordActivity('completed', titleId);
+        else if (status === 'dropped') void recordActivity('dropped', titleId);
+      } else {
+        void recordActivity('added', titleId);
+      }
     } catch (error) {
       setWatchlist(previousWatchlist);
       throw error;
     }
-  }, [recordHistory, userId]);
+  }, [recordActivity, recordHistory, userId]);
 
   const removeFromList = useCallback(async (titleId) => {
     const previousItem = watchlistRef.current.find((item) => item.titleId === titleId) || null;
@@ -772,6 +793,8 @@ export function WatchlistProvider({ children }) {
           toStatus: updates.status,
           createdAt: timestamp,
         }));
+        if (updates.status === 'completed') void recordActivity('completed', titleId);
+        else if (updates.status === 'dropped') void recordActivity('dropped', titleId);
       } else if (updates.score !== undefined) {
         void recordHistory(createHistoryEvent({
           titleId,
@@ -781,6 +804,7 @@ export function WatchlistProvider({ children }) {
           score: updates.score,
           createdAt: timestamp,
         }));
+        if (updates.score != null) void recordActivity('rated', titleId, { score: updates.score });
       } else if (updates.note !== undefined) {
         void recordHistory(createHistoryEvent({
           titleId,
@@ -795,7 +819,7 @@ export function WatchlistProvider({ children }) {
       setWatchlist(previousWatchlist);
       throw error;
     }
-  }, [recordConsumptionSession, recordHistory, userId]);
+  }, [recordActivity, recordConsumptionSession, recordHistory, userId]);
 
   const watchlistMap = useMemo(
     () => new Map(watchlist.map((item) => [item.titleId, item])),

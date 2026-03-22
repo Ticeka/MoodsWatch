@@ -1,4 +1,4 @@
-# MoodToon Catalog Integration
+# MoodsWatch Catalog Integration
 
 This project now uses a canonical catalog model in Supabase with AniList-only ingestion.
 

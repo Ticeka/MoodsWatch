@@ -469,6 +469,496 @@
   100% { background-position: -100% 0; }
 }
 
+/* ── Mood Journal ────────────────────────────────── */
+.mood-journal {
+  display: grid;
+  gap: 2rem;
+  padding-bottom: 2rem;
+}
+
+.mood-journal-login-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.mood-journal-login-prompt span {
+  font-size: 2.5rem;
+}
+
+.mood-journal-today {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.mood-journal-today-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.mood-journal-eyebrow {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+  margin-bottom: 0.25rem;
+}
+
+.mood-journal-today-header h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.mood-journal-today-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--mood-color, var(--primary)) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--mood-color, var(--primary)) 30%, transparent);
+  color: color-mix(in srgb, var(--mood-color, var(--primary)) 80%, var(--text-primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.mood-journal-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood-journal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--mood-color, var(--primary)) 25%, transparent);
+  background: color-mix(in srgb, var(--mood-color, var(--primary)) 8%, var(--bg-secondary));
+  color: color-mix(in srgb, var(--mood-color, var(--primary)) 75%, var(--text-primary));
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mood-journal-chip:hover {
+  transform: translateY(-1px);
+}
+
+.mood-journal-chip.selected {
+  background: color-mix(in srgb, var(--mood-color, var(--primary)) 20%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--mood-color, var(--primary)) 50%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--mood-color, var(--primary)) 22%, transparent);
+  font-weight: 800;
+}
+
+.mood-journal-note {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.mood-journal-note:focus {
+  border-color: var(--primary);
+}
+
+.mood-journal-today-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mood-journal-date-label {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.mood-journal-save-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary-600, #c2455b), var(--primary-500, #e85d75));
+  color: white;
+  font-weight: 700;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: none;
+  transition: opacity var(--transition-fast);
+}
+
+.mood-journal-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mood-journal-calendar {
+  display: grid;
+  gap: 1rem;
+}
+
+.mood-journal-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood-journal-calendar-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.mood-journal-calendar-header span {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+.mood-journal-loading {
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  padding: 1rem 0;
+}
+
+.mood-journal-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 0.5rem;
+}
+
+.mood-journal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.4rem 0.2rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  cursor: default;
+  transition: transform var(--transition-fast);
+}
+
+.mood-journal-day.has-mood {
+  background: color-mix(in srgb, var(--mood-color) 12%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--mood-color) 30%, transparent);
+}
+
+.mood-journal-day.today {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.mood-journal-day:hover {
+  transform: translateY(-2px);
+}
+
+.mood-journal-day-dot {
+  font-size: 1.1rem;
+  line-height: 1;
+  min-height: 1.2rem;
+}
+
+.mood-journal-day-num {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 600px) {
+  .mood-journal-grid {
+    grid-template-columns: repeat(7, 1fr);
+  }
+}
+
+/* ── Share button ────────────────────────────────── */
+.watchlist-share-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.watchlist-share-btn:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* ── Star Rating ─────────────────────────────────── */
+.star-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.star-rating-stars {
+  display: flex;
+  gap: 1px;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  padding: 2px 1px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-quaternary, #d1d5db);
+  cursor: pointer;
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+
+.star-btn:hover,
+.star-btn--filled {
+  color: #e85d75;
+}
+
+.star-btn:hover {
+  transform: scale(1.2);
+}
+
+.star-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.star-score {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  min-width: 2.5rem;
+}
+
+.star-score--active {
+  color: #e85d75;
+}
+
+/* ── Progress Row ────────────────────────────────── */
+.watchlist-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+}
+
+.watchlist-progress-unit {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  min-width: 1.8rem;
+}
+
+.watchlist-progress-stepper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.watchlist-progress-stepper:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.watchlist-progress-stepper:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.watchlist-progress-value {
+  min-width: 36px;
+  height: 26px;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.watchlist-progress-value:hover {
+  border-color: var(--primary);
+}
+
+.watchlist-progress-input {
+  width: 52px;
+  height: 26px;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--primary);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.watchlist-progress-input::-webkit-inner-spin-button,
+.watchlist-progress-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.watchlist-progress-total {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+/* ── Share Card Modal ────────────────────────────── */
+.share-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+}
+
+.share-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 640px;
+  box-shadow: var(--shadow-xl, 0 24px 64px rgba(0,0,0,0.35));
+  overflow: hidden;
+}
+
+.share-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.share-modal-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.share-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.share-modal-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.share-modal-preview {
+  padding: 1.25rem;
+  background: var(--bg-secondary);
+}
+
+.share-card-img {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  display: block;
+  border: 1px solid var(--border-default);
+}
+
+.share-modal-actions {
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.share-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.35rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary-600, #c2455b), var(--primary-500, #e85d75));
+  color: white;
+  font-weight: 700;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: none;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.share-download-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.share-download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   .results-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

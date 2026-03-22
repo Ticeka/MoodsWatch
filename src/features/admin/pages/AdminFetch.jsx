@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Download, Play, Square, RefreshCw,
   CheckCircle2, XCircle, SkipForward, Info,
-  TrendingUp, Star, Flame, Clock, CalendarDays, Hash, Users,
+  TrendingUp, Star, Flame, Clock, CalendarDays, Hash, Users, Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/shared/lib/supabase';
@@ -115,6 +115,79 @@ async function fetchAniListCharStaff(anilistId, signal) {
   return json.data?.Media || null;
 }
 
+// ─── Jikan (MyAnimeList) ──────────────────────────────────────────────────────
+
+const JIKAN_BASE = 'https://api.jikan.moe/v4';
+// Genre IDs: Erotica=49, exclude Yaoi=28, Shounen Ai=26
+
+function mapJikanStatus(s) {
+  if (!s) return 'ongoing';
+  const u = s.toLowerCase();
+  if (u.includes('finish')) return 'completed';
+  if (u.includes('hiatus')) return 'hiatus';
+  if (u.includes('discontinu') || u.includes('cancel')) return 'cancelled';
+  return 'ongoing';
+}
+
+function normalizeJikanManga(item) {
+  const title = item.title_english || item.title || `jikan-${item.mal_id}`;
+  const slugBase = item.title_english || item.title || `manhwa-${item.mal_id}`;
+  const allGenreNames = [
+    ...(item.genres || []).map((g) => g.name),
+    ...(item.themes || []).map((th) => th.name),
+    ...(item.demographics || []).map((d) => d.name),
+  ];
+  const releaseYear = item.published?.from ? new Date(item.published.from).getFullYear() : null;
+  return {
+    malId: String(item.mal_id),
+    displayTitle: title,
+    coverImage: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
+    canonical: {
+      slug: `${slugify(slugBase) || 'manhwa'}-mal-${item.mal_id}`,
+      canonical_title: title,
+      type: 'manga', subtype: 'manhwa',
+      origin_country: 'KR', origin_language: 'ko',
+      status: mapJikanStatus(item.status),
+      release_year: releaseYear,
+      chapters: item.chapters || null, volumes: item.volumes || null,
+      episodes: null, duration_minutes: null,
+      is_adult: true,
+      cover_image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
+      banner_image: null,
+      synopsis: item.synopsis || null,
+      avg_score: item.score ? Math.round(item.score * 10) : null,
+      popularity_score: item.scored_by || null,
+      last_synced_at: new Date().toISOString(),
+    },
+    aliases: [
+      item.title_english && { alias: item.title_english, language_code: 'en', alias_type: 'english', is_primary: true },
+      item.title && item.title !== item.title_english && { alias: item.title, language_code: 'ja-Latn', alias_type: 'romaji', is_primary: !item.title_english },
+      item.title_japanese && { alias: item.title_japanese, language_code: null, alias_type: 'native', is_primary: false },
+    ].filter(Boolean),
+    genres: allGenreNames.map((genre_name) => ({ genre_name })),
+    tags: allGenreNames.map((tag_name) => ({ tag_name, weight: null, source_provider: 'jikan' })),
+    moodIds: deriveMoodIds([item.synopsis, ...allGenreNames]),
+    sourceRef: {
+      provider: 'jikan', external_id: String(item.mal_id),
+      external_url: item.url || null, source_priority: 20,
+    },
+  };
+}
+
+async function fetchJikanPage(page, jikanCfg, signal) {
+  const params = new URLSearchParams({
+    type: 'manhwa', genres: '49',
+    genres_exclude: '28,26',
+    limit: String(jikanCfg.perPage),
+    page: String(page),
+    order_by: jikanCfg.sort,
+    sort: 'desc',
+  });
+  const res = await fetch(`${JIKAN_BASE}/manga?${params}`, { signal });
+  if (!res.ok) throw new Error(`Jikan ตอบกลับ ${res.status}`);
+  return res.json();
+}
+
 // ─── Supabase upsert ─────────────────────────────────────────────────────────
 
 async function upsertTitle(norm, skipDuplicates) {
@@ -190,6 +263,48 @@ async function upsertCharStaff(titleId, media) {
   if (chars.length) { const { error } = await supabase.from('title_characters').insert(chars); if (error) throw error; }
   if (staff.length) { const { error } = await supabase.from('title_staff').insert(staff); if (error) throw error; }
   return { chars: chars.length, staff: staff.length };
+}
+
+async function upsertJikanTitle(norm, skipDuplicates) {
+  const { data: existingRef } = await supabase.from('title_source_refs').select('canonical_title_id')
+    .eq('provider', 'jikan').eq('external_id', norm.malId).maybeSingle();
+  if (existingRef?.canonical_title_id && skipDuplicates) return 'skipped';
+
+  let titleId = existingRef?.canonical_title_id || null;
+  const wasExisting = !!titleId;
+
+  if (!titleId) {
+    const { data: bySlug } = await supabase.from('canonical_titles').select('id').eq('slug', norm.canonical.slug).maybeSingle();
+    if (bySlug?.id && skipDuplicates) return 'skipped';
+    titleId = bySlug?.id || null;
+  }
+
+  if (titleId) {
+    const { error } = await supabase.from('canonical_titles').update(norm.canonical).eq('id', titleId);
+    if (error) throw error;
+  } else {
+    const { data, error } = await supabase.from('canonical_titles').upsert(norm.canonical, { onConflict: 'slug' }).select('id').single();
+    if (error) throw error;
+    titleId = data.id;
+  }
+
+  for (const { table, rows } of [
+    { table: 'title_aliases', rows: norm.aliases.map((a) => ({ canonical_title_id: titleId, source_provider: 'jikan', ...a })) },
+    { table: 'title_genres', rows: norm.genres.map((g) => ({ canonical_title_id: titleId, ...g })) },
+    { table: 'title_tags', rows: norm.tags.map((t) => ({ canonical_title_id: titleId, ...t })) },
+    { table: 'title_moods', rows: norm.moodIds.map((mood_id) => ({ canonical_title_id: titleId, mood_id })) },
+  ]) {
+    const { error: delErr } = await supabase.from(table).delete().eq('canonical_title_id', titleId);
+    if (delErr) throw delErr;
+    if (rows.length) { const { error: insErr } = await supabase.from(table).insert(rows); if (insErr) throw insErr; }
+  }
+
+  const { error: refErr } = await supabase.from('title_source_refs').upsert(
+    { canonical_title_id: titleId, ...norm.sourceRef, last_synced_at: new Date().toISOString(), fetched_at: new Date().toISOString() },
+    { onConflict: 'provider,external_id' },
+  );
+  if (refErr && refErr.code !== 'PGRST205') throw refErr;
+  return wasExisting ? 'updated' : 'imported';
 }
 
 // ─── Config options ───────────────────────────────────────────────────────────
@@ -342,6 +457,7 @@ export function AdminFetch() {
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('titles');
   const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
+  const [jikanConfig, setJikanConfig] = useState({ sort: 'score', pages: 3, perPage: 25 });
   const abortRef = useRef(null);
   const logContainerRef = useRef(null);
 
@@ -503,6 +619,71 @@ export function AdminFetch() {
     }
   };
 
+  const handleJikanFetch = async () => {
+    if (!supabase) { toast.error('Supabase unavailable'); return; }
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress({ page: 0, totalPages: jikanConfig.pages, fetched: 0, imported: 0, updated: 0, skipped: 0, errors: 0 });
+    addLog('info', `เริ่ม fetch Manhwa Adult จาก Jikan — ${jikanConfig.pages} หน้า, ${jikanConfig.perPage}/หน้า (ไม่มี BL)`);
+
+    try {
+      for (let page = 1; page <= jikanConfig.pages; page++) {
+        if (abortRef.current.signal.aborted) break;
+        setProgress((p) => ({ ...p, page }));
+        addLog('info', `หน้า ${page}/${jikanConfig.pages}`);
+
+        let pageData;
+        try {
+          pageData = await fetchJikanPage(page, jikanConfig, abortRef.current.signal);
+        } catch (err) {
+          if (err.name === 'AbortError') break;
+          addLog('error', `Fetch ล้มเหลว: ${err.message}`);
+          break;
+        }
+
+        const items = pageData.data || [];
+        addLog('info', `ได้รับ ${items.length} รายการ`);
+
+        for (const item of items) {
+          if (abortRef.current.signal.aborted) break;
+          const norm = normalizeJikanManga(item);
+          try {
+            const result = await upsertJikanTitle(norm, skipDuplicates);
+            setProgress((p) => ({
+              ...p, fetched: p.fetched + 1,
+              imported: result === 'imported' ? p.imported + 1 : p.imported,
+              updated:  result === 'updated'  ? p.updated  + 1 : p.updated,
+              skipped:  result === 'skipped'  ? p.skipped  + 1 : p.skipped,
+            }));
+            const label = result === 'imported' ? 'นำเข้า' : result === 'updated' ? 'อัปเดต' : 'ข้าม';
+            addLog(result, `[${label}] ${norm.displayTitle}`);
+          } catch (err) {
+            setProgress((p) => ({ ...p, fetched: p.fetched + 1, errors: p.errors + 1 }));
+            addLog('error', `${norm.displayTitle}: ${err.message}`);
+          }
+          await new Promise((r) => setTimeout(r, 0));
+        }
+
+        if (!pageData.pagination?.has_next_page) { addLog('info', 'ไม่มีหน้าถัดไป'); break; }
+        // Jikan rate limit ~3 req/s — wait 400ms between pages
+        if (page < jikanConfig.pages && !abortRef.current.signal.aborted) await new Promise((r) => setTimeout(r, 400));
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', 'Fetch เสร็จสมบูรณ์');
+        toast.success('Jikan fetch เสร็จสมบูรณ์');
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') { addLog('error', err.message); toast.error(err.message); }
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const totalEstimate = config.pages * config.perPage;
   const pageProgress = progress ? Math.min(((progress.page - 1) / progress.totalPages) * 100, 100) : 0;
 
@@ -516,7 +697,7 @@ export function AdminFetch() {
             <Download size={24} /> {t('admin.fetch.pageTitle')}
           </h1>
           <p style={{ margin: '0.3rem 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-            {activeTab === 'titles' ? t('admin.fetch.pageSubtitle') : t('admin.fetch.cs.tabSubtitle')}
+            {activeTab === 'titles' ? t('admin.fetch.pageSubtitle') : activeTab === 'jikan' ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)' : t('admin.fetch.cs.tabSubtitle')}
           </p>
         </div>
       </div>
@@ -525,6 +706,7 @@ export function AdminFetch() {
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-5)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-3)' }}>
         {[
           { id: 'titles', label: t('admin.fetch.tabTitles'), Icon: Download },
+          { id: 'jikan', label: 'Jikan (MAL)', Icon: Globe },
           { id: 'charstaff', label: t('admin.fetch.cs.tabTitle'), Icon: Users },
         ].map(({ id, label, Icon }) => (
           <button
@@ -664,6 +846,38 @@ export function AdminFetch() {
                 </div>
               </Section>
             </>
+          ) : activeTab === 'jikan' ? (
+            <>
+              {/* Jikan — Source info */}
+              <Section title="แหล่งข้อมูล">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}>
+                  <Globe size={28} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Jikan API v4 (MyAnimeList)</div>
+                    <div style={{ fontSize: '0.77rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                      Manhwa · Erotica (genre 49) · ไม่มี BL/Yaoi (genre 28, 26) · เรียงตาม Score
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              {/* Jikan — Sort */}
+              <Section title="เรียงลำดับ">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    { value: 'score',      label: 'Score',      Icon: Star },
+                    { value: 'scored_by',  label: 'Most Rated', Icon: Users },
+                    { value: 'popularity', label: 'Popularity', Icon: TrendingUp },
+                    { value: 'start_date', label: 'Start Date', Icon: CalendarDays },
+                  ].map(({ value, label, Icon }) => (
+                    <Chip key={value} active={jikanConfig.sort === value} disabled={running}
+                      onClick={() => setJikanConfig((p) => ({ ...p, sort: value }))}>
+                      <Icon size={13} /> {label}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+            </>
           ) : (
             <>
               {/* Characters & Staff — Mode */}
@@ -717,38 +931,53 @@ export function AdminFetch() {
         {/* ── Right: Options + Action ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
 
-          {/* Pages + Per page (titles tab only) */}
-          {activeTab === 'titles' && (
+          {/* Pages + Per page (titles + jikan tabs) */}
+          {(activeTab === 'titles' || activeTab === 'jikan') && (
             <Section title={t('admin.fetch.volumeLabel')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
                   <label className="form-label">{t('admin.fetch.pages')}</label>
-                  <Stepper value={config.pages} onChange={(v) => set('pages', v)} min={1} max={20} disabled={running} />
+                  {activeTab === 'titles'
+                    ? <Stepper value={config.pages} onChange={(v) => set('pages', v)} min={1} max={20} disabled={running} />
+                    : <Stepper value={jikanConfig.pages} onChange={(v) => setJikanConfig((p) => ({ ...p, pages: v }))} min={1} max={20} disabled={running} />
+                  }
                 </div>
                 <div>
                   <label className="form-label">{t('admin.fetch.perPage')}</label>
                   <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                    {[10, 25, 50].map((n) => (
-                      <Chip key={n} active={config.perPage === n} disabled={running} onClick={() => set('perPage', n)}>
+                    {(activeTab === 'jikan' ? [10, 25] : [10, 25, 50]).map((n) => (
+                      <Chip
+                        key={n}
+                        active={activeTab === 'titles' ? config.perPage === n : jikanConfig.perPage === n}
+                        disabled={running}
+                        onClick={() => activeTab === 'titles' ? set('perPage', n) : setJikanConfig((p) => ({ ...p, perPage: n }))}
+                      >
                         {n}
                       </Chip>
                     ))}
                   </div>
+                  {activeTab === 'jikan' && (
+                    <p style={{ margin: 'var(--space-2) 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                      Jikan จำกัด 25 items/หน้า
+                    </p>
+                  )}
                 </div>
                 <div style={{
                   padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
                   background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
                   textAlign: 'center',
                 }}>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>~{totalEstimate}</span>
+                  <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    ~{activeTab === 'titles' ? totalEstimate : jikanConfig.pages * jikanConfig.perPage}
+                  </span>
                   <p style={{ margin: '2px 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>{t('admin.fetch.willFetch')}</p>
                 </div>
               </div>
             </Section>
           )}
 
-          {/* Duplicate mode (titles tab only) */}
-          {activeTab === 'titles' && (
+          {/* Duplicate mode (titles + jikan tabs) */}
+          {(activeTab === 'titles' || activeTab === 'jikan') && (
             <Section title={t('admin.fetch.duplicateLabel')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', cursor: running ? 'default' : 'pointer' }}>
@@ -776,9 +1005,9 @@ export function AdminFetch() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {!running ? (
               <button type="button" className="primary-btn"
-                onClick={activeTab === 'titles' ? handleFetch : handleCharStaff}
+                onClick={activeTab === 'titles' ? handleFetch : activeTab === 'jikan' ? handleJikanFetch : handleCharStaff}
                 style={{ width: '100%', justifyContent: 'center', padding: 'var(--space-4)' }}>
-                <Play size={16} /> {activeTab === 'titles' ? t('admin.fetch.fetchBtn') : t('admin.fetch.cs.startBtn')}
+                <Play size={16} /> {activeTab === 'titles' ? t('admin.fetch.fetchBtn') : activeTab === 'jikan' ? 'Fetch Manhwa Adult' : t('admin.fetch.cs.startBtn')}
               </button>
             ) : (
               <button type="button" onClick={() => abortRef.current?.abort()}
@@ -802,7 +1031,7 @@ export function AdminFetch() {
           {/* Progress stats */}
           {progress && (
             <Section title={running ? t('admin.fetch.runningTitle') : t('admin.fetch.resultTitle')}>
-              {activeTab === 'titles' && running && (
+              {(activeTab === 'titles' || activeTab === 'jikan') && running && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
                     <span>{t('admin.fetch.pageProgress', { page: progress.page, total: progress.totalPages })}</span>
@@ -832,7 +1061,7 @@ export function AdminFetch() {
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-                {(activeTab === 'titles'
+                {(activeTab === 'titles' || activeTab === 'jikan'
                   ? [
                       { label: t('admin.fetch.statNew'),     value: progress.imported, color: '#16a34a' },
                       { label: t('admin.fetch.statUpdated'), value: progress.updated,  color: '#2563eb' },

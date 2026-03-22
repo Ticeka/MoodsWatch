@@ -7,6 +7,7 @@ import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
 import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
@@ -21,6 +22,8 @@ import {
   TOP_TITLE_TYPE_OPTIONS,
 } from '@/features/profile/lib/profileStore';
 import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
+import { AchievementBadges } from '@/features/profile/components/AchievementBadges';
 import './Profile.css';
 
 const PAGE_SIZE = 8;
@@ -99,6 +102,7 @@ export function Profile() {
   const { watchlist, watchlistTitles } = useWatchlist();
   const { prefs: storedPrefs, savePreferences } = useProfilePreferences();
   const { hiddenTitleIds, getHiddenEntry, setHiddenScopes, unhideTitle, bulkUnhideTitles, error: hiddenTitlesError } = useHiddenTitles();
+  const { showAdult } = useAgeGate();
   const { theme, toggleTheme } = useTheme();
   const { language, t } = useLanguage();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
@@ -190,7 +194,6 @@ export function Profile() {
     return () => { cancelled = true; };
   }, [t, userId]);
 
-  const watchlistMap = useMemo(() => new Map(watchlist.map((item) => [item.titleId, item])), [watchlist]);
   const watchStats = useMemo(() => watchlist.reduce((acc, item) => {
     acc.total += 1;
     acc[item.status] = (acc[item.status] || 0) + 1;
@@ -261,24 +264,17 @@ export function Profile() {
     return next;
   }, [libraryTitles, watchlistTitles]);
 
-  const _continueTitles = useMemo(() => continueIds.map((id) => {
-    const title = titleMap.get(id);
-    const item = watchlistMap.get(id);
-    return title ? {
-      ...title,
-      _listProgressEpisode: item?.progressEpisode ?? null,
-      _listProgressChapter: item?.progressChapter ?? null,
-    } : null;
-  }).filter(Boolean), [continueIds, titleMap, watchlistMap]);
-
-  const hiddenTitles = useMemo(() => hiddenTitleIds.map((id) => titleMap.get(id)).filter(Boolean), [hiddenTitleIds, titleMap]);
+  const hiddenTitles = useMemo(
+    () => filterTitlesForAgeGate(hiddenTitleIds.map((id) => titleMap.get(id)).filter(Boolean), showAdult),
+    [hiddenTitleIds, showAdult, titleMap]
+  );
   const topSections = useMemo(() => TOP_TITLE_TYPE_OPTIONS.map((typeId) => ({
     typeId,
-    titles: (prefsDraft.topTitles?.[typeId] || []).map((id, index) => {
+    titles: filterTitlesForAgeGate((prefsDraft.topTitles?.[typeId] || []).map((id, index) => {
       const title = titleMap.get(id);
       return title ? { ...title, _rank: index + 1, _typeLabel: TYPE_LABELS[typeId]?.[language] || typeId } : null;
-    }).filter(Boolean),
-  })), [language, prefsDraft.topTitles, titleMap]);
+    }).filter(Boolean), showAdult),
+  })), [language, prefsDraft.topTitles, showAdult, titleMap]);
 
   const totalPinnedTopTitles = useMemo(
     () => topSections.reduce((count, section) => count + section.titles.length, 0),
@@ -771,6 +767,10 @@ export function Profile() {
               </article>
 
               <article className="profile-section-card">
+                <AchievementBadges />
+              </article>
+
+              <article className="profile-section-card">
                 <div className="profile-section-heading">
                   <div>
                     <h2>{t('profile.profileCommentsTitle')}</h2>
@@ -984,12 +984,16 @@ export function Profile() {
                     <div className="profile-field">
                       <span>{language === 'th' ? 'มูดที่ชอบ' : 'Favorite moods'}</span>
                       <div className="profile-chip-group">
-                        {MOODS.map((mood) => (
+                        {MOODS.filter((mood) => showAdult || !mood.isAdult).map((mood) => (
                           <button
                             key={mood.id}
                             type="button"
                             className={`profile-chip-btn ${prefsDraft.favoriteMoods.includes(mood.id) ? 'active' : ''}`}
-                            onClick={() => toggleArray('favoriteMoods', mood.id, MOODS.map((item) => item.id))}
+                            onClick={() => toggleArray(
+                              'favoriteMoods',
+                              mood.id,
+                              MOODS.filter((item) => showAdult || !item.isAdult).map((item) => item.id)
+                            )}
                           >
                             <span>{mood.icon}</span>
                             <span>{getLocalizedMoodName(mood, language)}</span>

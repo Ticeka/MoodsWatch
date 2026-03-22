@@ -141,3 +141,37 @@
 .time-btn:hover:not(.disabled) .time-icon {
   transform: scale(1.1);
 }
+
+/* Adult mood button */
+.mood-btn-adult {
+  border-style: dashed;
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.mood-btn-adult:hover:not(.disabled) {
+  border-color: var(--mood-color);
+  border-style: solid;
+}
+
+.mood-btn-adult.selected {
+  border-style: solid;
+}
+
+.mood-adult-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.18);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  line-height: 1.4;
+  margin-left: 2px;
+}
+
+.mood-btn.selected .mood-adult-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+}

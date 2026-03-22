@@ -140,6 +140,12 @@ export function mapCanonicalTitle(record) {
   const titleTh = getAlias(record, (alias) => alias.language_code === 'th');
   const titleRomaji = getAlias(record, (alias) => alias.alias_type === 'romaji');
   const titleNative = getAlias(record, (alias) => alias.alias_type === 'native');
+  const aliases = [...new Set(
+    (record.aliases || [])
+      .map((alias) => alias.alias)
+      .filter(Boolean)
+      .filter((alias) => ![titleEn, titleTh, titleRomaji, titleNative].includes(alias))
+  )];
 
   const officialPlatforms = record.availability?.filter((item) => item.is_official !== false).map((item) => ({
     name: item.platform_name,
@@ -160,6 +166,7 @@ export function mapCanonicalTitle(record) {
     title_th: titleTh,
     title_romaji: titleRomaji,
     title_native: titleNative,
+    aliases,
     synopsis: record.synopsis,
     cover: record.cover_image,
     banner: record.banner_image,

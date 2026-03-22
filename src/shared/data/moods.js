@@ -1,4 +1,4 @@
-// MoodToon — Mood taxonomy (หัวใจของระบบ)
+// MoodsWatch — Mood taxonomy (หัวใจของระบบ)
 export const MOODS = [
   {
     id: 'light',
@@ -144,6 +144,51 @@ export const MOODS = [
     color: '#14b8a6',
     description: 'จบเร็ว ไม่กี่ตอน ดูรวดเดียวจบ',
     tags: ['1 cour', 'movie', 'completed', 'low commitment'],
+  },
+  // ─── Adult / 18+ moods (manhwa-focused) ───────────────────────────────────
+  {
+    id: 'adult-ecchi',
+    name_th: 'เอ็กจิ',
+    name_en: 'Ecchi',
+    icon: '🔥',
+    color: '#f43f5e',
+    description: 'มีเนื้อหาผู้ใหญ่เบา ๆ แบบ ecchi',
+    tags: ['ecchi', 'fanservice', 'mature', 'adult'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-harem',
+    name_th: 'ฮาเร็ม',
+    name_en: 'Harem',
+    icon: '💞',
+    color: '#ec4899',
+    description: 'พระเอกล้อมรอบด้วยตัวละครหลายคน ฮาเร็มสไตล์',
+    tags: ['harem', 'reverse harem', 'romance', 'ecchi', 'mature'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-romance',
+    name_th: 'โรแมนส์ผู้ใหญ่',
+    name_en: 'Mature Romance',
+    icon: '💋',
+    color: '#db2777',
+    description: 'โรแมนซ์เข้มข้น เนื้อหาผู้ใหญ่เต็ม ๆ',
+    tags: ['mature romance', 'adult', 'smut', 'drama', 'manhwa'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-dark',
+    name_th: 'ดาร์กผู้ใหญ่',
+    name_en: 'Mature Dark',
+    icon: '⛓️',
+    color: '#7c3aed',
+    description: 'เนื้อหาหนัก ดาร์ก ซับซ้อนสำหรับผู้ใหญ่',
+    tags: ['mature', 'adult', 'psychological', 'dark', 'violence', 'gore', 'tragedy'],
+    matchMode: 'explicit',
+    isAdult: true,
   },
 ];
 
