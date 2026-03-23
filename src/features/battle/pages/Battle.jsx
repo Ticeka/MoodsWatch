@@ -705,8 +705,6 @@ function BattleMatchCard({
   voteLabel,
   voteIcon,
   onVote,
-  isTrailerOpen,
-  onToggleTrailer,
   onPlayTrailer,
 }) {
   const { t } = useLanguage();
@@ -749,9 +747,8 @@ function BattleMatchCard({
                 variant="ghost"
                 size="sm"
                 icon={<Play size={14} />}
-                className={`battle-card-trailer-inline-action${isTrailerOpen ? ' is-active' : ''}`}
-                onClick={onToggleTrailer}
-                aria-expanded={isTrailerOpen}
+                className="battle-card-trailer-inline-action"
+                onClick={onPlayTrailer}
                 aria-label={t('titleDetail.playTrailerForTitle', { title: displayName })}
               >
                 {t('titleDetail.metaTrailer')}
@@ -770,42 +767,6 @@ function BattleMatchCard({
             </div>
           </div>
 
-          {isTrailerOpen ? (
-            <div className="battle-card-trailer-panel">
-              {(trailer.embedUrl || trailer.watchUrl) ? (
-                <button
-                  type="button"
-                  className="battle-card-trailer-launcher"
-                  onClick={onPlayTrailer}
-                  aria-label={t('titleDetail.playTrailerForTitle', { title: displayName })}
-                >
-                  {trailer.thumbnailUrl ? (
-                    <img
-                      src={trailer.thumbnailUrl}
-                      alt={t('titleDetail.trailerPreviewAlt', { title: displayName })}
-                      className="battle-card-trailer-poster"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="battle-card-trailer-poster battle-card-trailer-poster--empty" aria-hidden="true" />
-                  )}
-                  <div className="battle-card-trailer-overlay">
-                    <span className="battle-card-trailer-play">
-                      <Play size={16} />
-                      {t('titleDetail.playTrailer')}
-                    </span>
-                  </div>
-                </button>
-              ) : null}
-
-              {(trailer.site || trailer.source) ? (
-                <div className="battle-card-trailer-meta">
-                  {trailer.site ? <span>{t('titleDetail.trailerSiteMeta', { site: trailer.site })}</span> : null}
-                  {trailer.source ? <span>{t('titleDetail.trailerSourceMeta', { source: trailer.source })}</span> : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </article>
@@ -2055,7 +2016,6 @@ export function BattleSessionPage() {
   const [isCommunityLoading, setIsCommunityLoading] = useState(false);
   const [isExportingCard, setIsExportingCard] = useState(false);
   const [communityRankView, setCommunityRankView] = useState('top5');
-  const [expandedTrailerSide, setExpandedTrailerSide] = useState(null);
   const [trailerModal, setTrailerModal] = useState(null);
 
   useEffect(() => {
@@ -2198,7 +2158,6 @@ export function BattleSessionPage() {
     : t('battle.knockoutPhaseDescription');
 
   useEffect(() => {
-    setExpandedTrailerSide(null);
     setTrailerModal(null);
   }, [session?.currentPair?.leftId, session?.currentPair?.rightId]);
 
@@ -2291,10 +2250,6 @@ export function BattleSessionPage() {
     }
   };
 
-  const handleToggleTrailer = (side) => {
-    setExpandedTrailerSide((current) => (current === side ? null : side));
-  };
-
   const handlePlayTrailer = (side) => {
     const trailer = side === 'left' ? leftTrailer : rightTrailer;
     const titleObj = side === 'left' ? leftTitle : rightTitle;
@@ -2346,8 +2301,6 @@ export function BattleSessionPage() {
               voteLabel={t('battle.chooseLeft')}
               voteIcon={<Swords size={16} />}
               onVote={() => handleVote('left')}
-              isTrailerOpen={expandedTrailerSide === 'left'}
-              onToggleTrailer={() => handleToggleTrailer('left')}
               onPlayTrailer={() => handlePlayTrailer('left')}
             />
 
@@ -2367,8 +2320,6 @@ export function BattleSessionPage() {
               voteLabel={t('battle.chooseRight')}
               voteIcon={<ArrowLeftRight size={16} />}
               onVote={() => handleVote('right')}
-              isTrailerOpen={expandedTrailerSide === 'right'}
-              onToggleTrailer={() => handleToggleTrailer('right')}
               onPlayTrailer={() => handlePlayTrailer('right')}
             />
           </section>
