@@ -76,7 +76,7 @@ async function ensureUserProfile(userId) {
   const { data, error } = await withTimeout(
     supabase
       .from('user_profiles')
-      .upsert({ id: userId }, { onConflict: 'id' })
+      .insert({ id: userId, is_profile_public: true })
       .select('*')
       .maybeSingle(),
     PROFILE_REQUEST_TIMEOUT_MS,
@@ -84,6 +84,9 @@ async function ensureUserProfile(userId) {
   );
 
   if (error) {
+    if (error.code === '23505') {
+      return fetchUserProfile(userId);
+    }
     console.warn('Error creating user profile:', error.message);
     return null;
   }
