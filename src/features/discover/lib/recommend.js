@@ -42,6 +42,11 @@ let cachedTitlesPromise = null;
 let cacheTimestamp = 0;
 let cacheError = null;
 let cachedCatalogLimit = null;
+let cachedDetailedTitles = null;
+let cachedDetailedTitlesPromise = null;
+let detailedCacheTimestamp = 0;
+let detailedCacheError = null;
+let cachedDetailedCatalogLimit = null;
 const titleByIdCache = new Map();
 const titleByIdsRequestCache = new Map();
 const titleBySlugCache = new Map();
@@ -55,7 +60,11 @@ MOODS.forEach((mood) => {
 const EXPLICIT_MOOD_FALLBACKS = {
   'adult-ecchi': {
     tagKeywords: ['erotica', 'ecchi', 'fanservice', 'adult', 'mature'],
-    textKeywords: ['erotic', 'naughty', 'sensual', 'one-night', 'heat'],
+    textKeywords: ['erotic', 'naughty', 'sensual', 'one-night', 'heat', 'teasing', 'playful'],
+  },
+  'adult-flirty': {
+    tagKeywords: ['romance', 'adult', 'mature', 'ecchi'],
+    textKeywords: ['seductive', 'temptation', 'attraction', 'chemistry', 'desire', 'flirty', 'teasing', 'sensual'],
   },
   'adult-harem': {
     tagKeywords: ['harem', 'reverse harem'],
@@ -64,6 +73,18 @@ const EXPLICIT_MOOD_FALLBACKS = {
   'adult-romance': {
     tagKeywords: ['drama', 'romance', 'historical', 'reverse harem'],
     textKeywords: ['love', 'romance', 'romantic', 'marriage', 'married', 'wedding', 'bride', 'groom', 'husband', 'wife', 'dating', 'kiss', 'affair'],
+  },
+  'adult-forbidden': {
+    tagKeywords: ['romance', 'drama', 'mature', 'adult'],
+    textKeywords: ['forbidden', 'secret relationship', 'affair', 'scandal', 'cheat', 'cheating', 'taboo', 'hidden love'],
+  },
+  'adult-power-play': {
+    tagKeywords: ['drama', 'romance', 'mature', 'adult'],
+    textKeywords: ['ceo', 'boss', 'secretary', 'contract marriage', 'deal', 'power', 'dominant', 'workplace'],
+  },
+  'adult-obsession': {
+    tagKeywords: ['psychological', 'romance', 'mature'],
+    textKeywords: ['obsession', 'obsessed', 'possessive', 'fixated', 'clingy', 'stalker', "can't let go"],
   },
   'adult-dark': {
     tagKeywords: ['psychological', 'drama', 'thriller', 'horror'],
@@ -87,7 +108,10 @@ function resolveRequestedRowLimit(maxRows) {
   return null;
 }
 
-async function fetchSupabaseTitles({ maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) {
+async function fetchSupabaseTitles({
+  maxRows = DEFAULT_CATALOG_MAX_ROWS,
+  select = CANONICAL_TITLE_BROWSE_SELECT,
+} = {}) {
   const rowLimit = resolveRequestedRowLimit(maxRows);
   const step = 1000; // Supabase max per request
   let allData = [];
@@ -100,7 +124,7 @@ async function fetchSupabaseTitles({ maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) 
 
     let query = supabase
       .from('canonical_titles')
-      .select(CANONICAL_TITLE_BROWSE_SELECT)
+      .select(select)
       .order('id', { ascending: true })
       .limit(remaining);
 
@@ -175,6 +199,16 @@ function matchesExplicitMoodFallback(title, moodId) {
   }
 
   return hasTagMatch || hasTextMatch;
+}
+
+export function matchesMoodSelection(title, moodId) {
+  if (!moodId) {
+    return false;
+  }
+
+  return isExplicitMood(moodId)
+    ? matchesExplicitMoodFallback(title, moodId)
+    : (title?.moods || []).includes(moodId);
 }
 
 function storeTitlesInCaches(titles) {
@@ -276,44 +310,80 @@ async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag
   };
 }
 
-export async function getAllTitles({ forceRefresh = false, maxRows = DEFAULT_CATALOG_MAX_ROWS } = {}) {
+export async function getAllTitles({
+  forceRefresh = false,
+  maxRows = DEFAULT_CATALOG_MAX_ROWS,
+  includeCharacters = false,
+} = {}) {
   ensureSupabaseConnected();
   const requestedLimit = resolveRequestedRowLimit(maxRows);
-  const cacheSatisfiesRequest = cachedTitles && (
-    cachedCatalogLimit === null ||
-    (requestedLimit !== null && cachedCatalogLimit >= requestedLimit)
+  const cachedCollection = includeCharacters ? cachedDetailedTitles : cachedTitles;
+  const cachedLimit = includeCharacters ? cachedDetailedCatalogLimit : cachedCatalogLimit;
+  const lastCacheTimestamp = includeCharacters ? detailedCacheTimestamp : cacheTimestamp;
+  const inFlightRequest = includeCharacters ? cachedDetailedTitlesPromise : cachedTitlesPromise;
+  const cacheSatisfiesRequest = cachedCollection && (
+    cachedLimit === null ||
+    (requestedLimit !== null && cachedLimit >= requestedLimit)
   );
 
   const canUseCachedCatalog =
     !forceRefresh &&
     cacheSatisfiesRequest &&
-    (Date.now() - cacheTimestamp < CACHE_TTL_MS) &&
-    (requestedLimit === null || cachedTitles.length >= requestedLimit);
+    (Date.now() - lastCacheTimestamp < CACHE_TTL_MS) &&
+    (requestedLimit === null || cachedCollection.length >= requestedLimit);
 
   if (canUseCachedCatalog) {
-    return cachedTitles;
+    return cachedCollection;
   }
 
-  if (!forceRefresh && cachedTitlesPromise) return cachedTitlesPromise;
+  if (!forceRefresh && inFlightRequest) {
+    return inFlightRequest;
+  }
 
-  cachedTitlesPromise = (async () => {
+  const request = (async () => {
     try {
-      const titles = await fetchSupabaseTitles({ maxRows });
-      cachedTitles = titles;
-      cachedCatalogLimit = requestedLimit;
-      cacheTimestamp = Date.now();
-      cacheError = null;
+      const titles = await fetchSupabaseTitles({
+        maxRows,
+        select: includeCharacters ? CANONICAL_TITLE_DETAIL_SELECT : CANONICAL_TITLE_BROWSE_SELECT,
+      });
       storeTitlesInCaches(titles);
+
+      if (includeCharacters) {
+        cachedDetailedTitles = titles;
+        cachedDetailedCatalogLimit = requestedLimit;
+        detailedCacheTimestamp = Date.now();
+        detailedCacheError = null;
+      } else {
+        cachedTitles = titles;
+        cachedCatalogLimit = requestedLimit;
+        cacheTimestamp = Date.now();
+        cacheError = null;
+      }
+
       return titles;
     } catch (error) {
-      cacheError = error.message;
+      if (includeCharacters) {
+        detailedCacheError = error.message;
+      } else {
+        cacheError = error.message;
+      }
       throw error;
     } finally {
-      cachedTitlesPromise = null;
+      if (includeCharacters) {
+        cachedDetailedTitlesPromise = null;
+      } else {
+        cachedTitlesPromise = null;
+      }
     }
   })();
 
-  return cachedTitlesPromise;
+  if (includeCharacters) {
+    cachedDetailedTitlesPromise = request;
+  } else {
+    cachedTitlesPromise = request;
+  }
+
+  return request;
 }
 
 export function clearTitlesCache() {
@@ -322,6 +392,11 @@ export function clearTitlesCache() {
   cacheTimestamp = 0;
   cacheError = null;
   cachedCatalogLimit = null;
+  cachedDetailedTitles = null;
+  cachedDetailedTitlesPromise = null;
+  detailedCacheTimestamp = 0;
+  detailedCacheError = null;
+  cachedDetailedCatalogLimit = null;
   titleByIdCache.clear();
   titleByIdsRequestCache.clear();
   titleBySlugCache.clear();
@@ -330,12 +405,16 @@ export function clearTitlesCache() {
 
 export function getCacheInfo() {
   return {
-    source: cachedTitles ? 'supabase' : null,
+    source: cachedTitles || cachedDetailedTitles ? 'supabase' : null,
     count: cachedTitles?.length || 0,
     limit: cachedCatalogLimit,
     age: cacheTimestamp ? Date.now() - cacheTimestamp : null,
+    detailedCount: cachedDetailedTitles?.length || 0,
+    detailedLimit: cachedDetailedCatalogLimit,
+    detailedAge: detailedCacheTimestamp ? Date.now() - detailedCacheTimestamp : null,
     isSupabaseConfigured: isSupabaseConnected(),
     cacheError,
+    detailedCacheError,
   };
 }
 
@@ -571,11 +650,7 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
 
 function scoreMoodMatch(title, moods) {
   if (!moods || moods.length === 0) return 0;
-  const matched = moods.filter((moodId) => (
-    isExplicitMood(moodId)
-      ? matchesExplicitMoodFallback(title, moodId)
-      : (title.moods || []).includes(moodId)
-  )).length;
+  const matched = moods.filter((moodId) => matchesMoodSelection(title, moodId)).length;
   return matched / moods.length;
 }
 
@@ -597,11 +672,11 @@ function matchesRequestedMoods(title, moods) {
   const titleMoodIds = new Set(title.moods || []);
   const { explicit, fuzzy } = splitRequestedMoods(moods);
 
-  if (explicit.some((mood) => titleMoodIds.has(mood) || matchesExplicitMoodFallback(title, mood))) {
+  if (explicit.some((mood) => matchesMoodSelection(title, mood))) {
     return true;
   }
 
-  if (fuzzy.some((mood) => titleMoodIds.has(mood))) {
+  if (fuzzy.some((mood) => titleMoodIds.has(mood) || matchesMoodSelection(title, mood))) {
     return true;
   }
 
@@ -738,10 +813,10 @@ function buildReason(title, moods, timeOption, likedTitleId, allTitles) {
 
   if (moods?.length) {
     const matchedMoodNames = moods
-      .filter((m) => (title.moods || []).includes(m))
+      .filter((m) => matchesMoodSelection(title, m))
       .map((m) => MOODS.find((mood) => mood.id === m)?.name_th)
       .filter(Boolean);
-    if (matchedMoodNames.length > 0) parts.push(`ตรงกับโหมด ${matchedMoodNames.join(', ')}`);
+    if (matchedMoodNames.length > 0) parts.push(`ตรงกับโทนเรื่อง ${matchedMoodNames.join(', ')}`);
   }
 
   const eps = title.episodes || title.chapters || 0;
@@ -768,7 +843,7 @@ function buildDebugBreakdown(title, moods, timeOption, resolvedLikedTitleIds, al
   const qualityScore = scoreQuality(title);
   const simScore = scoreSimilarity(title, resolvedLikedTitleIds, allTitles);
   const freshnessScore = scoreFreshness(title);
-  const matchedMoods = (moods || []).filter((mood) => (title.moods || []).includes(mood));
+  const matchedMoods = (moods || []).filter((mood) => matchesMoodSelection(title, mood));
   const primaryLikedTitleId = resolvedLikedTitleIds[0] || null;
   const likedTitle = primaryLikedTitleId
     ? allTitles.find((entry) => entry.id === primaryLikedTitleId) || null

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart2, Bell, BookMarked, ChevronDown, Eye, EyeOff, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
+import { BarChart2, Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useSearchAutocomplete } from '@/features/discover/hooks/useSearchAutocomplete';
 import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
@@ -41,6 +41,22 @@ function LanguageToggle() {
       </button>
     </div>
   );
+}
+
+function AdultModeBadgeIcon({ size = 18, active = false, className = '' }) {
+  return (
+    <span
+      className={`adult-mode-icon ${active ? 'is-active' : ''} ${className}`.trim()}
+      style={{ '--adult-mode-icon-size': `${size}px` }}
+      aria-hidden="true"
+    >
+      <span>18+</span>
+    </span>
+  );
+}
+
+function getAdultModeLabel(showAdult) {
+  return showAdult ? '18+ ON' : '18+ OFF';
 }
 
 function NotificationBell({ userId }) {
@@ -595,13 +611,13 @@ export function Header() {
                 <div className="guest-icon-group">
                   <button
                     type="button"
-                    className="guest-pill-btn"
+                    className={`guest-pill-btn adult-toggle-btn adult-toggle-btn-desktop ${showAdult ? 'is-active' : ''}`}
                     onClick={toggleAdult}
-                    aria-label={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
-                    title={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
-                    style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}
+                    aria-label={getAdultModeLabel(showAdult)}
+                    title={getAdultModeLabel(showAdult)}
                   >
-                    {showAdult ? <Eye size={17} /> : <EyeOff size={17} />}
+                    <span className="adult-toggle-desktop-label">18+</span>
+                    <span className={`adult-toggle-state-dot ${showAdult ? 'is-active' : ''}`} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -793,10 +809,9 @@ export function Header() {
               <User size={18} /> {t('layout.login')}
             </Link>
           )}
-          <button type="button" onClick={toggleAdult} className="drawer-link theme"
-            style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
-            {showAdult ? <Eye size={18} /> : <EyeOff size={18} />}
-            {showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+          <button type="button" onClick={toggleAdult} className={`drawer-link theme adult-toggle-btn ${showAdult ? 'is-active' : ''}`}>
+            <AdultModeBadgeIcon size={18} active={showAdult} />
+            {getAdultModeLabel(showAdult)}
           </button>
           <button type="button" onClick={toggleTheme} className="drawer-link theme">
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -828,10 +843,9 @@ export function Header() {
             <span className="bottom-nav-label">{t('layout.profile')}</span>
           </Link>
         )}
-        <button type="button" onClick={toggleAdult} className="bottom-nav-item"
-          style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
-          {showAdult ? <Eye size={20} className="bottom-nav-icon" /> : <EyeOff size={20} className="bottom-nav-icon" />}
-          <span className="bottom-nav-label">{showAdult ? '18+ ON' : '18+ OFF'}</span>
+        <button type="button" onClick={toggleAdult} className={`bottom-nav-item adult-toggle-btn ${showAdult ? 'is-active' : ''}`}>
+          <AdultModeBadgeIcon size={20} active={showAdult} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{getAdultModeLabel(showAdult)}</span>
         </button>
         <button type="button" onClick={toggleTheme} className="bottom-nav-item">
           {theme === 'dark' ? <Sun size={20} className="bottom-nav-icon" /> : <Moon size={20} className="bottom-nav-icon" />}
@@ -860,10 +874,9 @@ export function Header() {
             <LanguageToggle />
           </div>
 
-          <button className="dropdown-item" onClick={toggleAdult} role="menuitem" type="button"
-            style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}>
-            {showAdult ? <Eye size={16} /> : <EyeOff size={16} />}
-            <span>{showAdult ? 'ปิด 18+' : 'เปิด 18+'}</span>
+          <button className={`dropdown-item adult-toggle-btn ${showAdult ? 'is-active' : ''}`} onClick={toggleAdult} role="menuitem" type="button">
+            <AdultModeBadgeIcon size={16} active={showAdult} />
+            <span>{getAdultModeLabel(showAdult)}</span>
           </button>
           <button className="dropdown-item" onClick={toggleTheme} role="menuitem" type="button">
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}

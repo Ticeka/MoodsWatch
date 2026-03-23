@@ -7,7 +7,7 @@ import { TitleCard } from '@/shared/components/ui/Card';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
+import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
@@ -298,6 +298,10 @@ export function Watchlist() {
   const favoriteMoodDetails = useMemo(
     () => MOODS.filter((mood) => prefs.favoriteMoods.includes(mood.id) && (showAdult || !mood.isAdult)),
     [prefs.favoriteMoods, showAdult]
+  );
+  const selectableMoods = useMemo(
+    () => getMoodOptionsForAgeGate(showAdult),
+    [showAdult]
   );
   const inProgressCount = (statusCounts.watching || 0) + (statusCounts.reading || 0);
   const planningCount = (statusCounts.planned || 0) + (statusCounts['on-hold'] || 0);
@@ -630,7 +634,7 @@ export function Watchlist() {
                   <span>{isSavingMoods ? t('watchlist.savingTags') : t('watchlist.selectedCount', { count: prefs.favoriteMoods.length })}</span>
                 </div>
                 <div className="watchlist-mood-grid" role="group" aria-label={t('watchlist.favoriteTags')}>
-                  {MOODS.filter((mood) => showAdult || !mood.isAdult).map((mood) => {
+                  {selectableMoods.map((mood) => {
                     const active = prefs.favoriteMoods.includes(mood.id);
                     return (
                       <button

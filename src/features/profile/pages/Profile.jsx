@@ -21,7 +21,7 @@ import {
   RECOMMENDATION_TYPE_OPTIONS,
   TOP_TITLE_TYPE_OPTIONS,
 } from '@/features/profile/lib/profileStore';
-import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
+import { LIST_STATUS_OPTIONS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { AchievementBadges } from '@/features/profile/components/AchievementBadges';
 import './Profile.css';
@@ -106,6 +106,7 @@ export function Profile() {
   const { theme, toggleTheme } = useTheme();
   const { language, t } = useLanguage();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
+  const selectableMoods = useMemo(() => getMoodOptionsForAgeGate(showAdult), [showAdult]);
   const profile = user?.profile || {};
   const userId = user?.id || null;
   const initialName = profile.name || user?.user_metadata?.username || user?.email?.split('@')[0] || '';
@@ -982,9 +983,9 @@ export function Profile() {
                       />
                     </label>
                     <div className="profile-field">
-                      <span>{language === 'th' ? 'มูดที่ชอบ' : 'Favorite moods'}</span>
+                      <span>{language === 'th' ? 'มู้ดที่ชอบ' : 'Favorite moods'}</span>
                       <div className="profile-chip-group">
-                        {MOODS.filter((mood) => showAdult || !mood.isAdult).map((mood) => (
+                        {selectableMoods.map((mood) => (
                           <button
                             key={mood.id}
                             type="button"
@@ -992,7 +993,7 @@ export function Profile() {
                             onClick={() => toggleArray(
                               'favoriteMoods',
                               mood.id,
-                              MOODS.filter((item) => showAdult || !item.isAdult).map((item) => item.id)
+                              selectableMoods.map((item) => item.id)
                             )}
                           >
                             <span>{mood.icon}</span>

@@ -24,6 +24,13 @@
   flex-shrink: 0;
 }
 
+.section-helper {
+  margin: calc(var(--space-5) * -1) 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 /* Mood Grid - Refined and cleaner */
 .mood-grid {
   display: flex;

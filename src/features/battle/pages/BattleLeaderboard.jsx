@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { normalizeBattleLeaderboardRows } from '@/features/battle/lib/leaderboard';
 import { Trophy, TrendingUp, Swords, ChevronLeft } from 'lucide-react';
 import './BattleLeaderboard.css';
 
@@ -11,6 +13,7 @@ const FILTERS = ['elo', 'wins', 'win_rate'];
 
 export function BattleLeaderboard() {
   const { language, t } = useLanguage();
+  const { showAdult } = useAgeGate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState('elo');
@@ -32,23 +35,16 @@ export function BattleLeaderboard() {
           win_rate,
           elo_score,
           canonical_titles!inner(
-            id, canonical_title, slug, cover_image, type
+            id, canonical_title, slug, cover_image, type, is_adult
           )
         `)
         .gte('total_votes', 3)
+        .eq('canonical_titles.is_adult', showAdult)
         .order(orderCol, { ascending: false })
         .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
-      const mapped = (data || []).map((row) => ({
-        titleId: row.title_id,
-        wins: row.wins,
-        losses: row.losses,
-        totalVotes: row.total_votes,
-        winRate: row.win_rate,
-        elo: Math.round(row.elo_score),
-        title: row.canonical_titles,
-      }));
+      const mapped = normalizeBattleLeaderboardRows(data, showAdult);
 
       if (sort === 'win_rate') {
         mapped.sort((a, b) => (b.winRate || 0) - (a.winRate || 0));
@@ -61,13 +57,13 @@ export function BattleLeaderboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showAdult]);
 
   useEffect(() => {
     setPage(0);
     setEntries([]);
     fetchLeaderboard(sortBy, 0);
-  }, [sortBy, fetchLeaderboard]);
+  }, [sortBy, showAdult, fetchLeaderboard]);
 
   const handleLoadMore = () => {
     const nextPage = page + 1;

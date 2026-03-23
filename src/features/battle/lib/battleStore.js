@@ -1,4 +1,5 @@
 import { BRAND_NAME } from '@/shared/config/brand';
+import { CHARACTER_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 
 const BATTLE_SESSIONS_KEY = 'moodtoon-battle-sessions';
 const BATTLE_DECKS_KEY = 'moodtoon-battle-decks';
@@ -19,37 +20,37 @@ const BATTLE_PRESETS = [
     id: 'best-anime',
     label: 'Best Anime',
     description: 'Top anime picks from the full catalog.',
-    filters: { type: 'anime', size: 32 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'anime', size: 32 },
   },
   {
     id: 'best-manga',
     label: 'Best Manga',
     description: 'Rank manga titles from the current catalog.',
-    filters: { type: 'manga', size: 32 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'manga', size: 32 },
   },
   {
     id: 'best-manhwa',
     label: 'Best Manhwa',
     description: 'Pick your top manhwa one battle at a time.',
-    filters: { type: 'manhwa', size: 32 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'manhwa', size: 32 },
   },
   {
     id: 'romance-anime',
     label: 'Best Romance Anime',
     description: 'Anime filtered to romance-heavy tags and genres.',
-    filters: { type: 'anime', tag: 'romance', size: 24 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'anime', tag: 'romance', size: 24 },
   },
   {
     id: 'mystery-picks',
     label: 'Mystery Face-Off',
     description: 'Mystery and thriller titles from the existing catalog.',
-    filters: { type: 'all', tag: 'mystery', size: 24 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'all', tag: 'mystery', size: 24 },
   },
   {
     id: 'healing-picks',
     label: 'Healing Picks',
     description: 'Battle through gentle, feel-good titles.',
-    filters: { type: 'all', mood: 'healing', size: 24 },
+    filters: { entityType: TITLE_ENTITY_TYPE, type: 'all', mood: 'healing', size: 24 },
   },
 ];
 
@@ -77,10 +78,11 @@ function clampDeckSize(size) {
 
 function buildDeckLabel(filters) {
   const parts = [];
+  const entityType = normalizeCatalogEntityType(filters.entityType);
   if (filters.type && filters.type !== 'all') {
     parts.push(filters.type[0].toUpperCase() + filters.type.slice(1));
   } else {
-    parts.push('All titles');
+    parts.push(entityType === CHARACTER_ENTITY_TYPE ? 'All characters' : 'All titles');
   }
   if (filters.tag) parts.push(`#${filters.tag}`);
   if (filters.mood) parts.push(filters.mood);
@@ -163,6 +165,7 @@ function pickDeckTitles(titles, filters, options = {}) {
 
 function buildDeckSignature(filters) {
   return JSON.stringify({
+    entityType: normalizeCatalogEntityType(filters.entityType),
     type: filters.type || 'all',
     tag: normalizeText(filters.tag),
     mood: normalizeText(filters.mood),
@@ -173,6 +176,7 @@ function buildDeckSignature(filters) {
 
 function normalizeDeckFilters(filters = {}) {
   return {
+    entityType: normalizeCatalogEntityType(filters.entityType),
     type: filters.type || 'all',
     tag: filters.tag || '',
     mood: filters.mood || '',
@@ -193,11 +197,15 @@ function serializeTitle(title) {
   return {
     id: title.id,
     slug: title.slug,
+    entityType: normalizeCatalogEntityType(title.entityType),
     type: title.type,
+    subtype: title.subtype,
     title_en: title.title_en,
     title_th: title.title_th,
     title_native: title.title_native,
     cover: title.cover,
+    banner: title.banner,
+    synopsis: title.synopsis,
     score: title.score,
     popularity: title.popularity,
     year: title.year,
@@ -205,6 +213,12 @@ function serializeTitle(title) {
     genres: title.genres || [],
     tags: title.tags || [],
     moods: title.moods || [],
+    role: title.role || '',
+    voice_actor_name: title.voice_actor_name || '',
+    voice_actor_image: title.voice_actor_image || '',
+    sourceTitleId: title.sourceTitleId || null,
+    sourceTitleSlug: title.sourceTitleSlug || '',
+    sourceTitleName: title.sourceTitleName || '',
   };
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles } from 'lucide-react';
-import { MOODS, getLocalizedMoodName } from '@/shared/data/moods';
+import { getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import './Selectors.css';
@@ -9,8 +9,9 @@ export function MoodSelector({ selected, onChange }) {
   const { language, t } = useLanguage();
   const { showAdult } = useAgeGate();
 
-  // Keep the selector aligned with the current age-gate mode.
-  const visibleMoods = MOODS.filter((mood) => (showAdult ? mood.isAdult : !mood.isAdult));
+  const visibleMoods = getMoodOptionsForAgeGate(showAdult);
+  const titleKey = showAdult ? 'selectors.moodTitleAdult' : 'selectors.moodTitle';
+  const subtitleKey = showAdult ? 'selectors.moodSubtitleAdult' : 'selectors.moodSubtitle';
 
   const toggleMood = (id) => {
     if (selected.includes(id)) {
@@ -27,8 +28,9 @@ export function MoodSelector({ selected, onChange }) {
     <div className="selector-container">
       <h3 className="section-title">
         <span className="section-title-icon"><Sparkles size={16} aria-hidden="true" /></span>
-        {t('selectors.moodTitle')} <span className="subtitle">{t('selectors.moodSubtitle')}</span>
+        {t(titleKey)} <span className="subtitle">{t(subtitleKey)}</span>
       </h3>
+      {showAdult && <p className="section-helper">{t('selectors.moodHelperAdult')}</p>}
       <div className="mood-grid stagger-children">
         {visibleMoods.map((mood) => {
           const isSelected = selected.includes(mood.id);
@@ -37,6 +39,8 @@ export function MoodSelector({ selected, onChange }) {
           return (
             <button
               key={mood.id}
+              type="button"
+              aria-pressed={isSelected}
               className={`mood-btn ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''} ${mood.isAdult ? 'mood-btn-adult' : ''}`}
               onClick={() => !isDisabled && toggleMood(mood.id)}
               style={{ '--mood-color': mood.color }}

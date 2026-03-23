@@ -148,12 +148,23 @@ export const MOODS = [
   // ─── Adult / 18+ moods (manhwa-focused) ───────────────────────────────────
   {
     id: 'adult-ecchi',
-    name_th: 'เอ็กจิ',
-    name_en: 'Ecchi',
+    name_th: 'เซ็กซี่ขี้เล่น',
+    name_en: 'Playful Sexy',
     icon: '🔥',
     color: '#f43f5e',
-    description: 'มีเนื้อหาผู้ใหญ่เบา ๆ แบบ ecchi',
+    description: 'โทนยั่วเย้า สนุก และมีเนื้อหาผู้ใหญ่แบบเบา ๆ',
     tags: ['ecchi', 'fanservice', 'mature', 'adult'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-flirty',
+    name_th: 'เคมีแรง',
+    name_en: 'Strong Chemistry',
+    icon: '✨',
+    color: '#fb7185',
+    description: 'เคมีเด่น ชวนเขิน และมีบรรยากาศแบบผู้ใหญ่',
+    tags: ['mature', 'romance', 'chemistry', 'sensual', 'adult'],
     matchMode: 'explicit',
     isAdult: true,
   },
@@ -163,29 +174,62 @@ export const MOODS = [
     name_en: 'Harem',
     icon: '💞',
     color: '#ec4899',
-    description: 'พระเอกล้อมรอบด้วยตัวละครหลายคน ฮาเร็มสไตล์',
+    description: 'ความสัมพันธ์หลายคน วุ่นรัก และชวนลุ้นว่าใครจะชนะใจ',
     tags: ['harem', 'reverse harem', 'romance', 'ecchi', 'mature'],
     matchMode: 'explicit',
     isAdult: true,
   },
   {
     id: 'adult-romance',
-    name_th: 'โรแมนส์ผู้ใหญ่',
-    name_en: 'Mature Romance',
+    name_th: 'รักร้อนแรง',
+    name_en: 'Intense Romance',
     icon: '💋',
     color: '#db2777',
-    description: 'โรแมนซ์เข้มข้น เนื้อหาผู้ใหญ่เต็ม ๆ',
+    description: 'ความสัมพันธ์เดินหน้าไว โรแมนซ์เข้มข้น และอารมณ์ชัด',
     tags: ['mature romance', 'adult', 'smut', 'drama', 'manhwa'],
     matchMode: 'explicit',
     isAdult: true,
   },
   {
+    id: 'adult-forbidden',
+    name_th: 'รักต้องห้าม',
+    name_en: 'Forbidden Love',
+    icon: '🫦',
+    color: '#e11d48',
+    description: 'ความสัมพันธ์ลับ ๆ หรือรักที่มีข้อห้ามชวนติดตาม',
+    tags: ['mature', 'romance', 'drama', 'affair', 'secret relationship'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-power-play',
+    name_th: 'เกมอำนาจ',
+    name_en: 'Power Play',
+    icon: '👠',
+    color: '#be185d',
+    description: 'ความสัมพันธ์ต่างสถานะ มีแรงกดดันและเกมเชิงอำนาจ',
+    tags: ['mature', 'drama', 'romance', 'workplace', 'contract relationship'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
+    id: 'adult-obsession',
+    name_th: 'รักหมกมุ่น',
+    name_en: 'Obsessive Love',
+    icon: '🕯️',
+    color: '#9333ea',
+    description: 'ความรักแบบครอบงำ หวงหนัก หรือหมกมุ่นเป็นพิเศษ',
+    tags: ['mature', 'romance', 'psychological', 'obsession', 'yandere'],
+    matchMode: 'explicit',
+    isAdult: true,
+  },
+  {
     id: 'adult-dark',
-    name_th: 'ดาร์กผู้ใหญ่',
-    name_en: 'Mature Dark',
+    name_th: 'ดาร์กเข้ม',
+    name_en: 'Dark & Mature',
     icon: '⛓️',
     color: '#7c3aed',
-    description: 'เนื้อหาหนัก ดาร์ก ซับซ้อนสำหรับผู้ใหญ่',
+    description: 'โทนหม่น หนัก ซับซ้อน และมีประเด็นผู้ใหญ่ชัดเจน',
     tags: ['mature', 'adult', 'psychological', 'dark', 'violence', 'gore', 'tragedy'],
     matchMode: 'explicit',
     isAdult: true,
@@ -218,6 +262,14 @@ export function getLocalizedMoodName(mood, language = 'th') {
   }
 
   return language === 'th' ? mood.name_th : mood.name_en;
+}
+
+export function getMoodOptionsForAgeGate(showAdult = false) {
+  if (!showAdult) {
+    return MOODS.filter((mood) => !mood.isAdult);
+  }
+
+  return [...MOODS].sort((left, right) => Number(Boolean(right.isAdult)) - Number(Boolean(left.isAdult)));
 }
 
 export const TIME_OPTIONS = [
@@ -264,7 +316,7 @@ export const LIST_STATUS_OPTIONS = [
 
 export const RANDOM_MODES = [
   { id: 'any', label: 'สุ่มมัว', labelEn: 'Truly random', icon: '🎲' },
-  { id: 'by-mood', label: 'สุ่มตาม mood', labelEn: 'By mood', icon: '🎭' },
+  { id: 'by-mood', label: 'สุ่มตามมู้ด', labelEn: 'By mood', icon: '🎭' },
   { id: 'short', label: 'สุ่มเฉพาะเรื่องสั้น', labelEn: 'Short only', icon: '⏱️' },
   { id: 'popular', label: 'สุ่มเฉพาะเรื่องดัง', labelEn: 'Popular only', icon: '⭐' },
   { id: 'underrated', label: 'สุ่มเรื่อง underrated', labelEn: 'Underrated gems', icon: '💎' },

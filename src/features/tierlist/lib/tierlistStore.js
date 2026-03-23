@@ -1,12 +1,36 @@
 import { supabase } from '@/shared/lib/supabase';
+import { CHARACTER_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 
 const TIERLIST_STORAGE_KEY = 'moodtoon-tierlist-v3';
 
 const DEFAULT_ROWS = ['S', 'A', 'B', 'C', 'D'];
+const TEMPLATE_CATEGORY_CHARACTER_PREFIX = 'character::';
 const DEFAULT_LIBRARY = {
   templates: [],
   lists: [],
 };
+
+function encodeTemplateCategory(category, entityType = TITLE_ENTITY_TYPE) {
+  const normalizedCategory = String(category || 'general');
+  return normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE
+    ? `${TEMPLATE_CATEGORY_CHARACTER_PREFIX}${normalizedCategory}`
+    : normalizedCategory;
+}
+
+function decodeTemplateCategory(category) {
+  const rawCategory = String(category || 'general');
+  if (rawCategory.startsWith(TEMPLATE_CATEGORY_CHARACTER_PREFIX)) {
+    return {
+      category: rawCategory.slice(TEMPLATE_CATEGORY_CHARACTER_PREFIX.length) || 'general',
+      entityType: CHARACTER_ENTITY_TYPE,
+    };
+  }
+
+  return {
+    category: rawCategory,
+    entityType: TITLE_ENTITY_TYPE,
+  };
+}
 
 function makeId(prefix) {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -70,11 +94,15 @@ function normalizeRows(rows) {
 }
 
 function normalizeTemplate(raw, index = 0) {
+  const decodedCategory = decodeTemplateCategory(raw?.category);
+  const entityType = normalizeCatalogEntityType(raw?.entityType || decodedCategory.entityType);
+
   return {
     id: String(raw?.id || makeId(`template-${index}`)),
     title: String(raw?.title || `Template ${index + 1}`),
     description: String(raw?.description || ''),
-    category: String(raw?.category || 'general'),
+    category: String(decodedCategory.category || 'general'),
+    entityType,
     titleIds: dedupeNumberIds(raw?.titleIds || []),
     defaultRows: Array.isArray(raw?.defaultRows) && raw.defaultRows.length > 0
       ? raw.defaultRows.map((label) => String(label || '').trim()).filter(Boolean)
@@ -105,6 +133,7 @@ export function createTierListFromTemplate(template) {
       color: '',
     })),
     poolTitleIds: Array.isArray(template?.titleIds) ? template.titleIds : [],
+    entityType: normalizeCatalogEntityType(template?.entityType),
     isPublic: false,
     playCount: 0,
     ownerName: 'You',
@@ -124,6 +153,7 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
     title: options.title || 'Untitled template',
     description: options.description || '',
     category: options.category || 'general',
+    entityType: normalizeCatalogEntityType(options.entityType),
     titleIds: titles.map((title) => Number(title.id)),
     defaultRows: baseRows,
     isPublic: Boolean(options.isPublic ?? true),
@@ -143,6 +173,7 @@ function normalizeTierList(raw, index = 0) {
     templateId: String(raw?.templateId || ''),
     title: String(raw?.title || 'My Tier List'),
     description: String(raw?.description || ''),
+    entityType: normalizeCatalogEntityType(raw?.entityType),
     rows,
     poolTitleIds,
     isPublic: Boolean(raw?.isPublic),
@@ -162,9 +193,13 @@ function normalizeLibrary(raw) {
   const lists = Array.isArray(raw?.lists)
     ? raw.lists.map((list, index) => normalizeTierList(list, index))
     : [];
+  const templateById = new Map(templates.map((template) => [template.id, template]));
   return {
     templates: uniqueById(templates),
-    lists: uniqueById(lists),
+    lists: uniqueById(lists).map((list) => ({
+      ...list,
+      entityType: normalizeCatalogEntityType(list.entityType || templateById.get(list.templateId)?.entityType),
+    })),
   };
 }
 
@@ -381,7 +416,7 @@ function toRemoteTemplate(template, userId = null) {
     owner_user_id: normalized.isSystem ? null : (normalized.ownerUserId || userId || null),
     title: normalized.title,
     description: normalized.description,
-    category: normalized.category,
+    category: encodeTemplateCategory(normalized.category, normalized.entityType),
     title_ids: normalized.titleIds,
     default_rows: normalized.defaultRows,
     is_public: normalized.isPublic,

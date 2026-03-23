@@ -207,9 +207,19 @@
 .battle-recent-grid,
 .battle-deck-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
   justify-items: start;
+}
+
+.battle-preset-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 260px));
+  justify-content: start;
+  align-items: start;
+}
+
+.battle-recent-grid,
+.battle-deck-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .battle-preset-grid-compact {
@@ -2053,6 +2063,10 @@
     padding-top: 0.75rem;
   }
 
+  .battle-preset-grid {
+    grid-template-columns: 1fr;
+  }
+
   .battle-section-head {
     flex-direction: column;
     align-items: flex-start;
@@ -2115,6 +2129,11 @@
 
   .battle-deck-card-compact {
     grid-template-columns: 1fr;
+  }
+
+  .battle-preset-card,
+  .battle-preset-card-skeleton {
+    max-width: 100%;
   }
 
   .battle-deck-card-compact .battle-preset-art {

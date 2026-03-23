@@ -12,7 +12,7 @@ import { useProfilePreferences } from '@/features/profile/hooks/useProfilePrefer
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import { TYPE_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName } from '@/shared/data/moods';
+import { TYPE_OPTIONS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { HOMEPAGE_BLOCK_PUBLIC_SELECT, mapHomepagePublicBlock } from '@/shared/lib/editorial';
 import { supabase } from '@/shared/lib/supabase';
 import { TypeIcon } from '@/shared/components/ui/TypeIcon';
@@ -93,7 +93,7 @@ export function Home() {
     [watchlist, effectivePrefs, hiddenFromDiscoveryIds]
   );
   const visibleMoods = useMemo(
-    () => MOODS.filter((mood) => (showAdult ? mood.isAdult : !mood.isAdult)),
+    () => getMoodOptionsForAgeGate(showAdult),
     [showAdult]
   );
   const visibleMoodIds = useMemo(

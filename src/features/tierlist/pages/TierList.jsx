@@ -30,6 +30,14 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
+  CHARACTER_ENTITY_TYPE,
+  TITLE_ENTITY_TYPE,
+  getCatalogEntities,
+  getCatalogEntityMeta,
+  getCatalogEntityName,
+  normalizeCatalogEntityType,
+} from '@/shared/lib/catalogEntities';
+import {
   addTierRow,
   buildTierListFromTemplate,
   createTemplateFromCatalog,
@@ -49,13 +57,33 @@ import './TierList.css';
 
 const BROWSE_PAGE_SIZE = 8;
 const TIER_COLORS = ['#ff7f7f', '#ffbf7f', '#ffdf7f', '#ffff7f', '#bfff7f', '#7fffff', '#7fbfff', '#7f7fff'];
+const ENTITY_TYPE_OPTIONS = [
+  { value: TITLE_ENTITY_TYPE, label: 'Titles' },
+  { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
+];
 
 function getDisplayName(title) {
-  return title?.title_th || title?.title_en || title?.title_native || 'Unknown title';
+  return getCatalogEntityName(title);
 }
 
 function getMetaLine(title) {
-  return [title?.type, ...(title?.genres || []).slice(0, 2)].filter(Boolean).join(' / ');
+  return getCatalogEntityMeta(title);
+}
+
+function buildEntityMaps(titles = []) {
+  const titleMap = new Map(titles.map((title) => [Number(title.id), title]));
+  const characterMap = new Map(
+    getCatalogEntities(titles, CHARACTER_ENTITY_TYPE).map((character) => [Number(character.id), character])
+  );
+
+  return {
+    [TITLE_ENTITY_TYPE]: titleMap,
+    [CHARACTER_ENTITY_TYPE]: characterMap,
+  };
+}
+
+function getEntityMap(entityMaps, entityType = TITLE_ENTITY_TYPE) {
+  return entityMaps[normalizeCatalogEntityType(entityType)] || entityMaps[TITLE_ENTITY_TYPE] || new Map();
 }
 
 function getCurrentUsername(user) {
@@ -457,7 +485,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
     return tierList.poolTitleIds.filter((titleId) => {
       const title = titleById.get(Number(titleId));
       if (!title) return false;
-      const haystack = [title.title_th, title.title_en, title.title_native, title.slug]
+      const haystack = [title.title_th, title.title_en, title.title_native, title.sourceTitleName, title.slug]
         .map((entry) => String(entry || '').toLowerCase())
         .join(' ');
       return haystack.includes(normalizedQuery);
@@ -1321,6 +1349,7 @@ export function TierListBrowsePage() {
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [query, setQuery] = useState('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState('all');
   const [category, setCategory] = useState('all');
   const [sortBy, setSortBy] = useState('popular');
   const [page, setPage] = useState(1);
@@ -1333,7 +1362,7 @@ export function TierListBrowsePage() {
     async function load() {
       setIsLoading(true);
       setLoadError('');
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
       if (cancelled) return;
       const filtered = filterTitlesForAgeGate(catalog, showAdult);
       setTitles(filtered);
@@ -1351,17 +1380,23 @@ export function TierListBrowsePage() {
     return () => { cancelled = true; };
   }, [pick, showAdult, user?.id]);
 
-  const titleById = useMemo(
-    () => new Map(titles.map((title) => [Number(title.id), title])),
+  const entityMaps = useMemo(
+    () => buildEntityMaps(titles),
     [titles]
   );
   const publicTemplates = useMemo(
-    () => library.templates.filter((template) => template.isPublic && hasVisibleTemplateTitles(template, titleById)),
-    [library.templates, titleById]
+    () => library.templates.filter((template) => (
+      template.isPublic &&
+      hasVisibleTemplateTitles(template, getEntityMap(entityMaps, template.entityType))
+    )),
+    [entityMaps, library.templates]
   );
   const publicLists = useMemo(
-    () => library.lists.filter((list) => list.isPublic && hasVisibleTierListTitles(list, titleById)),
-    [library.lists, titleById]
+    () => library.lists.filter((list) => (
+      list.isPublic &&
+      hasVisibleTierListTitles(list, getEntityMap(entityMaps, list.entityType))
+    )),
+    [entityMaps, library.lists]
   );
   const recentCommunityLists = useMemo(
     () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
@@ -1371,12 +1406,13 @@ export function TierListBrowsePage() {
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return publicTemplates.filter((template) => {
+      if (entityTypeFilter !== 'all' && normalizeCatalogEntityType(template.entityType) !== entityTypeFilter) return false;
       if (category !== 'all' && template.category !== category) return false;
       if (!normalizedQuery) return true;
       const haystack = `${template.title} ${template.description}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [category, publicTemplates, query]);
+  }, [category, entityTypeFilter, publicTemplates, query]);
 
   const pagedTemplates = useMemo(() => {
     const sorted = sortTemplates(filteredTemplates, sortBy);
@@ -1414,8 +1450,13 @@ export function TierListBrowsePage() {
     }
   };
 
-  const categoryOptions = ['all', ...new Set(publicTemplates.map((template) => template.category).filter(Boolean))];
-  const hasActiveFilters = category !== 'all' || query.trim().length > 0 || sortBy !== 'popular';
+  const categoryOptions = ['all', ...new Set(
+    publicTemplates
+      .filter((template) => entityTypeFilter === 'all' || normalizeCatalogEntityType(template.entityType) === entityTypeFilter)
+      .map((template) => template.category)
+      .filter(Boolean)
+  )];
+  const hasActiveFilters = entityTypeFilter !== 'all' || category !== 'all' || query.trim().length > 0 || sortBy !== 'popular';
 
   if (loadError && !isLoading) {
     return (
@@ -1447,6 +1488,26 @@ export function TierListBrowsePage() {
       </div>
 
       <div className="container tierlist-browse-filters">
+        <div className="tierlist-browse-cats">
+          {[
+            { value: 'all', label: pick('ทั้งหมด', 'All') },
+            ...ENTITY_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`tierlist-cat-pill${entityTypeFilter === option.value ? ' is-active' : ''}`}
+              onClick={() => {
+                setEntityTypeFilter(option.value);
+                setCategory('all');
+                setPage(1);
+              }}
+              aria-pressed={entityTypeFilter === option.value}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <div className="tierlist-browse-cats">
           {categoryOptions.map((cat) => (
             <button
@@ -1513,6 +1574,7 @@ export function TierListBrowsePage() {
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  setEntityTypeFilter('all');
                   setCategory('all');
                   setQuery('');
                   setSortBy('popular');
@@ -1526,9 +1588,10 @@ export function TierListBrowsePage() {
         ) : (
           <div className="tierlist-browse-grid">
             {pagedTemplates.items.map((template) => {
+              const entityById = getEntityMap(entityMaps, template.entityType);
               const cover = template.titleIds
                 .slice(0, 4)
-                .map((id) => titleById.get(Number(id)))
+                .map((id) => entityById.get(Number(id)))
                 .filter(Boolean);
 
               return (
@@ -1600,7 +1663,7 @@ export function TierListBrowsePage() {
               <TierListCommunityCard
                 key={list.id}
                 list={list}
-                titleById={titleById}
+                titleById={getEntityMap(entityMaps, list.entityType)}
                 pick={pick}
                 primaryLabel={pick('เปิดอันดับ', 'Open ranking')}
                 primaryTo={`/tierlist/play/${list.id}`}
@@ -1650,7 +1713,7 @@ export function TierListTemplatePage() {
       setTemplate(found);
       setIsTemplateLoading(false);
 
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
       if (cancelled) return;
       const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
       setTitles(filteredCatalog);
@@ -1672,9 +1735,10 @@ export function TierListTemplatePage() {
     return () => { cancelled = true; };
   }, [pick, templateId, showAdult, user?.id]);
 
+  const entityMaps = useMemo(() => buildEntityMaps(titles), [titles]);
   const titleById = useMemo(
-    () => new Map(titles.map((title) => [Number(title.id), title])),
-    [titles]
+    () => getEntityMap(entityMaps, template?.entityType),
+    [entityMaps, template?.entityType]
   );
 
   const relatedPublicLists = useMemo(
@@ -1853,6 +1917,7 @@ export function TierListCreatePage() {
   const [templateName, setTemplateName] = useState('');
   const [templateDesc, setTemplateDesc] = useState('');
   const [category, setCategory] = useState('anime');
+  const [entityType, setEntityType] = useState(TITLE_ENTITY_TYPE);
   const [typeFilter, setTypeFilter] = useState('all');
   const [genreFilter, setGenreFilter] = useState(new Set());
   const [titleQuery, setTitleQuery] = useState('');
@@ -1863,7 +1928,7 @@ export function TierListCreatePage() {
     async function load() {
       setIsLoading(true);
       setLoadError('');
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
       if (!cancelled) {
         const filtered = filterTitlesForAgeGate(catalog, showAdult);
         setTitles(filtered);
@@ -1880,9 +1945,14 @@ export function TierListCreatePage() {
     return () => { cancelled = true; };
   }, [pick, showAdult, user?.id]);
 
+  const catalogEntries = useMemo(
+    () => getCatalogEntities(titles, entityType),
+    [entityType, titles]
+  );
+
   const availableGenres = useMemo(() => {
     const counts = new Map();
-    titles.forEach((title) => {
+    catalogEntries.forEach((title) => {
       (title.genres || []).forEach((genre) => {
         counts.set(genre, (counts.get(genre) || 0) + 1);
       });
@@ -1890,28 +1960,28 @@ export function TierListCreatePage() {
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([genre]) => genre);
-  }, [titles]);
+  }, [catalogEntries]);
 
   const filtered = useMemo(() => {
-    let result = typeFilter === 'all' ? titles : titles.filter((title) => title.type === typeFilter);
+    let result = typeFilter === 'all' ? catalogEntries : catalogEntries.filter((title) => title.type === typeFilter);
     if (genreFilter.size > 0) {
       result = result.filter((title) => (title.genres || []).some((genre) => genreFilter.has(genre)));
     }
     const query = titleQuery.trim().toLowerCase();
     if (query) {
       result = result.filter((title) => {
-        const haystack = [title.title_th, title.title_en, title.title_native]
+        const haystack = [title.title_th, title.title_en, title.title_native, title.sourceTitleName]
           .map((entry) => String(entry || '').toLowerCase())
           .join(' ');
         return haystack.includes(query);
       });
     }
     return result.slice(0, 200);
-  }, [titles, typeFilter, genreFilter, titleQuery]);
+  }, [catalogEntries, typeFilter, genreFilter, titleQuery]);
 
   const selectedTitles = useMemo(
-    () => titles.filter((title) => selectedIds.has(Number(title.id))),
-    [titles, selectedIds]
+    () => catalogEntries.filter((title) => selectedIds.has(Number(title.id))),
+    [catalogEntries, selectedIds]
   );
 
   const hasActiveFilters = typeFilter !== 'all' || genreFilter.size > 0 || titleQuery.trim().length > 0;
@@ -1937,6 +2007,7 @@ export function TierListCreatePage() {
         title: templateName.trim() || pick('เทมเพลตใหม่', 'New Template'),
         description: templateDesc.trim(),
         category,
+        entityType,
         isPublic: true,
         isSystem: false,
         defaultRows: ['S', 'A', 'B', 'C', 'D'],
@@ -2014,6 +2085,24 @@ export function TierListCreatePage() {
             onChange={(event) => setCategory(event.target.value)}
             placeholder={pick('เช่น anime / manga / action / romance', 'e.g. anime / manga / action / romance')}
           />
+        </label>
+
+        <label className="tierlist-field">
+          <span>Catalog</span>
+          <select
+            value={entityType}
+            onChange={(event) => {
+              setEntityType(normalizeCatalogEntityType(event.target.value));
+              setSelectedIds(new Set());
+              setTypeFilter('all');
+              setGenreFilter(new Set());
+              setTitleQuery('');
+            }}
+          >
+            {ENTITY_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
         </label>
 
         <div className="tierlist-toolbar-actions">
@@ -2205,7 +2294,7 @@ export function TierListPlayPage() {
         setTierList(quickList);
       }
 
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
       if (cancelled) return;
       const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
       setTitles(filteredCatalog);
@@ -2236,11 +2325,13 @@ export function TierListPlayPage() {
     return () => { cancelled = true; };
   }, [listId, pick, showAdult, user?.id]);
 
-  const titleById = useMemo(
-    () => new Map(titles.map((title) => [Number(title.id), title])),
-    [titles]
-  );
   const sourceTemplate = tierList?.templateId ? findTierTemplate(tierList.templateId, library) : null;
+  const entityMaps = useMemo(() => buildEntityMaps(titles), [titles]);
+  const activeEntityType = normalizeCatalogEntityType(tierList?.entityType || sourceTemplate?.entityType);
+  const titleById = useMemo(
+    () => getEntityMap(entityMaps, activeEntityType),
+    [activeEntityType, entityMaps]
+  );
   const isOwner = Boolean(user?.id && tierList?.ownerUserId && String(user.id) === String(tierList.ownerUserId));
   const canEdit = !tierList?.ownerUserId || isOwner;
   const relatedPublicLists = tierList?.templateId

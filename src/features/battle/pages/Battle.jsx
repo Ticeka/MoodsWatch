@@ -36,19 +36,31 @@ import {
   persistRemotePublicBattleDeck,
 } from '@/features/battle/lib/battleRemote';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import {
+  CHARACTER_ENTITY_TYPE,
+  TITLE_ENTITY_TYPE,
+  getCatalogEntities,
+  getCatalogEntityMeta,
+  getCatalogEntityName,
+  normalizeCatalogEntityType,
+} from '@/shared/lib/catalogEntities';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
 import './Battle.css';
 
 const TYPE_OPTIONS = [
-  { value: 'all', label: 'All titles' },
+  { value: 'all', label: 'All entries' },
   { value: 'anime', label: 'Anime' },
   { value: 'manga', label: 'Manga' },
   { value: 'manhwa', label: 'Manhwa' },
+];
+const ENTITY_TYPE_OPTIONS = [
+  { value: TITLE_ENTITY_TYPE, label: 'Titles' },
+  { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
 ];
 
 const SIZE_OPTIONS = [8, 16, 24, 32, 48];
@@ -58,11 +70,23 @@ const TITLE_DRAG_MIME = 'application/x-battle-title-id';
 const SLOT_DRAG_MIME = 'application/x-battle-slot-index';
 
 function getDisplayName(title) {
-  return title?.title_th || title?.title_en || title?.title_native || 'Unknown title';
+  return getCatalogEntityName(title);
 }
 
 function getMetaLine(title) {
-  return [title?.type, ...(title?.genres || []).slice(0, 2)].filter(Boolean).join(' / ');
+  return getCatalogEntityMeta(title);
+}
+
+function getEntryUnitLabel(entityType, options = {}) {
+  const normalized = normalizeCatalogEntityType(entityType);
+  if (normalized === CHARACTER_ENTITY_TYPE) {
+    return options.singular ? 'character' : 'characters';
+  }
+  return options.singular ? 'title' : 'titles';
+}
+
+function getAnyTypeLabel(entityType) {
+  return normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE ? 'All characters' : 'All titles';
 }
 
 function normalizeBattleText(value) {
@@ -88,6 +112,7 @@ function buildPreparedBattleTitle(title) {
       title.title_en,
       title.title_th,
       title.title_native,
+      title.sourceTitleName,
       title.slug,
     ].map(normalizeBattleText),
   };
@@ -136,8 +161,10 @@ function buildEmptyDeckSlots(size) {
 
 function createManualBattleDeck({ filters, deckName, deckSlots, sourceCount }) {
   const titles = deckSlots.filter(Boolean);
+  const entityType = normalizeCatalogEntityType(filters.entityType);
   const normalizedFilters = {
     ...filters,
+    entityType,
     size: deckSlots.length,
   };
 
@@ -151,7 +178,7 @@ function createManualBattleDeck({ filters, deckName, deckSlots, sourceCount }) {
       .filter(Boolean)
       .sort((a, b) => a - b)
       .join(':'),
-    label: deckName.trim() || `Custom deck ${titles.length}/${deckSlots.length}`,
+    label: deckName.trim() || `Custom ${getEntryUnitLabel(entityType, { singular: true })} deck ${titles.length}/${deckSlots.length}`,
     filters: normalizedFilters,
     sourceCount,
     titles,
@@ -322,6 +349,20 @@ function mergeSessionsByRecency(localSessions = [], remoteSessions = []) {
     .slice(0, RECENT_BATTLE_SESSION_LIMIT);
 }
 
+function getBattleDeckSubtitle(deck) {
+  return [
+    deck?.filters?.type && deck.filters.type !== 'all'
+      ? deck.filters.type
+      : getAnyTypeLabel(deck?.filters?.entityType),
+    deck?.filters?.tag ? `#${deck.filters.tag}` : '',
+    deck?.filters?.mood || '',
+  ].filter(Boolean).join(' / ');
+}
+
+function getBattleDeckMeta(deck) {
+  return `${(deck?.filters?.type || 'all').toUpperCase()} / ${(deck?.titles?.length || 0)} ${getEntryUnitLabel(deck?.filters?.entityType)}`;
+}
+
 function BattlePresetCard({ preset, deck, disabled, onApply }) {
   const { t } = useLanguage();
   const previewTitles = deck?.titles?.slice(0, 3) || [];
@@ -374,11 +415,7 @@ function BattleSavedDeckPresetCard({ deck, disabled, onStart }) {
   const canStart = (deck?.titles?.length || 0) >= 8;
   const ownerProfilePath = buildOwnerProfilePath(deck?.ownerUsername);
   const ownerLabel = deck?.ownerUsername || deck?.ownerDisplayName || '';
-  const subtitle = [
-    deck.filters?.type && deck.filters.type !== 'all' ? deck.filters.type : 'all titles',
-    deck.filters?.tag ? `#${deck.filters.tag}` : '',
-    deck.filters?.mood || '',
-  ].filter(Boolean).join(' / ');
+  const subtitle = getBattleDeckSubtitle(deck);
 
   return (
     <div className={`battle-preset-card glass-heavy is-static ${!canStart ? 'is-disabled' : ''}`}>
@@ -416,7 +453,7 @@ function BattleSavedDeckPresetCard({ deck, disabled, onStart }) {
           </>
         ) : null}
       </p>
-      <span className="battle-preset-meta">{(deck.filters?.type || 'all').toUpperCase()} / {t('battle.titlesReady', { count: deck?.titles?.length || 0 })}</span>
+      <span className="battle-preset-meta">{getBattleDeckMeta(deck)}</span>
       <button
         type="button"
         className="battle-preset-cta"
@@ -434,7 +471,7 @@ function BattleReadyDeckCard({ title, subtitle, deck, badge, disabled, onStart, 
   const resolvedActionLabel = actionLabel || t('battle.startBattle');
   const previewTitles = deck?.titles?.slice(0, 3) || [];
   const canStart = (deck?.titles?.length || 0) >= 8;
-  const metaLabel = `${(deck?.filters?.type || 'all').toUpperCase()} / ${t('battle.titlesReady', { count: deck?.titles?.length || 0 })}`;
+  const metaLabel = getBattleDeckMeta(deck);
 
   if (variant === 'preset') {
     return (
@@ -497,7 +534,7 @@ function BattleReadyDeckCard({ title, subtitle, deck, badge, disabled, onStart, 
         </div>
         {subtitle ? <p>{subtitle}</p> : null}
         <div className="battle-deck-meta-row">
-          <span className="battle-preset-meta">{t('battle.titlesReady', { count: deck?.titles?.length || 0 })}</span>
+          <span className="battle-preset-meta">{deck?.titles?.length || 0} {getEntryUnitLabel(deck?.filters?.entityType)} ready</span>
           <span className={`battle-visibility-pill ${deck?.isPublic ? 'is-public' : 'is-private'}`}>
             {deck?.isPublic ? <Globe size={12} /> : <Lock size={12} />}
             {deck?.isPublic ? t('battle.publicDeck') : t('battle.privateDeck')}
@@ -560,7 +597,6 @@ export function BattleHub() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const { prefs } = useProfilePreferences();
   const { hiddenTitleIds } = useHiddenTitles();
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
@@ -577,7 +613,7 @@ export function BattleHub() {
       setIsLoading(true);
       setError('');
       try {
-        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
         const remoteSessions = user?.id
           ? await fetchRemoteBattleSessions(user.id).catch(() => [])
           : [];
@@ -622,6 +658,14 @@ export function BattleHub() {
     () => titles.filter((title) => !hiddenTitleIds.includes(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
     [hiddenTitleIds, showAdult, titles]
   );
+  const visibleCharacterCatalog = useMemo(
+    () => getCatalogEntities(visibleCatalogTitles, CHARACTER_ENTITY_TYPE),
+    [visibleCatalogTitles]
+  );
+  const titleLookup = useMemo(
+    () => new Map(titles.map((title) => [Number(title.id), title])),
+    [titles]
+  );
   const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
   const presets = useMemo(() => getBattlePresets(), []);
   const presetDecks = useMemo(
@@ -654,8 +698,9 @@ export function BattleHub() {
       }
     });
 
-    return mergedDecks.filter((deck) => (deck?.titles?.length || 0) >= 8);
-  }, [publicDecks, readySavedDecks]);
+    const visibleDecks = filterDecksForAgeGate(mergedDecks, showAdult, titleLookup);
+    return visibleDecks.filter((deck) => (deck?.titles?.length || deck?.titleIds?.length || 0) >= 8);
+  }, [publicDecks, readySavedDecks, showAdult, titleLookup]);
 
   const startBattle = async (deck) => {
     if ((deck?.titles?.length || 0) < 8) {
@@ -664,7 +709,9 @@ export function BattleHub() {
     }
 
     const session = saveBattleSession(createBattleSession(deck, {
-      catalogCount: visibleCatalogTitles.length,
+      catalogCount: normalizeCatalogEntityType(deck?.filters?.entityType) === CHARACTER_ENTITY_TYPE
+        ? visibleCharacterCatalog.length
+        : visibleCatalogTitles.length,
       hiddenExcludedCount,
       excludesAdultContent: !showAdult,
     }));
@@ -826,7 +873,6 @@ export function BattleBuilderPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const { prefs } = useProfilePreferences();
   const { hiddenTitleIds } = useHiddenTitles();
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
@@ -836,6 +882,7 @@ export function BattleBuilderPage() {
   const [deckName, setDeckName] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [filters, setFilters] = useState({
+    entityType: TITLE_ENTITY_TYPE,
     type: 'all',
     tag: '',
     mood: '',
@@ -858,7 +905,7 @@ export function BattleBuilderPage() {
       setIsLoading(true);
       setError('');
       try {
-        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
         if (!cancelled) {
           setTitles(allTitles);
         }
@@ -887,11 +934,19 @@ export function BattleBuilderPage() {
     () => titles.filter((title) => !hiddenTitleIdSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
     [hiddenTitleIdSet, showAdult, titles]
   );
+  const visibleCatalogEntries = useMemo(
+    () => getCatalogEntities(visibleCatalogTitles, filters.entityType),
+    [filters.entityType, visibleCatalogTitles]
+  );
+  const allCatalogEntries = useMemo(
+    () => getCatalogEntities(titles, filters.entityType),
+    [filters.entityType, titles]
+  );
   const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
-  const filterOptions = useMemo(() => collectBattleFilters(visibleCatalogTitles), [visibleCatalogTitles]);
+  const filterOptions = useMemo(() => collectBattleFilters(visibleCatalogEntries), [visibleCatalogEntries]);
   const preparedCatalogTitles = useMemo(
-    () => visibleCatalogTitles.map(buildPreparedBattleTitle),
-    [visibleCatalogTitles]
+    () => visibleCatalogEntries.map(buildPreparedBattleTitle),
+    [visibleCatalogEntries]
   );
   const filteredCatalogTitles = useMemo(
     () => sortBattleTitles(
@@ -929,12 +984,12 @@ export function BattleBuilderPage() {
     [deckSlots]
   );
   const titleById = useMemo(
-    () => new Map(visibleCatalogTitles.map((title) => [String(title.id), title])),
-    [visibleCatalogTitles]
+    () => new Map(visibleCatalogEntries.map((title) => [String(title.id), title])),
+    [visibleCatalogEntries]
   );
   const titleByAnyId = useMemo(
-    () => new Map(titles.map((title) => [String(title.id), title])),
-    [titles]
+    () => new Map(allCatalogEntries.map((title) => [String(title.id), title])),
+    [allCatalogEntries]
   );
 
   useEffect(() => {
@@ -950,13 +1005,14 @@ export function BattleBuilderPage() {
   }, [editDeckId]);
 
   useEffect(() => {
-    if (!editingDeck || hasLoadedEditDeck || titles.length === 0) {
+    if (!editingDeck || hasLoadedEditDeck || allCatalogEntries.length === 0) {
       return;
     }
 
     const nextSize = Number(editingDeck.filters?.size || editingDeck.titles?.length || 16);
     const normalizedSize = Number.isFinite(nextSize) && nextSize > 0 ? nextSize : 16;
     const nextFilters = {
+      entityType: normalizeCatalogEntityType(editingDeck.filters?.entityType),
       type: editingDeck.filters?.type || 'all',
       tag: editingDeck.filters?.tag || '',
       mood: editingDeck.filters?.mood || '',
@@ -978,7 +1034,7 @@ export function BattleBuilderPage() {
     setDeckSlots(nextSlots);
     setActiveSlotIndex(0);
     setHasLoadedEditDeck(true);
-  }, [editingDeck, hasLoadedEditDeck, titleByAnyId, titles.length]);
+  }, [allCatalogEntries.length, editingDeck, hasLoadedEditDeck, titleByAnyId]);
 
   useEffect(() => {
     setDeckSlots((current) => {
@@ -1002,7 +1058,7 @@ export function BattleBuilderPage() {
 
   useEffect(() => {
     setCatalogPage(0);
-  }, [deferredFilters, visibleCatalogTitles.length]);
+  }, [deferredFilters, visibleCatalogEntries.length]);
 
   useEffect(() => {
     if (catalogPage > totalCatalogPages - 1) {
@@ -1050,6 +1106,21 @@ export function BattleBuilderPage() {
   const handleClearDeck = () => {
     setDeckSlots(buildEmptyDeckSlots(filters.size));
     setActiveSlotIndex(0);
+  };
+
+  const handleEntityTypeChange = (nextEntityType) => {
+    const normalizedEntityType = normalizeCatalogEntityType(nextEntityType);
+    setFilters((current) => ({
+      ...current,
+      entityType: normalizedEntityType,
+      type: 'all',
+      tag: '',
+      mood: '',
+      query: '',
+    }));
+    setDeckSlots(buildEmptyDeckSlots(filters.size));
+    setActiveSlotIndex(0);
+    setCatalogPage(0);
   };
 
   const handleRemoveFromSlot = (slotIndex) => {
@@ -1103,7 +1174,7 @@ export function BattleBuilderPage() {
 
   const saveDeck = async ({ startAfterSave = false } = {}) => {
     if (battleDeck.titles.length < 8) {
-      toast.error(t('battle.onlyTitlesMatch', { count: battleDeck.titles.length }));
+      toast.error(`Only ${battleDeck.titles.length} ${getEntryUnitLabel(filters.entityType)} match right now.`);
       return;
     }
 
@@ -1148,7 +1219,7 @@ export function BattleBuilderPage() {
 
       if (startAfterSave) {
         const session = saveBattleSession(createBattleSession(storedDeck, {
-          catalogCount: visibleCatalogTitles.length,
+          catalogCount: visibleCatalogEntries.length,
           hiddenExcludedCount,
           excludesAdultContent: !showAdult,
         }));
@@ -1183,11 +1254,11 @@ export function BattleBuilderPage() {
         <div className="battle-hero-panel glass-heavy">
           <div className="battle-hero-stat">
             <strong>{filledSlotCount}</strong>
-            <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.titlesInDeck')}</span>
+            <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {getEntryUnitLabel(filters.entityType)} in deck</span>
           </div>
           <div className="battle-hero-stat">
-            <strong>{visibleCatalogTitles.length}</strong>
-            <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.visibleTitles')}</span>
+            <strong>{visibleCatalogEntries.length}</strong>
+            <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> visible {getEntryUnitLabel(filters.entityType)}</span>
           </div>
           <div className="battle-hero-stat">
             <strong>{hiddenExcludedCount}</strong>
@@ -1229,10 +1300,21 @@ export function BattleBuilderPage() {
             </label>
 
             <label className="battle-field">
+              <span>Catalog</span>
+              <select value={filters.entityType} onChange={(event) => handleEntityTypeChange(event.target.value)}>
+                {ENTITY_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="battle-field">
               <span>{t('battle.type')}</span>
               <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}>
                 {TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>
+                    {option.value === 'all' ? getAnyTypeLabel(filters.entityType) : option.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -1273,7 +1355,7 @@ export function BattleBuilderPage() {
               <span>{t('battle.deckSize')}</span>
               <select value={filters.size} onChange={(event) => setFilters((current) => ({ ...current, size: Number(event.target.value) }))}>
                 {SIZE_OPTIONS.map((value) => (
-                  <option key={value} value={value}>{value} titles</option>
+                  <option key={value} value={value}>{value} {getEntryUnitLabel(filters.entityType)}</option>
                 ))}
               </select>
             </label>
@@ -1368,7 +1450,7 @@ export function BattleBuilderPage() {
             <div className="battle-builder-preview glass-heavy">
               <div className="battle-preview-head">
                 <strong>{t('battle.filteredCatalog')}</strong>
-                <span>{t('battle.titlesFound', { count: filteredCatalogTitles.length, sourceCount: visibleCatalogTitles.length })}</span>
+                <span>{filteredCatalogTitles.length} / {visibleCatalogEntries.length} {getEntryUnitLabel(filters.entityType)}</span>
               </div>
               {isLoading ? (
                 <div className="battle-catalog-grid">
@@ -1377,7 +1459,7 @@ export function BattleBuilderPage() {
               ) : error ? (
                 <p>{error}</p>
               ) : filteredCatalogTitles.length === 0 ? (
-                <p>{t('battle.noTitlesMatch')}</p>
+                <p>No {getEntryUnitLabel(filters.entityType)} match the current filters.</p>
               ) : (
                 <div className="battle-catalog-grid">
                   {previewCatalogTitles.map((title) => {
@@ -1448,11 +1530,15 @@ export function BattleDeckLibraryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { showAdult } = useAgeGate();
   const [savedDecks, setSavedDecks] = useState(() => getStoredBattleDecks());
 
   const readySavedDecks = useMemo(
-    () => savedDecks.filter((deck) => (deck?.titles?.length || 0) >= 8),
-    [savedDecks]
+    () => filterDecksForAgeGate(
+      savedDecks.filter((deck) => (deck?.titles?.length || 0) >= 8),
+      showAdult
+    ),
+    [savedDecks, showAdult]
   );
 
   const privateDecks = useMemo(
@@ -1556,11 +1642,7 @@ export function BattleDeckLibraryPage() {
               <BattleReadyDeckCard
                 key={deck.id}
                 title={deck.label}
-                subtitle={[
-                  deck.filters?.type && deck.filters.type !== 'all' ? deck.filters.type : 'all titles',
-                  deck.filters?.tag ? `#${deck.filters.tag}` : '',
-                  deck.filters?.mood || '',
-                ].filter(Boolean).join(' / ')}
+                subtitle={getBattleDeckSubtitle(deck)}
                 deck={deck}
                 badge={t('battle.customDeck')}
                 className="battle-deck-card-compact"
@@ -1600,11 +1682,7 @@ export function BattleDeckLibraryPage() {
               <div key={deck.id} className="battle-deck-preset-wrap">
                 <BattleReadyDeckCard
                   title={deck.label}
-                  subtitle={[
-                    deck.filters?.type && deck.filters.type !== 'all' ? deck.filters.type : 'all titles',
-                    deck.filters?.tag ? `#${deck.filters.tag}` : '',
-                    deck.filters?.mood || '',
-                  ].filter(Boolean).join(' / ')}
+                  subtitle={getBattleDeckSubtitle(deck)}
                   deck={deck}
                   badge={t('battle.publicDeck')}
                   className="battle-deck-card-compact"
