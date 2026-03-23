@@ -1,3 +1,5 @@
+import { normalizeTrailer } from '@/shared/lib/trailers';
+
 const CANONICAL_TITLE_LIST_SELECT = `
   id,
   slug,
@@ -25,6 +27,10 @@ const CANONICAL_TITLE_LIST_SELECT = `
   favorites_count,
   hashtag,
   trailer_url,
+  trailer_site,
+  trailer_video_id,
+  trailer_thumbnail_url,
+  trailer_source,
   start_date,
   end_date,
   editorial_score,
@@ -55,6 +61,11 @@ const CANONICAL_TITLE_BROWSE_SELECT = `
   banner_image,
   avg_score,
   popularity_score,
+  trailer_url,
+  trailer_site,
+  trailer_video_id,
+  trailer_thumbnail_url,
+  trailer_source,
   aliases:title_aliases(alias, language_code, alias_type, is_primary),
   genres:title_genres(genre_name),
   tags:title_tags(tag_name, weight),
@@ -157,6 +168,8 @@ export function mapCanonicalTitle(record) {
     !officialPlatforms.some((platform) => platform.name === fallback.name)
   ));
 
+  const trailer = normalizeTrailer(record);
+
   return {
     id: record.id,
     slug: record.slug,
@@ -188,6 +201,11 @@ export function mapCanonicalTitle(record) {
     favorites_count: record.favorites_count ?? null,
     hashtag: record.hashtag || null,
     trailer_url: record.trailer_url || null,
+    trailer_site: trailer?.site || null,
+    trailer_video_id: trailer?.videoId || null,
+    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
+    trailer_source: trailer?.source || null,
+    trailer,
     start_date: record.start_date || null,
     end_date: record.end_date || null,
     genres: record.genres?.map((genre) => genre.genre_name) || [],
@@ -222,6 +240,11 @@ export function mapCanonicalRecordToAdminForm(record) {
     duration_minutes: title.duration ?? '',
     cover_image: title.cover || '',
     banner_image: title.banner || '',
+    trailer_url: title.trailer?.url || '',
+    trailer_site: title.trailer?.site || '',
+    trailer_video_id: title.trailer?.videoId || '',
+    trailer_thumbnail_url: title.trailer?.thumbnailUrl || '',
+    trailer_source: title.trailer?.source || '',
     popularity: title.popularity ?? 0,
     is_adult: Boolean(title.is_adult),
     origin_country: record.origin_country || '',
@@ -231,6 +254,7 @@ export function mapCanonicalRecordToAdminForm(record) {
 
 export function buildCanonicalPayload(formData) {
   const { type, subtype } = toCanonicalType(formData.type);
+  const trailer = normalizeTrailer(formData);
 
   return {
     canonical_title: formData.title_en?.trim(),
@@ -245,6 +269,11 @@ export function buildCanonicalPayload(formData) {
     duration_minutes: formData.duration_minutes === '' ? null : Number(formData.duration_minutes),
     cover_image: formData.cover_image?.trim() || null,
     banner_image: formData.banner_image?.trim() || null,
+    trailer_url: trailer?.url || null,
+    trailer_site: trailer?.site || null,
+    trailer_video_id: trailer?.videoId || null,
+    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
+    trailer_source: formData.trailer_source?.trim() || trailer?.source || null,
     synopsis: formData.synopsis?.trim() || null,
     avg_score: formData.average_score === '' ? null : Number(formData.average_score),
     popularity_score: formData.popularity === '' ? null : Number(formData.popularity),

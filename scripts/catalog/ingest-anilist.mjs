@@ -47,6 +47,14 @@ function buildTrailerUrl(trailer) {
   return null;
 }
 
+function buildTrailerThumbnailUrl(trailer) {
+  if (trailer?.thumbnail) return trailer.thumbnail;
+  if (trailer?.site === 'youtube' && trailer?.id) {
+    return `https://i.ytimg.com/vi/${trailer.id}/hqdefault.jpg`;
+  }
+  return null;
+}
+
 function normalizeAniListMedia(media) {
   const mediaType = media.type === 'ANIME' ? 'anime' : 'manga';
   const { type, subtype } = inferSubtype({
@@ -85,6 +93,10 @@ function normalizeAniListMedia(media) {
       season_year: media.seasonYear || null,
       hashtag: media.hashtag || null,
       trailer_url: buildTrailerUrl(media.trailer),
+      trailer_site: media.trailer?.site?.toLowerCase?.() || null,
+      trailer_video_id: media.trailer?.id || null,
+      trailer_thumbnail_url: buildTrailerThumbnailUrl(media.trailer),
+      trailer_source: media.trailer?.id ? 'anilist' : null,
       start_date: buildDate(media.startDate),
       end_date: buildDate(media.endDate),
       raw_payload: media,

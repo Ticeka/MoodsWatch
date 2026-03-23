@@ -48,6 +48,14 @@ function applyCatalogFilters(query, filters) {
     nextQuery = nextQuery.lte('avg_score', Number(filters.scoreMax));
   }
 
+  if (filters.hasTrailer === 'yes') {
+    nextQuery = nextQuery.or('trailer_url.not.is.null,trailer_video_id.not.is.null');
+  }
+
+  if (filters.hasTrailer === 'no') {
+    nextQuery = nextQuery.is('trailer_url', null).is('trailer_video_id', null);
+  }
+
   return nextQuery;
 }
 
@@ -180,6 +188,7 @@ export function AdminTitles() {
     originCountry: 'all',
     isAdult: 'all',
     hasLinks: 'all',
+    hasTrailer: 'all',
     yearFrom: '',
     yearTo: '',
     scoreMin: '',
@@ -299,6 +308,7 @@ export function AdminTitles() {
     filters.originCountry,
     filters.isAdult,
     filters.hasLinks,
+    filters.hasTrailer,
     filters.yearFrom,
     filters.yearTo,
     filters.scoreMin,
@@ -341,6 +351,7 @@ export function AdminTitles() {
       filters.originCountry,
       filters.isAdult,
       filters.hasLinks,
+      filters.hasTrailer,
       filters.yearFrom,
       filters.yearTo,
       filters.scoreMin,
@@ -361,6 +372,7 @@ export function AdminTitles() {
       originCountry: 'all',
       isAdult: 'all',
       hasLinks: 'all',
+      hasTrailer: 'all',
       yearFrom: '',
       yearTo: '',
       scoreMin: '',
@@ -456,6 +468,14 @@ export function AdminTitles() {
             <option value="all">{t('admin.titles.linkAll')}</option>
             <option value="yes">{t('admin.titles.linkHas')}</option>
             <option value="no">{t('admin.titles.linkNone')}</option>
+          </select>
+        </label>
+        <label>
+          <span className="form-label">{t('admin.titles.filterTrailer')}</span>
+          <select className="form-select" value={filters.hasTrailer} onChange={handleFilterChange('hasTrailer')}>
+            <option value="all">{t('admin.titles.trailerAll')}</option>
+            <option value="yes">{t('admin.titles.trailerHas')}</option>
+            <option value="no">{t('admin.titles.trailerNone')}</option>
           </select>
         </label>
         <label>
@@ -561,6 +581,7 @@ export function AdminTitles() {
                 <th>{t('admin.titles.colTitle')}</th>
                 <th style={{ width: '110px' }}>{t('admin.titles.colType')}</th>
                 <th style={{ width: '160px' }}>{t('admin.titles.colYearStatus')}</th>
+                <th style={{ width: '130px' }}>{t('admin.titles.colTrailer')}</th>
                 <th style={{ width: '90px' }}>{t('admin.titles.colScore')}</th>
                 <th style={{ width: '160px', textAlign: 'right' }}>{t('admin.titles.colActions')}</th>
               </tr>
@@ -600,6 +621,16 @@ export function AdminTitles() {
                       <div>{title.year || '-'}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
                         {title.status || t('admin.titles.statusUnknown')}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'grid', gap: '0.2rem' }}>
+                        <strong style={{ color: title.trailer?.watchUrl ? 'var(--success)' : 'var(--text-secondary)' }}>
+                          {title.trailer?.watchUrl ? t('admin.titles.trailerReady') : t('admin.titles.trailerMissing')}
+                        </strong>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+                          {title.trailer?.site || t('admin.titles.trailerUnknown')}
+                        </div>
                       </div>
                     </td>
                     <td>

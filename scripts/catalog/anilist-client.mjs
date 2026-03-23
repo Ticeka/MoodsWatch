@@ -82,6 +82,7 @@ const MEDIA_QUERY = `
         trailer {
           id
           site
+          thumbnail
         }
         nextAiringEpisode {
           airingAt

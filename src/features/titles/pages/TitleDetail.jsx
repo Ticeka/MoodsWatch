@@ -10,13 +10,14 @@ import { useProfilePreferences } from '@/features/profile/hooks/useProfilePrefer
 import { useTopTitles } from '@/features/profile/hooks/useTopTitles';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { buildContentReportPayload, CONTENT_REPORT_ISSUE_OPTIONS } from '@/shared/lib/contentReports';
+import { normalizeTrailer } from '@/shared/lib/trailers';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, Flag, Link as LinkIcon, Plus, Star, Trash2, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
 import './TitleDetail.css';
 
@@ -67,6 +68,7 @@ export function TitleDetail() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [canScrollCastPrev, setCanScrollCastPrev] = useState(false);
   const [canScrollCastNext, setCanScrollCastNext] = useState(false);
+  const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
   const similarRailRef = useRef(null);
   const castRailRef = useRef(null);
 
@@ -77,6 +79,7 @@ export function TitleDetail() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    setIsTrailerPlaying(false);
   }, [slug]);
 
   useEffect(() => {
@@ -246,6 +249,7 @@ export function TitleDetail() {
   const shouldTruncate = rawSynopsis.length > 300;
   const displaySynopsis = shouldTruncate && !showFullSynopsis ? `${rawSynopsis.slice(0, 300)}...` : rawSynopsis;
   const primaryTitle = title.title_th || title.title_en;
+  const trailerTitle = primaryTitle || title.title_romaji || title.title_native || title.slug;
   const secondaryTitle = [title.title_en, title.title_native]
     .filter(Boolean)
     .filter((entry, index, list) => list.indexOf(entry) === index)
@@ -259,6 +263,7 @@ export function TitleDetail() {
       return groups;
     }, [])
     : [];
+  const trailer = normalizeTrailer(title);
 
   const statusOption = status ? LIST_STATUS_OPTIONS.find((option) => option.id === status) : null;
   const progressEpisode = watchlistItem?.progressEpisode ?? '';
@@ -752,6 +757,93 @@ export function TitleDetail() {
         </div>
 
         {/* ─── Cast & Staff Tabbed Section ─── */}
+        {trailer && (
+          <section className="detail-trailer-section">
+            <div className="detail-trailer-head">
+              <div>
+                <h3 className="detail-section-heading">{t('titleDetail.metaTrailer')}</h3>
+                <p className="detail-trailer-subtitle">{t('titleDetail.trailerHint')}</p>
+              </div>
+              {trailer.watchUrl && (
+                <a
+                  href={trailer.watchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="detail-trailer-link"
+                >
+                  <ExternalLink size={14} />
+                  {t('titleDetail.openTrailer')}
+                </a>
+              )}
+            </div>
+
+            <div className="detail-trailer-card">
+              {isTrailerPlaying && trailer.embedUrl ? (
+                <div className="detail-trailer-frame-wrap">
+                  <iframe
+                    className="detail-trailer-frame"
+                    src={trailer.embedUrl}
+                    title={t('titleDetail.trailerFrameTitle', { title: trailerTitle })}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+              ) : trailer.embedUrl ? (
+                <button
+                  type="button"
+                  className="detail-trailer-launcher"
+                  onClick={() => setIsTrailerPlaying(true)}
+                  aria-label={t('titleDetail.playTrailerForTitle', { title: trailerTitle })}
+                >
+                  {trailer.thumbnailUrl ? (
+                    <img
+                      src={trailer.thumbnailUrl}
+                      alt={t('titleDetail.trailerPreviewAlt', { title: trailerTitle })}
+                      className="detail-trailer-poster"
+                    />
+                  ) : (
+                    <div className="detail-trailer-poster detail-trailer-poster--empty" aria-hidden="true" />
+                  )}
+                  <div className="detail-trailer-overlay">
+                    <span className="detail-trailer-play">
+                      <PlayCircle size={20} />
+                      {t('titleDetail.playTrailer')}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <a
+                  href={trailer.watchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="detail-trailer-launcher detail-trailer-launcher--external"
+                >
+                  {trailer.thumbnailUrl ? (
+                    <img
+                      src={trailer.thumbnailUrl}
+                      alt={t('titleDetail.trailerPreviewAlt', { title: trailerTitle })}
+                      className="detail-trailer-poster"
+                    />
+                  ) : (
+                    <div className="detail-trailer-poster detail-trailer-poster--empty" aria-hidden="true" />
+                  )}
+                  <div className="detail-trailer-overlay">
+                    <span className="detail-trailer-play">
+                      <ExternalLink size={20} />
+                      {t('titleDetail.openTrailer')}
+                    </span>
+                  </div>
+                </a>
+              )}
+
+              <div className="detail-trailer-meta">
+                {trailer.site ? <span>{t('titleDetail.trailerSiteMeta', { site: trailer.site })}</span> : null}
+                {trailer.source ? <span>{t('titleDetail.trailerSourceMeta', { source: trailer.source })}</span> : null}
+              </div>
+            </div>
+          </section>
+        )}
+
         {(title.characters?.length > 0 || title.staff?.length > 0) && (
           <section className="detail-cast-section">
             <div className="cast-header">

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '@/shared/lib/supabase';
 import { getAutoDerivableMoods } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { normalizeTrailer } from '@/shared/lib/trailers';
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -38,6 +39,39 @@ function deriveMoodIds(parts) {
     .filter((mood) => (mood.tags || []).some((tag) => hay.includes(tag.toLowerCase())))
     .map((mood) => mood.id);
 }
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildAniListTrailerPatch(media) {
+  const trailer = normalizeTrailer({
+    trailer_url: media?.trailer?.id
+      ? media.trailer.site === 'youtube'
+        ? `https://www.youtube.com/watch?v=${media.trailer.id}`
+        : media.trailer.site === 'dailymotion'
+          ? `https://www.dailymotion.com/video/${media.trailer.id}`
+          : null
+      : null,
+    trailer_site: media?.trailer?.site || null,
+    trailer_video_id: media?.trailer?.id || null,
+    trailer_thumbnail_url: media?.trailer?.thumbnail || null,
+    trailer_source: media?.trailer?.id ? 'anilist' : null,
+  });
+
+  return {
+    trailer_url: trailer?.url || null,
+    trailer_site: trailer?.site || null,
+    trailer_video_id: trailer?.videoId || null,
+    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
+    trailer_source: trailer?.source || 'anilist',
+  };
+}
+
+function getMediaDisplayTitle(media) {
+  return media?.title?.english || media?.title?.romaji || media?.title?.native || `AniList #${media?.id ?? ''}`;
+}
+
 function normalizeMedia(media) {
   const mediaType = media.type === 'ANIME' ? 'anime' : 'manga';
   const { type, subtype } = inferSubtype({
@@ -62,6 +96,7 @@ function normalizeMedia(media) {
       cover_image: media.coverImage?.extraLarge || media.coverImage?.large || null,
       banner_image: media.bannerImage || null,
       synopsis: media.description || null, avg_score: media.averageScore || null,
+      ...buildAniListTrailerPatch(media),
       popularity_score: media.popularity || null, last_synced_at: new Date().toISOString(),
     },
     aliases: [
@@ -76,6 +111,7 @@ function normalizeMedia(media) {
     sourceRef: {
       provider: 'anilist', external_id: String(media.id), external_url: media.siteUrl || null,
       source_priority: media.type === 'ANIME' ? 10 : subtype === 'manhwa' ? 20 : 10,
+      raw_payload: media,
     },
   };
 }
@@ -83,7 +119,21 @@ function normalizeMedia(media) {
 // ─── AniList ─────────────────────────────────────────────────────────────────
 
 const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
-const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank}}}}`;
+const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank} trailer{id site thumbnail}}}}`;
+const ANILIST_TRAILER_GQL = `query($id:Int!){Media(id:$id){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}`;
+
+async function fetchAniListGraphQL(query, variables, signal) {
+  const res = await fetch(ANILIST_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ query, variables }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`AniList ${res.status}`);
+  const json = await res.json();
+  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
+  return json.data;
+}
 
 async function fetchAniListPage(vars, signal) {
   const res = await fetch(ANILIST_URL, {
@@ -113,6 +163,11 @@ async function fetchAniListCharStaff(anilistId, signal) {
   const json = await res.json();
   if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
   return json.data?.Media || null;
+}
+
+async function fetchAniListTrailerById(anilistId, signal) {
+  const data = await fetchAniListGraphQL(ANILIST_TRAILER_GQL, { id: anilistId }, signal);
+  return data?.Media || null;
 }
 
 // ─── Jikan (MyAnimeList) ──────────────────────────────────────────────────────
@@ -345,6 +400,23 @@ const STATUS_OPTIONS = [
   { value: 'CANCELLED', labelKey: 'admin.fetch.statusCancelled' },
 ];
 
+function matchesTrailerCategory(titleRecord, category) {
+  if (category === 'all') return true;
+
+  const subtype = String(titleRecord?.subtype || '').toLowerCase();
+  const type = String(titleRecord?.type || '').toLowerCase();
+
+  if (category === 'anime') {
+    return subtype === 'anime' || type === 'anime';
+  }
+
+  if (category === 'manga') {
+    return subtype === 'manga' || (type === 'manga' && !subtype);
+  }
+
+  return subtype === category;
+}
+
 const LOG_ICON = {
   imported: <CheckCircle2 size={12} />,
   updated:  <RefreshCw size={12} />,
@@ -381,13 +453,13 @@ function Chip({ active, onClick, disabled, children, color }) {
 }
 
 // ─── Number stepper ───────────────────────────────────────────────────────────
-function Stepper({ value, onChange, min, max, disabled }) {
+function Stepper({ value, onChange, min, max, disabled, step = 1 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--border-default)', overflow: 'hidden', background: 'var(--bg-primary)' }}>
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={disabled || value <= min}
+      <button type="button" onClick={() => onChange(Math.max(min, value - step))} disabled={disabled || value <= min}
         style={{ width: 36, height: 38, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 700 }}>−</button>
       <span style={{ minWidth: 32, textAlign: 'center', fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{value}</span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={disabled || value >= max}
+      <button type="button" onClick={() => onChange(Math.min(max, value + step))} disabled={disabled || value >= max}
         style={{ width: 36, height: 38, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 700 }}>+</button>
     </div>
   );
@@ -458,6 +530,7 @@ export function AdminFetch() {
   const [activeTab, setActiveTab] = useState('titles');
   const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
   const [jikanConfig, setJikanConfig] = useState({ sort: 'score', pages: 3, perPage: 25 });
+  const [trailerConfig, setTrailerConfig] = useState({ onlyMissing: true, category: 'all', limit: 100, delayMs: 1200 });
   const abortRef = useRef(null);
   const logContainerRef = useRef(null);
 
@@ -491,6 +564,15 @@ export function AdminFetch() {
       ...(config.minPopularity ? { popularityGreater: Number(config.minPopularity) } : {}),
     };
   }, [config]);
+
+  const trailerCategoryOptions = [
+    { value: 'all', label: t('admin.titles.allSubtypes') },
+    { value: 'anime', label: t('admin.titles.subtypeAnime') },
+    { value: 'manga', label: t('admin.titles.subtypeManga') },
+    { value: 'manhwa', label: t('admin.titles.subtypeManhwa') },
+    { value: 'manhua', label: t('admin.titles.subtypeManhua') },
+    { value: 'webtoon', label: t('admin.titles.subtypeWebtoon') },
+  ];
 
   const handleFetch = async () => {
     abortRef.current = new AbortController();
@@ -619,6 +701,150 @@ export function AdminFetch() {
     }
   };
 
+  const handleTrailerBackfill = async () => {
+    if (!supabase) {
+      toast.error(t('admin.fetch.trailers.supabaseUnavailable'));
+      return;
+    }
+
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress(null);
+
+    try {
+      addLog(
+        'info',
+        t('admin.fetch.trailers.logStart', {
+          mode: trailerConfig.onlyMissing
+            ? t('admin.fetch.trailers.modeMissing')
+            : t('admin.fetch.trailers.modeRefresh'),
+          delayMs: trailerConfig.delayMs,
+        })
+      );
+
+      let query = supabase
+        .from('title_source_refs')
+        .select('canonical_title_id, external_id, canonical_titles!inner(id, canonical_title, slug, type, subtype, trailer_url, trailer_video_id)')
+        .eq('provider', 'anilist')
+        .order('canonical_title_id', { ascending: true });
+
+      if (trailerConfig.onlyMissing) {
+        query = query.is('canonical_titles.trailer_url', null).is('canonical_titles.trailer_video_id', null);
+      }
+
+      const { data: refRows, error: refError } = await query;
+      if (refError) throw refError;
+
+      let targets = (refRows || []).filter((target) => {
+        const titleRecord = Array.isArray(target.canonical_titles)
+          ? target.canonical_titles[0]
+          : target.canonical_titles;
+
+        return matchesTrailerCategory(titleRecord, trailerConfig.category);
+      });
+      if (trailerConfig.limit > 0) {
+        targets = targets.slice(0, trailerConfig.limit);
+      }
+
+      addLog('info', t('admin.fetch.trailers.logTargets', { count: targets.length }));
+      setProgress({ total: targets.length, done: 0, updated: 0, noTrailer: 0, errors: 0 });
+
+      if (targets.length === 0) {
+        addLog('success', t('admin.fetch.trailers.logNothingToDo'));
+        toast.success(t('admin.fetch.trailers.nothingToDo'));
+        return;
+      }
+
+      for (const target of targets) {
+        if (abortRef.current.signal.aborted) break;
+
+        const titleRecord = Array.isArray(target.canonical_titles)
+          ? target.canonical_titles[0]
+          : target.canonical_titles;
+        const fallbackTitle = titleRecord?.canonical_title || `#${target.canonical_title_id}`;
+
+        try {
+          const media = await fetchAniListTrailerById(Number(target.external_id), abortRef.current.signal);
+
+          const { error: sourceRefError } = await supabase.from('title_source_refs').upsert(
+            {
+              canonical_title_id: target.canonical_title_id,
+              provider: 'anilist',
+              external_id: String(target.external_id),
+              external_url: media?.siteUrl || null,
+              source_priority: titleRecord?.type === 'anime' ? 10 : 20,
+              raw_payload: media,
+              last_synced_at: new Date().toISOString(),
+              fetched_at: new Date().toISOString(),
+            },
+            { onConflict: 'provider,external_id' },
+          );
+          if (sourceRefError && sourceRefError.code !== 'PGRST205') throw sourceRefError;
+
+          if (!media?.trailer?.id) {
+            setProgress((current) => ({
+              ...current,
+              done: current.done + 1,
+              noTrailer: current.noTrailer + 1,
+            }));
+            addLog('skipped', t('admin.fetch.trailers.logNoTrailer', { title: getMediaDisplayTitle(media) || fallbackTitle }));
+          } else {
+            const patch = buildAniListTrailerPatch(media);
+            const { error: updateError } = await supabase
+              .from('canonical_titles')
+              .update({
+                ...patch,
+                last_synced_at: new Date().toISOString(),
+              })
+              .eq('id', target.canonical_title_id);
+            if (updateError) throw updateError;
+
+            setProgress((current) => ({
+              ...current,
+              done: current.done + 1,
+              updated: current.updated + 1,
+            }));
+            addLog(
+              'updated',
+              t('admin.fetch.trailers.logUpdated', {
+                title: getMediaDisplayTitle(media) || fallbackTitle,
+                site: patch.trailer_site || 'external',
+              })
+            );
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') break;
+          setProgress((current) => ({
+            ...current,
+            done: current.done + 1,
+            errors: current.errors + 1,
+          }));
+          addLog('error', `[${fallbackTitle}] ${error.message}`);
+        }
+
+        if (!abortRef.current.signal.aborted && trailerConfig.delayMs > 0) {
+          await sleep(trailerConfig.delayMs);
+        }
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', t('admin.fetch.trailers.logFinished'));
+        toast.success(t('admin.fetch.trailers.finished'));
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        addLog('error', error.message);
+        toast.error(error.message);
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const handleJikanFetch = async () => {
     if (!supabase) { toast.error('Supabase unavailable'); return; }
     abortRef.current = new AbortController();
@@ -697,7 +923,13 @@ export function AdminFetch() {
             <Download size={24} /> {t('admin.fetch.pageTitle')}
           </h1>
           <p style={{ margin: '0.3rem 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-            {activeTab === 'titles' ? t('admin.fetch.pageSubtitle') : activeTab === 'jikan' ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)' : t('admin.fetch.cs.tabSubtitle')}
+            {activeTab === 'titles'
+              ? t('admin.fetch.pageSubtitle')
+              : activeTab === 'trailers'
+                ? t('admin.fetch.trailers.tabSubtitle')
+                : activeTab === 'jikan'
+                  ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)'
+                  : t('admin.fetch.cs.tabSubtitle')}
           </p>
         </div>
       </div>
@@ -706,6 +938,7 @@ export function AdminFetch() {
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-5)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-3)' }}>
         {[
           { id: 'titles', label: t('admin.fetch.tabTitles'), Icon: Download },
+          { id: 'trailers', label: t('admin.fetch.trailers.tabTitle'), Icon: RefreshCw },
           { id: 'jikan', label: 'Jikan (MAL)', Icon: Globe },
           { id: 'charstaff', label: t('admin.fetch.cs.tabTitle'), Icon: Users },
         ].map(({ id, label, Icon }) => (
@@ -843,6 +1076,96 @@ export function AdminFetch() {
                       min={0} value={config.minPopularity} disabled={running}
                       onChange={(e) => set('minPopularity', e.target.value)} />
                   </div>
+                </div>
+              </Section>
+            </>
+          ) : activeTab === 'trailers' ? (
+            <>
+              <Section title={t('admin.fetch.trailers.modeLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {[
+                    {
+                      key: true,
+                      label: t('admin.fetch.trailers.modeMissing'),
+                      hint: t('admin.fetch.trailers.modeMissingHint'),
+                    },
+                    {
+                      key: false,
+                      label: t('admin.fetch.trailers.modeRefresh'),
+                      hint: t('admin.fetch.trailers.modeRefreshHint'),
+                    },
+                  ].map(({ key, label, hint }) => (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      disabled={running}
+                      onClick={() => setTrailerConfig((current) => ({ ...current, onlyMissing: key }))}
+                      style={{
+                        padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
+                        border: `2px solid ${trailerConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: trailerConfig.onlyMissing === key
+                          ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                          : 'var(--bg-primary)',
+                        textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: trailerConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.trailers.categoryLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                    {trailerCategoryOptions.map((option) => (
+                      <Chip
+                        key={option.value}
+                        active={trailerConfig.category === option.value}
+                        disabled={running}
+                        onClick={() => setTrailerConfig((current) => ({ ...current, category: option.value }))}
+                      >
+                        {option.label}
+                      </Chip>
+                    ))}
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.trailers.categoryHint')}
+                  </p>
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.trailers.limitLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={trailerConfig.limit}
+                    onChange={(value) => setTrailerConfig((current) => ({ ...current, limit: value }))}
+                    min={0}
+                    max={1000}
+                    disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.trailers.limitHint')}
+                  </p>
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.trailers.delayLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={trailerConfig.delayMs}
+                    onChange={(value) => setTrailerConfig((current) => ({ ...current, delayMs: value }))}
+                    min={250}
+                    max={5000}
+                    step={250}
+                    disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.trailers.delayHint')}
+                  </p>
                 </div>
               </Section>
             </>
@@ -1005,9 +1328,25 @@ export function AdminFetch() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {!running ? (
               <button type="button" className="primary-btn"
-                onClick={activeTab === 'titles' ? handleFetch : activeTab === 'jikan' ? handleJikanFetch : handleCharStaff}
+                onClick={
+                  activeTab === 'titles'
+                    ? handleFetch
+                    : activeTab === 'trailers'
+                      ? handleTrailerBackfill
+                      : activeTab === 'jikan'
+                        ? handleJikanFetch
+                        : handleCharStaff
+                }
                 style={{ width: '100%', justifyContent: 'center', padding: 'var(--space-4)' }}>
-                <Play size={16} /> {activeTab === 'titles' ? t('admin.fetch.fetchBtn') : activeTab === 'jikan' ? 'Fetch Manhwa Adult' : t('admin.fetch.cs.startBtn')}
+                <Play size={16} /> {
+                  activeTab === 'titles'
+                    ? t('admin.fetch.fetchBtn')
+                    : activeTab === 'trailers'
+                      ? t('admin.fetch.trailers.startBtn')
+                      : activeTab === 'jikan'
+                        ? 'Fetch Manhwa Adult'
+                        : t('admin.fetch.cs.startBtn')
+                }
               </button>
             ) : (
               <button type="button" onClick={() => abortRef.current?.abort()}
@@ -1060,6 +1399,21 @@ export function AdminFetch() {
                   </div>
                 </div>
               )}
+              {activeTab === 'trailers' && running && progress.total > 0 && (
+                <div style={{ marginBottom: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                    <span>{t('admin.fetch.trailers.progress', { done: progress.done, total: progress.total })}</span>
+                    <span>{t('admin.fetch.trailers.delayProgress', { delayMs: trailerConfig.delayMs })}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999,
+                      background: 'linear-gradient(90deg, var(--primary-500), var(--accent-500))',
+                      width: `${Math.round((progress.done / progress.total) * 100)}%`, transition: 'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
                 {(activeTab === 'titles' || activeTab === 'jikan'
                   ? [
@@ -1068,6 +1422,13 @@ export function AdminFetch() {
                       { label: t('admin.fetch.statSkipped'), value: progress.skipped,  color: 'var(--text-tertiary)' },
                       { label: t('admin.fetch.statErrors'),  value: progress.errors,   color: '#dc2626' },
                     ]
+                  : activeTab === 'trailers'
+                    ? [
+                        { label: t('admin.fetch.trailers.statDone'), value: progress.done, color: '#2563eb' },
+                        { label: t('admin.fetch.trailers.statUpdated'), value: progress.updated, color: '#16a34a' },
+                        { label: t('admin.fetch.trailers.statNoTrailer'), value: progress.noTrailer, color: 'var(--text-tertiary)' },
+                        { label: t('admin.fetch.trailers.statErrors'), value: progress.errors, color: '#dc2626' },
+                      ]
                   : [
                       { label: t('admin.fetch.cs.statDone'),   value: progress.done,   color: '#2563eb' },
                       { label: t('admin.fetch.cs.statChars'),  value: progress.chars,  color: '#16a34a' },
@@ -1142,5 +1503,3 @@ export function AdminFetch() {
 }
 
 export default AdminFetch;
-
-

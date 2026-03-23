@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, ExternalLink, Loader2, PlayCircle, RefreshCw } from 'lucide-react';
 import {
   buildAliasRows,
   buildCanonicalPayload,
@@ -7,6 +8,7 @@ import {
   mapCanonicalRecordToAdminForm,
 } from '@/shared/lib/catalog';
 import { supabase } from '@/shared/lib/supabase';
+import { normalizeTrailer } from '@/shared/lib/trailers';
 import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
 import toast from 'react-hot-toast';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -42,6 +44,46 @@ const PLATFORM_OPTIONS = [
 
 const ADMIN_SAVE_TIMEOUT_MS = 10000;
 const ADMIN_TITLE_DRAFT_PREFIX = 'moodwatch-admin-title-draft';
+const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
+const TRAILER_SOURCE_OPTIONS = ['manual', 'anilist', 'tmdb', 'youtube', 'dailymotion'];
+const ANILIST_TRAILER_QUERY = `
+  query AdminTitleTrailer($id: Int!) {
+    Media(id: $id) {
+      id
+      siteUrl
+      title {
+        romaji
+        english
+        native
+      }
+      trailer {
+        id
+        site
+        thumbnail
+      }
+    }
+  }
+`;
+const ANILIST_TRAILER_SEARCH_QUERY = `
+  query AdminTitleTrailerSearch($search: String!, $type: MediaType) {
+    Page(page: 1, perPage: 5) {
+      media(search: $search, type: $type, isAdult: false) {
+        id
+        siteUrl
+        title {
+          romaji
+          english
+          native
+        }
+        trailer {
+          id
+          site
+          thumbnail
+        }
+      }
+    }
+  }
+`;
 
 function getDraftStorageKey(id, isNew) {
   return `${ADMIN_TITLE_DRAFT_PREFIX}:${isNew ? 'new' : id}`;
@@ -146,6 +188,68 @@ function areRelationEntriesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizeTitleCandidate(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function mapDisplayTypeToAniListMediaType(type) {
+  return type === 'anime' ? 'ANIME' : 'MANGA';
+}
+
+function getMediaDisplayTitle(media) {
+  return media?.title?.english || media?.title?.romaji || media?.title?.native || '';
+}
+
+function buildTrailerPatch(media) {
+  const trailer = normalizeTrailer({
+    trailer_url: media?.trailer?.id
+      ? media.trailer.site === 'youtube'
+        ? `https://www.youtube.com/watch?v=${media.trailer.id}`
+        : media.trailer.site === 'dailymotion'
+          ? `https://www.dailymotion.com/video/${media.trailer.id}`
+          : null
+      : null,
+    trailer_site: media?.trailer?.site || null,
+    trailer_video_id: media?.trailer?.id || null,
+    trailer_thumbnail_url: media?.trailer?.thumbnail || null,
+    trailer_source: media?.trailer?.id ? 'anilist' : null,
+  });
+
+  return {
+    trailer_url: trailer?.url || '',
+    trailer_site: trailer?.site || '',
+    trailer_video_id: trailer?.videoId || '',
+    trailer_thumbnail_url: trailer?.thumbnailUrl || '',
+    trailer_source: trailer?.source || 'anilist',
+  };
+}
+
+async function fetchAniListGraphQL(query, variables) {
+  const response = await fetch(ANILIST_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`AniList request failed with ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((item) => item.message).join('; '));
+  }
+
+  return payload.data;
+}
+
 export function AdminTitleEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -172,6 +276,11 @@ export function AdminTitleEdit() {
     duration_minutes: '',
     cover_image: '',
     banner_image: '',
+    trailer_url: '',
+    trailer_site: '',
+    trailer_video_id: '',
+    trailer_thumbnail_url: '',
+    trailer_source: '',
     popularity: 0,
     is_adult: false,
     origin_country: '',
@@ -183,6 +292,25 @@ export function AdminTitleEdit() {
   const [tagInput, setTagInput] = useState('');
   const [platformLinks, setPlatformLinks] = useState([]);
   const [initialRelations, setInitialRelations] = useState(null);
+  const [sourceRefs, setSourceRefs] = useState([]);
+  const [pendingSourceRef, setPendingSourceRef] = useState(null);
+  const [isFetchingTrailer, setIsFetchingTrailer] = useState(false);
+  const [trailerFetchState, setTrailerFetchState] = useState({ status: 'idle', message: '' });
+
+  const trailerPreview = useMemo(
+    () => normalizeTrailer(formData),
+    [
+      formData.trailer_source,
+      formData.trailer_site,
+      formData.trailer_thumbnail_url,
+      formData.trailer_url,
+      formData.trailer_video_id,
+    ]
+  );
+  const aniListSourceRef = useMemo(
+    () => sourceRefs.find((entry) => entry.provider === 'anilist') || null,
+    [sourceRefs]
+  );
 
   const fetchTitleDetails = useCallback(async () => {
     if (!supabase) {
@@ -209,6 +337,8 @@ export function AdminTitleEdit() {
           setTagInput(draft.tagInput || '');
           setPlatformLinks(draft.platformLinks || []);
         }
+        setSourceRefs([]);
+        setPendingSourceRef(null);
         setInitialRelations(null);
         return;
       }
@@ -234,6 +364,7 @@ export function AdminTitleEdit() {
         url: item.url,
         region_code: item.region_code || '',
       })) || [];
+      const nextSourceRefs = data.source_refs || [];
 
       const draft = loadDraft(draftStorageKey);
       const restoredFormData = draft?.formData ? { ...nextFormData, ...draft.formData } : nextFormData;
@@ -247,6 +378,8 @@ export function AdminTitleEdit() {
       setGenreInput(restoredGenreInput);
       setTagInput(restoredTagInput);
       setPlatformLinks(restoredPlatformLinks);
+      setSourceRefs(nextSourceRefs);
+      setPendingSourceRef(null);
       setInitialRelations(buildRelationSnapshot({
         titleId: id,
         formData: nextFormData,
@@ -274,6 +407,14 @@ export function AdminTitleEdit() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+  };
+
+  const handleTrailerFieldChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+    setTrailerFetchState((current) => (current.status === 'error' ? { status: 'idle', message: '' } : current));
   };
 
   const toggleMood = (moodId) => {
@@ -312,6 +453,98 @@ export function AdminTitleEdit() {
     toast.success(t('admin.titleEdit.slugGenerated'));
   };
 
+  const handleFetchTrailer = async () => {
+    const searchCandidates = [
+      formData.title_en,
+      formData.title_romaji,
+      formData.title_native,
+      formData.title_th,
+    ].filter(Boolean);
+    const searchTitle = searchCandidates[0];
+
+    if (!aniListSourceRef?.external_id && !searchTitle) {
+      toast.error(t('admin.titleEdit.trailerNeedsTitle'));
+      return;
+    }
+
+    setIsFetchingTrailer(true);
+    setTrailerFetchState({ status: 'loading', message: t('admin.titleEdit.trailerFetching') });
+
+    try {
+      let media = null;
+
+      if (aniListSourceRef?.external_id) {
+        const result = await fetchAniListGraphQL(ANILIST_TRAILER_QUERY, {
+          id: Number(aniListSourceRef.external_id),
+        });
+        media = result?.Media || null;
+      } else if (searchTitle) {
+        const result = await fetchAniListGraphQL(ANILIST_TRAILER_SEARCH_QUERY, {
+          search: searchTitle,
+          type: mapDisplayTypeToAniListMediaType(formData.type),
+        });
+        const mediaList = result?.Page?.media || [];
+        const normalizedCandidates = new Set(searchCandidates.map(normalizeTitleCandidate));
+        const exactWithTrailer = mediaList.find((item) => (
+          item?.trailer?.id && normalizedCandidates.has(normalizeTitleCandidate(getMediaDisplayTitle(item)))
+        ));
+        const trailerCandidate = mediaList.find((item) => item?.trailer?.id);
+        const exactCandidate = mediaList.find((item) => normalizedCandidates.has(normalizeTitleCandidate(getMediaDisplayTitle(item))));
+        media = exactWithTrailer || trailerCandidate || exactCandidate || mediaList[0] || null;
+      }
+
+      if (!media) {
+        throw new Error(t('admin.titleEdit.trailerNoMatch'));
+      }
+
+      if (!media?.trailer?.id) {
+        throw new Error(t('admin.titleEdit.trailerNoResult'));
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        ...buildTrailerPatch(media),
+      }));
+
+      const nextRef = {
+        provider: 'anilist',
+        external_id: String(media.id),
+        external_url: media.siteUrl || null,
+        source_priority: formData.type === 'anime' ? 10 : 20,
+        raw_payload: media,
+      };
+      setPendingSourceRef(nextRef);
+      setSourceRefs((current) => {
+        const withoutAniList = current.filter((entry) => entry.provider !== 'anilist');
+        return [...withoutAniList, nextRef];
+      });
+      setTrailerFetchState({
+        status: 'success',
+        message: t('admin.titleEdit.trailerFetched', { title: getMediaDisplayTitle(media) }),
+      });
+    } catch (error) {
+      console.error('Failed to fetch AniList trailer:', error);
+      setTrailerFetchState({
+        status: 'error',
+        message: error.message || t('admin.titleEdit.trailerFetchFailed'),
+      });
+    } finally {
+      setIsFetchingTrailer(false);
+    }
+  };
+
+  const handleClearTrailer = () => {
+    setFormData((prev) => ({
+      ...prev,
+      trailer_url: '',
+      trailer_site: '',
+      trailer_video_id: '',
+      trailer_thumbnail_url: '',
+      trailer_source: '',
+    }));
+    setTrailerFetchState({ status: 'idle', message: '' });
+  };
+
   const handleSave = async (event) => {
     event?.preventDefault();
 
@@ -345,6 +578,23 @@ export function AdminTitleEdit() {
           'Update title'
         );
         if (error) throw error;
+      }
+
+      if (pendingSourceRef?.external_id) {
+        const { error } = await runQuery(
+          supabase.from('title_source_refs').upsert(
+            {
+              canonical_title_id: titleId,
+              ...pendingSourceRef,
+              last_synced_at: new Date().toISOString(),
+              fetched_at: new Date().toISOString(),
+            },
+            { onConflict: 'provider,external_id' },
+          ),
+          'Save AniList source reference'
+        );
+        if (error) throw error;
+        setPendingSourceRef(null);
       }
 
       const nextRelations = buildRelationSnapshot({
@@ -696,6 +946,174 @@ export function AdminTitleEdit() {
           </div>
         </div>
 
+        <div className="admin-edit-section">
+          <div className="admin-section-header admin-section-header--tight">
+            <div>
+              <h2>{t('admin.titleEdit.trailerSection')}</h2>
+              <p className="admin-helper-text">{t('admin.titleEdit.trailerHint')}</p>
+            </div>
+            <div className="admin-inline-actions">
+              <button
+                type="button"
+                className="action-btn"
+                onClick={handleFetchTrailer}
+                disabled={isFetchingTrailer || isSaving}
+              >
+                {isFetchingTrailer ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                {t('admin.titleEdit.fetchTrailer')}
+              </button>
+              <button
+                type="button"
+                className="action-btn"
+                onClick={handleClearTrailer}
+                disabled={isSaving || (!formData.trailer_url && !formData.trailer_video_id)}
+              >
+                {t('admin.titleEdit.clearTrailer')}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-form-grid">
+            <div className="admin-form-grid-wide">
+              <label className="form-label">{t('admin.titleEdit.trailerUrl')}</label>
+              <input
+                type="text"
+                className="form-input"
+                name="trailer_url"
+                value={formData.trailer_url}
+                onChange={(event) => handleTrailerFieldChange('trailer_url', event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+              <p className="admin-helper-text">{t('admin.titleEdit.trailerUrlHint')}</p>
+            </div>
+            <div>
+              <label className="form-label">{t('admin.titleEdit.trailerSite')}</label>
+              <input
+                type="text"
+                className="form-input"
+                name="trailer_site"
+                value={formData.trailer_site}
+                onChange={(event) => handleTrailerFieldChange('trailer_site', event.target.value)}
+                placeholder="youtube"
+              />
+            </div>
+            <div>
+              <label className="form-label">{t('admin.titleEdit.trailerVideoId')}</label>
+              <input
+                type="text"
+                className="form-input"
+                name="trailer_video_id"
+                value={formData.trailer_video_id}
+                onChange={(event) => handleTrailerFieldChange('trailer_video_id', event.target.value)}
+                placeholder="OhNwckCLzis"
+              />
+            </div>
+            <div>
+              <label className="form-label">{t('admin.titleEdit.trailerThumbnail')}</label>
+              <input
+                type="text"
+                className="form-input"
+                name="trailer_thumbnail_url"
+                value={formData.trailer_thumbnail_url}
+                onChange={(event) => handleTrailerFieldChange('trailer_thumbnail_url', event.target.value)}
+                placeholder="https://i.ytimg.com/vi/..."
+              />
+            </div>
+            <div>
+              <label className="form-label">{t('admin.titleEdit.trailerSource')}</label>
+              <select
+                className="form-select"
+                name="trailer_source"
+                value={formData.trailer_source}
+                onChange={(event) => handleTrailerFieldChange('trailer_source', event.target.value)}
+              >
+                <option value="">{t('admin.titleEdit.trailerSourceAuto')}</option>
+                {TRAILER_SOURCE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="admin-inline-kv-grid admin-inline-kv-grid-wide" style={{ marginTop: 'var(--space-4)' }}>
+            <div>
+              <span>{t('admin.titleEdit.trailerLinkedSource')}</span>
+              <strong>
+                {aniListSourceRef?.external_id
+                  ? `AniList #${aniListSourceRef.external_id}`
+                  : t('admin.titleEdit.trailerNoSourceRef')}
+              </strong>
+            </div>
+            <div>
+              <span>{t('admin.titleEdit.trailerStatus')}</span>
+              <strong>
+                {trailerPreview?.watchUrl
+                  ? t('admin.titleEdit.trailerReady')
+                  : t('admin.titleEdit.trailerEmpty')}
+              </strong>
+            </div>
+          </div>
+
+          {trailerFetchState.status !== 'idle' && (
+            <div className={`admin-inline-alert admin-inline-alert--${trailerFetchState.status}`}>
+              {trailerFetchState.status === 'success' ? <CheckCircle2 size={16} /> : null}
+              {trailerFetchState.status === 'error' ? <AlertCircle size={16} /> : null}
+              {trailerFetchState.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : null}
+              <span>{trailerFetchState.message}</span>
+            </div>
+          )}
+
+          {trailerPreview ? (
+            <div className="admin-trailer-preview">
+              <div className="admin-trailer-preview-media">
+                {trailerPreview.thumbnailUrl ? (
+                  <img
+                    src={trailerPreview.thumbnailUrl}
+                    alt={t('admin.titleEdit.trailerPreviewAlt')}
+                    className="admin-trailer-thumb"
+                  />
+                ) : (
+                  <div className="admin-trailer-thumb admin-trailer-thumb--empty">
+                    <PlayCircle size={28} />
+                  </div>
+                )}
+              </div>
+              <div className="admin-trailer-preview-copy">
+                <span className="admin-section-label">{t('admin.titleEdit.trailerPreview')}</span>
+                <h3>{formData.title_en || formData.title_romaji || t('admin.titleEdit.trailerUntitled')}</h3>
+                <p className="admin-helper-text">
+                  {trailerPreview.provider
+                    ? t('admin.titleEdit.trailerProviderLabel', { provider: trailerPreview.provider })
+                    : t('admin.titleEdit.trailerNoProvider')}
+                </p>
+                <div className="admin-preview-meta">
+                  {trailerPreview.site ? <span>{t('admin.titleEdit.trailerSiteMeta', { site: trailerPreview.site })}</span> : null}
+                  {trailerPreview.videoId ? <span>{t('admin.titleEdit.trailerVideoMeta', { id: trailerPreview.videoId })}</span> : null}
+                  {trailerPreview.source ? <span>{t('admin.titleEdit.trailerSourceMeta', { source: trailerPreview.source })}</span> : null}
+                </div>
+                {trailerPreview.watchUrl ? (
+                  <a
+                    href={trailerPreview.watchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="primary-btn"
+                    style={{ width: 'fit-content' }}
+                  >
+                    <ExternalLink size={14} />
+                    {t('admin.titleEdit.openTrailer')}
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="admin-empty-state" style={{ marginTop: 'var(--space-4)' }}>
+              <PlayCircle size={22} style={{ color: 'var(--text-tertiary)' }} />
+              <span className="admin-state-title">{t('admin.titleEdit.trailerEmptyTitle')}</span>
+              <p className="admin-state-description">{t('admin.titleEdit.trailerEmptyHint')}</p>
+            </div>
+          )}
+        </div>
+
         <div className="admin-sticky-bar">
           <span className="admin-sticky-bar-info">
             {!isNew && t('admin.titleEdit.catalogId', { id })}
@@ -715,4 +1133,3 @@ export function AdminTitleEdit() {
 }
 
 export default AdminTitleEdit;
-
