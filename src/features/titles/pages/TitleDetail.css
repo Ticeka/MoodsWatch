@@ -2025,4 +2025,224 @@
   transition: opacity var(--transition-fast);
 }
 
+/* ── Theme Songs (aside) ── */
+.theme-songs-aside-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.theme-songs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 0 var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-2);
+}
+
+.song-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.song-action-links {
+  display: flex;
+  gap: 4px;
+}
+
+.song-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.song-action-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.song-type-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.song-type-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.song-type-tab.active {
+  background: var(--primary-500, #e85d75);
+  color: #fff;
+  border-color: var(--primary-500, #e85d75);
+}
+
+.song-tab-count {
+  font-size: 0.65rem;
+  opacity: 0.75;
+}
+
+.song-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 4px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.song-row:hover {
+  background: var(--bg-secondary);
+}
+
+.song-type-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary-500, #e85d75) 15%, transparent);
+  color: var(--primary-400, #e85d75);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.song-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.05em;
+}
+
+.song-badge--nc {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+.song-badge--spoiler {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.song-badge--nsfw {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.song-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.song-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-artist {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-play-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.song-row:hover .song-play-icon {
+  opacity: 1;
+  color: var(--primary-400, #e85d75);
+}
+
+.song-no-video {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.song-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.song-pager-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.song-pager-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.song-pager-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.song-pager-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  min-width: 2.5rem;
+  text-align: center;
+}
+
 .review-btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }

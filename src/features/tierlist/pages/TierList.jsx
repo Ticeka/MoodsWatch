@@ -11,6 +11,7 @@ import {
   Loader2,
   MessageSquare,
   Monitor,
+  Music,
   Palette,
   Plus,
   Search,
@@ -27,20 +28,24 @@ import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { BRAND_NAME } from '@/shared/config/brand';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { getAllTitles } from '@/features/discover/lib/recommend';
+import { getAllTitles, getTitleBySlug } from '@/features/discover/lib/recommend';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
   CHARACTER_ENTITY_TYPE,
+  THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  buildThemeSongEntity,
   getCatalogEntities,
   getCatalogEntityMeta,
   getCatalogEntityName,
+  isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import {
   addTierRow,
   buildTierListFromTemplate,
   createTemplateFromCatalog,
+  createTierListFromTemplate,
   findTierList,
   findTierTemplate,
   loadTierLibrary,
@@ -291,6 +296,9 @@ function TierTitleCard({
     >
       <div className="tierlist-item-thumb">
         <img src={getTitleArtwork(title)} alt="" loading={eager ? 'eager' : 'lazy'} draggable={false} />
+        {isThemeSongEntity(title) && (
+          <span className="tier-song-badge">{title.role || title.theme_label}</span>
+        )}
       </div>
     </article>
   );
@@ -2504,6 +2512,139 @@ export function TierListPlayPage() {
           pick={pick}
         />
       )}
+    </div>
+  );
+}
+
+export function SongTierListPage() {
+  const { titleSlug } = useParams();
+  const { pick } = useLanguage();
+  const { user } = useAuth();
+  const [sourceTitle, setSourceTitle] = useState(null);
+  const [songs, setSongs] = useState([]);
+  const [tierList, setTierList] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!titleSlug) return undefined;
+    let cancelled = false;
+
+    async function load() {
+      setLoadError('');
+      try {
+        const title = await getTitleBySlug(titleSlug);
+        if (cancelled) return;
+        if (!title) {
+          setLoadError(pick('ไม่พบชื่อเรื่องนี้', 'Title not found'));
+          return;
+        }
+        setSourceTitle(title);
+
+        const { data: songData, error: songError } = await supabase
+          .from('title_theme_songs')
+          .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
+          .eq('canonical_title_id', title.id)
+          .order('display_order');
+
+        if (cancelled) return;
+        if (songError) throw songError;
+
+        const songEntities = (songData || []).map((song) => buildThemeSongEntity(song, title));
+        setSongs(songEntities);
+
+        if (songEntities.length === 0) {
+          setLoadError(pick('ไม่มีเพลงสำหรับชื่อเรื่องนี้', 'No songs found for this title'));
+          return;
+        }
+
+        // Load library to find an existing song tierlist for this title
+        const library = await loadTierLibrary([], { userId: user?.id || null });
+        if (cancelled) return;
+
+        const songSourceKey = `song-source:${title.id}`;
+        const existing = library.lists.find(
+          (l) => l.entityType === THEME_SONG_ENTITY_TYPE && l.description === songSourceKey
+        );
+
+        const songIds = songEntities.map((s) => s.id);
+        const baseList = existing
+          ? seedPoolFromCatalog(existing, songIds)
+          : createTierListFromTemplate({
+            id: '',
+            title: `${pick('เพลงจาก', 'Songs of')} ${getCatalogEntityName(title)}`,
+            description: songSourceKey,
+            defaultRows: ['S', 'A', 'B', 'C', 'D'],
+            titleIds: songIds,
+            entityType: THEME_SONG_ENTITY_TYPE,
+          });
+
+        if (!cancelled) {
+          setTierList(baseList);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err?.message || pick('โหลดไม่สำเร็จ', 'Failed to load'));
+        }
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [titleSlug, user?.id, pick]);
+
+  const titleById = useMemo(
+    () => new Map(songs.map((s) => [s.id, s])),
+    [songs]
+  );
+
+  const titleName = sourceTitle ? getCatalogEntityName(sourceTitle) : titleSlug;
+
+  if (!tierList) {
+    return (
+      <div className="tierlist-play-page">
+        <section className="container tierlist-section">
+          {loadError ? (
+            <TierListErrorPanel
+              message={loadError}
+              onRetry={() => window.location.reload()}
+              backLabel={pick('กลับ', 'Back')}
+              backTo={`/titles/${titleSlug}`}
+            />
+          ) : (
+            <TierListEmptyPanel
+              icon={<Loader2 size={28} className="animate-spin" />}
+              title={pick('กำลังโหลดเพลง', 'Loading songs')}
+              message={pick('กำลังเตรียมรายการเพลงสำหรับจัด Tierlist', 'Preparing song list for tierlist')}
+            />
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tierlist-play-page">
+      <div className="container tierlist-play-topbar">
+        <div className="tierlist-play-topbar-left">
+          <Link className="btn btn-ghost btn-sm" to={`/titles/${titleSlug}`}>
+            <ChevronLeft size={14} /> {titleName}
+          </Link>
+          <span className="tierlist-by-line">
+            <Music size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+            {pick('จัดอันดับเพลง', 'Song Tierlist')}
+          </span>
+        </div>
+      </div>
+
+      <TierListEditor
+        tierList={tierList}
+        setTierList={setTierList}
+        titleById={titleById}
+        query={query}
+        setQuery={setQuery}
+        pick={pick}
+      />
     </div>
   );
 }

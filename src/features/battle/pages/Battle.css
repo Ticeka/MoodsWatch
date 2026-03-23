@@ -1415,6 +1415,25 @@
   transform: scale(1.08);
 }
 
+.battle-card-song-badge {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(15, 23, 42, 0.82);
+  color: var(--primary-400, #f472b6);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(244, 114, 182, 0.35);
+  backdrop-filter: blur(4px);
+}
+
 .battle-card-body {
   position: absolute;
   bottom: 0;

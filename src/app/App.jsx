@@ -20,6 +20,7 @@ const TierListBrowsePage = lazy(() => import('@/features/tierlist/pages/TierList
 const TierListCreatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListCreatePage })));
 const TierListPlayPage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListPlayPage })));
 const TierListTemplatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListTemplatePage })));
+const SongTierListPage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.SongTierListPage })));
 const Discover = lazy(() => import('@/features/discover/pages/Discover').then((module) => ({ default: module.Discover })));
 const TitleDetail = lazy(() => import('@/features/titles/pages/TitleDetail').then((module) => ({ default: module.TitleDetail })));
 const Watchlist = lazy(() => import('@/features/watchlist/pages/Watchlist').then((module) => ({ default: module.Watchlist })));
@@ -102,6 +103,7 @@ function App() {
                     <Route path="tierlist/create" element={<TierListCreatePage />} />
                     <Route path="tierlist/template/:templateId" element={<TierListTemplatePage />} />
                     <Route path="tierlist/play/:listId" element={<TierListPlayPage />} />
+                    <Route path="tierlist/songs/:titleSlug" element={<SongTierListPage />} />
                     <Route path="discover" element={<Discover />} />
                     <Route path="title/:slug" element={<TitleDetail />} />
                     <Route path="watchlist" element={<Watchlist />} />

@@ -36,6 +36,20 @@ function resolveWeights(hasMoods, hasLikedTitles) {
 const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_CATALOG_MAX_ROWS = null;
+const SUPABASE_BATCH_SIZE = 1000;
+const TITLE_CHARACTER_ID_CHUNK_SIZE = 200;
+const TITLE_CHARACTER_SELECT = `
+  id,
+  canonical_title_id,
+  anilist_id,
+  name_full,
+  name_native,
+  image_url,
+  role,
+  voice_actor_name,
+  voice_actor_image,
+  sort_order
+`;
 
 let cachedTitles = null;
 let cachedTitlesPromise = null;
@@ -113,13 +127,12 @@ async function fetchSupabaseTitles({
   select = CANONICAL_TITLE_BROWSE_SELECT,
 } = {}) {
   const rowLimit = resolveRequestedRowLimit(maxRows);
-  const step = 1000; // Supabase max per request
   let allData = [];
   let lastId = null;
   let hasMore = true;
 
   while (hasMore) {
-    const remaining = rowLimit === null ? step : Math.min(step, rowLimit - allData.length);
+    const remaining = rowLimit === null ? SUPABASE_BATCH_SIZE : Math.min(SUPABASE_BATCH_SIZE, rowLimit - allData.length);
     if (rowLimit !== null && remaining <= 0) break;
 
     let query = supabase
@@ -146,6 +159,104 @@ async function fetchSupabaseTitles({
   }
 
   return allData.map((title) => normalizeTitleType(mapCanonicalTitle(title)));
+}
+
+function chunkIds(ids = [], chunkSize = TITLE_CHARACTER_ID_CHUNK_SIZE) {
+  const chunks = [];
+
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    chunks.push(ids.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
+async function fetchTitleCharacters(titleIds = []) {
+  const normalizedTitleIds = [...new Set(
+    (Array.isArray(titleIds) ? titleIds : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  )];
+
+  if (Array.isArray(titleIds) && titleIds.length > 0 && normalizedTitleIds.length === 0) {
+    return [];
+  }
+
+  const idChunks = normalizedTitleIds.length > 0
+    ? chunkIds(normalizedTitleIds)
+    : [null];
+  const allCharacters = [];
+
+  for (const titleIdChunk of idChunks) {
+    let lastRowId = null;
+    let hasMore = true;
+
+    while (hasMore) {
+      let query = supabase
+        .from('title_characters')
+        .select(TITLE_CHARACTER_SELECT)
+        .order('id', { ascending: true })
+        .limit(SUPABASE_BATCH_SIZE);
+
+      if (titleIdChunk) {
+        query = query.in('canonical_title_id', titleIdChunk);
+      }
+
+      if (lastRowId !== null) {
+        query = query.gt('id', lastRowId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      if (data?.length) {
+        allCharacters.push(...data);
+        lastRowId = data[data.length - 1].id;
+        hasMore = data.length === SUPABASE_BATCH_SIZE;
+      } else {
+        hasMore = false;
+      }
+    }
+  }
+
+  return allCharacters;
+}
+
+function attachCharactersToTitles(titles = [], characterRows = []) {
+  if (!Array.isArray(titles) || titles.length === 0) {
+    return [];
+  }
+
+  const charactersByTitleId = new Map();
+
+  (Array.isArray(characterRows) ? characterRows : []).forEach((character) => {
+    const titleId = Number(character?.canonical_title_id || 0);
+    if (!titleId) {
+      return;
+    }
+
+    if (!charactersByTitleId.has(titleId)) {
+      charactersByTitleId.set(titleId, []);
+    }
+
+    charactersByTitleId.get(titleId).push({
+      anilist_id: character.anilist_id,
+      name_full: character.name_full,
+      name_native: character.name_native,
+      image_url: character.image_url,
+      role: character.role,
+      voice_actor_name: character.voice_actor_name,
+      voice_actor_image: character.voice_actor_image,
+      sort_order: character.sort_order,
+    });
+  });
+
+  return titles.map((title) => ({
+    ...title,
+    characters: (charactersByTitleId.get(Number(title.id)) || [])
+      .slice()
+      .sort((left, right) => (left.sort_order || 0) - (right.sort_order || 0)),
+  }));
 }
 
 function ensureSupabaseConnected() {
@@ -344,23 +455,27 @@ export async function getAllTitles({
     try {
       const titles = await fetchSupabaseTitles({
         maxRows,
-        select: includeCharacters ? CANONICAL_TITLE_DETAIL_SELECT : CANONICAL_TITLE_BROWSE_SELECT,
+        select: CANONICAL_TITLE_BROWSE_SELECT,
       });
-      storeTitlesInCaches(titles);
+      const hydratedTitles = includeCharacters
+        ? attachCharactersToTitles(titles, await fetchTitleCharacters(titles.map((title) => title.id)))
+        : titles;
+
+      storeTitlesInCaches(hydratedTitles);
 
       if (includeCharacters) {
-        cachedDetailedTitles = titles;
+        cachedDetailedTitles = hydratedTitles;
         cachedDetailedCatalogLimit = requestedLimit;
         detailedCacheTimestamp = Date.now();
         detailedCacheError = null;
       } else {
-        cachedTitles = titles;
+        cachedTitles = hydratedTitles;
         cachedCatalogLimit = requestedLimit;
         cacheTimestamp = Date.now();
         cacheError = null;
       }
 
-      return titles;
+      return hydratedTitles;
     } catch (error) {
       if (includeCharacters) {
         detailedCacheError = error.message;

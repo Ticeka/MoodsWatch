@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
@@ -18,7 +18,8 @@ import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Flag, Layers, Link as LinkIcon, Music, Play, PlayCircle, Plus, Star, Swords, Trash2, Trophy } from 'lucide-react';
+import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
 import './TitleDetail.css';
 
@@ -70,6 +71,10 @@ export function TitleDetail() {
   const [canScrollCastPrev, setCanScrollCastPrev] = useState(false);
   const [canScrollCastNext, setCanScrollCastNext] = useState(false);
   const [trailerModalOpen, setTrailerModalOpen] = useState(false);
+  const [themeSongs, setThemeSongs] = useState([]);
+  const [activeSongTab, setActiveSongTab] = useState('OP');
+  const [activeSong, setActiveSong] = useState(null);
+  const [songPage, setSongPage] = useState(0);
   const similarRailRef = useRef(null);
   const castRailRef = useRef(null);
 
@@ -176,6 +181,35 @@ export function TitleDetail() {
     fetchStats();
     return () => { cancelled = true; };
   }, [castTab, title?.id]);
+
+  useEffect(() => {
+    if (!title?.id) return undefined;
+    let cancelled = false;
+
+    async function fetchThemeSongs() {
+      const { data, error } = await supabase
+        .from('title_theme_songs')
+        .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
+        .eq('canonical_title_id', title.id)
+        .order('display_order');
+
+      if (error) {
+        console.error('[ThemeSongs] fetch error:', error);
+        return;
+      }
+      if (!cancelled) {
+        setThemeSongs(data || []);
+        setSongPage(0);
+        if (data?.length) {
+          const hasOp = data.some((s) => s.theme_type === 'OP');
+          setActiveSongTab(hasOp ? 'OP' : 'ED');
+        }
+      }
+    }
+
+    fetchThemeSongs();
+    return () => { cancelled = true; };
+  }, [title?.id]);
 
   useEffect(() => {
     if (castTab === 'stats') return undefined;
@@ -788,6 +822,96 @@ export function TitleDetail() {
                 </div>
               )}
             </div>
+          {themeSongs.length > 0 && (() => {
+              const SONGS_PER_PAGE = 5;
+              const opSongs = themeSongs.filter((s) => s.theme_type === 'OP');
+              const edSongs = themeSongs.filter((s) => s.theme_type === 'ED');
+              const hasBoth = opSongs.length > 0 && edSongs.length > 0;
+              const filteredSongs = hasBoth ? themeSongs.filter((s) => s.theme_type === activeSongTab) : themeSongs;
+              const totalPages = Math.ceil(filteredSongs.length / SONGS_PER_PAGE);
+              const pagedSongs = filteredSongs.slice(songPage * SONGS_PER_PAGE, (songPage + 1) * SONGS_PER_PAGE);
+
+              return (
+                <div className="aside-card theme-songs-aside-card">
+                  <div className="theme-songs-header">
+                    <span className="platform-label">
+                      <Music size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 5 }} />
+                      {t('titleDetail.themeSongsHeading')}
+                    </span>
+                    <div className="song-header-right">
+                      {hasBoth && (
+                      <div className="song-type-tabs">
+                        <button type="button" className={`song-type-tab${activeSongTab === 'OP' ? ' active' : ''}`} onClick={() => { setActiveSongTab('OP'); setSongPage(0); }}>
+                          {t('titleDetail.opTab')}
+                          <span className="song-tab-count">{opSongs.length}</span>
+                        </button>
+                        <button type="button" className={`song-type-tab${activeSongTab === 'ED' ? ' active' : ''}`} onClick={() => { setActiveSongTab('ED'); setSongPage(0); }}>
+                          {t('titleDetail.edTab')}
+                          <span className="song-tab-count">{edSongs.length}</span>
+                        </button>
+                      </div>
+                    )}
+                      <div className="song-action-links">
+                        <Link to={`/battle/build?songTitleSlug=${slug}`} className="song-action-btn" title="Battle songs">
+                          <Swords size={13} />
+                          <span>Battle</span>
+                        </Link>
+                        <Link to={`/tierlist/songs/${slug}`} className="song-action-btn" title="Tierlist songs">
+                          <Layers size={13} />
+                          <span>Tierlist</span>
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="song-list">
+                    {pagedSongs.map((song) => (
+                      <button
+                        key={song.id}
+                        type="button"
+                        className="song-row"
+                        onClick={() => song.video_url && setActiveSong(song)}
+                        style={{ cursor: song.video_url ? 'pointer' : 'default' }}
+                      >
+                        <span className="song-type-badge">
+                          {song.theme_type}{song.theme_sequence > 1 ? ` ${song.theme_sequence}` : ''}
+                        </span>
+                        <div className="song-info">
+                          <span className="song-title">{song.song_title}</span>
+                          {song.artist_name && <span className="song-artist">{song.artist_name}</span>}
+                        </div>
+                        {song.video_url
+                          ? <Play size={14} className="song-play-icon" />
+                          : <span className="song-no-video" />
+                        }
+                      </button>
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="song-pager">
+                      <button
+                        type="button"
+                        className="song-pager-btn"
+                        onClick={() => setSongPage((p) => p - 1)}
+                        disabled={songPage === 0}
+                        aria-label="Previous"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <span className="song-pager-label">{songPage + 1} / {totalPages}</span>
+                      <button
+                        type="button"
+                        className="song-pager-btn"
+                        onClick={() => setSongPage((p) => p + 1)}
+                        disabled={songPage >= totalPages - 1}
+                        aria-label="Next"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </aside>
         </div>
 
@@ -1061,6 +1185,12 @@ export function TitleDetail() {
           </div>
         )}
       </div>
+      {activeSong && (
+        <ThemeSongModal
+          song={activeSong}
+          onClose={() => setActiveSong(null)}
+        />
+      )}
       {trailerModalOpen && trailer && (
         <TrailerModal
           embedUrl={trailer.embedUrl || null}

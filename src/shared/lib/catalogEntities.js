@@ -1,5 +1,6 @@
 export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';
+export const THEME_SONG_ENTITY_TYPE = 'theme_song';
 
 const CHARACTER_ROLE_LABELS = {
   MAIN: 'Main character',
@@ -71,18 +72,34 @@ function shouldReplaceCharacter(existingEntity, nextEntity) {
 }
 
 export function normalizeCatalogEntityType(value) {
-  return value === CHARACTER_ENTITY_TYPE ? CHARACTER_ENTITY_TYPE : TITLE_ENTITY_TYPE;
+  if (value === CHARACTER_ENTITY_TYPE) return CHARACTER_ENTITY_TYPE;
+  if (value === THEME_SONG_ENTITY_TYPE) return THEME_SONG_ENTITY_TYPE;
+  return TITLE_ENTITY_TYPE;
 }
 
 export function isCharacterEntity(entity) {
   return normalizeCatalogEntityType(entity?.entityType) === CHARACTER_ENTITY_TYPE;
 }
 
+export function isThemeSongEntity(entity) {
+  return entity?.entityType === THEME_SONG_ENTITY_TYPE;
+}
+
 export function getCatalogEntityName(entity) {
+  if (isThemeSongEntity(entity)) {
+    return entity?.song_title || entity?.title_en || 'Unknown';
+  }
   return entity?.title_th || entity?.title_en || entity?.title_native || 'Unknown';
 }
 
 export function getCatalogEntityMeta(entity) {
+  if (isThemeSongEntity(entity)) {
+    return [
+      entity?.voice_actor_name || entity?.artist_name,
+      entity?.sourceTitleName,
+    ].filter(Boolean).join(' / ');
+  }
+
   if (isCharacterEntity(entity)) {
     return [
       entity?.sourceTitleName,
@@ -91,6 +108,52 @@ export function getCatalogEntityMeta(entity) {
   }
 
   return [entity?.type, ...(entity?.genres || []).slice(0, 2)].filter(Boolean).join(' / ');
+}
+
+export function buildThemeSongEntity(song, sourceTitle) {
+  const themeLabel = song.theme_type + (song.theme_sequence > 1 ? ` ${song.theme_sequence}` : '');
+  const sourceTitleName = sourceTitle
+    ? (sourceTitle.title_th || sourceTitle.title_en || sourceTitle.title_native || '')
+    : '';
+
+  return {
+    id: Number(song.id),
+    entityType: THEME_SONG_ENTITY_TYPE,
+    slug: `song-${song.id}`,
+    title_en: song.song_title,
+    title_th: song.song_title,
+    title_native: '',
+    cover: sourceTitle?.cover || '',
+    banner: sourceTitle?.banner || '',
+    synopsis: '',
+    // Store in existing serializable fields so they survive battle session serialization:
+    role: themeLabel,
+    voice_actor_name: song.artist_name || '',
+    // Song-specific fields (available in-memory; also preserved in stored sessions):
+    song_title: song.song_title,
+    artist_name: song.artist_name || '',
+    theme_type: song.theme_type,
+    theme_sequence: song.theme_sequence || 1,
+    theme_label: themeLabel,
+    video_url: song.video_url || null,
+    is_creditless: Boolean(song.is_creditless),
+    is_spoiler: Boolean(song.is_spoiler),
+    is_nsfw: Boolean(song.is_nsfw),
+    episodes_text: song.episodes_text || null,
+    // Standard catalog fields:
+    type: 'theme_song',
+    subtype: song.theme_type || 'OP',
+    genres: [],
+    tags: [],
+    moods: [],
+    score: null,
+    popularity: 0,
+    is_adult: Boolean(sourceTitle?.is_adult),
+    year: sourceTitle?.year || null,
+    sourceTitleId: Number(sourceTitle?.id || 0) || null,
+    sourceTitleSlug: sourceTitle?.slug || '',
+    sourceTitleName,
+  };
 }
 
 export function buildCharacterEntity(sourceTitle, character, index = 0) {

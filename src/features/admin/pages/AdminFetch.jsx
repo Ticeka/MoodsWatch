@@ -243,6 +243,223 @@ async function fetchJikanPage(page, jikanCfg, signal) {
   return res.json();
 }
 
+const ANIMETHEMES_BASE = 'https://api.animethemes.moe';
+const ANIMETHEMES_INCLUDE = 'resources,animethemes.song,animethemes.animethemeentries.videos';
+const THEME_SOURCE_PRIORITY = { BD: 4, WEB: 3, DVD: 2, RAW: 1 };
+const ALIAS_TYPE_PRIORITY = { romaji: 0, english: 1, native: 2, synonym: 3, localized: 4, alternate: 5, canonical: 6 };
+
+function normalizeLooseText(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function getSourceRefId(sourceRefs, provider) {
+  const ref = (sourceRefs || []).find((entry) => entry.provider === provider);
+  return ref?.external_id ? String(ref.external_id) : '';
+}
+
+function buildThemeSearchNames(titleRecord) {
+  const seen = new Set();
+  const aliases = [...(titleRecord?.aliases || [])]
+    .sort((a, b) => {
+      const rankA = ALIAS_TYPE_PRIORITY[a.alias_type] ?? 99;
+      const rankB = ALIAS_TYPE_PRIORITY[b.alias_type] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
+      if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+      return String(a.alias || '').length - String(b.alias || '').length;
+    })
+    .map((entry) => entry.alias);
+
+  return [titleRecord?.canonical_title, ...aliases]
+    .filter((value) => String(value || '').trim())
+    .filter((value) => {
+      const key = normalizeLooseText(value);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+function getThemeType(rawType) {
+  if (rawType === 'OP') return 'OP';
+  if (rawType === 'ED') return 'ED';
+  if (rawType === 'IN') return 'INSERT';
+  return 'OTHER';
+}
+
+function pickPreferredThemeVideo(videos) {
+  return [...(videos || [])].sort((left, right) => {
+    if (Boolean(left?.nc) !== Boolean(right?.nc)) return Number(Boolean(right?.nc)) - Number(Boolean(left?.nc));
+    const resolutionDiff = Number(right?.resolution || 0) - Number(left?.resolution || 0);
+    if (resolutionDiff !== 0) return resolutionDiff;
+    const sourceDiff = (THEME_SOURCE_PRIORITY[right?.source] || 0) - (THEME_SOURCE_PRIORITY[left?.source] || 0);
+    if (sourceDiff !== 0) return sourceDiff;
+    return Number(right?.id || 0) - Number(left?.id || 0);
+  })[0] || null;
+}
+
+async function fetchAnimeThemesByName(name, signal) {
+  const params = new URLSearchParams();
+  params.set('filter[name]', name);
+  params.set('include', ANIMETHEMES_INCLUDE);
+  const res = await fetch(`${ANIMETHEMES_BASE}/anime?${params.toString()}`, {
+    headers: { accept: 'application/json' },
+    signal,
+  });
+  if (!res.ok) throw new Error(`AnimeThemes ${res.status}`);
+  const json = await res.json();
+  return json?.anime || [];
+}
+
+function selectAnimeThemesMatch(candidates, titleRecord, queryName) {
+  const anilistId = getSourceRefId(titleRecord?.source_refs, 'anilist');
+  const malId = getSourceRefId(titleRecord?.source_refs, 'jikan');
+  const queryNorm = normalizeLooseText(queryName);
+  const searchNames = new Set(buildThemeSearchNames(titleRecord).map(normalizeLooseText));
+
+  let best = null;
+
+  for (const candidate of candidates || []) {
+    const resources = candidate?.resources || [];
+    const candidateNorm = normalizeLooseText(candidate?.name);
+    const matchedAniList = Boolean(
+      anilistId && resources.some((resource) => resource?.site === 'AniList' && String(resource?.external_id || '') === anilistId)
+    );
+    const matchedMal = Boolean(
+      malId && resources.some((resource) => resource?.site === 'MyAnimeList' && String(resource?.external_id || '') === malId)
+    );
+    const matchedAlias = Boolean(candidateNorm && searchNames.has(candidateNorm));
+    const matchedQuery = Boolean(candidateNorm && candidateNorm === queryNorm);
+    const matchedYear = Boolean(titleRecord?.release_year && candidate?.year && Number(candidate.year) === Number(titleRecord.release_year));
+
+    const score = (matchedAniList ? 1000 : 0)
+      + (matchedMal ? 900 : 0)
+      + (matchedAlias ? 120 : 0)
+      + (matchedQuery ? 25 : 0)
+      + (matchedYear ? 10 : 0);
+
+    if (!best || score > best.score) {
+      best = {
+        score,
+        queryName,
+        candidate,
+        matchedBy: matchedAniList
+          ? 'anilist'
+          : matchedMal
+            ? 'mal'
+            : matchedAlias
+              ? 'alias'
+              : matchedQuery
+                ? 'query'
+                : matchedYear
+                  ? 'year'
+                  : 'candidate',
+      };
+    }
+  }
+
+  if (!best) return null;
+  if (best.score >= 900) return best;
+  if (best.score >= 120) return best;
+  return null;
+}
+
+async function resolveAnimeThemesMatch(titleRecord, signal) {
+  const searchNames = buildThemeSearchNames(titleRecord);
+  let best = null;
+
+  for (const name of searchNames) {
+    const candidates = await fetchAnimeThemesByName(name, signal);
+    const matched = selectAnimeThemesMatch(candidates, titleRecord, name);
+    if (matched?.score >= 900) return matched;
+    if (!best || (matched && matched.score > best.score)) best = matched;
+  }
+
+  return best;
+}
+
+function buildThemeSongRows(titleId, matched) {
+  const anime = matched?.candidate;
+  let order = 0;
+
+  return (anime?.animethemes || [])
+    .filter((theme) => ['OP', 'ED'].includes(theme?.type))
+    .flatMap((theme) => {
+      const entries = theme?.animethemeentries?.length ? theme.animethemeentries : [null];
+      return entries.map((entry) => {
+        const video = pickPreferredThemeVideo(entry?.videos || []);
+        const themeType = getThemeType(theme?.type);
+        order += 1;
+        return {
+          canonical_title_id: titleId,
+          source_provider: 'animethemes',
+          theme_key: `${anime?.id || 'anime'}:${theme?.id || 'theme'}:${entry?.id || 'entry'}:${video?.id || 'novideo'}`,
+          source_anime_id: anime?.id ? String(anime.id) : null,
+          source_theme_id: theme?.id ? String(theme.id) : null,
+          source_song_id: theme?.song?.id ? String(theme.song.id) : null,
+          source_entry_id: entry?.id ? String(entry.id) : null,
+          source_video_id: video?.id ? String(video.id) : null,
+          theme_slug: theme?.slug || null,
+          theme_type: themeType,
+          theme_sequence: Number.isFinite(Number(theme?.sequence)) ? Number(theme.sequence) : null,
+          entry_version: Number.isFinite(Number(entry?.version)) ? Number(entry.version) : null,
+          display_order: order,
+          song_title: theme?.song?.title || theme?.slug || `${themeType}${theme?.sequence || ''}`,
+          artist_name: Array.isArray(theme?.song?.artists) && theme.song.artists.length
+            ? theme.song.artists.map((artist) => artist?.name).filter(Boolean).join(', ')
+            : null,
+          episodes_text: entry?.episodes || null,
+          notes: entry?.notes || null,
+          video_url: video?.link || null,
+          video_resolution: Number.isFinite(Number(video?.resolution)) ? Number(video.resolution) : null,
+          video_source: video?.source || null,
+          is_creditless: Boolean(video?.nc),
+          is_nsfw: Boolean(entry?.nsfw),
+          is_spoiler: Boolean(entry?.spoiler),
+          is_subbed: Boolean(video?.subbed),
+          metadata: {
+            matched_query: matched?.queryName || null,
+            matched_by: matched?.matchedBy || null,
+            anime_name: anime?.name || null,
+            anime_slug: anime?.slug || null,
+            video_filename: video?.filename || null,
+            video_tags: video?.tags || null,
+          },
+          fetched_at: new Date().toISOString(),
+        };
+      });
+    });
+}
+
+async function replaceTitleThemeSongs(titleId, matched) {
+  const rows = buildThemeSongRows(titleId, matched);
+  const { error: deleteError } = await supabase.from('title_theme_songs').delete().eq('canonical_title_id', titleId);
+  if (deleteError) throw deleteError;
+
+  if (rows.length) {
+    const { error: insertError } = await supabase.from('title_theme_songs').insert(rows);
+    if (insertError) throw insertError;
+  }
+
+  const { error: titleError } = await supabase
+    .from('canonical_titles')
+    .update({ last_synced_at: new Date().toISOString() })
+    .eq('id', titleId);
+  if (titleError) throw titleError;
+
+  return {
+    rows: rows.length,
+    themes: (matched?.candidate?.animethemes || []).filter((theme) => ['OP', 'ED'].includes(theme?.type)).length,
+  };
+}
+
 // ─── Supabase upsert ─────────────────────────────────────────────────────────
 
 async function upsertTitle(norm, skipDuplicates) {
@@ -590,6 +807,7 @@ export function AdminFetch() {
   const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
   const [jikanConfig, setJikanConfig] = useState({ sort: 'score', pages: 3, perPage: 25 });
   const [trailerConfig, setTrailerConfig] = useState({ onlyMissing: true, category: 'all', limit: 100, delayMs: 1200 });
+  const [themeConfig, setThemeConfig] = useState({ onlyMissing: true, limit: 100, delayMs: 1200 });
   const abortRef = useRef(null);
   const logContainerRef = useRef(null);
 
@@ -904,6 +1122,132 @@ export function AdminFetch() {
     }
   };
 
+  const handleThemeBackfill = async () => {
+    if (!supabase) {
+      toast.error(t('admin.fetch.themes.supabaseUnavailable'));
+      return;
+    }
+
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress(null);
+
+    try {
+      addLog(
+        'info',
+        t('admin.fetch.themes.logStart', {
+          mode: themeConfig.onlyMissing
+            ? t('admin.fetch.themes.modeMissing')
+            : t('admin.fetch.themes.modeRefresh'),
+          delayMs: themeConfig.delayMs,
+        })
+      );
+
+      const { data: titleRows, error: titleError } = await supabase
+        .from('canonical_titles')
+        .select(`
+          id,
+          canonical_title,
+          release_year,
+          type,
+          subtype,
+          aliases:title_aliases(alias, alias_type, is_primary),
+          source_refs:title_source_refs(provider, external_id),
+          themes:title_theme_songs(id)
+        `)
+        .eq('type', 'anime')
+        .order('id', { ascending: true });
+      if (titleError) throw titleError;
+
+      let targets = (titleRows || []).filter((titleRecord) => {
+        if (themeConfig.onlyMissing && Array.isArray(titleRecord.themes) && titleRecord.themes.length > 0) {
+          return false;
+        }
+        return buildThemeSearchNames(titleRecord).length > 0;
+      });
+
+      if (themeConfig.limit > 0) {
+        targets = targets.slice(0, themeConfig.limit);
+      }
+
+      addLog('info', t('admin.fetch.themes.logTargets', { count: targets.length }));
+      setProgress({ total: targets.length, done: 0, synced: 0, rows: 0, noMatch: 0, errors: 0 });
+
+      if (targets.length === 0) {
+        addLog('success', t('admin.fetch.themes.logNothingToDo'));
+        toast.success(t('admin.fetch.themes.nothingToDo'));
+        return;
+      }
+
+      for (const titleRecord of targets) {
+        if (abortRef.current.signal.aborted) break;
+
+        const fallbackTitle = titleRecord?.canonical_title || `#${titleRecord?.id}`;
+
+        try {
+          const matched = await resolveAnimeThemesMatch(titleRecord, abortRef.current.signal);
+
+          if (!matched?.candidate) {
+            setProgress((current) => ({
+              ...current,
+              done: current.done + 1,
+              noMatch: current.noMatch + 1,
+            }));
+            addLog('skipped', t('admin.fetch.themes.logNoMatch', { title: fallbackTitle }));
+          } else {
+            const result = await replaceTitleThemeSongs(titleRecord.id, matched);
+            setProgress((current) => ({
+              ...current,
+              done: current.done + 1,
+              synced: current.synced + 1,
+              rows: current.rows + result.rows,
+            }));
+
+            addLog(
+              result.rows > 0 ? 'updated' : 'skipped',
+              t(
+                result.rows > 0 ? 'admin.fetch.themes.logSynced' : 'admin.fetch.themes.logNoThemes',
+                {
+                  title: fallbackTitle,
+                  rows: result.rows,
+                  match: matched.candidate?.name || fallbackTitle,
+                }
+              )
+            );
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') break;
+          setProgress((current) => ({
+            ...current,
+            done: current.done + 1,
+            errors: current.errors + 1,
+          }));
+          addLog('error', `[${fallbackTitle}] ${error.message}`);
+        }
+
+        if (!abortRef.current.signal.aborted && themeConfig.delayMs > 0) {
+          await sleep(themeConfig.delayMs);
+        }
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', t('admin.fetch.themes.logFinished'));
+        toast.success(t('admin.fetch.themes.finished'));
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        addLog('error', error.message);
+        toast.error(error.message);
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const handleJikanFetch = async () => {
     if (!supabase) { toast.error('Supabase unavailable'); return; }
     abortRef.current = new AbortController();
@@ -984,11 +1328,13 @@ export function AdminFetch() {
           <p style={{ margin: '0.3rem 0 0', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
             {activeTab === 'titles'
               ? t('admin.fetch.pageSubtitle')
-              : activeTab === 'trailers'
-                ? t('admin.fetch.trailers.tabSubtitle')
-                : activeTab === 'jikan'
-                  ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)'
-                  : t('admin.fetch.cs.tabSubtitle')}
+              : activeTab === 'themes'
+                ? t('admin.fetch.themes.tabSubtitle')
+                : activeTab === 'trailers'
+                  ? t('admin.fetch.trailers.tabSubtitle')
+                  : activeTab === 'jikan'
+                    ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)'
+                    : t('admin.fetch.cs.tabSubtitle')}
           </p>
         </div>
       </div>
@@ -997,6 +1343,7 @@ export function AdminFetch() {
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-5)', borderBottom: '1px solid var(--border-default)', paddingBottom: 'var(--space-3)' }}>
         {[
           { id: 'titles', label: t('admin.fetch.tabTitles'), Icon: Download },
+          { id: 'themes', label: t('admin.fetch.themes.tabTitle'), Icon: Hash },
           { id: 'trailers', label: t('admin.fetch.trailers.tabTitle'), Icon: RefreshCw },
           { id: 'jikan', label: 'Jikan (MAL)', Icon: Globe },
           { id: 'charstaff', label: t('admin.fetch.cs.tabTitle'), Icon: Users },
@@ -1135,6 +1482,89 @@ export function AdminFetch() {
                       min={0} value={config.minPopularity} disabled={running}
                       onChange={(e) => set('minPopularity', e.target.value)} />
                   </div>
+                </div>
+              </Section>
+            </>
+          ) : activeTab === 'themes' ? (
+            <>
+              <Section title={t('admin.fetch.themes.modeLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {[
+                    {
+                      key: true,
+                      label: t('admin.fetch.themes.modeMissing'),
+                      hint: t('admin.fetch.themes.modeMissingHint'),
+                    },
+                    {
+                      key: false,
+                      label: t('admin.fetch.themes.modeRefresh'),
+                      hint: t('admin.fetch.themes.modeRefreshHint'),
+                    },
+                  ].map(({ key, label, hint }) => (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      disabled={running}
+                      onClick={() => setThemeConfig((current) => ({ ...current, onlyMissing: key }))}
+                      style={{
+                        padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
+                        border: `2px solid ${themeConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: themeConfig.onlyMissing === key
+                          ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                          : 'var(--bg-primary)',
+                        textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: themeConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.themes.sourceLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div style={{ padding: 'var(--space-4)', borderRadius: 18, background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: 4 }}>
+                      {t('admin.fetch.themes.sourceTitle')}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', lineHeight: 1.55 }}>
+                      {t('admin.fetch.themes.sourceHint')}
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.themes.limitLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={themeConfig.limit}
+                    onChange={(value) => setThemeConfig((current) => ({ ...current, limit: value }))}
+                    min={0}
+                    max={1000}
+                    disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.themes.limitHint')}
+                  </p>
+                </div>
+              </Section>
+
+              <Section title={t('admin.fetch.themes.delayLabel')}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={themeConfig.delayMs}
+                    onChange={(value) => setThemeConfig((current) => ({ ...current, delayMs: value }))}
+                    min={250}
+                    max={5000}
+                    step={250}
+                    disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    {t('admin.fetch.themes.delayHint')}
+                  </p>
                 </div>
               </Section>
             </>
@@ -1390,6 +1820,8 @@ export function AdminFetch() {
                 onClick={
                   activeTab === 'titles'
                     ? handleFetch
+                    : activeTab === 'themes'
+                      ? handleThemeBackfill
                     : activeTab === 'trailers'
                       ? handleTrailerBackfill
                       : activeTab === 'jikan'
@@ -1400,6 +1832,8 @@ export function AdminFetch() {
                 <Play size={16} /> {
                   activeTab === 'titles'
                     ? t('admin.fetch.fetchBtn')
+                    : activeTab === 'themes'
+                      ? t('admin.fetch.themes.startBtn')
                     : activeTab === 'trailers'
                       ? t('admin.fetch.trailers.startBtn')
                       : activeTab === 'jikan'
@@ -1473,6 +1907,21 @@ export function AdminFetch() {
                   </div>
                 </div>
               )}
+              {activeTab === 'themes' && running && progress.total > 0 && (
+                <div style={{ marginBottom: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                    <span>{t('admin.fetch.themes.progress', { done: progress.done, total: progress.total })}</span>
+                    <span>{t('admin.fetch.themes.delayProgress', { delayMs: themeConfig.delayMs })}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999,
+                      background: 'linear-gradient(90deg, var(--primary-500), var(--accent-500))',
+                      width: `${Math.round((progress.done / progress.total) * 100)}%`, transition: 'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
                 {(activeTab === 'titles' || activeTab === 'jikan'
                   ? [
@@ -1481,6 +1930,13 @@ export function AdminFetch() {
                       { label: t('admin.fetch.statSkipped'), value: progress.skipped,  color: 'var(--text-tertiary)' },
                       { label: t('admin.fetch.statErrors'),  value: progress.errors,   color: '#dc2626' },
                     ]
+                  : activeTab === 'themes'
+                    ? [
+                        { label: t('admin.fetch.themes.statSynced'), value: progress.synced, color: '#16a34a' },
+                        { label: t('admin.fetch.themes.statRows'), value: progress.rows, color: '#2563eb' },
+                        { label: t('admin.fetch.themes.statNoMatch'), value: progress.noMatch, color: 'var(--text-tertiary)' },
+                        { label: t('admin.fetch.themes.statErrors'), value: progress.errors, color: '#dc2626' },
+                      ]
                   : activeTab === 'trailers'
                     ? [
                         { label: t('admin.fetch.trailers.statDone'), value: progress.done, color: '#2563eb' },

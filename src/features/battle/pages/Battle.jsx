@@ -1,8 +1,8 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
-import { getAllTitles } from '@/features/discover/lib/recommend';
+import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, Music, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
+import { getAllTitles, getTitleBySlug } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
   buildBattleShareText,
@@ -41,12 +41,16 @@ import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import {
   CHARACTER_ENTITY_TYPE,
+  THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  buildThemeSongEntity,
   getCatalogEntities,
   getCatalogEntityMeta,
   getCatalogEntityName,
+  isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
+import { supabase } from '@/shared/lib/supabase';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
@@ -722,6 +726,12 @@ function BattleMatchCard({
     <article className="battle-card glass-heavy">
       <div className="battle-card-cover">
         <img src={getTitleArtwork(title)} alt="" />
+        {isThemeSongEntity(title) && (
+          <span className="battle-card-song-badge">
+            <Music size={10} />
+            {title.role || title.theme_label}
+          </span>
+        )}
         <div className="battle-card-body">
           <small className="battle-card-meta">{getMetaLine(title)}</small>
           <h2>{displayName}</h2>
@@ -1079,8 +1089,74 @@ export function BattleBuilderPage() {
   const [hasLoadedEditDeck, setHasLoadedEditDeck] = useState(false);
   const deferredFilters = useDeferredValue(filters);
   const editDeckId = searchParams.get('deckId');
+  const songTitleSlug = searchParams.get('songTitleSlug');
+
+  // Song battle mode: auto-fetch songs for a title and start a battle session
+  useEffect(() => {
+    if (!songTitleSlug) return undefined;
+    let cancelled = false;
+
+    async function startSongBattle() {
+      setIsLoading(true);
+      setError('');
+      try {
+        const sourceTitle = await getTitleBySlug(songTitleSlug);
+        if (cancelled) return;
+        if (!sourceTitle) {
+          setError('ไม่พบชื่อเรื่องนี้ / Title not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const { data: songData, error: songError } = await supabase
+          .from('title_theme_songs')
+          .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
+          .eq('canonical_title_id', sourceTitle.id)
+          .order('display_order');
+
+        if (cancelled) return;
+        if (songError || !songData || songData.length < 2) {
+          setError('เพลงไม่เพียงพอสำหรับ Battle (ต้องมีอย่างน้อย 2 เพลง) / Not enough songs for battle (need at least 2)');
+          setIsLoading(false);
+          return;
+        }
+
+        const songEntities = songData.map((song) => buildThemeSongEntity(song, sourceTitle));
+        const titleName = sourceTitle.title_th || sourceTitle.title_en || sourceTitle.title_native || 'Songs';
+        const deck = {
+          key: `song-battle:${sourceTitle.id}`,
+          fingerprint: songEntities.map((s) => s.id).sort((a, b) => a - b).join(':'),
+          label: `เพลงจาก ${titleName}`,
+          filters: { entityType: THEME_SONG_ENTITY_TYPE, size: songEntities.length },
+          titles: songEntities,
+          sourceCount: songEntities.length,
+        };
+
+        const session = saveBattleSession(createBattleSession(deck, {}));
+        if (user?.id) {
+          try {
+            await persistRemoteBattleSession(user.id, session);
+          } catch (saveError) {
+            console.warn('Failed to persist song battle session remotely', saveError);
+          }
+        }
+        if (!cancelled) {
+          navigate(`/battle/${session.id}`);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError.message || 'Failed to start song battle');
+          setIsLoading(false);
+        }
+      }
+    }
+
+    startSongBattle();
+    return () => { cancelled = true; };
+  }, [songTitleSlug, user?.id, navigate]);
 
   useEffect(() => {
+    if (songTitleSlug) return undefined;
     let cancelled = false;
 
     async function loadTitles() {
@@ -1444,6 +1520,29 @@ export function BattleBuilderPage() {
       setIsSaving(false);
     }
   };
+
+  if (songTitleSlug) {
+    return (
+      <div className="battle-page">
+        <section className="container battle-section" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {error ? (
+            <div className="glass-heavy battle-empty-state">
+              <Music size={28} style={{ opacity: 0.4 }} />
+              <strong>{error}</strong>
+              <button type="button" className="btn btn-ghost" onClick={() => navigate(-1)}>
+                ← กลับ / Back
+              </button>
+            </div>
+          ) : (
+            <div className="glass-heavy battle-empty-state">
+              <Music size={28} style={{ opacity: 0.6 }} />
+              <strong>กำลังเตรียม Song Battle... / Preparing Song Battle...</strong>
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="battle-page">
