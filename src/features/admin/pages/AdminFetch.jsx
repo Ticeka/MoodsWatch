@@ -454,11 +454,70 @@ function Chip({ active, onClick, disabled, children, color }) {
 
 // ─── Number stepper ───────────────────────────────────────────────────────────
 function Stepper({ value, onChange, min, max, disabled, step = 1 }) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commitValue = (rawValue) => {
+    const trimmed = String(rawValue ?? '').trim();
+    if (!trimmed) {
+      setDraft(String(value));
+      return;
+    }
+
+    const numericValue = Number(trimmed);
+    if (!Number.isFinite(numericValue)) {
+      setDraft(String(value));
+      return;
+    }
+
+    const nextValue = Math.min(max, Math.max(min, Math.round(numericValue)));
+    setDraft(String(nextValue));
+    onChange(nextValue);
+  };
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--border-default)', overflow: 'hidden', background: 'var(--bg-primary)' }}>
       <button type="button" onClick={() => onChange(Math.max(min, value - step))} disabled={disabled || value <= min}
         style={{ width: 36, height: 38, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 700 }}>−</button>
-      <span style={{ minWidth: 32, textAlign: 'center', fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{value}</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={draft}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={(event) => commitValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            setDraft(String(value));
+            event.currentTarget.blur();
+          }
+        }}
+        aria-label="Number input"
+        style={{
+          width: 72,
+          height: 38,
+          border: 'none',
+          borderLeft: '1px solid var(--border-default)',
+          borderRight: '1px solid var(--border-default)',
+          background: 'transparent',
+          color: 'var(--text-primary)',
+          textAlign: 'center',
+          fontWeight: 700,
+          fontSize: '0.95rem',
+          outline: 'none',
+          padding: '0 0.4rem',
+          MozAppearance: 'textfield',
+        }}
+      />
       <button type="button" onClick={() => onChange(Math.min(max, value + step))} disabled={disabled || value >= max}
         style={{ width: 36, height: 38, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 700 }}>+</button>
     </div>
