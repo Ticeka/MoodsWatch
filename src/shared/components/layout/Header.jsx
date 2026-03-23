@@ -592,25 +592,27 @@ export function Header() {
             {!user && (
               <div className="guest-actions-desktop">
                 <LanguageToggle />
-                <button
-                  type="button"
-                  className="theme-toggle"
-                  onClick={toggleAdult}
-                  aria-label={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
-                  title={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
-                  style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}
-                >
-                  {showAdult ? <Eye size={18} /> : <EyeOff size={18} />}
-                </button>
-                <button
-                  type="button"
-                  className="theme-toggle"
-                  onClick={toggleTheme}
-                  aria-label={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
-                  title={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
-                >
-                  {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
+                <div className="guest-icon-group">
+                  <button
+                    type="button"
+                    className="guest-pill-btn"
+                    onClick={toggleAdult}
+                    aria-label={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+                    title={showAdult ? 'ปิด 18+' : 'เปิด 18+'}
+                    style={{ color: showAdult ? 'var(--error, #e11d48)' : undefined }}
+                  >
+                    {showAdult ? <Eye size={17} /> : <EyeOff size={17} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="guest-pill-btn"
+                    onClick={toggleTheme}
+                    aria-label={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+                    title={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
+                  >
+                    {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -950,4 +952,3 @@ export function Footer() {
     </footer>
   );
 }
-

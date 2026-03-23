@@ -115,7 +115,23 @@
 .guest-actions-desktop {
   display: none;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
+}
+
+/* Hide language toggle by default on smaller desktops, show at 1280px+ */
+.guest-actions-desktop > .language-toggle {
+  display: none;
+}
+
+/* Compact pill wrapper for guest icon-buttons */
+.guest-icon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--bg-secondary, rgba(255,255,255,0.08));
+  border: 1px solid var(--border-default, rgba(255,255,255,0.15));
 }
 
 .language-toggle {
@@ -151,7 +167,8 @@
 .desktop-nav {
   display: none;
   align-items: center;
-  gap: 2rem;
+  gap: 0.25rem;
+  flex-shrink: 0;
   min-width: 0;
 }
 
@@ -253,10 +270,13 @@
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: color var(--transition-fast), gap var(--transition-fast);
+  transition: color var(--transition-fast);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
 }
 
 .nav-link svg {
@@ -279,23 +299,17 @@
 
 .nav-link-label {
   white-space: nowrap;
+  display: none;
 }
 
 .nav-link.active::after {
-  content: "";
-  position: absolute;
-  bottom: -4px;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: var(--gradient-primary);
-  border-radius: 2px;
+  display: none;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-shrink: 0;
 }
 
@@ -306,8 +320,8 @@
 }
 
 .theme-toggle, .mobile-menu-btn {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -316,6 +330,28 @@
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+/* Guest-mode icon buttons inside the pill group */
+.guest-pill-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+  flex-shrink: 0;
+}
+
+.guest-pill-btn:hover {
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg-tertiary));
+  color: var(--text-primary);
 }
 
 .theme-toggle:hover {
@@ -665,17 +701,21 @@
 .login-btn {
   background: var(--gradient-primary);
   color: white;
-  padding: 0.625rem 1.25rem;
-  border-radius: 12px;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.2);
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(var(--primary-rgb), 0.25);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
 }
 
 .login-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(var(--primary-rgb), 0.24);
-  filter: saturate(1.04);
+  box-shadow: 0 10px 26px rgba(var(--primary-rgb), 0.3);
+  filter: brightness(1.04) saturate(1.06);
 }
 
 .mobile-overlay {
@@ -962,10 +1002,15 @@
     gap: 0.5rem;
   }
 
+  /* Mobile: login button is compact, guest icon group hidden */
   .login-btn {
-    padding: 0.5rem 0.85rem;
-    font-size: 0.85rem;
-    border-radius: 10px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.82rem;
+    border-radius: 999px;
+  }
+
+  .guest-icon-group {
+    display: none;
   }
 
   .user-chip {
@@ -1045,19 +1090,15 @@
   }
 }
 
-/* Tablet: icons-only nav to prevent overflow */
+/* ── Tablet: compact guest controls ── */
 @media (min-width: 768px) and (max-width: 1099px) {
+
+  .header-content {
+    gap: 0.6rem;
+  }
+
   .desktop-nav {
-    gap: 0.25rem;
-  }
-
-  .nav-link-label {
-    display: none;
-  }
-
-  .nav-link {
-    padding: 0.4rem 0.5rem;
-    border-radius: 10px;
+    gap: 0.15rem;
   }
 
   .nav-link:hover,
@@ -1065,26 +1106,50 @@
     background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
   }
 
-  .nav-link.active::after {
+  /* Hide language toggle on tablet */
+  .guest-actions-desktop > .language-toggle {
     display: none;
   }
 
   .header-actions {
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 }
 
 @media (min-width: 1100px) {
+  .header-content {
+    gap: 1.25rem;
+  }
+
   .header-search {
     display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 36rem;
   }
 
   .desktop-nav {
-    gap: 1.25rem;
+    gap: 0.25rem;
   }
 
   .nav-link-discover {
     display: none;
+  }
+
+  .nav-link:hover,
+  .nav-link.active {
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
+  }
+}
+
+/* ── Large desktop: show language toggle ── */
+@media (min-width: 1280px) {
+  .guest-actions-desktop > .language-toggle {
+    display: inline-flex;
+  }
+
+  .desktop-nav {
+    gap: 0.35rem;
   }
 }
 
