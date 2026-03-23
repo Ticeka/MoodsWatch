@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
@@ -18,7 +18,7 @@ import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, ExternalLink, Flag, Layers, Link as LinkIcon, Music, Play, PlayCircle, Plus, Star, Swords, Trash2, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
 import './TitleDetail.css';
@@ -851,16 +851,6 @@ export function TitleDetail() {
                         </button>
                       </div>
                     )}
-                      <div className="song-action-links">
-                        <Link to={`/battle/build?songTitleSlug=${slug}`} className="song-action-btn" title="Battle songs">
-                          <Swords size={13} />
-                          <span>Battle</span>
-                        </Link>
-                        <Link to={`/tierlist/songs/${slug}`} className="song-action-btn" title="Tierlist songs">
-                          <Layers size={13} />
-                          <span>Tierlist</span>
-                        </Link>
-                      </div>
                     </div>
                   </div>
                   <div className="song-list">
