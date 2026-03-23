@@ -11,6 +11,7 @@ import { useTopTitles } from '@/features/profile/hooks/useTopTitles';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { buildContentReportPayload, CONTENT_REPORT_ISSUE_OPTIONS } from '@/shared/lib/contentReports';
 import { normalizeTrailer } from '@/shared/lib/trailers';
+import { TrailerModal } from '@/shared/components/ui/TrailerModal';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
@@ -68,7 +69,7 @@ export function TitleDetail() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [canScrollCastPrev, setCanScrollCastPrev] = useState(false);
   const [canScrollCastNext, setCanScrollCastNext] = useState(false);
-  const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
+  const [trailerModalOpen, setTrailerModalOpen] = useState(false);
   const similarRailRef = useRef(null);
   const castRailRef = useRef(null);
 
@@ -79,7 +80,7 @@ export function TitleDetail() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    setIsTrailerPlaying(false);
+    setTrailerModalOpen(false);
   }, [slug]);
 
   useEffect(() => {
@@ -155,15 +156,12 @@ export function TitleDetail() {
       setStatsLoading(true);
       try {
         const { data, error } = await supabase
-          .from('user_lists')
-          .select('list_status')
-          .eq('title_id', title.id);
+          .rpc('get_title_status_counts', { p_title_id: title.id });
         if (error) throw error;
         if (!cancelled && data) {
           const counts = {};
           data.forEach((row) => {
-            const s = row.list_status || 'planned';
-            counts[s] = (counts[s] || 0) + 1;
+            counts[row.list_status] = Number(row.count);
           });
           setTitleStats(counts);
         }
@@ -651,7 +649,44 @@ export function TitleDetail() {
           )}
 
           <aside className="detail-body-aside">
-            <div className={`platforms-card${orderedPlatforms.length === 0 ? ' platforms-card--empty' : ''}`}>
+            {trailer && (
+              <div className="aside-card trailer-aside-card">
+                <div className="aside-card-head">
+                  <h3 className="detail-section-heading aside-section-heading">{t('titleDetail.metaTrailer')}</h3>
+                  {trailer.watchUrl && (
+                    <a href={trailer.watchUrl} target="_blank" rel="noreferrer" className="aside-trailer-ext-link">
+                      <ExternalLink size={12} />
+                      {t('titleDetail.openTrailer')}
+                    </a>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="detail-trailer-launcher aside-frame-shape"
+                  onClick={() => setTrailerModalOpen(true)}
+                  aria-label={t('titleDetail.playTrailerForTitle', { title: trailerTitle })}
+                >
+                  {trailer.thumbnailUrl ? (
+                    <img src={trailer.thumbnailUrl} alt={t('titleDetail.trailerPreviewAlt', { title: trailerTitle })} className="detail-trailer-poster" />
+                  ) : (
+                    <div className="detail-trailer-poster detail-trailer-poster--empty" aria-hidden="true" />
+                  )}
+                  <div className="detail-trailer-overlay">
+                    <span className="detail-trailer-play">
+                      <PlayCircle size={18} />
+                      {t('titleDetail.playTrailer')}
+                    </span>
+                  </div>
+                </button>
+                {(trailer.site || trailer.source) && (
+                  <div className="detail-trailer-meta">
+                    {trailer.site && <span>{t('titleDetail.trailerSiteMeta', { site: trailer.site })}</span>}
+                    {trailer.source && <span>{t('titleDetail.trailerSourceMeta', { source: trailer.source })}</span>}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className={`aside-card platforms-card${orderedPlatforms.length === 0 ? ' platforms-card--empty' : ''}`}>
               <div className="platforms-card-head">
                 <span className="platform-label">{t('titleDetail.availableOn')}</span>
                 {isAdmin && (
@@ -756,96 +791,11 @@ export function TitleDetail() {
           </aside>
         </div>
 
-        {/* ─── Cast & Staff Tabbed Section ─── */}
-        {trailer && (
-          <section className="detail-trailer-section">
-            <div className="detail-trailer-head">
-              <div>
-                <h3 className="detail-section-heading">{t('titleDetail.metaTrailer')}</h3>
-                <p className="detail-trailer-subtitle">{t('titleDetail.trailerHint')}</p>
-              </div>
-              {trailer.watchUrl && (
-                <a
-                  href={trailer.watchUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="detail-trailer-link"
-                >
-                  <ExternalLink size={14} />
-                  {t('titleDetail.openTrailer')}
-                </a>
-              )}
-            </div>
-
-            <div className="detail-trailer-card">
-              {isTrailerPlaying && trailer.embedUrl ? (
-                <div className="detail-trailer-frame-wrap">
-                  <iframe
-                    className="detail-trailer-frame"
-                    src={trailer.embedUrl}
-                    title={t('titleDetail.trailerFrameTitle', { title: trailerTitle })}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                </div>
-              ) : trailer.embedUrl ? (
-                <button
-                  type="button"
-                  className="detail-trailer-launcher"
-                  onClick={() => setIsTrailerPlaying(true)}
-                  aria-label={t('titleDetail.playTrailerForTitle', { title: trailerTitle })}
-                >
-                  {trailer.thumbnailUrl ? (
-                    <img
-                      src={trailer.thumbnailUrl}
-                      alt={t('titleDetail.trailerPreviewAlt', { title: trailerTitle })}
-                      className="detail-trailer-poster"
-                    />
-                  ) : (
-                    <div className="detail-trailer-poster detail-trailer-poster--empty" aria-hidden="true" />
-                  )}
-                  <div className="detail-trailer-overlay">
-                    <span className="detail-trailer-play">
-                      <PlayCircle size={20} />
-                      {t('titleDetail.playTrailer')}
-                    </span>
-                  </div>
-                </button>
-              ) : (
-                <a
-                  href={trailer.watchUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="detail-trailer-launcher detail-trailer-launcher--external"
-                >
-                  {trailer.thumbnailUrl ? (
-                    <img
-                      src={trailer.thumbnailUrl}
-                      alt={t('titleDetail.trailerPreviewAlt', { title: trailerTitle })}
-                      className="detail-trailer-poster"
-                    />
-                  ) : (
-                    <div className="detail-trailer-poster detail-trailer-poster--empty" aria-hidden="true" />
-                  )}
-                  <div className="detail-trailer-overlay">
-                    <span className="detail-trailer-play">
-                      <ExternalLink size={20} />
-                      {t('titleDetail.openTrailer')}
-                    </span>
-                  </div>
-                </a>
-              )}
-
-              <div className="detail-trailer-meta">
-                {trailer.site ? <span>{t('titleDetail.trailerSiteMeta', { site: trailer.site })}</span> : null}
-                {trailer.source ? <span>{t('titleDetail.trailerSourceMeta', { source: trailer.source })}</span> : null}
-              </div>
-            </div>
-          </section>
-        )}
-
         {(title.characters?.length > 0 || title.staff?.length > 0) && (
           <section className="detail-cast-section">
+            <div className="cast-section-title-row">
+              <h3 className="cast-section-main-title">Cast & Staff</h3>
+            </div>
             <div className="cast-header">
               <div className="cast-tabs" role="tablist">
                 {title.characters?.length > 0 && (
@@ -1111,6 +1061,14 @@ export function TitleDetail() {
           </div>
         )}
       </div>
+      {trailerModalOpen && trailer && (
+        <TrailerModal
+          embedUrl={trailer.embedUrl || null}
+          watchUrl={trailer.watchUrl || null}
+          title={trailerTitle}
+          onClose={() => setTrailerModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

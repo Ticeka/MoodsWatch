@@ -1,0 +1,121 @@
+.trailer-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: trailer-backdrop-in 0.18s ease;
+}
+
+@keyframes trailer-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.trailer-modal {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  background: var(--bg-card, #1a1a1a);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.07);
+  animation: trailer-modal-in 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+@keyframes trailer-modal-in {
+  from { opacity: 0; transform: scale(0.93) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.trailer-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.trailer-modal-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.trailer-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.trailer-modal-ext,
+.trailer-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+}
+
+.trailer-modal-ext:hover,
+.trailer-modal-close:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--text-primary, #fff);
+}
+
+.trailer-modal-frame-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.trailer-modal-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.trailer-modal-no-embed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--text-secondary, #aaa);
+}
+
+@media (max-width: 600px) {
+  .trailer-modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .trailer-modal {
+    border-radius: 18px 18px 0 0;
+    max-width: 100%;
+  }
+}

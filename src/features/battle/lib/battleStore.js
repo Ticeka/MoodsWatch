@@ -1,5 +1,6 @@
 import { BRAND_NAME } from '@/shared/config/brand';
 import { CHARACTER_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { normalizeTrailer } from '@/shared/lib/trailers';
 
 const BATTLE_SESSIONS_KEY = 'moodtoon-battle-sessions';
 const BATTLE_DECKS_KEY = 'moodtoon-battle-decks';
@@ -67,6 +68,15 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function getTitleTrailerMeta(title) {
+  const trailer = normalizeTrailer(title || {});
+  return {
+    trailer,
+    hasTrailer: Boolean(trailer),
+    provider: normalizeText(trailer?.provider || trailer?.site || ''),
+  };
+}
+
 function uniqueValues(values) {
   return [...new Set((values || []).filter(Boolean))];
 }
@@ -126,6 +136,8 @@ function pickDeckTitles(titles, filters, options = {}) {
   const normalizedTag = normalizeText(filters.tag);
   const normalizedMood = normalizeText(filters.mood);
   const normalizedQuery = normalizeText(filters.query);
+  const normalizedTrailerState = normalizeText(filters.trailerState) || 'all';
+  const normalizedTrailerProvider = normalizeText(filters.trailerProvider) || 'all';
   const size = clampDeckSize(filters.size);
 
   let pool = applyBattleVisibilityRules(titles, options);
@@ -158,6 +170,16 @@ function pickDeckTitles(titles, filters, options = {}) {
     });
   }
 
+  if (normalizedTrailerState === 'has') {
+    pool = pool.filter((title) => getTitleTrailerMeta(title).hasTrailer);
+  } else if (normalizedTrailerState === 'none') {
+    pool = pool.filter((title) => !getTitleTrailerMeta(title).hasTrailer);
+  }
+
+  if (normalizedTrailerProvider && normalizedTrailerProvider !== 'all') {
+    pool = pool.filter((title) => getTitleTrailerMeta(title).provider === normalizedTrailerProvider);
+  }
+
   const sortedPool = sortDeckPool(pool);
 
   return sortedPool.slice(0, size);
@@ -170,17 +192,26 @@ function buildDeckSignature(filters) {
     tag: normalizeText(filters.tag),
     mood: normalizeText(filters.mood),
     query: normalizeText(filters.query),
+    trailerState: normalizeText(filters.trailerState) || 'all',
+    trailerProvider: normalizeText(filters.trailerProvider) || 'all',
     size: clampDeckSize(filters.size),
   });
 }
 
 function normalizeDeckFilters(filters = {}) {
+  const trailerState = filters.trailerState || 'all';
+  const trailerProvider = trailerState === 'none'
+    ? 'all'
+    : (filters.trailerProvider || 'all');
+
   return {
     entityType: normalizeCatalogEntityType(filters.entityType),
     type: filters.type || 'all',
     tag: filters.tag || '',
     mood: filters.mood || '',
     query: filters.query || '',
+    trailerState,
+    trailerProvider,
     size: clampDeckSize(filters.size),
   };
 }
@@ -216,6 +247,12 @@ function serializeTitle(title) {
     role: title.role || '',
     voice_actor_name: title.voice_actor_name || '',
     voice_actor_image: title.voice_actor_image || '',
+    trailer_url: title.trailer_url || title.trailer?.url || null,
+    trailer_site: title.trailer_site || title.trailer?.site || null,
+    trailer_video_id: title.trailer_video_id || title.trailer?.videoId || null,
+    trailer_thumbnail_url: title.trailer_thumbnail_url || title.trailer?.thumbnailUrl || null,
+    trailer_source: title.trailer_source || title.trailer?.source || null,
+    trailer: title.trailer || null,
     sourceTitleId: title.sourceTitleId || null,
     sourceTitleSlug: title.sourceTitleSlug || '',
     sourceTitleName: title.sourceTitleName || '',
@@ -1002,9 +1039,15 @@ export function collectBattleFilters(titles) {
   const genres = uniqueValues((titles || []).flatMap((title) => title.genres || [])).sort();
   const tags = uniqueValues((titles || []).flatMap((title) => title.tags || [])).sort();
   const moods = uniqueValues((titles || []).flatMap((title) => title.moods || [])).sort();
+  const trailerProviders = uniqueValues(
+    (titles || [])
+      .map((title) => getTitleTrailerMeta(title).provider)
+      .filter(Boolean)
+  ).sort();
   return {
     genres,
     tags,
     moods,
+    trailerProviders,
   };
 }

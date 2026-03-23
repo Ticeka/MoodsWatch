@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, BarChart3, CalendarDays, Copy, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
@@ -48,8 +48,10 @@ import {
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+import { normalizeTrailer } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
+import { TrailerModal } from '@/shared/components/ui/TrailerModal';
 import './Battle.css';
 
 const TYPE_OPTIONS = [
@@ -89,6 +91,78 @@ function getAnyTypeLabel(entityType) {
   return normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE ? 'All characters' : 'All titles';
 }
 
+function formatTrailerProviderLabel(provider, t) {
+  const normalized = normalizeBattleText(provider);
+  if (!normalized) {
+    return t('battle.trailerPlatformUnknown');
+  }
+  if (normalized === 'youtube') {
+    return 'YouTube';
+  }
+  if (normalized === 'dailymotion') {
+    return 'Dailymotion';
+  }
+  if (normalized === 'external') {
+    return t('battle.trailerPlatformExternal');
+  }
+  return provider[0].toUpperCase() + provider.slice(1);
+}
+
+function getBattleTrailerBadge(title, t) {
+  const trailer = normalizeTrailer(title || {});
+  if (!trailer) {
+    return {
+      tone: 'missing',
+      label: t('battle.trailerNone'),
+    };
+  }
+
+  return {
+    tone: 'ready',
+    label: t('battle.trailerProviderBadge', {
+      provider: formatTrailerProviderLabel(trailer.provider || trailer.site || '', t),
+    }),
+  };
+}
+
+function countTitlesWithTrailers(titles = []) {
+  return (titles || []).filter((title) => Boolean(normalizeTrailer(title || {}))).length;
+}
+
+function getActiveBattleFilterSummary(filters, t) {
+  const items = [];
+
+  if (filters.type && filters.type !== 'all') {
+    items.push(filters.type[0].toUpperCase() + filters.type.slice(1));
+  }
+
+  if (filters.tag) {
+    items.push(`#${filters.tag}`);
+  }
+
+  if (filters.mood) {
+    items.push(filters.mood);
+  }
+
+  if (filters.query) {
+    items.push(`"${filters.query}"`);
+  }
+
+  if (filters.trailerState === 'has') {
+    items.push(t('battle.trailerHas'));
+  } else if (filters.trailerState === 'none') {
+    items.push(t('battle.trailerNone'));
+  }
+
+  if (filters.trailerProvider && filters.trailerProvider !== 'all') {
+    items.push(t('battle.trailerProviderBadge', {
+      provider: formatTrailerProviderLabel(filters.trailerProvider, t),
+    }));
+  }
+
+  return items;
+}
+
 function normalizeBattleText(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -102,12 +176,15 @@ function buildOwnerProfilePath(ownerUsername) {
 }
 
 function buildPreparedBattleTitle(title) {
+  const trailer = normalizeTrailer(title || {});
   return {
     title,
     type: title.type,
     moods: new Set((title.moods || []).map(normalizeBattleText)),
     genres: (title.genres || []).map(normalizeBattleText),
     tags: (title.tags || []).map(normalizeBattleText),
+    hasTrailer: Boolean(trailer),
+    trailerProvider: normalizeBattleText(trailer?.provider || trailer?.site),
     haystack: [
       title.title_en,
       title.title_th,
@@ -132,6 +209,8 @@ function matchesPreparedBattleFilters(entry, filters = {}) {
   const normalizedTag = normalizeBattleText(filters.tag);
   const normalizedMood = normalizeBattleText(filters.mood);
   const normalizedQuery = normalizeBattleText(filters.query);
+  const normalizedTrailerState = normalizeBattleText(filters.trailerState);
+  const normalizedTrailerProvider = normalizeBattleText(filters.trailerProvider);
 
   if (filters.type && filters.type !== 'all' && entry.type !== filters.type) {
     return false;
@@ -149,6 +228,18 @@ function matchesPreparedBattleFilters(entry, filters = {}) {
   }
 
   if (normalizedQuery && !entry.haystack.some((value) => value.includes(normalizedQuery))) {
+    return false;
+  }
+
+  if (normalizedTrailerState === 'has' && !entry.hasTrailer) {
+    return false;
+  }
+
+  if (normalizedTrailerState === 'none' && entry.hasTrailer) {
+    return false;
+  }
+
+  if (normalizedTrailerProvider && normalizedTrailerProvider !== 'all' && entry.trailerProvider !== normalizedTrailerProvider) {
     return false;
   }
 
@@ -349,14 +440,29 @@ function mergeSessionsByRecency(localSessions = [], remoteSessions = []) {
     .slice(0, RECENT_BATTLE_SESSION_LIMIT);
 }
 
-function getBattleDeckSubtitle(deck) {
-  return [
+function getBattleDeckSubtitle(deck, t) {
+  const parts = [
     deck?.filters?.type && deck.filters.type !== 'all'
       ? deck.filters.type
       : getAnyTypeLabel(deck?.filters?.entityType),
     deck?.filters?.tag ? `#${deck.filters.tag}` : '',
     deck?.filters?.mood || '',
-  ].filter(Boolean).join(' / ');
+  ];
+
+  if (deck?.filters?.trailerState === 'has') {
+    parts.push(t ? t('battle.trailerHas') : 'Has trailer');
+  } else if (deck?.filters?.trailerState === 'none') {
+    parts.push(t ? t('battle.trailerNone') : 'No trailer');
+  }
+
+  if (deck?.filters?.trailerProvider && deck.filters.trailerProvider !== 'all') {
+    const providerLabel = t
+      ? formatTrailerProviderLabel(deck.filters.trailerProvider, t)
+      : deck.filters.trailerProvider;
+    parts.push(t ? t('battle.trailerProviderBadge', { provider: providerLabel }) : `${providerLabel} trailer`);
+  }
+
+  return parts.filter(Boolean).join(' / ');
 }
 
 function getBattleDeckMeta(deck) {
@@ -415,7 +521,7 @@ function BattleSavedDeckPresetCard({ deck, disabled, onStart }) {
   const canStart = (deck?.titles?.length || 0) >= 8;
   const ownerProfilePath = buildOwnerProfilePath(deck?.ownerUsername);
   const ownerLabel = deck?.ownerUsername || deck?.ownerDisplayName || '';
-  const subtitle = getBattleDeckSubtitle(deck);
+  const subtitle = getBattleDeckSubtitle(deck, t);
 
   return (
     <div className={`battle-preset-card glass-heavy is-static ${!canStart ? 'is-disabled' : ''}`}>
@@ -590,6 +696,119 @@ function BattleCatalogCardSkeleton() {
       </div>
       <div className="battle-skeleton-block" style={{ width: '72px', height: '30px', borderRadius: '8px', flexShrink: 0 }} />
     </div>
+  );
+}
+
+function BattleMatchCard({
+  title,
+  trailer,
+  voteLabel,
+  voteIcon,
+  onVote,
+  isTrailerOpen,
+  onToggleTrailer,
+  onPlayTrailer,
+}) {
+  const { t } = useLanguage();
+
+  if (!title) {
+    return null;
+  }
+
+  const displayName = getDisplayName(title) || t('battle.catalogFallback');
+  const providerLabel = trailer?.site
+    ? `${String(trailer.site).charAt(0).toUpperCase()}${String(trailer.site).slice(1)}`
+    : '';
+
+  return (
+    <article className="battle-card glass-heavy">
+      <div className="battle-card-cover">
+        <img src={getTitleArtwork(title)} alt="" />
+        <div className="battle-card-body">
+          <small className="battle-card-meta">{getMetaLine(title)}</small>
+          <h2>{displayName}</h2>
+          <div className="battle-card-tags">
+            {(title?.tags || []).slice(0, 3).map((tag) => (
+              <span key={tag} className="battle-card-tag">{tag}</span>
+            ))}
+          </div>
+          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+        </div>
+      </div>
+
+      {trailer ? (
+        <div className="battle-card-trailer">
+          <div className="battle-card-trailer-head">
+            <div className="battle-card-trailer-copy">
+              <span className="battle-card-trailer-label">{t('titleDetail.metaTrailer')}</span>
+              <strong className="battle-card-trailer-provider">{providerLabel || t('titleDetail.metaTrailer')}</strong>
+            </div>
+            <div className="battle-card-trailer-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon={<Play size={14} />}
+                className={`battle-card-trailer-inline-action${isTrailerOpen ? ' is-active' : ''}`}
+                onClick={onToggleTrailer}
+                aria-expanded={isTrailerOpen}
+                aria-label={t('titleDetail.playTrailerForTitle', { title: displayName })}
+              >
+                {t('titleDetail.metaTrailer')}
+              </Button>
+              {trailer.watchUrl ? (
+                <a
+                  href={trailer.watchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-ghost btn-sm battle-card-trailer-inline-action battle-card-trailer-link"
+                >
+                  <span className="btn-slot" aria-hidden="true"><ExternalLink size={14} /></span>
+                  <span className="btn-text">{t('titleDetail.openTrailer')}</span>
+                </a>
+              ) : null}
+            </div>
+          </div>
+
+          {isTrailerOpen ? (
+            <div className="battle-card-trailer-panel">
+              {(trailer.embedUrl || trailer.watchUrl) ? (
+                <button
+                  type="button"
+                  className="battle-card-trailer-launcher"
+                  onClick={onPlayTrailer}
+                  aria-label={t('titleDetail.playTrailerForTitle', { title: displayName })}
+                >
+                  {trailer.thumbnailUrl ? (
+                    <img
+                      src={trailer.thumbnailUrl}
+                      alt={t('titleDetail.trailerPreviewAlt', { title: displayName })}
+                      className="battle-card-trailer-poster"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="battle-card-trailer-poster battle-card-trailer-poster--empty" aria-hidden="true" />
+                  )}
+                  <div className="battle-card-trailer-overlay">
+                    <span className="battle-card-trailer-play">
+                      <Play size={16} />
+                      {t('titleDetail.playTrailer')}
+                    </span>
+                  </div>
+                </button>
+              ) : null}
+
+              {(trailer.site || trailer.source) ? (
+                <div className="battle-card-trailer-meta">
+                  {trailer.site ? <span>{t('titleDetail.trailerSiteMeta', { site: trailer.site })}</span> : null}
+                  {trailer.source ? <span>{t('titleDetail.trailerSourceMeta', { source: trailer.source })}</span> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -887,6 +1106,8 @@ export function BattleBuilderPage() {
     tag: '',
     mood: '',
     query: '',
+    trailerState: 'all',
+    trailerProvider: 'all',
     size: 16,
   });
   const [deckSlots, setDeckSlots] = useState(() => buildEmptyDeckSlots(16));
@@ -965,6 +1186,10 @@ export function BattleBuilderPage() {
     () => [...new Set([...filterOptions.genres, ...filterOptions.tags])].slice(0, 80),
     [filterOptions.genres, filterOptions.tags]
   );
+  const trailerProviderOptions = useMemo(
+    () => filterOptions.trailerProviders || [],
+    [filterOptions.trailerProviders]
+  );
   const battleDeck = useMemo(
     () => createManualBattleDeck({
       filters,
@@ -979,6 +1204,18 @@ export function BattleBuilderPage() {
     [deckSlots]
   );
   const filledSlotCount = battleDeck.titles.length;
+  const filteredTrailerCount = useMemo(
+    () => countTitlesWithTrailers(filteredCatalogTitles),
+    [filteredCatalogTitles]
+  );
+  const deckTrailerCount = useMemo(
+    () => countTitlesWithTrailers(battleDeck.titles),
+    [battleDeck.titles]
+  );
+  const activeFilterSummary = useMemo(
+    () => getActiveBattleFilterSummary(filters, t),
+    [filters, t]
+  );
   const firstEmptySlotIndex = useMemo(
     () => deckSlots.findIndex((title) => !title),
     [deckSlots]
@@ -1017,6 +1254,8 @@ export function BattleBuilderPage() {
       tag: editingDeck.filters?.tag || '',
       mood: editingDeck.filters?.mood || '',
       query: '',
+      trailerState: editingDeck.filters?.trailerState || 'all',
+      trailerProvider: editingDeck.filters?.trailerProvider || 'all',
       size: normalizedSize,
     };
 
@@ -1117,6 +1356,8 @@ export function BattleBuilderPage() {
       tag: '',
       mood: '',
       query: '',
+      trailerState: 'all',
+      trailerProvider: 'all',
     }));
     setDeckSlots(buildEmptyDeckSlots(filters.size));
     setActiveSlotIndex(0);
@@ -1352,6 +1593,39 @@ export function BattleBuilderPage() {
             </label>
 
             <label className="battle-field">
+              <span>{t('battle.trailerStatus')}</span>
+              <select
+                value={filters.trailerState}
+                onChange={(event) => setFilters((current) => ({
+                  ...current,
+                  trailerState: event.target.value,
+                  trailerProvider: event.target.value === 'none' ? 'all' : current.trailerProvider,
+                }))}
+                disabled={filters.entityType !== TITLE_ENTITY_TYPE}
+              >
+                <option value="all">{t('battle.anyTrailerStatus')}</option>
+                <option value="has">{t('battle.trailerHas')}</option>
+                <option value="none">{t('battle.trailerNone')}</option>
+              </select>
+            </label>
+
+            <label className="battle-field">
+              <span>{t('battle.trailerPlatform')}</span>
+              <select
+                value={filters.trailerProvider}
+                onChange={(event) => setFilters((current) => ({ ...current, trailerProvider: event.target.value }))}
+                disabled={filters.entityType !== TITLE_ENTITY_TYPE || filters.trailerState === 'none'}
+              >
+                <option value="all">{t('battle.anyTrailerPlatform')}</option>
+                {trailerProviderOptions.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {formatTrailerProviderLabel(provider, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="battle-field">
               <span>{t('battle.deckSize')}</span>
               <select value={filters.size} onChange={(event) => setFilters((current) => ({ ...current, size: Number(event.target.value) }))}>
                 {SIZE_OPTIONS.map((value) => (
@@ -1374,6 +1648,35 @@ export function BattleBuilderPage() {
               <Button onClick={() => saveDeck({ startAfterSave: true })} disabled={isLoading || isSaving || Boolean(error)}>
                 {t('battle.saveAndStart')}
               </Button>
+            </div>
+          </div>
+
+          <div className="battle-builder-summary">
+            <div className="battle-builder-summary-card">
+              <span>{t('battle.filteredResults')}</span>
+              <strong>{filteredCatalogTitles.length}</strong>
+              <small>{t('battle.builderSummaryHint')}</small>
+            </div>
+            <div className="battle-builder-summary-card">
+              <span>{t('battle.trailersInResults')}</span>
+              <strong>{filters.entityType === TITLE_ENTITY_TYPE ? filteredTrailerCount : '-'}</strong>
+              <small>{t('battle.builderSummaryHint')}</small>
+            </div>
+            <div className="battle-builder-summary-card">
+              <span>{t('battle.trailersInDeck')}</span>
+              <strong>{filters.entityType === TITLE_ENTITY_TYPE ? deckTrailerCount : '-'}</strong>
+              <small>{t('battle.deckComposition', { count: filledSlotCount, size: deckSlots.length })}</small>
+            </div>
+          </div>
+
+          <div className="battle-builder-filter-summary glass-heavy">
+            <span className="battle-builder-filter-summary-label">{t('battle.filterSummary')}</span>
+            <div className="battle-builder-filter-chip-row">
+              {activeFilterSummary.length > 0 ? activeFilterSummary.map((item) => (
+                <span key={item} className="battle-builder-filter-chip">{item}</span>
+              )) : (
+                <span className="battle-builder-filter-chip is-muted">{t('battle.filterSummaryEmpty')}</span>
+              )}
             </div>
           </div>
 
@@ -1417,13 +1720,26 @@ export function BattleBuilderPage() {
                       >
                         <span className="battle-slot-index">{index + 1}</span>
                         {title ? (
-                          <>
+                          (() => {
+                            const trailerBadge = filters.entityType === TITLE_ENTITY_TYPE
+                              ? getBattleTrailerBadge(title, t)
+                              : null;
+
+                            return (
+                              <>
                             <div className="battle-slot-thumb">
                               <img src={getTitleArtwork(title)} alt="" loading="lazy" />
                             </div>
                             <div className="battle-slot-copy">
                               <strong>{getDisplayName(title)}</strong>
                               <small>{getMetaLine(title) || title.type}</small>
+                              {trailerBadge ? (
+                                <div className="battle-entry-badges">
+                                  <span className={`battle-entry-badge is-${trailerBadge.tone}`}>
+                                    {trailerBadge.label}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                             <button
                               type="button"
@@ -1436,7 +1752,9 @@ export function BattleBuilderPage() {
                             >
                               <Trash2 size={16} />
                             </button>
-                          </>
+                              </>
+                            );
+                          })()
                         ) : (
                           <div className="battle-slot-empty" aria-label={t('battle.dropTitleHere')} />
                         )}
@@ -1464,6 +1782,9 @@ export function BattleBuilderPage() {
                 <div className="battle-catalog-grid">
                   {previewCatalogTitles.map((title) => {
                     const isSelected = selectedTitleIds.has(title.id);
+                    const trailerBadge = filters.entityType === TITLE_ENTITY_TYPE
+                      ? getBattleTrailerBadge(title, t)
+                      : null;
                     return (
                       <div
                         key={title.id}
@@ -1480,6 +1801,13 @@ export function BattleBuilderPage() {
                         <div className="battle-catalog-copy">
                           <strong>{getDisplayName(title)}</strong>
                           <small>{getMetaLine(title) || title.type}</small>
+                          {trailerBadge ? (
+                            <div className="battle-entry-badges">
+                              <span className={`battle-entry-badge is-${trailerBadge.tone}`}>
+                                {trailerBadge.label}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
                         <Button
                           size="sm"
@@ -1642,7 +1970,7 @@ export function BattleDeckLibraryPage() {
               <BattleReadyDeckCard
                 key={deck.id}
                 title={deck.label}
-                subtitle={getBattleDeckSubtitle(deck)}
+                subtitle={getBattleDeckSubtitle(deck, t)}
                 deck={deck}
                 badge={t('battle.customDeck')}
                 className="battle-deck-card-compact"
@@ -1682,7 +2010,7 @@ export function BattleDeckLibraryPage() {
               <div key={deck.id} className="battle-deck-preset-wrap">
                 <BattleReadyDeckCard
                   title={deck.label}
-                  subtitle={getBattleDeckSubtitle(deck)}
+                  subtitle={getBattleDeckSubtitle(deck, t)}
                   deck={deck}
                   badge={t('battle.publicDeck')}
                   className="battle-deck-card-compact"
@@ -1727,6 +2055,8 @@ export function BattleSessionPage() {
   const [isCommunityLoading, setIsCommunityLoading] = useState(false);
   const [isExportingCard, setIsExportingCard] = useState(false);
   const [communityRankView, setCommunityRankView] = useState('top5');
+  const [expandedTrailerSide, setExpandedTrailerSide] = useState(null);
+  const [trailerModal, setTrailerModal] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1810,6 +2140,8 @@ export function BattleSessionPage() {
 
   const leftTitle = session?.currentPair ? titleMap.get(session.currentPair.leftId) : null;
   const rightTitle = session?.currentPair ? titleMap.get(session.currentPair.rightId) : null;
+  const leftTrailer = useMemo(() => normalizeTrailer(leftTitle || {}), [leftTitle]);
+  const rightTrailer = useMemo(() => normalizeTrailer(rightTitle || {}), [rightTitle]);
   const ranking = session?.ranking || getLiveBattleRanking(session);
   const leaders = ranking.slice(0, 5);
   const winner = ranking[0] || null;
@@ -1864,6 +2196,11 @@ export function BattleSessionPage() {
   const battlePhaseDescription = session?.fastState?.phase === 'playoff'
     ? t('battle.playoffPhaseDescription')
     : t('battle.knockoutPhaseDescription');
+
+  useEffect(() => {
+    setExpandedTrailerSide(null);
+    setTrailerModal(null);
+  }, [session?.currentPair?.leftId, session?.currentPair?.rightId]);
 
   if (!session) {
     return (
@@ -1954,6 +2291,22 @@ export function BattleSessionPage() {
     }
   };
 
+  const handleToggleTrailer = (side) => {
+    setExpandedTrailerSide((current) => (current === side ? null : side));
+  };
+
+  const handlePlayTrailer = (side) => {
+    const trailer = side === 'left' ? leftTrailer : rightTrailer;
+    const titleObj = side === 'left' ? leftTitle : rightTitle;
+    if (trailer) {
+      setTrailerModal({
+        embedUrl: trailer.embedUrl || null,
+        watchUrl: trailer.watchUrl || null,
+        title: getDisplayName(titleObj) || '',
+      });
+    }
+  };
+
   return (
     <div className="battle-page">
       <section className="container battle-session-head">
@@ -1987,21 +2340,16 @@ export function BattleSessionPage() {
           </section>
 
           <section className="container battle-match-grid">
-            <article className="battle-card glass-heavy">
-              <div className="battle-card-cover">
-                <img src={getTitleArtwork(leftTitle)} alt="" />
-                <div className="battle-card-body">
-                  <small className="battle-card-meta">{getMetaLine(leftTitle)}</small>
-                  <h2>{getDisplayName(leftTitle)}</h2>
-                  <div className="battle-card-tags">
-                    {(leftTitle?.tags || []).slice(0, 3).map(tag => (
-                      <span key={tag} className="battle-card-tag">{tag}</span>
-                    ))}
-                  </div>
-                  <Button variant="primary" icon={<Swords size={16} />} onClick={() => handleVote('left')}>{t('battle.chooseLeft')}</Button>
-                </div>
-              </div>
-            </article>
+            <BattleMatchCard
+              title={leftTitle}
+              trailer={leftTrailer}
+              voteLabel={t('battle.chooseLeft')}
+              voteIcon={<Swords size={16} />}
+              onVote={() => handleVote('left')}
+              isTrailerOpen={expandedTrailerSide === 'left'}
+              onToggleTrailer={() => handleToggleTrailer('left')}
+              onPlayTrailer={() => handlePlayTrailer('left')}
+            />
 
             <div className="battle-vs-column">
               <div className="battle-vs-badge">{t('battle.versus')}</div>
@@ -2013,21 +2361,16 @@ export function BattleSessionPage() {
               </div>
             </div>
 
-            <article className="battle-card glass-heavy">
-              <div className="battle-card-cover">
-                <img src={getTitleArtwork(rightTitle)} alt="" />
-                <div className="battle-card-body">
-                  <small className="battle-card-meta">{getMetaLine(rightTitle)}</small>
-                  <h2>{getDisplayName(rightTitle)}</h2>
-                  <div className="battle-card-tags">
-                    {(rightTitle?.tags || []).slice(0, 3).map(tag => (
-                      <span key={tag} className="battle-card-tag">{tag}</span>
-                    ))}
-                  </div>
-                  <Button variant="primary" icon={<ArrowLeftRight size={16} />} onClick={() => handleVote('right')}>{t('battle.chooseRight')}</Button>
-                </div>
-              </div>
-            </article>
+            <BattleMatchCard
+              title={rightTitle}
+              trailer={rightTrailer}
+              voteLabel={t('battle.chooseRight')}
+              voteIcon={<ArrowLeftRight size={16} />}
+              onVote={() => handleVote('right')}
+              isTrailerOpen={expandedTrailerSide === 'right'}
+              onToggleTrailer={() => handleToggleTrailer('right')}
+              onPlayTrailer={() => handlePlayTrailer('right')}
+            />
           </section>
 
           <section className="container battle-section">
@@ -2349,6 +2692,14 @@ export function BattleSessionPage() {
             </section>
 	        </>
 	      )}
+      {trailerModal && (
+        <TrailerModal
+          embedUrl={trailerModal.embedUrl}
+          watchUrl={trailerModal.watchUrl}
+          title={trailerModal.title}
+          onClose={() => setTrailerModal(null)}
+        />
+      )}
     </div>
   );
 }
