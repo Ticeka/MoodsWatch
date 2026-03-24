@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBattleDeck, createStoredBattleDeck } from '../battleStore.js';
+import { buildBattleDeck, createBattleSession, createStoredBattleDeck, getBattleDecisionCount, recordBattleVote } from '../battleStore.js';
 import { THEME_SONG_ENTITY_TYPE } from '../../../../shared/lib/catalogEntities.js';
 
 function makeSong(overrides = {}) {
@@ -38,6 +38,30 @@ function makeSong(overrides = {}) {
     sourceTitleId: 55,
     sourceTitleSlug: 'oshi-no-ko',
     sourceTitleName: 'Oshi no Ko',
+    ...overrides,
+  };
+}
+
+function makeTitle(id, overrides = {}) {
+  return {
+    id,
+    slug: `title-${id}`,
+    entityType: 'title',
+    type: 'anime',
+    subtype: 'anime',
+    title_en: `Title ${id}`,
+    title_th: `Title ${id}`,
+    title_native: '',
+    cover: '',
+    banner: '',
+    synopsis: '',
+    score: 90 - id,
+    popularity: 1000 - id,
+    year: 2024,
+    is_adult: false,
+    genres: [],
+    tags: [],
+    moods: [],
     ...overrides,
   };
 }
@@ -106,5 +130,29 @@ describe('battleStore song support', () => {
       episodes_text: 'EP 1-11',
       sourceTitleName: 'Oshi no Ko',
     }));
+  });
+
+  it('completes the session as soon as progress reaches the target rounds', () => {
+    const titles = Array.from({ length: 8 }, (_, index) => makeTitle(index + 1));
+    const deck = {
+      key: 'anime-deck',
+      fingerprint: titles.map((title) => title.id).join(':'),
+      label: 'Anime deck',
+      filters: { entityType: 'title', type: 'anime', size: 8 },
+      titles,
+    };
+
+    let session = createBattleSession(deck);
+    const targetRounds = session.targetRounds;
+
+    for (let index = 0; index < targetRounds; index += 1) {
+      session = recordBattleVote(session, index % 2 === 0 ? 'left' : 'right');
+    }
+
+    expect(getBattleDecisionCount(session)).toBe(targetRounds);
+    expect(session.status).toBe('completed');
+    expect(session.currentPair).toBeNull();
+    expect(session.winnerId).toBeTruthy();
+    expect(session.ranking).toHaveLength(titles.length);
   });
 });

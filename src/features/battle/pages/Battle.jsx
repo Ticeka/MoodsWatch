@@ -2,7 +2,7 @@ import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, Music, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
-import { getAllTitles, getTitleBySlug, fetchTitleCharacters, attachCharactersToTitles } from '@/features/discover/lib/recommend';
+import { getAllTitles, getTitleBySlug, fetchTitleCharacters } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
   buildBattleShareText,
@@ -1032,7 +1032,7 @@ export function BattleHub() {
       return;
     }
 
-    const session = saveBattleSession(createBattleSession(deck, {
+    let session = saveBattleSession(createBattleSession(deck, {
       catalogCount: normalizeCatalogEntityType(deck?.filters?.entityType) === CHARACTER_ENTITY_TYPE
         ? visibleCharacterCatalog.length
         : normalizeCatalogEntityType(deck?.filters?.entityType) === THEME_SONG_ENTITY_TYPE
@@ -1043,7 +1043,7 @@ export function BattleHub() {
     }));
     if (user?.id) {
       try {
-        await persistRemoteBattleSession(user.id, session);
+        session = saveBattleSession(await persistRemoteBattleSession(user.id, session));
       } catch (saveError) {
         console.warn('Failed to persist battle session remotely', saveError);
         toast.error(t('battle.savedLocalCloudFailed'));
@@ -1272,10 +1272,10 @@ export function BattleBuilderPage() {
           sourceCount: songEntities.length,
         };
 
-        const session = saveBattleSession(createBattleSession(deck, {}));
+        let session = saveBattleSession(createBattleSession(deck, {}));
         if (user?.id) {
           try {
-            await persistRemoteBattleSession(user.id, session);
+            session = saveBattleSession(await persistRemoteBattleSession(user.id, session));
           } catch (saveError) {
             console.warn('Failed to persist song battle session remotely', saveError);
           }
@@ -1708,14 +1708,14 @@ export function BattleBuilderPage() {
       }
 
       if (startAfterSave) {
-        const session = saveBattleSession(createBattleSession(storedDeck, {
+        let session = saveBattleSession(createBattleSession(storedDeck, {
           catalogCount: visibleCatalogEntries.length,
           hiddenExcludedCount,
           excludesAdultContent: !showAdult,
         }));
         if (user?.id) {
           try {
-            await persistRemoteBattleSession(user.id, session);
+            session = saveBattleSession(await persistRemoteBattleSession(user.id, session));
           } catch (saveError) {
             console.warn('Failed to persist battle session remotely', saveError);
             toast.error(t('battle.startAfterSaveFailed'));
@@ -2497,11 +2497,16 @@ export function BattleSessionPage() {
   const progressPercent = Math.min(100, Math.round((decisionCount / session.targetRounds) * 100));
 
   const updateSession = async (nextSession) => {
-    const persisted = saveBattleSession(nextSession);
+    let persisted = saveBattleSession(nextSession);
     setSession(persisted);
     if (user?.id) {
       try {
-        await persistRemoteBattleSession(user.id, persisted);
+        const remotePersisted = await persistRemoteBattleSession(user.id, persisted);
+        if (remotePersisted?.id && remotePersisted.id !== persisted.id) {
+          persisted = saveBattleSession(remotePersisted);
+          setSession(persisted);
+          navigate(`/battle/${persisted.id}`, { replace: true });
+        }
       } catch (saveError) {
         console.warn('Failed to persist remote battle update', saveError);
         toast.error(t('battle.updateSyncFailed'));

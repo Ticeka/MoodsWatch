@@ -513,38 +513,8 @@ function getTopRankBoundaryGaps(ranking = []) {
 }
 
 function shouldContinueBattle(session) {
-  const activeIds = session?.fastState?.phase === 'playoff'
-    ? (session.fastState.activeIds || [])
-    : (session?.titles || []).map((title) => title.id);
-  const activeTitles = (session?.titles || []).filter((title) => activeIds.includes(title.id));
-  const ranking = buildRanking({
-    ...session,
-    titles: activeTitles,
-  });
-  const ratings = session.ratings || {};
-  const coverageTarget = getBattleCoverageTarget(activeTitles.length || session?.titles?.length || 0);
   const decisionCount = getBattleDecisionCount(session);
-  const pairCap = Math.floor((activeTitles.length * Math.max(0, activeTitles.length - 1)) / 2);
-
-  if (decisionCount < session.targetRounds) {
-    return true;
-  }
-
-  const underComparedCount = activeTitles.filter((title) => {
-    const entry = getRatingEntry(ratings, title.id);
-    return Number(entry.comparisons || 0) < coverageTarget;
-  }).length;
-
-  if (underComparedCount > 0 && decisionCount < pairCap) {
-    return true;
-  }
-
-  const unresolvedTopBoundary = getTopRankBoundaryGaps(ranking).some((entry) => entry.gap <= CLOSE_SCORE_GAP);
-  if (unresolvedTopBoundary && decisionCount < Math.min(pairCap, session.targetRounds + session.titles.length)) {
-    return true;
-  }
-
-  return false;
+  return decisionCount < Number(session?.targetRounds || 0);
 }
 
 function choosePlayoffPair(session, activeIds = null) {

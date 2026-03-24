@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { Header, Footer } from '@/shared/components/layout/Header';
 import './Layout.css';
@@ -9,8 +9,9 @@ const CommandPaletteLauncher = lazy(() => import('@/shared/components/ui/Command
 })));
 
 export function Layout() {
-  const { t } = useLanguage();
+  useLanguage();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const location = useLocation();
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
@@ -29,6 +30,10 @@ export function Layout() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
 
   return (
     <div className="app-wrapper">
