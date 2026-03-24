@@ -15,19 +15,33 @@
   inset: 0 0 auto;
   z-index: 1000;
   height: var(--header-height);
-  background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-glass-heavy);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   transition: height 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   overflow: visible !important;
   transform: translateZ(0);
 }
 
+.header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--bg-glass-heavy), transparent);
+  pointer-events: none;
+}
+
 .header-scrolled {
   background: var(--bg-glass-heavy);
   box-shadow: var(--shadow-md);
-  height: 70px; /* Slimmer when scrolled */
+  height: 70px;
+}
+
+.header-scrolled::after {
+  display: none;
 }
 
 .header-content {

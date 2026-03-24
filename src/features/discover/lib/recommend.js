@@ -1125,12 +1125,103 @@ export async function getTitleBySlug(slug) {
   }
 }
 
+async function fetchSimilarCandidates(baseTitleId, { genres = [], tags = [], moods = [], showAdult = true, maxCandidates = 150 } = {}) {
+  if (genres.length === 0 && tags.length === 0 && moods.length === 0) return [];
+
+  const [genreRows, tagRows, moodRows] = await Promise.all([
+    genres.length > 0
+      ? supabase.from('title_genres').select('canonical_title_id').in('genre_name', genres).neq('canonical_title_id', baseTitleId)
+      : { data: [] },
+    tags.length > 0
+      ? supabase.from('title_tags').select('canonical_title_id').in('tag_name', tags.slice(0, 20)).neq('canonical_title_id', baseTitleId)
+      : { data: [] },
+    moods.length > 0
+      ? supabase.from('title_moods').select('canonical_title_id').in('mood_id', moods).neq('canonical_title_id', baseTitleId)
+      : { data: [] },
+  ]);
+
+  const idSet = new Set([
+    ...(genreRows.data || []).map((r) => r.canonical_title_id),
+    ...(tagRows.data || []).map((r) => r.canonical_title_id),
+    ...(moodRows.data || []).map((r) => r.canonical_title_id),
+  ]);
+
+  const candidateIds = [...idSet].slice(0, maxCandidates);
+  if (candidateIds.length === 0) return [];
+
+  const allFetched = [];
+  for (const chunk of chunkIds(candidateIds, 200)) {
+    let query = supabase.from('canonical_titles').select(CANONICAL_TITLE_BROWSE_SELECT).in('id', chunk);
+    if (!showAdult) query = query.eq('is_adult', false);
+    const { data, error } = await query;
+    if (error) throw error;
+    if (data) allFetched.push(...data.map((t) => normalizeTitleType(mapCanonicalTitle(t))));
+  }
+  return allFetched;
+}
+
+function scoreAndRankSimilar(candidates, baseTitle, limit, { showAdult = true, watchlist = [], preferences = DEFAULT_PROFILE_PREFERENCES, hiddenTitleIds = [] } = {}) {
+  const recommendationState = buildRecommendationState(watchlist, preferences, hiddenTitleIds);
+  const weights = resolveWeights(false, true);
+
+  let pool = filterTitlesForAgeGate(candidates, showAdult);
+  pool = pool.filter((t) => t.id !== baseTitle.id);
+  if (recommendationState.excludedTitleIds.size > 0) {
+    pool = pool.filter((t) => !recommendationState.excludedTitleIds.has(t.id));
+  }
+  if (recommendationState.hiddenTitleIds.size > 0) {
+    pool = pool.filter((t) => !recommendationState.hiddenTitleIds.has(t.id));
+  }
+  pool = filterTitlesByRecommendationPreferences(pool, recommendationState);
+
+  const scored = pool.map((title) => {
+    const simScore = scoreSimilarityAgainstLiked(title, baseTitle);
+    const qualityScore = scoreQuality(title);
+    const freshnessScore = scoreFreshness(title);
+    const sharedGenres = (title.genres || []).filter((g) => (baseTitle.genres || []).includes(g));
+    return {
+      ...title,
+      _score: weights.similarTitle * simScore + weights.quality * qualityScore + weights.freshness * freshnessScore,
+      _reason: sharedGenres.length
+        ? `คล้าย ${baseTitle.title_en || baseTitle.title_th} ด้าน ${sharedGenres.join(', ')}`
+        : null,
+    };
+  });
+
+  scored.sort((a, b) => {
+    if (recommendationState.preferences.prioritizeUnseen) {
+      const aTracked = recommendationState.trackedTitleIds.has(a.id) ? 1 : 0;
+      const bTracked = recommendationState.trackedTitleIds.has(b.id) ? 1 : 0;
+      if (aTracked !== bTracked) return aTracked - bTracked;
+    }
+    return b._score - a._score;
+  });
+
+  return scored.slice(0, limit);
+}
+
 export async function getSimilarTitles(titleId, limit = 6, options = {}) {
-  const { showAdult = true, ...rest } = options;
-  const titles = await getAllTitles({ maxRows: DEFAULT_CATALOG_MAX_ROWS });
-  const base = titles.find((title) => title.id === titleId);
-  if (!base) return [];
-  return recommend({ likedTitleId: titleId, limit, showAdult, ...rest });
+  const { showAdult = true, baseTitleData = null, watchlist = [], preferences = DEFAULT_PROFILE_PREFERENCES, hiddenTitleIds = [] } = options;
+
+  // Use passed-in base title data, or look up from ID cache, or fetch individually
+  let base = baseTitleData || titleByIdCache.get(titleId);
+  if (!base) {
+    const { data } = await supabase.from('canonical_titles').select(CANONICAL_TITLE_BROWSE_SELECT).eq('id', titleId).maybeSingle();
+    if (!data) return [];
+    base = normalizeTitleType(mapCanonicalTitle(data));
+  }
+
+  const candidates = await fetchSimilarCandidates(titleId, {
+    genres: base.genres || [],
+    tags: base.tags || [],
+    moods: base.moods || [],
+    showAdult,
+    maxCandidates: 150,
+  });
+
+  if (candidates.length === 0) return [];
+
+  return scoreAndRankSimilar(candidates, base, limit, { showAdult, watchlist, preferences, hiddenTitleIds });
 }
 
 export async function getTrendingTitles(limit = 8, { showAdult = true } = {}) {

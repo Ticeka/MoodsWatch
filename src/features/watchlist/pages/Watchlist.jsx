@@ -119,6 +119,7 @@ export function Watchlist() {
   const { prefs, savePreferences } = useProfilePreferences();
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
+  const [listPage, setListPage] = useState(0);
   const [titleLibrary, setTitleLibrary] = useState([]);
   const [isTitlesLoading, setIsTitlesLoading] = useState(true);
   const [isSavingMoods, setIsSavingMoods] = useState(false);
@@ -217,6 +218,10 @@ export function Watchlist() {
     [visiblePopulatedList]
   );
 
+  const LIST_PAGE_SIZE = 48;
+
+  useEffect(() => { setListPage(0); }, [filter, sortBy]);
+
   const displayList = useMemo(() => {
     const filtered = filter === 'all'
       ? visiblePopulatedList
@@ -269,6 +274,12 @@ export function Watchlist() {
       return String(a.title_th || a.title_en || '').localeCompare(String(b.title_th || b.title_en || ''));
     });
   }, [filter, visiblePopulatedList, sortBy]);
+
+  const pagedDisplayList = useMemo(
+    () => displayList.slice(0, (listPage + 1) * LIST_PAGE_SIZE),
+    [displayList, listPage]
+  );
+  const hasMorePages = pagedDisplayList.length < displayList.length;
 
   const favoriteList = useMemo(() => {
     return favoriteTitleIds
@@ -697,8 +708,9 @@ export function Watchlist() {
             {isPageLoading ? (
               <SkeletonGrid count={4} cardClassName="skeleton-card glass" />
             ) : displayList.length > 0 ? (
+              <>
               <div className="results-grid stagger-children">
-                {displayList.map((title) => {
+                {pagedDisplayList.map((title) => {
                   const quickActions = getQuickActions(title);
 
                   return (
@@ -764,6 +776,14 @@ export function Watchlist() {
                   );
                 })}
               </div>
+              {hasMorePages && (
+                <div className="watchlist-load-more">
+                  <Button variant="secondary" onClick={() => setListPage((p) => p + 1)}>
+                    {t('watchlist.loadMore', { count: displayList.length - pagedDisplayList.length })}
+                  </Button>
+                </div>
+              )}
+              </>
             ) : (
               <EmptyState
                 title={t('watchlist.noTitlesYet')}

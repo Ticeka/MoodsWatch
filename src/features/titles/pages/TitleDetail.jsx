@@ -132,6 +132,7 @@ export function TitleDetail() {
 
       try {
         const nextSimilar = await getSimilarTitles(title.id, 8, {
+          baseTitleData: title,
           watchlist,
           preferences: prefs,
           hiddenTitleIds: hiddenFromRecommendationIds,
@@ -191,7 +192,8 @@ export function TitleDetail() {
         .from('title_theme_songs')
         .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
         .eq('canonical_title_id', title.id)
-        .order('display_order');
+        .order('display_order')
+        .limit(100);
 
       if (error) {
         console.error('[ThemeSongs] fetch error:', error);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Loader2, Rss, Users } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -112,14 +112,27 @@ export function Feed() {
   const postsSectionRef = useRef(null);
   const [highlightedPostId, setHighlightedPostId] = useState(null);
 
-  const [posts, setPosts]           = useState([]);
+  const [rawPosts, setRawPosts]         = useState([]);
   const [postTitleMap, setPostTitleMap] = useState(new Map());
   const [postsLoading, setPostsLoading] = useState(true);
 
-  const [items, setItems]           = useState([]);
+  const [rawItems, setRawItems]     = useState([]);
   const [titleMap, setTitleMap]     = useState(new Map());
   const [activityLoading, setActivityLoading] = useState(true);
   const [error, setError]           = useState('');
+
+  const applyAdultFilter = useCallback((feed, map) => {
+    if (!map.size) return feed;
+    return feed.filter((item) => {
+      if (!item.title_id) return true;
+      const title = map.get(Number(item.title_id));
+      if (!title) return true;
+      return showAdult || !title.is_adult;
+    });
+  }, [showAdult]);
+
+  const posts = useMemo(() => applyAdultFilter(rawPosts, postTitleMap), [applyAdultFilter, rawPosts, postTitleMap]);
+  const items = useMemo(() => applyAdultFilter(rawItems, titleMap), [applyAdultFilter, rawItems, titleMap]);
 
   const loadPosts = useCallback(async () => {
     if (!user?.id || !supabase) { setPostsLoading(false); return; }
@@ -131,23 +144,16 @@ export function Feed() {
         p_offset: 0,
       });
       const feed = data || [];
-      setPosts(feed);
-
       const titleIds = [...new Set(feed.map((p) => p.title_id).filter(Boolean))];
       if (titleIds.length) {
         const titles = await getTitlesByIds(titleIds);
-        const titleMap = new Map(titles.map((t) => [Number(t.id), t]));
-        // Filter posts by adult/non-adult based on showAdult mode
-        const visibleFeed = showAdult
-          ? feed.filter((p) => !p.title_id || titleMap.get(Number(p.title_id))?.is_adult)
-          : feed.filter((p) => !p.title_id || !titleMap.get(Number(p.title_id))?.is_adult);
-        setPosts(visibleFeed);
-        setPostTitleMap(titleMap);
+        setPostTitleMap(new Map(titles.map((t) => [Number(t.id), t])));
       }
+      setRawPosts(feed);
     } finally {
       setPostsLoading(false);
     }
-  }, [user?.id, showAdult]);
+  }, [user?.id]);
 
   const loadActivity = useCallback(async () => {
     if (!user?.id || !supabase) { setActivityLoading(false); return; }
@@ -160,26 +166,18 @@ export function Feed() {
       });
       if (rpcError) throw rpcError;
       const feed = data || [];
-
       const titleIds = [...new Set(feed.map((i) => i.title_id).filter(Boolean))];
       if (titleIds.length) {
         const titles = await getTitlesByIds(titleIds);
-        const titleMap = new Map(titles.map((t) => [Number(t.id), t]));
-        setTitleMap(titleMap);
-        // Filter activity items by adult/non-adult based on showAdult mode
-        const visibleFeed = showAdult
-          ? feed.filter((i) => !i.title_id || titleMap.get(Number(i.title_id))?.is_adult)
-          : feed.filter((i) => !i.title_id || !titleMap.get(Number(i.title_id))?.is_adult);
-        setItems(visibleFeed);
-      } else {
-        setItems(feed);
+        setTitleMap(new Map(titles.map((t) => [Number(t.id), t])));
       }
+      setRawItems(feed);
     } catch {
       setError(t('social.feedLoadFailed'));
     } finally {
       setActivityLoading(false);
     }
-  }, [user?.id, showAdult, t]);
+  }, [user?.id, t]);
 
   useEffect(() => {
     loadPosts();
@@ -199,7 +197,7 @@ export function Feed() {
         .single()
         .then(({ data }) => {
           if (data) {
-            setPosts((prev) => {
+            setRawPosts((prev) => {
               if (prev.some((p) => String(p.id) === String(data.id))) return prev;
               return [data, ...prev];
             });
@@ -219,7 +217,7 @@ export function Feed() {
   }, [focusPostId, postsLoading, posts]);
 
   function handlePostDeleted(id) {
-    setPosts((prev) => prev.filter((p) => p.id !== id));
+    setRawPosts((prev) => prev.filter((p) => p.id !== id));
   }
 
   const isLoading = postsLoading && activityLoading;

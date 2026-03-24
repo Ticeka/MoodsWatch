@@ -500,7 +500,8 @@ export const translations = {
     "ratedSuccess": "ให้คะแนน {score}/10 แล้ว",
     "rateFailed": "ให้คะแนนไม่สำเร็จ",
     "shareCard": "แชร์การ์ด",
-    "downloadCard": "ดาวน์โหลด PNG"
+    "downloadCard": "ดาวน์โหลด PNG",
+    "loadMore": "โหลดเพิ่มอีก {count} รายการ"
   },
   "moodJournal": {
     "tabLabel": "ไดอารี่",
