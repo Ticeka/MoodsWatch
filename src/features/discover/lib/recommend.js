@@ -172,7 +172,7 @@ function chunkIds(ids = [], chunkSize = TITLE_CHARACTER_ID_CHUNK_SIZE) {
   return chunks;
 }
 
-async function fetchTitleCharacters(titleIds = []) {
+export async function fetchTitleCharacters(titleIds = []) {
   const normalizedTitleIds = [...new Set(
     (Array.isArray(titleIds) ? titleIds : [])
       .map((id) => Number(id))
@@ -223,7 +223,7 @@ async function fetchTitleCharacters(titleIds = []) {
   return allCharacters;
 }
 
-function attachCharactersToTitles(titles = [], characterRows = []) {
+export function attachCharactersToTitles(titles = [], characterRows = []) {
   if (!Array.isArray(titles) || titles.length === 0) {
     return [];
   }

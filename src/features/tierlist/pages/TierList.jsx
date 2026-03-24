@@ -47,6 +47,7 @@ import {
   buildTierListFromTemplate,
   createTemplateFromCatalog,
   createTierListFromTemplate,
+  dedupeTierTemplatesByIdentity,
   findTierList,
   findTierTemplate,
   filterTierListToCatalog,
@@ -1506,10 +1507,11 @@ export function TierListBrowsePage() {
     async function load() {
       setIsLoading(true);
       setLoadError('');
-      // Step 1: load library fast (no full catalog needed)
+      // Step 1: load library fast (no full catalog needed) — show content immediately
       const nextLibrary = await loadTierLibrary([], { userId: user?.id || null });
       if (cancelled) return;
       setLibrary(nextLibrary);
+      setIsLoading(false);
 
       // Step 2: collect only title-entity IDs referenced by templates/lists for cover images
       const titleIds = [
@@ -1528,7 +1530,6 @@ export function TierListBrowsePage() {
       const fetchedTitles = await getTitlesByIds(titleIds);
       if (cancelled) return;
       setTitles(filterTitlesForAgeGate(fetchedTitles, showAdult));
-      setIsLoading(false);
     }
     load().catch((error) => {
       if (!cancelled) {
@@ -1544,7 +1545,9 @@ export function TierListBrowsePage() {
     [titles]
   );
   const publicTemplates = useMemo(
-    () => library.templates.filter((template) => template.isPublic),
+    () => dedupeTierTemplatesByIdentity(
+      library.templates.filter((template) => template.isPublic)
+    ),
     [library.templates]
   );
   const publicLists = useMemo(
@@ -1575,7 +1578,10 @@ export function TierListBrowsePage() {
   const handlePlayTemplate = async (template) => {
     try {
       const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, {
+        userId: user?.id || null,
+        preserveOwnership: true,
+      });
       const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
       const list = buildTierListFromTemplate(savedTemplate);
       const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
@@ -1928,7 +1934,10 @@ export function TierListTemplatePage() {
   const handlePlay = async () => {
     try {
       const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, { userId: user?.id || null });
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, {
+        userId: user?.id || null,
+        preserveOwnership: true,
+      });
       const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
       setLibrary(libraryAfterTemplate);
       setTemplate(savedTemplate);

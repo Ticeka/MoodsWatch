@@ -2,13 +2,14 @@ import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, Music, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
-import { getAllTitles, getTitleBySlug } from '@/features/discover/lib/recommend';
+import { getAllTitles, getTitleBySlug, fetchTitleCharacters, attachCharactersToTitles } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
   buildBattleShareText,
   collectBattleFilters,
   createBattleSession,
   createStoredBattleDeck,
+  dedupeBattleSessionsByRecency,
   deleteBattleSession,
   deleteStoredBattleDeck,
   finalizeBattleSession,
@@ -517,28 +518,7 @@ function downloadBlob(blob, filename) {
 }
 
 function mergeSessionsByRecency(localSessions = [], remoteSessions = []) {
-  const sessionMap = new Map();
-
-  [...localSessions, ...remoteSessions].forEach((session) => {
-    if (!session?.id) {
-      return;
-    }
-
-    const existing = sessionMap.get(session.id);
-    if (!existing) {
-      sessionMap.set(session.id, session);
-      return;
-    }
-
-    const existingUpdatedAt = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-    const nextUpdatedAt = new Date(session.updatedAt || session.createdAt || 0).getTime();
-    if (nextUpdatedAt >= existingUpdatedAt) {
-      sessionMap.set(session.id, session);
-    }
-  });
-
-  return [...sessionMap.values()]
-    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime())
+  return dedupeBattleSessionsByRecency([...localSessions, ...remoteSessions])
     .slice(0, RECENT_BATTLE_SESSION_LIMIT);
 }
 
@@ -955,11 +935,11 @@ export function BattleHub() {
       setIsLoading(true);
       setError('');
       try {
-        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
-        const remoteSessions = user?.id
-          ? await fetchRemoteBattleSessions(user.id).catch(() => [])
-          : [];
-        const remotePublicDecks = await fetchPublicBattleDecks().catch(() => []);
+        const [allTitles, remoteSessions, remotePublicDecks] = await Promise.all([
+          getAllTitles({ maxRows: Number.POSITIVE_INFINITY }),
+          user?.id ? fetchRemoteBattleSessions(user.id).catch(() => []) : Promise.resolve([]),
+          fetchPublicBattleDecks().catch(() => []),
+        ]);
         if (!cancelled) {
           setTitles(allTitles);
           const localSessions = getStoredBattleSessions();
@@ -967,7 +947,7 @@ export function BattleHub() {
           mergedSessions.forEach((session) => {
             saveBattleSession(session);
           });
-          setRecentSessions(mergedSessions);
+          setRecentSessions(getStoredBattleSessions());
           setSavedDecks(getStoredBattleDecks());
           setPublicDecks(remotePublicDecks);
         }
@@ -1009,13 +989,15 @@ export function BattleHub() {
     [titles]
   );
   const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
+  const deferredCatalogTitlesForPresets = useDeferredValue(visibleCatalogTitles);
+  const isComputingPresets = deferredCatalogTitlesForPresets !== visibleCatalogTitles;
   const presets = useMemo(() => getBattlePresets(), []);
   const presetDecks = useMemo(
     () => presets.map((preset) => ({
       preset,
-      deck: buildBattleDeck(visibleCatalogTitles, { ...preset.filters, label: preset.label }, deckOptions),
+      deck: buildBattleDeck(deferredCatalogTitlesForPresets, { ...preset.filters, label: preset.label }, deckOptions),
     })),
-    [deckOptions, presets, visibleCatalogTitles]
+    [deckOptions, presets, deferredCatalogTitlesForPresets]
   );
 
   const readyPresetDecks = useMemo(
@@ -1158,7 +1140,7 @@ export function BattleHub() {
           <h2>{t('battle.quickPresets')}</h2>
           <p>{t('battle.quickPresetsHint')}</p>
         </div>
-        {isLoading ? (
+        {isLoading || isComputingPresets ? (
           <div className="battle-preset-grid">
             {[0, 1, 2, 3].map((i) => <BattlePresetCardSkeleton key={i} />)}
           </div>
@@ -1225,6 +1207,8 @@ export function BattleBuilderPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [songCatalogError, setSongCatalogError] = useState('');
+  const [characterMap, setCharacterMap] = useState(new Map());
+  const fetchedCharTypesRef = React.useRef(new Set());
   const [deckName, setDeckName] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [filters, setFilters] = useState({
@@ -1320,7 +1304,7 @@ export function BattleBuilderPage() {
       setError('');
       setSongCatalogError('');
       try {
-        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
+        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
         const titleById = new Map(allTitles.map((title) => [Number(title.id), title]));
         let nextSongCatalog = [];
         let nextSongCatalogError = '';
@@ -1363,14 +1347,55 @@ export function BattleBuilderPage() {
     };
   }, []);
 
+  // Lazy-load characters only for titles matching the current entity/type filter
+  useEffect(() => {
+    if (filters.entityType !== CHARACTER_ENTITY_TYPE) return;
+    if (titles.length === 0) return;
+
+    const fetchKey = filters.type === 'all' ? 'all' : (filters.type || 'all');
+    if (fetchedCharTypesRef.current.has(fetchKey)) return;
+    fetchedCharTypesRef.current.add(fetchKey);
+
+    let cancelled = false;
+    const titleIds = fetchKey === 'all'
+      ? titles.map((t) => t.id)
+      : titles.filter((t) => t.type === fetchKey).map((t) => t.id);
+
+    fetchTitleCharacters(titleIds).then((characterRows) => {
+      if (cancelled) return;
+      setCharacterMap((prev) => {
+        const next = new Map(prev);
+        for (const row of characterRows) {
+          const id = Number(row.canonical_title_id);
+          if (!next.has(id)) next.set(id, []);
+          next.get(id).push(row);
+        }
+        return next;
+      });
+    }).catch(() => {
+      fetchedCharTypesRef.current.delete(fetchKey);
+    });
+
+    return () => { cancelled = true; };
+  }, [filters.entityType, filters.type, titles.length]);
+
   const hiddenTitleIdSet = useMemo(
     () => new Set(hiddenTitleIds),
     [hiddenTitleIds]
   );
+  const titlesWithCharacters = useMemo(
+    () => characterMap.size === 0 ? titles : titles.map((t) => ({
+      ...t,
+      characters: (characterMap.get(Number(t.id)) || [])
+        .slice()
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    })),
+    [titles, characterMap]
+  );
   const isSongEntity = filters.entityType === THEME_SONG_ENTITY_TYPE;
   const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenTitleIdSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
-    [hiddenTitleIdSet, showAdult, titles]
+    () => titlesWithCharacters.filter((title) => !hiddenTitleIdSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
+    [hiddenTitleIdSet, showAdult, titlesWithCharacters]
   );
   const visibleSongCatalog = useMemo(
     () => songCatalog.filter((song) => !hiddenTitleIdSet.has(Number(song.sourceTitleId || 0)) && (showAdult ? song.is_adult : !song.is_adult)),
@@ -1381,8 +1406,8 @@ export function BattleBuilderPage() {
     [filters.entityType, isSongEntity, visibleCatalogTitles, visibleSongCatalog]
   );
   const allCatalogEntries = useMemo(
-    () => (isSongEntity ? songCatalog : getCatalogEntities(titles, filters.entityType)),
-    [filters.entityType, isSongEntity, songCatalog, titles]
+    () => (isSongEntity ? songCatalog : getCatalogEntities(titlesWithCharacters, filters.entityType)),
+    [filters.entityType, isSongEntity, songCatalog, titlesWithCharacters]
   );
   const hiddenExcludedCount = Math.max(0, allCatalogEntries.length - visibleCatalogEntries.length);
   const filterOptions = useMemo(() => collectBattleFilters(visibleCatalogEntries), [visibleCatalogEntries]);

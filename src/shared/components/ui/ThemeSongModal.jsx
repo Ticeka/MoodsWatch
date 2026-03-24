@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ExternalLink } from 'lucide-react';
 import './ThemeSongModal.css';
 
@@ -14,7 +15,11 @@ export function ThemeSongModal({ song, onClose }) {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
-  return (
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(
     <div className="trailer-modal-backdrop" onClick={onClose}>
       <div className="trailer-modal theme-song-modal" onClick={(e) => e.stopPropagation()}>
         <div className="trailer-modal-header">
@@ -61,6 +66,7 @@ export function ThemeSongModal({ song, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

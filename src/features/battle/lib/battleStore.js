@@ -68,6 +68,10 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function getBattleSessionTime(session) {
+  return new Date(session?.updatedAt || session?.createdAt || 0).getTime();
+}
+
 function getTitleTrailerMeta(title) {
   const trailer = normalizeTrailer(title || {});
   return {
@@ -814,10 +818,41 @@ export function getStoredBattleSessions() {
   if (!storage) return [];
   try {
     const parsed = JSON.parse(storage.getItem(BATTLE_SESSIONS_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalizedSessions = dedupeBattleSessionsByRecency(parsed).slice(0, RECENT_BATTLE_SESSION_LIMIT);
+    if (JSON.stringify(normalizedSessions) !== JSON.stringify(parsed)) {
+      storage.setItem(BATTLE_SESSIONS_KEY, JSON.stringify(normalizedSessions));
+    }
+    return normalizedSessions;
   } catch {
     return [];
   }
+}
+
+export function dedupeBattleSessionsByRecency(sessions = []) {
+  return [...sessions]
+    .filter(Boolean)
+    .sort((a, b) => getBattleSessionTime(b) - getBattleSessionTime(a))
+    .filter((session, index, sortedSessions) => {
+      if (!session?.id) {
+        return false;
+      }
+
+      const firstWithSameId = sortedSessions.findIndex((entry) => entry?.id === session.id);
+      if (firstWithSameId !== index) {
+        return false;
+      }
+
+      const hasDeckKey = session.deckKey != null && session.deckKey !== '';
+      if (!hasDeckKey) {
+        return true;
+      }
+
+      const firstWithSameDeckKey = sortedSessions.findIndex((entry) => entry?.deckKey === session.deckKey);
+      return firstWithSameDeckKey === index;
+    });
 }
 
 export function getStoredBattleDecks() {
@@ -869,7 +904,7 @@ export function saveBattleSession(session) {
   const storage = safeLocalStorage();
   if (!storage || !session) return session;
   const sessions = getStoredBattleSessions();
-  const nextSessions = [session, ...sessions.filter((entry) => entry.id !== session.id)].slice(0, RECENT_BATTLE_SESSION_LIMIT);
+  const nextSessions = dedupeBattleSessionsByRecency([session, ...sessions]).slice(0, RECENT_BATTLE_SESSION_LIMIT);
   storage.setItem(BATTLE_SESSIONS_KEY, JSON.stringify(nextSessions));
   return session;
 }

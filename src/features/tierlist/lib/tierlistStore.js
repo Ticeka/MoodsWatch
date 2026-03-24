@@ -116,6 +116,60 @@ function normalizeTemplate(raw, index = 0) {
   };
 }
 
+function normalizeTemplateIdentityText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function compareTemplatesByIdentityPriority(left, right) {
+  const playDelta = Number(right?.plays || 0) - Number(left?.plays || 0);
+  if (playDelta !== 0) {
+    return playDelta;
+  }
+
+  const updatedAtDelta = new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime();
+  if (updatedAtDelta !== 0) {
+    return updatedAtDelta;
+  }
+
+  const createdAtDelta = new Date(right?.createdAt || 0).getTime() - new Date(left?.createdAt || 0).getTime();
+  if (createdAtDelta !== 0) {
+    return createdAtDelta;
+  }
+
+  return String(right?.id || '').localeCompare(String(left?.id || ''));
+}
+
+export function getTierTemplateIdentityKey(template) {
+  const normalized = normalizeTemplate(template);
+  return [
+    normalizeCatalogEntityType(normalized.entityType),
+    normalizeTemplateIdentityText(normalized.category),
+    normalizeTemplateIdentityText(normalized.title),
+    normalizeTemplateIdentityText(normalized.description),
+    normalized.defaultRows.map(normalizeTemplateIdentityText).join('|'),
+    dedupeNumberIds(normalized.titleIds).join(','),
+  ].join('::');
+}
+
+export function dedupeTierTemplatesByIdentity(templates = []) {
+  const seen = new Set();
+
+  return [...templates]
+    .map((template) => normalizeTemplate(template))
+    .sort(compareTemplatesByIdentityPriority)
+    .filter((template) => {
+      const identityKey = getTierTemplateIdentityKey(template);
+      if (!identityKey) {
+        return true;
+      }
+      if (seen.has(identityKey)) {
+        return false;
+      }
+      seen.add(identityKey);
+      return true;
+    });
+}
+
 export function createTierListFromTemplate(template) {
   const rowLabels = Array.isArray(template?.defaultRows) && template.defaultRows.length > 0
     ? template.defaultRows
@@ -193,10 +247,14 @@ function normalizeLibrary(raw) {
   const lists = Array.isArray(raw?.lists)
     ? raw.lists.map((list, index) => normalizeTierList(list, index))
     : [];
-  const templateById = new Map(templates.map((template) => [template.id, template]));
+  // Sort by updatedAt DESC before uniqueById so the newest version wins when IDs collide
+  const byNewest = (a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+  const sortedTemplates = [...templates].sort(byNewest);
+  const sortedLists = [...lists].sort(byNewest);
+  const templateById = new Map(sortedTemplates.map((template) => [template.id, template]));
   return {
-    templates: uniqueById(templates),
-    lists: uniqueById(lists).map((list) => ({
+    templates: uniqueById(sortedTemplates),
+    lists: uniqueById(sortedLists).map((list) => ({
       ...list,
       entityType: normalizeCatalogEntityType(list.entityType || templateById.get(list.templateId)?.entityType),
     })),
@@ -791,7 +849,9 @@ export async function loadTierLibrary(catalog = [], options = {}) {
     const merged = mergeLibraries(
       { templates: localLibrary.templates.filter((template) => template.isSystem), lists: [] },
       { templates: remoteTemplates, lists: remoteLists },
-      !userId ? localLibrary : { templates: [], lists: [] }
+      // Always include local non-system data so unsaved local changes survive
+      // (sort-by-updatedAt in normalizeLibrary ensures the newest version wins)
+      { templates: localLibrary.templates.filter((template) => !template.isSystem), lists: localLibrary.lists }
     );
 
     saveLibraryRaw(merged);
@@ -834,13 +894,16 @@ export async function saveTierLibrary(library, options = {}) {
 
 export async function saveTierTemplate(template, library = null, options = {}) {
   const userId = options?.userId || null;
+  const preserveOwnership = Boolean(options?.preserveOwnership);
   const source = normalizeLibrary(library || loadLibraryRaw());
-  const baseTemplate = shouldPromoteTemplateToOwnedCopy(template, userId)
+  const baseTemplate = !preserveOwnership && shouldPromoteTemplateToOwnedCopy(template, userId)
     ? rekeyTemplateForOwner(template, userId)
     : template;
   const normalizedTemplate = normalizeTemplate({
     ...baseTemplate,
-    ownerUserId: baseTemplate?.ownerUserId || userId || null,
+    ownerUserId: preserveOwnership
+      ? (baseTemplate?.ownerUserId || null)
+      : (baseTemplate?.ownerUserId || userId || null),
     updatedAt: new Date().toISOString(),
   });
 
@@ -852,7 +915,12 @@ export async function saveTierTemplate(template, library = null, options = {}) {
     ],
   });
 
-  if (!supabase || !userId || normalizedTemplate.isSystem) {
+  if (
+    !supabase
+    || !userId
+    || normalizedTemplate.isSystem
+    || (preserveOwnership && String(normalizedTemplate.ownerUserId || '') !== String(userId))
+  ) {
     return localLibrary;
   }
 

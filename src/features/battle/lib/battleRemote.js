@@ -254,6 +254,21 @@ export async function persistRemoteBattleSession(userId, session) {
     throw sessionError;
   }
 
+  // Keep only the newest remote session per deck key for each user.
+  const normalizedDeckKey = String(session.deckKey || '').trim();
+  if (normalizedDeckKey) {
+    const { error: duplicateDeleteError } = await supabase
+      .from('battle_sessions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('deck_key', normalizedDeckKey)
+      .neq('id', session.id);
+
+    if (duplicateDeleteError) {
+      throw duplicateDeleteError;
+    }
+  }
+
   const voteRows = buildVoteRows(userId, session);
   const { error: deleteError } = await supabase
     .from('battle_votes')
