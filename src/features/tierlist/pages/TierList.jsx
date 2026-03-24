@@ -2510,30 +2510,55 @@ export function TierListCreatePage() {
                   message={pick('ลองล้างคำค้นหา', 'Try clearing the search.')}
                 />
               ) : (
-                <div className="tierlist-picker-grid">
-                  {filteredForSongBrowse.map((title) => {
-                    const titleSongs = songEntityCache.get(Number(title.id)) || [];
-                    const selectedCount = titleSongs.filter((s) => selectedIds.has(s.id)).length;
-                    return (
-                      <button
-                        key={title.id}
-                        type="button"
-                        className={`tierlist-picker-card${selectedCount > 0 ? ' is-selected' : ''}`}
-                        onClick={() => setBrowsingTitle(title)}
-                        title={getDisplayName(title)}
+                <>
+                  <div className="tierlist-picker-grid">
+                    {filteredForSongBrowse.map((title) => {
+                      const titleSongs = songEntityCache.get(Number(title.id)) || [];
+                      const selectedCount = titleSongs.filter((s) => selectedIds.has(s.id)).length;
+                      return (
+                        <button
+                          key={title.id}
+                          type="button"
+                          className={`tierlist-picker-card${selectedCount > 0 ? ' is-selected' : ''}`}
+                          onClick={() => setBrowsingTitle(title)}
+                          title={getDisplayName(title)}
+                        >
+                          <div className="tierlist-picker-thumb">
+                            <img src={getTitleArtwork(title)} alt="" loading="lazy" />
+                            {selectedCount > 0 && (
+                              <div className="tierlist-picker-check">
+                                <Music size={10} /> {selectedCount}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {catalogTotalPages > 1 && (
+                    <div className="tierlist-picker-pagination">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={catalogPage <= 1}
+                        onClick={() => setCatalogPage((p) => p - 1)}
                       >
-                        <div className="tierlist-picker-thumb">
-                          <img src={getTitleArtwork(title)} alt="" loading="lazy" />
-                          {selectedCount > 0 && (
-                            <div className="tierlist-picker-check">
-                              <Music size={10} /> {selectedCount}
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        <ChevronLeft size={14} /> {pick('ก่อนหน้า', 'Prev')}
+                      </Button>
+                      <span className="tierlist-picker-page-info">
+                        {pick('หน้า', 'Page')} {catalogPage} / {catalogTotalPages}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={catalogPage >= catalogTotalPages}
+                        onClick={() => setCatalogPage((p) => p + 1)}
+                      >
+                        {pick('ถัดไป', 'Next')} <ChevronRight size={14} />
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
