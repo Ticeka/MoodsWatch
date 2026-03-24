@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 
@@ -12,7 +13,7 @@ export function ProtectedRoute({ children, allowedRoles = [] }) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
         <div style={{ textAlign: 'center' }}>
-          <div className="spinning-icon" style={{ fontSize: '3rem', animation: 'spin 1s linear infinite', marginBottom: '1rem' }}>🌀</div>
+          <Loader2 size={40} className="animate-spin" aria-hidden="true" style={{ margin: '0 auto 1rem' }} />
           <div style={{ color: 'var(--text-secondary)' }}>{t('app.loadingPermissions')}</div>
         </div>
       </div>

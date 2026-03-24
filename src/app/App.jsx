@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
 import { ProtectedRoute } from '@/features/auth/components/ProtectedRoute';
 import { AuthProvider } from '@/features/auth/contexts/AuthContext';
 import { WatchlistProvider } from '@/features/watchlist/contexts/WatchlistContext';
@@ -54,7 +55,7 @@ function PageLoader() {
       className="flex justify-center items-center"
       style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}
     >
-      <div className="spinning-icon" style={{ fontSize: '3rem', animation: 'spin 1s linear infinite' }}>🌀</div>
+      <Loader2 size={40} className="animate-spin" aria-hidden="true" />
       <div style={{ color: 'var(--text-secondary)' }}>{t('app.loadingContent')}</div>
     </div>
   );
@@ -65,7 +66,7 @@ function AdminFallback() {
 
   return (
     <div className="admin-page-content" style={{ padding: '5rem', textAlign: 'center' }}>
-      <h2>{t('app.adminPlaceholder')} 🚧</h2>
+      <h2>{t('app.adminPlaceholder')}</h2>
     </div>
   );
 }

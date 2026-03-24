@@ -42,6 +42,20 @@ select {
   font: inherit;
 }
 
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+input[type="search"]::-ms-clear,
+input[type="search"]::-ms-reveal {
+  display: none;
+}
+
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -76,7 +90,7 @@ button {
 }
 
 :root {
-  /* ── Primary — Vivid Rose-Pink ── */
+  /* โ”€โ”€ Primary โ€” Vivid Rose-Pink โ”€โ”€ */
   --primary-rgb: 236, 72, 153;
   --primary: rgb(var(--primary-rgb));
   --primary-hover: #be185d;
@@ -90,24 +104,24 @@ button {
   --primary-700: #be185d;
   --primary-gradient: linear-gradient(135deg, #f43f5e 0%, #ec4899 60%, #f97316 100%);
 
-  /* ── Accent — Amber Gold ── */
+  /* โ”€โ”€ Accent โ€” Amber Gold โ”€โ”€ */
   --accent-rgb: 245, 158, 11;
   --accent: rgb(var(--accent-rgb));
   --accent-500: #f59e0b;
   --accent-600: #d97706;
   --accent-700: #b45309;
 
-  /* ── Secondary — Soft Violet ── */
+  /* โ”€โ”€ Secondary โ€” Soft Violet โ”€โ”€ */
   --secondary: #8b5cf6;
   --secondary-600: #7c3aed;
 
-  /* ── Semantic ── */
+  /* โ”€โ”€ Semantic โ”€โ”€ */
   --success: #16a34a;
   --info: #3b82f6;
   --warning: #d97706;
   --error: #ef4444;
 
-  /* ── Brand Tones ── */
+  /* โ”€โ”€ Brand Tones โ”€โ”€ */
   --ink-900: #2a1c19;
   --paper-tint: #fff8f0;
   --peach-200: #fed7aa;
@@ -116,7 +130,7 @@ button {
   --rose-100: #ffe4e6;
   --rose-600: #e11d48;
 
-  /* ── Light Mode Backgrounds ── */
+  /* โ”€โ”€ Light Mode Backgrounds โ”€โ”€ */
   --bg-primary: #fdfaf6;
   --bg-secondary: #f5ece3;
   --bg-tertiary: #ebe0d6;
@@ -125,7 +139,7 @@ button {
   --bg-glass-heavy: rgba(253, 250, 246, 0.93);
   --bg-overlay: rgba(18, 10, 8, 0.48);
 
-  /* ── Light Mode Text ── */
+  /* โ”€โ”€ Light Mode Text โ”€โ”€ */
   --text-primary: #2a1c19;
   --text-secondary: #644e48;
   --text-tertiary: #967369;
@@ -133,14 +147,14 @@ button {
   --text-accent: var(--primary);
   --text-h: var(--text-primary);
 
-  /* ── Light Mode Borders ── */
+  /* โ”€โ”€ Light Mode Borders โ”€โ”€ */
   --border-default: rgba(90, 60, 50, 0.13);
   --border-strong: rgba(90, 60, 50, 0.24);
   --border: var(--border-default);
   --border-hover: rgba(236, 72, 153, 0.34);
   --border-focus: var(--primary);
 
-  /* ── Glows ── */
+  /* โ”€โ”€ Glows โ”€โ”€ */
   --glow-1: rgba(236, 72, 153, 0.14);
   --glow-2: rgba(245, 158, 11, 0.11);
   --glow-3: rgba(253, 250, 246, 1);
@@ -148,7 +162,7 @@ button {
   --accent-border: rgba(245, 158, 11, 0.26);
   --social-bg: rgba(255, 255, 255, 0.82);
 
-  /* ── Shadows ── */
+  /* โ”€โ”€ Shadows โ”€โ”€ */
   --shadow-xs: 0 1px 3px rgba(42, 28, 25, 0.07);
   --shadow-sm: 0 8px 22px rgba(70, 44, 36, 0.09);
   --shadow-md: 0 16px 34px rgba(70, 44, 36, 0.13);
@@ -159,7 +173,7 @@ button {
   --shadow: var(--shadow-sm);
   --shadow-glow: 0 20px 44px rgba(236, 72, 153, 0.24);
 
-  /* ── Spacing ── */
+  /* โ”€โ”€ Spacing โ”€โ”€ */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -171,7 +185,7 @@ button {
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* ── Radius ── */
+  /* โ”€โ”€ Radius โ”€โ”€ */
   --radius-sm: 0.375rem;
   --radius-md: 0.75rem;
   --radius-lg: 1.25rem;
@@ -179,18 +193,18 @@ button {
   --radius-2xl: 2.5rem;
   --radius-full: 9999px;
 
-  /* ── Motion ── */
+  /* โ”€โ”€ Motion โ”€โ”€ */
   --transition-fast: 200ms cubic-bezier(0.16, 1, 0.3, 1);
   --transition-base: 300ms cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* ── Typography ── */
+  /* โ”€โ”€ Typography โ”€โ”€ */
   --font-sans: 'Plus Jakarta Sans', 'Noto Sans Thai', sans-serif;
   --font-heading: 'Plus Jakarta Sans', 'Noto Sans Thai', sans-serif;
 
   --max-width: 1400px;
   --header-height: 80px;
 
-  /* ── Gradients ── */
+  /* โ”€โ”€ Gradients โ”€โ”€ */
   --gradient-primary: linear-gradient(135deg, #f43f5e 0%, #ec4899 55%, #f97316 100%);
   --gradient-accent: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
   --gradient-hero: linear-gradient(135deg, #f43f5e 0%, #8b5cf6 100%);
@@ -199,7 +213,7 @@ button {
 }
 
 [data-theme="dark"] {
-  /* ── Dark Primary — Soft Sakura ── */
+  /* โ”€โ”€ Dark Primary โ€” Soft Sakura โ”€โ”€ */
   --primary: #f472b6;
   --primary-rgb: 244, 114, 182;
   --primary-50: #2a1522;
@@ -211,7 +225,7 @@ button {
   --primary-600: #f9a8d4;
   --primary-700: #fce7f3;
 
-  /* ── Dark Accent — Warm Gold ── */
+  /* โ”€โ”€ Dark Accent โ€” Warm Gold โ”€โ”€ */
   --accent: #fbbf24;
   --accent-rgb: 251, 191, 36;
   --accent-500: #fbbf24;
@@ -224,7 +238,7 @@ button {
   --paper-tint: #1a1215;
   --ink-900: #ffeee4;
 
-  /* ── Dark Backgrounds — Deep Cinematic ── */
+  /* โ”€โ”€ Dark Backgrounds โ€” Deep Cinematic โ”€โ”€ */
   --bg-primary: #120e0d;
   --bg-secondary: #1c1614;
   --bg-tertiary: #261d1a;
@@ -233,21 +247,21 @@ button {
   --bg-glass-heavy: rgba(28, 22, 20, 0.96);
   --bg-overlay: rgba(0, 0, 0, 0.75);
 
-  /* ── Dark Text ── */
+  /* โ”€โ”€ Dark Text โ”€โ”€ */
   --text-primary: #fef2ec;
   --text-secondary: #c8a89e;
   --text-tertiary: #916c64;
   --text-inverse: #0a0706;
   --text-accent: #f9a8d4;
 
-  /* ── Dark Borders ── */
+  /* โ”€โ”€ Dark Borders โ”€โ”€ */
   --border-default: rgba(255, 230, 215, 0.07);
   --border-strong: rgba(255, 230, 215, 0.13);
   --border: var(--border-default);
   --border-hover: rgba(244, 114, 182, 0.32);
   --border-focus: #f472b6;
 
-  /* ── Dark Glows — More Vivid ── */
+  /* โ”€โ”€ Dark Glows โ€” More Vivid โ”€โ”€ */
   --glow-1: rgba(244, 114, 182, 0.2);
   --glow-2: rgba(251, 191, 36, 0.15);
   --glow-3: rgba(18, 14, 13, 1);
@@ -255,7 +269,7 @@ button {
   --accent-border: rgba(251, 191, 36, 0.22);
   --social-bg: rgba(38, 29, 26, 0.88);
 
-  /* ── Dark Shadows — Deeper ── */
+  /* โ”€โ”€ Dark Shadows โ€” Deeper โ”€โ”€ */
   --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.22);
   --shadow-md: 0 16px 34px rgba(0, 0, 0, 0.32);
@@ -430,6 +444,10 @@ h6,
   animation: float 4s ease-in-out infinite;
 }
 
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
 .stagger-children>* {
   opacity: 0;
   animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -453,6 +471,16 @@ h6,
 
 .stagger-children>*:nth-child(5) {
   animation-delay: 0.5s;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Responsive Adjustments */
@@ -481,7 +509,7 @@ h6,
   }
 }
 
-/* ── Shared UI component styles ──────────────────────────────────────────── */
+/* โ”€โ”€ Shared UI component styles โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
 
 .error-state {
   display: flex;

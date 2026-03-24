@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { getInitialLanguagePreference, preloadTranslations } from '@/shared/contexts/LanguageContext';
 import './index.css';
 
 // Clear stale Supabase auth locks that cause timeout issues
@@ -17,8 +18,14 @@ try {
   // Ignore - localStorage might be unavailable
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+async function bootstrap() {
+  await preloadTranslations(getInitialLanguagePreference());
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
+
+void bootstrap();

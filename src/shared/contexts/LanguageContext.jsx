@@ -1,10 +1,49 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { translations } from '@/shared/i18n/translations';
 
 const LANGUAGE_STORAGE_KEY = 'moodtoon-language';
 const LanguageContext = createContext(null);
+const translationLoaders = {
+  th: () => import('@/shared/i18n/th').then((module) => module.translations),
+  en: () => import('@/shared/i18n/en').then((module) => module.translations),
+};
+const loadedTranslations = new Map();
+const translationRequests = new Map();
 
-function getInitialLanguage() {
+function normalizeLanguage(language) {
+  return language === 'en' ? 'en' : 'th';
+}
+
+function getLoadedTranslationMap(language) {
+  return loadedTranslations.get(normalizeLanguage(language)) || null;
+}
+
+async function loadTranslationMap(language) {
+  const normalizedLanguage = normalizeLanguage(language);
+  const cachedTranslations = loadedTranslations.get(normalizedLanguage);
+  if (cachedTranslations) {
+    return cachedTranslations;
+  }
+
+  if (translationRequests.has(normalizedLanguage)) {
+    return translationRequests.get(normalizedLanguage);
+  }
+
+  const request = translationLoaders[normalizedLanguage]()
+    .then((translations) => {
+      loadedTranslations.set(normalizedLanguage, translations);
+      translationRequests.delete(normalizedLanguage);
+      return translations;
+    })
+    .catch((error) => {
+      translationRequests.delete(normalizedLanguage);
+      throw error;
+    });
+
+  translationRequests.set(normalizedLanguage, request);
+  return request;
+}
+
+export function getInitialLanguagePreference() {
   if (typeof window === 'undefined') {
     return 'th';
   }
@@ -13,8 +52,16 @@ function getInitialLanguage() {
   return storedLanguage === 'en' ? 'en' : 'th';
 }
 
-function resolveTranslation(language, key) {
-  return key.split('.').reduce((current, part) => current?.[part], translations[language]);
+export async function preloadTranslations(language) {
+  await loadTranslationMap(language);
+}
+
+function resolveTranslation(source, key) {
+  if (!source) {
+    return undefined;
+  }
+
+  return key.split('.').reduce((current, part) => current?.[part], source);
 }
 
 function interpolate(template, values = {}) {
@@ -26,7 +73,15 @@ function interpolate(template, values = {}) {
 }
 
 export function LanguageProvider({ children }) {
-  const [language, setLanguage] = useState(getInitialLanguage);
+  const [language, setLanguage] = useState(getInitialLanguagePreference);
+  const [translationMaps, setTranslationMaps] = useState(() => {
+    const initialLanguage = getInitialLanguagePreference();
+    const initialTranslations = getLoadedTranslationMap(initialLanguage);
+
+    return initialTranslations
+      ? { [initialLanguage]: initialTranslations }
+      : {};
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -37,17 +92,68 @@ export function LanguageProvider({ children }) {
     document.documentElement.lang = language === 'th' ? 'th' : 'en';
   }, [language]);
 
+  useEffect(() => {
+    let ignore = false;
+
+    const syncTranslations = async () => {
+      const normalizedLanguage = normalizeLanguage(language);
+      const nextTranslations = await loadTranslationMap(normalizedLanguage);
+
+      if (ignore) {
+        return;
+      }
+
+      setTranslationMaps((current) => (
+        current[normalizedLanguage] === nextTranslations
+          ? current
+          : { ...current, [normalizedLanguage]: nextTranslations }
+      ));
+    };
+
+    void syncTranslations();
+
+    return () => {
+      ignore = true;
+    };
+  }, [language]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const warmEnglishFallback = async () => {
+      const englishTranslations = await loadTranslationMap('en');
+
+      if (ignore) {
+        return;
+      }
+
+      setTranslationMaps((current) => (
+        current.en === englishTranslations
+          ? current
+          : { ...current, en: englishTranslations }
+      ));
+    };
+
+    void warmEnglishFallback();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const value = useMemo(() => ({
     language,
     setLanguage,
     toggleLanguage: () => setLanguage((current) => (current === 'th' ? 'en' : 'th')),
     t: (key, values) => {
-      const resolved = resolveTranslation(language, key) ?? resolveTranslation('en', key) ?? key;
+      const resolved = resolveTranslation(translationMaps[language], key)
+        ?? resolveTranslation(translationMaps.en, key)
+        ?? key;
       return interpolate(resolved, values);
     },
     pick: (thValue, enValue) => (language === 'th' ? thValue : enValue),
     isThai: language === 'th',
-  }), [language]);
+  }), [language, translationMaps]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }

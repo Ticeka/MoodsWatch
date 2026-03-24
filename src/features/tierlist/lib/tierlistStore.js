@@ -950,6 +950,20 @@ export function seedPoolFromCatalog(tierList, catalogTitleIds = []) {
   });
 }
 
+export function filterTierListToCatalog(tierList, catalogTitleIds = []) {
+  const normalized = normalizeTierList(tierList);
+  const knownIds = new Set(catalogTitleIds.map(Number).filter(Boolean));
+
+  return normalizeTierList({
+    ...normalized,
+    rows: normalized.rows.map((row) => ({
+      ...row,
+      titleIds: dedupeNumberIds(row.titleIds).filter((id) => knownIds.has(id)),
+    })),
+    poolTitleIds: dedupeNumberIds(normalized.poolTitleIds).filter((id) => knownIds.has(id)),
+  });
+}
+
 export function moveTitle(tierList, titleId, fromRowId, toRowId, toIndex = null) {
   const normalized = normalizeTierList(tierList);
   const id = Number(titleId);

@@ -1,6 +1,6 @@
-import { BRAND_NAME } from '@/shared/config/brand';
-import { CHARACTER_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
-import { normalizeTrailer } from '@/shared/lib/trailers';
+import { BRAND_NAME } from '../../../shared/config/brand.js';
+import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '../../../shared/lib/catalogEntities.js';
+import { normalizeTrailer } from '../../../shared/lib/trailers.js';
 
 const BATTLE_SESSIONS_KEY = 'moodtoon-battle-sessions';
 const BATTLE_DECKS_KEY = 'moodtoon-battle-decks';
@@ -86,13 +86,25 @@ function clampDeckSize(size) {
   return Math.min(MAX_DECK_SIZE, Math.max(MIN_DECK_SIZE, numericSize));
 }
 
+function getAllEntityLabel(entityType) {
+  if (entityType === CHARACTER_ENTITY_TYPE) {
+    return 'All characters';
+  }
+
+  if (entityType === THEME_SONG_ENTITY_TYPE) {
+    return 'All songs';
+  }
+
+  return 'All titles';
+}
+
 function buildDeckLabel(filters) {
   const parts = [];
   const entityType = normalizeCatalogEntityType(filters.entityType);
   if (filters.type && filters.type !== 'all') {
     parts.push(filters.type[0].toUpperCase() + filters.type.slice(1));
   } else {
-    parts.push(entityType === CHARACTER_ENTITY_TYPE ? 'All characters' : 'All titles');
+    parts.push(getAllEntityLabel(entityType));
   }
   if (filters.tag) parts.push(`#${filters.tag}`);
   if (filters.mood) parts.push(filters.mood);
@@ -165,6 +177,12 @@ function pickDeckTitles(titles, filters, options = {}) {
         title.title_th,
         title.title_native,
         title.slug,
+        title.song_title,
+        title.artist_name,
+        title.voice_actor_name,
+        title.theme_label,
+        title.episodes_text,
+        title.sourceTitleName,
       ].map(normalizeText);
       return haystack.some((entry) => entry.includes(normalizedQuery));
     });
@@ -199,16 +217,18 @@ function buildDeckSignature(filters) {
 }
 
 function normalizeDeckFilters(filters = {}) {
-  const trailerState = filters.trailerState || 'all';
-  const trailerProvider = trailerState === 'none'
-    ? 'all'
-    : (filters.trailerProvider || 'all');
+  const entityType = normalizeCatalogEntityType(filters.entityType);
+  const supportsTrailerFilters = entityType === TITLE_ENTITY_TYPE;
+  const trailerState = supportsTrailerFilters ? (filters.trailerState || 'all') : 'all';
+  const trailerProvider = supportsTrailerFilters && trailerState !== 'none'
+    ? (filters.trailerProvider || 'all')
+    : 'all';
 
   return {
-    entityType: normalizeCatalogEntityType(filters.entityType),
-    type: filters.type || 'all',
-    tag: filters.tag || '',
-    mood: filters.mood || '',
+    entityType,
+    type: entityType === THEME_SONG_ENTITY_TYPE ? 'all' : (filters.type || 'all'),
+    tag: entityType === THEME_SONG_ENTITY_TYPE ? '' : (filters.tag || ''),
+    mood: entityType === THEME_SONG_ENTITY_TYPE ? '' : (filters.mood || ''),
     query: filters.query || '',
     trailerState,
     trailerProvider,
@@ -247,6 +267,16 @@ function serializeTitle(title) {
     role: title.role || '',
     voice_actor_name: title.voice_actor_name || '',
     voice_actor_image: title.voice_actor_image || '',
+    song_title: title.song_title || '',
+    artist_name: title.artist_name || '',
+    theme_type: title.theme_type || '',
+    theme_sequence: title.theme_sequence || 1,
+    theme_label: title.theme_label || '',
+    video_url: title.video_url || null,
+    is_creditless: Boolean(title.is_creditless),
+    is_spoiler: Boolean(title.is_spoiler),
+    is_nsfw: Boolean(title.is_nsfw),
+    episodes_text: title.episodes_text || null,
     trailer_url: title.trailer_url || title.trailer?.url || null,
     trailer_site: title.trailer_site || title.trailer?.site || null,
     trailer_video_id: title.trailer_video_id || title.trailer?.videoId || null,

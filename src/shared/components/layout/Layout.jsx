@@ -1,18 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { useDiscoverSavedSearches } from '@/features/discover/hooks/useDiscoverSavedSearches';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { CommandPalette } from '@/shared/components/ui/CommandPalette';
 import { Header, Footer } from '@/shared/components/layout/Header';
 import './Layout.css';
 
+const CommandPaletteLauncher = lazy(() => import('@/shared/components/ui/CommandPaletteLauncher').then((module) => ({
+  default: module.CommandPaletteLauncher,
+})));
+
 export function Layout() {
   const { t } = useLanguage();
-  const { user } = useAuth();
   const [paletteOpen, setPaletteOpen] = useState(false);
-
-  const { savedSearches } = useDiscoverSavedSearches(t);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
@@ -39,12 +37,11 @@ export function Layout() {
         <Outlet />
       </main>
       <Footer />
-      <CommandPalette
-        isOpen={paletteOpen}
-        onClose={closePalette}
-        userId={user?.id || null}
-        savedSearches={savedSearches}
-      />
+      {paletteOpen ? (
+        <Suspense fallback={null}>
+          <CommandPaletteLauncher isOpen={paletteOpen} onClose={closePalette} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

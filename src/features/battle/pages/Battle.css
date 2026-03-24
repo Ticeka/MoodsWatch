@@ -791,10 +791,27 @@
   color: var(--text-tertiary);
 }
 
+.battle-entry-badge.is-default {
+  background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+  color: var(--text-secondary);
+}
+
 .battle-entry-badge.is-ready {
   background: color-mix(in srgb, var(--success) 10%, transparent);
   border-color: color-mix(in srgb, var(--success) 24%, transparent);
   color: color-mix(in srgb, var(--success) 76%, black);
+}
+
+.battle-entry-badge.is-song {
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-500) 28%, transparent);
+  color: color-mix(in srgb, var(--primary-700) 82%, white);
+}
+
+.battle-entry-badge.is-warning {
+  background: color-mix(in srgb, var(--peach-400) 14%, transparent);
+  border-color: color-mix(in srgb, var(--peach-500) 30%, transparent);
+  color: color-mix(in srgb, var(--peach-700) 86%, black);
 }
 
 .battle-slot-grid {
@@ -884,6 +901,11 @@
   display: grid;
   gap: 0.25rem;
   min-width: 0;
+}
+
+.battle-slot-copy.is-song-entry strong,
+.battle-catalog-copy.is-song-entry strong {
+  color: color-mix(in srgb, var(--primary-700) 82%, var(--text-primary));
 }
 
 .battle-slot-copy strong,
@@ -1495,6 +1517,47 @@
   border: 1px solid rgba(255,255,255,0.1);
 }
 
+.battle-card-tag.is-song {
+  background: color-mix(in srgb, var(--primary-500) 18%, rgba(255, 255, 255, 0.12));
+  border-color: color-mix(in srgb, var(--primary-400) 28%, transparent);
+  color: #fff6fb;
+}
+
+.battle-card-tag.is-ready {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(134, 239, 172, 0.28);
+  color: #dcfce7;
+}
+
+.battle-card-tag.is-missing,
+.battle-card-tag.is-default {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.86);
+}
+
+.battle-card-tag.is-warning {
+  background: rgba(249, 115, 22, 0.22);
+  border-color: rgba(251, 146, 60, 0.32);
+  color: #ffedd5;
+}
+
+.battle-card-song-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  margin-top: -0.15rem;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+}
+
+.battle-card-song-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.battle-card-song-panel,
 .battle-card-trailer {
   display: grid;
   gap: 0.75rem;
@@ -1503,6 +1566,10 @@
     radial-gradient(circle at top left, color-mix(in srgb, var(--accent-500) 10%, transparent), transparent 36%),
     linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 94%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
   border-top: 1px solid color-mix(in srgb, var(--ink-900) 10%, transparent);
+}
+
+.battle-card-song-panel {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .battle-card-trailer-head,

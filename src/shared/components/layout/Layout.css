@@ -236,6 +236,13 @@
   right: 3.2rem;
 }
 
+.header-search-clear svg,
+.drawer-search-clear svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+
 .header-search-clear:hover,
 .drawer-search-clear:hover {
   background: color-mix(in srgb, var(--primary) 10%, var(--bg-secondary));
@@ -483,7 +490,7 @@
   box-shadow: 0 0 0 4px rgba(var(--primary-rgb), 0.14);
 }
 
-/* ── User chip (pill button with avatar + name + chevron) ── */
+/* โ”€โ”€ User chip (pill button with avatar + name + chevron) โ”€โ”€ */
 .user-chip {
   display: flex;
   align-items: center;
@@ -1196,7 +1203,7 @@
   }
 }
 
-/* ── Tablet: compact guest controls ── */
+/* โ”€โ”€ Tablet: compact guest controls โ”€โ”€ */
 @media (min-width: 768px) and (max-width: 1099px) {
 
   .header-content {
@@ -1248,7 +1255,7 @@
   }
 }
 
-/* ── Large desktop: show language toggle ── */
+/* โ”€โ”€ Large desktop: show language toggle โ”€โ”€ */
 @media (min-width: 1280px) {
   .guest-actions-desktop > .language-toggle {
     display: inline-flex;
@@ -1259,7 +1266,7 @@
   }
 }
 
-/* ── Cmd+K button ──────────────────────────────────────────── */
+/* โ”€โ”€ Cmd+K button โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
 .header-cmdk-btn {
   display: inline-flex;
   align-items: center;
@@ -1287,7 +1294,7 @@
   font-size: 0.7rem;
 }
 
-/* ── Saved searches button ─────────────────────────────────── */
+/* โ”€โ”€ Saved searches button โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
 .header-saved-btn {
   position: relative;
   display: flex;
@@ -1321,7 +1328,7 @@
   pointer-events: none;
 }
 
-/* ── Saved searches panel (portal) ─────────────────────────── */
+/* โ”€โ”€ Saved searches panel (portal) โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
 .header-saved-panel {
   width: 260px;
   border-radius: 12px;
@@ -1440,7 +1447,7 @@
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* ── Notification Bell ─────────────────────────────────────── */
+/* โ”€โ”€ Notification Bell โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
 .notif-bell-btn {
   position: relative;
   display: flex;

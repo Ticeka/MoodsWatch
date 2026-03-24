@@ -48,6 +48,7 @@ import {
   createTierListFromTemplate,
   findTierList,
   findTierTemplate,
+  filterTierListToCatalog,
   loadTierLibrary,
   moveTitle,
   removeTierRow,
@@ -192,6 +193,26 @@ function hasVisibleTierListTitles(list, titleById) {
   ];
 
   return ids.some((id) => titleById.has(Number(id)));
+}
+
+function hasTierListStructureChanged(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return JSON.stringify({
+    rows: left.rows?.map((row) => ({
+      id: row.id,
+      titleIds: row.titleIds,
+    })),
+    poolTitleIds: left.poolTitleIds,
+  }) !== JSON.stringify({
+    rows: right.rows?.map((row) => ({
+      id: row.id,
+      titleIds: row.titleIds,
+    })),
+    poolTitleIds: right.poolTitleIds,
+  });
 }
 
 function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo, onPrimaryClick, secondaryLabel, onSecondaryClick }) {
@@ -2324,7 +2345,18 @@ export function TierListPlayPage() {
           ...list.poolTitleIds,
           ...list.rows.flatMap((row) => row.titleIds),
         ];
-      setTierList(seedPoolFromCatalog(list, allowedTitleIds));
+      const cleanedList = filterTierListToCatalog(list, allowedTitleIds);
+      if (cancelled) return;
+
+      if (hasTierListStructureChanged(list, cleanedList)) {
+        const cleanedLibrary = await saveTierList(cleanedList, hydratedLibrary, { userId: user?.id || null });
+        if (cancelled) return;
+        setLibrary(cleanedLibrary);
+        setTierList(findTierList(cleanedList.id, cleanedLibrary) || cleanedList);
+        return;
+      }
+
+      setTierList(cleanedList);
     }
     load().catch((error) => {
       if (cancelled) return;
@@ -2650,4 +2682,3 @@ export function SongTierListPage() {
 }
 
 export default TierListBrowsePage;
-
