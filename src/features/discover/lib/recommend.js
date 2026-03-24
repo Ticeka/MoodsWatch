@@ -15,6 +15,7 @@ import {
   filterTitlesByRecommendationPreferences,
 } from '@/features/profile/lib/profileStore';
 import { getSearchIntent, sortBySearchRelevance, textMatchesQuery } from '@/features/discover/lib/searchMatch';
+import { buildCharacterCatalog } from '@/shared/lib/catalogEntities';
 
 // Dynamic weights ตาม context ที่มี เพื่อไม่ให้ weight ที่ใช้งานไม่ได้ไป cap คะแนน
 function resolveWeights(hasMoods, hasLikedTitles) {
@@ -1135,6 +1136,24 @@ export async function getSimilarTitles(titleId, limit = 6, options = {}) {
 export async function getTrendingTitles(limit = 8, { showAdult = true } = {}) {
   const response = await fetchTitlesPageFromSupabase({ page: 1, pageSize: limit, showAdult });
   return response.items;
+}
+
+export async function getTitlesPage({ type = 'all', query = '', sortBy = 'popularity', page = 1, pageSize = 30, showAdult = true } = {}) {
+  return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize, showAdult });
+}
+
+export async function getCharactersPage({ type = 'all', query = '', page = 1, pageSize = 30, showAdult = true } = {}) {
+  const result = await fetchTitlesPageFromSupabase({ type, query, page, pageSize, showAdult });
+  const titleIds = result.items.map((t) => t.id);
+  const characters = await fetchTitleCharacters(titleIds);
+  const titlesWithChars = attachCharactersToTitles(result.items, characters);
+  return {
+    items: buildCharacterCatalog(titlesWithChars),
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalPages: result.totalPages,
+  };
 }
 
 export async function getTitlesByIds(ids) {

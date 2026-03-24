@@ -851,6 +851,15 @@ export function TitleDetail() {
                         </button>
                       </div>
                     )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="song-tierlist-btn"
+                        onClick={() => navigate(`/tierlist/songs/${title.slug}`)}
+                      >
+                        {language === 'th' ? 'จัด tierlist เพลง' : 'Song tierlist'}
+                      </Button>
                     </div>
                   </div>
                   <div className="song-list">

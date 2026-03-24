@@ -336,6 +336,53 @@
   display: none;
 }
 
+.tiermaker-song-preview {
+  margin: 0.7rem 0;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 58%, transparent);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-500) 10%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 72%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, transparent));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.tiermaker-song-preview-copy {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.tiermaker-song-preview-copy strong {
+  font-size: 1rem;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.tiermaker-song-preview-copy p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.tiermaker-song-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tiermaker-song-preview-hint {
+  max-width: 28ch;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
 /* ============================================
    TIER BOARD
    ============================================ */
@@ -1001,6 +1048,14 @@
   position: relative;
 }
 
+.tierlist-item-thumb.is-song::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 0%, rgba(15, 23, 42, 0.72) 100%);
+  pointer-events: none;
+}
+
 .tierlist-item-thumb img {
   width: 100%;
   height: 100%;
@@ -1009,20 +1064,81 @@
 
 .tier-song-badge {
   position: absolute;
-  bottom: 2px;
-  left: 0;
-  right: 0;
-  text-align: center;
+  top: 6px;
+  left: 6px;
   font-size: 0.55rem;
   font-weight: 800;
   color: #fff;
   background: rgba(15, 23, 42, 0.78);
-  padding: 1px 2px;
+  padding: 0.18rem 0.35rem;
   letter-spacing: 0.03em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  border-radius: 999px;
+  max-width: calc(100% - 40px);
+  z-index: 1;
+}
+
+.tiermaker-song-play {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease, background-color 140ms ease;
+}
+
+.tiermaker-tile:hover .tiermaker-song-play,
+.tiermaker-tile:focus-within .tiermaker-song-play {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tiermaker-song-play:hover,
+.tiermaker-song-play:focus-visible {
+  background: color-mix(in srgb, var(--primary-500) 72%, rgba(15, 23, 42, 0.72));
+  outline: none;
+}
+
+.tiermaker-song-meta {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.45rem 0.4rem 0.32rem;
+  color: #fff;
+  pointer-events: none;
+}
+
+.tiermaker-song-meta strong,
+.tiermaker-song-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tiermaker-song-meta strong {
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.tiermaker-song-meta span {
+  font-size: 0.52rem;
+  opacity: 0.9;
 }
 
 .tierlist-inline-link {
@@ -1067,6 +1183,160 @@
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+/* Song picker in TierListCreatePage */
+.tierlist-songs-drilldown-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tierlist-songs-drilldown-head h2 {
+  margin: 0;
+}
+
+.tierlist-song-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tierlist-song-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.tierlist-song-picker-row:hover {
+  border-color: var(--primary-400);
+  background: color-mix(in srgb, var(--primary-500) 6%, var(--bg-elevated));
+}
+
+.tierlist-song-picker-row.is-selected {
+  border-color: var(--primary-500);
+  background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-elevated));
+}
+
+.tierlist-song-picker-thumb {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tierlist-song-picker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tierlist-song-picker-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.tierlist-song-picker-info strong {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tierlist-song-picker-info span {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tierlist-song-picker-info small {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.tierlist-song-picker-check {
+  flex-shrink: 0;
+}
+
+.tierlist-picker-check-dot {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+}
+
+.tierlist-picker-check-dot.is-on {
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+}
+
+/* Song Tier List entry banner */
+.tierlist-songs-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.tierlist-songs-banner:hover {
+  border-color: var(--primary-400);
+  background: color-mix(in srgb, var(--primary-500) 6%, var(--bg-elevated));
+}
+
+.tierlist-songs-banner-icon {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-500) 15%, var(--bg-secondary));
+  color: var(--primary-400);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tierlist-songs-banner-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.tierlist-songs-banner-copy h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tierlist-songs-banner-copy p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.tierlist-songs-banner .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .tierlist-community-card {
@@ -1721,6 +1991,21 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 0.5rem;
+}
+
+.tierlist-picker-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 0 0.25rem;
+}
+
+.tierlist-picker-page-info {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  min-width: 80px;
+  text-align: center;
 }
 
 .tierlist-picker-card {

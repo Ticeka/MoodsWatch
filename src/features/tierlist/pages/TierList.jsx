@@ -13,6 +13,7 @@ import {
   Monitor,
   Music,
   Palette,
+  Play,
   Plus,
   Search,
   RotateCcw,
@@ -28,7 +29,7 @@ import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { BRAND_NAME } from '@/shared/config/brand';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { getAllTitles, getTitleBySlug } from '@/features/discover/lib/recommend';
+import { getAllTitles, getCharactersPage, getTitleBySlug, getTitlesByIds, getTitlesPage } from '@/features/discover/lib/recommend';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
   CHARACTER_ENTITY_TYPE,
@@ -59,6 +60,7 @@ import {
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { supabase } from '@/shared/lib/supabase';
+import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import './TierList.css';
 
 const BROWSE_PAGE_SIZE = 8;
@@ -66,6 +68,7 @@ const TIER_COLORS = ['#ff7f7f', '#ffbf7f', '#ffdf7f', '#ffff7f', '#bfff7f', '#7f
 const ENTITY_TYPE_OPTIONS = [
   { value: TITLE_ENTITY_TYPE, label: 'Titles' },
   { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
+  { value: THEME_SONG_ENTITY_TYPE, label: 'Theme Songs' },
 ];
 
 function getDisplayName(title) {
@@ -74,6 +77,14 @@ function getDisplayName(title) {
 
 function getMetaLine(title) {
   return getCatalogEntityMeta(title);
+}
+
+function getThemeSongSummary(song) {
+  return [
+    song?.theme_label || song?.role,
+    song?.artist_name,
+    song?.episodes_text,
+  ].filter(Boolean);
 }
 
 function buildEntityMaps(titles = []) {
@@ -298,7 +309,11 @@ function TierTitleCard({
   eager = false,
   isDragging = false,
   onPointerDragStart = null,
+  onPreviewSong = null,
 }) {
+  const isSong = isThemeSongEntity(title);
+  const canPreviewSong = isSong && title?.video_url && typeof onPreviewSong === 'function';
+
   return (
     <article
       className={`tiermaker-tile${isDragging ? ' is-dragging-origin' : ''}`}
@@ -315,11 +330,36 @@ function TierTitleCard({
         });
       }}
     >
-      <div className="tierlist-item-thumb">
+      <div className={`tierlist-item-thumb${isSong ? ' is-song' : ''}`}>
         <img src={getTitleArtwork(title)} alt="" loading={eager ? 'eager' : 'lazy'} draggable={false} />
-        {isThemeSongEntity(title) && (
-          <span className="tier-song-badge">{title.role || title.theme_label}</span>
-        )}
+        {isSong ? (
+          <>
+            <span className="tier-song-badge">{title.role || title.theme_label}</span>
+            {canPreviewSong ? (
+              <button
+                type="button"
+                className="tiermaker-song-play"
+                aria-label={`Play ${getDisplayName(title)}`}
+                title={`Play ${getDisplayName(title)}`}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onPreviewSong(title);
+                }}
+              >
+                <Play size={14} />
+              </button>
+            ) : null}
+            <div className="tiermaker-song-meta">
+              <strong>{title.song_title || getDisplayName(title)}</strong>
+              <span>{title.artist_name || title.sourceTitleName || 'Theme song'}</span>
+            </div>
+          </>
+        ) : null}
       </div>
     </article>
   );
@@ -349,12 +389,35 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [dragState, setDragState] = useState(null);
   const [dragTarget, setDragTarget] = useState(null);
+  const [activeSong, setActiveSong] = useState(null);
+  const [isSongModalOpen, setIsSongModalOpen] = useState(false);
   const boardRef = useRef(null);
   const dragStateRef = useRef(null);
+  const sampleEntity = titleById.values().next().value;
+  const isSongTierList = normalizeCatalogEntityType(tierList?.entityType) === THEME_SONG_ENTITY_TYPE || isThemeSongEntity(sampleEntity);
 
   useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
+
+  useEffect(() => {
+    if (!isSongTierList) {
+      setActiveSong(null);
+      setIsSongModalOpen(false);
+      return;
+    }
+
+    const activeSongId = Number(activeSong?.id);
+    if (activeSongId && titleById.has(activeSongId)) {
+      return;
+    }
+
+    const firstSongId = [...tierList.rows.flatMap((row) => row.titleIds), ...tierList.poolTitleIds]
+      .map(Number)
+      .find((id) => titleById.has(id));
+
+    setActiveSong(firstSongId ? titleById.get(firstSongId) : null);
+  }, [activeSong?.id, isSongTierList, tierList.poolTitleIds, tierList.rows, titleById]);
 
   const beginPointerDrag = (event, payload) => {
     if (readOnly) {
@@ -754,6 +817,16 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   };
   const handleTogglePin = () => setIsPoolPinned((current) => !current);
   const handleTogglePresentation = () => setIsPresentationMode((current) => !current);
+  const handlePreviewSong = (song) => {
+    setActiveSong(song);
+
+    if (!song?.video_url) {
+      toast.error(pick('เพลงนี้ยังไม่มีตัวอย่างให้เปิด', 'This song does not have a playable preview yet'));
+      return;
+    }
+
+    setIsSongModalOpen(true);
+  };
 
   const toolbarCompact = isMobileViewport && isToolbarCollapsed && !isToolbarExpanded;
 
@@ -761,6 +834,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   const dragOverRowId = dragTarget?.type === 'row' ? dragTarget.rowId : null;
   const isDragOverPool = dragTarget?.type === 'pool';
   const dragPreviewTitle = dragState ? titleById.get(Number(dragState.titleId)) : null;
+  const activeSongSummary = getThemeSongSummary(activeSong);
 
   return (
     <section className={`container tiermaker-editor ${isPresentationMode ? 'is-presentation' : ''} ${dragState ? 'is-pointer-dragging' : ''} ${readOnly ? 'is-readonly' : ''}`}>
@@ -888,6 +962,39 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       </section>
 
       {/* ── Board ── */}
+      {isSongTierList ? (
+        <section className="tiermaker-song-preview glass-heavy" aria-label={pick('ตัวอย่างเพลงที่เลือก', 'Selected song preview')}>
+          <div className="tiermaker-song-preview-copy">
+            <small className="tierlist-chip">{pick('โหมดจัดอันดับเพลง', 'Song tierlist mode')}</small>
+            <strong>{activeSong?.song_title || activeSong?.title_en || pick('เลือกเพลงจากการ์ดด้านล่าง', 'Pick a song tile to preview')}</strong>
+            <p>
+              {activeSong
+                ? activeSongSummary.join(' • ')
+                : pick('กดปุ่มเล่นบนการ์ดเพลงเพื่อฟังระหว่างจัด tier ได้ทันที', 'Use the play button on any song card to listen while ranking.')}
+            </p>
+          </div>
+          <div className="tiermaker-song-preview-actions">
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Play size={14} />}
+              onClick={() => {
+                if (!activeSong?.video_url) {
+                  toast.error(pick('เพลงนี้ยังไม่มีตัวอย่างให้เปิด', 'This song does not have a playable preview yet'));
+                  return;
+                }
+                setIsSongModalOpen(true);
+              }}
+              disabled={!activeSong?.video_url}
+            >
+              {pick('เปิดเพลง', 'Play song')}
+            </Button>
+            <span className="tiermaker-song-preview-hint">
+              {pick('เพิ่ม tier ได้จากปุ่มด้านบน แล้วลากเพลงลงแต่ละช่องได้เลย', 'Create tiers from the toolbar, then drag songs into each slot.')}
+            </span>
+          </div>
+        </section>
+      ) : null}
       <div className="tiermaker-export-board">
         <div className="tiermaker-export-head">
           <strong>{tierList.title}</strong>
@@ -985,6 +1092,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                         fromIndex={titleIndex}
                         isDragging={dragState?.titleId === Number(title.id) && dragState?.fromRowId === row.id && dragState?.fromIndex === titleIndex}
                         onPointerDragStart={readOnly ? null : beginPointerDrag}
+                        onPreviewSong={isSongTierList ? handlePreviewSong : null}
                       />,
                     ];
                     if (titleIndex === arr.length - 1) {
@@ -1038,6 +1146,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                   eager
                   isDragging={dragState?.titleId === Number(title.id) && dragState?.fromRowId === '' && dragState?.fromIndex === index}
                   onPointerDragStart={readOnly ? null : beginPointerDrag}
+                  onPreviewSong={isSongTierList ? handlePreviewSong : null}
                 />
               ))
           )}
@@ -1059,6 +1168,12 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
           </div>
         </div>
       )}
+      {isSongTierList && isSongModalOpen && activeSong ? (
+        <ThemeSongModal
+          song={activeSong}
+          onClose={() => setIsSongModalOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -1391,13 +1506,28 @@ export function TierListBrowsePage() {
     async function load() {
       setIsLoading(true);
       setLoadError('');
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
-      if (cancelled) return;
-      const filtered = filterTitlesForAgeGate(catalog, showAdult);
-      setTitles(filtered);
-      const nextLibrary = await loadTierLibrary(filtered, { userId: user?.id || null });
+      // Step 1: load library fast (no full catalog needed)
+      const nextLibrary = await loadTierLibrary([], { userId: user?.id || null });
       if (cancelled) return;
       setLibrary(nextLibrary);
+
+      // Step 2: collect only title-entity IDs referenced by templates/lists for cover images
+      const titleIds = [
+        ...nextLibrary.templates
+          .filter((t) => normalizeCatalogEntityType(t.entityType) !== CHARACTER_ENTITY_TYPE)
+          .flatMap((t) => t.titleIds || []),
+        ...nextLibrary.lists
+          .filter((l) => normalizeCatalogEntityType(l.entityType) !== CHARACTER_ENTITY_TYPE)
+          .flatMap((l) => [
+            ...(l.rows || []).flatMap((r) => r.titleIds || []),
+            ...(l.poolTitleIds || []),
+          ]),
+      ];
+
+      // Step 3: fetch only those titles (not the full catalog)
+      const fetchedTitles = await getTitlesByIds(titleIds);
+      if (cancelled) return;
+      setTitles(filterTitlesForAgeGate(fetchedTitles, showAdult));
       setIsLoading(false);
     }
     load().catch((error) => {
@@ -1414,18 +1544,12 @@ export function TierListBrowsePage() {
     [titles]
   );
   const publicTemplates = useMemo(
-    () => library.templates.filter((template) => (
-      template.isPublic &&
-      hasVisibleTemplateTitles(template, getEntityMap(entityMaps, template.entityType))
-    )),
-    [entityMaps, library.templates]
+    () => library.templates.filter((template) => template.isPublic),
+    [library.templates]
   );
   const publicLists = useMemo(
-    () => library.lists.filter((list) => (
-      list.isPublic &&
-      hasVisibleTierListTitles(list, getEntityMap(entityMaps, list.entityType))
-    )),
-    [entityMaps, library.lists]
+    () => library.lists.filter((list) => list.isPublic),
+    [library.lists]
   );
   const recentCommunityLists = useMemo(
     () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
@@ -1679,6 +1803,19 @@ export function TierListBrowsePage() {
         )}
       </section>
 
+      <section className="container tierlist-section">
+        <Link className="tierlist-songs-banner glass-heavy" to="/tierlist/songs">
+          <div className="tierlist-songs-banner-icon"><Music size={28} /></div>
+          <div className="tierlist-songs-banner-copy">
+            <h2>{pick('จัดอันดับเพลงเปิด-ปิด', 'Rank Opening & Ending Songs')}</h2>
+            <p>{pick('เลือกเรื่องที่มีข้อมูลเพลง แล้วจัดอันดับ OP/ED ในแบบของคุณเอง', 'Pick a title with song data and build your own OP/ED tier list.')}</p>
+          </div>
+          <span className="btn btn-primary btn-sm">
+            {pick('ดู Song Tier Lists', 'Explore Song Tier Lists')} <ArrowRight size={13} />
+          </span>
+        </Link>
+      </section>
+
       {recentCommunityLists.length > 0 && (
         <section className="container tierlist-section">
           <div className="tierlist-section-head">
@@ -1742,15 +1879,22 @@ export function TierListTemplatePage() {
       setTemplate(found);
       setIsTemplateLoading(false);
 
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
+      // For character templates: still need full catalog; for others: fetch only needed IDs
+      const isCharacterType = normalizeCatalogEntityType(found.entityType) === CHARACTER_ENTITY_TYPE;
+      let fetchedTitles;
+      if (isCharacterType) {
+        fetchedTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
+      } else {
+        const communityListIds = loadedLibrary.lists
+          .filter((l) => String(l.templateId) === String(templateId))
+          .flatMap((l) => [
+            ...(l.rows || []).flatMap((r) => r.titleIds || []),
+            ...(l.poolTitleIds || []),
+          ]);
+        fetchedTitles = await getTitlesByIds([...found.titleIds, ...communityListIds]);
+      }
       if (cancelled) return;
-      const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
-      setTitles(filteredCatalog);
-
-      const hydratedLibrary = await loadTierLibrary(filteredCatalog, { userId: user?.id || null });
-      if (cancelled) return;
-      setLibrary(hydratedLibrary);
-      setTemplate(findTierTemplate(templateId, hydratedLibrary) || found);
+      setTitles(filterTitlesForAgeGate(fetchedTitles, showAdult));
       setIsPreviewLoading(false);
     }
 
@@ -1939,7 +2083,10 @@ export function TierListCreatePage() {
   const { pick } = useLanguage();
   const { user } = useAuth();
   const { showAdult } = useAgeGate();
-  const [titles, setTitles] = useState([]);
+  const [pagedEntries, setPagedEntries] = useState([]);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogTotalPages, setCatalogTotalPages] = useState(1);
+  const [catalogTotal, setCatalogTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -1948,94 +2095,156 @@ export function TierListCreatePage() {
   const [category, setCategory] = useState('anime');
   const [entityType, setEntityType] = useState(TITLE_ENTITY_TYPE);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [genreFilter, setGenreFilter] = useState(new Set());
   const [titleQuery, setTitleQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectedEntityCache, setSelectedEntityCache] = useState(new Map());
+  // Song-specific state
+  const [browsingTitle, setBrowsingTitle] = useState(null);
+  const [songEntityCache, setSongEntityCache] = useState(new Map());
+  const [isSongsLoading, setIsSongsLoading] = useState(false);
 
+  // Initialise library in background (no catalog needed)
+  useEffect(() => {
+    loadTierLibrary([], { userId: user?.id || null }).catch(() => {});
+  }, [user?.id]);
+
+  // Debounce search query and reset to page 1
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(titleQuery);
+      setCatalogPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [titleQuery]);
+
+  // Server-side paginated fetch for all entity types (title, character, song)
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setLoadError('');
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
-      if (!cancelled) {
-        const filtered = filterTitlesForAgeGate(catalog, showAdult);
-        setTitles(filtered);
-        await loadTierLibrary(filtered, { userId: user?.id || null });
-        setIsLoading(false);
-      }
-    }
-    load().catch((error) => {
-      if (!cancelled) {
-        setLoadError(error?.message || pick('โหลดแคตตาล็อกสำหรับสร้างเทมเพลตไม่สำเร็จ', 'Failed to load the catalog for template creation'));
-        setIsLoading(false);
-      }
+    setIsLoading(true);
+    setLoadError('');
+    const isCharMode = normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE;
+    const fetchFn = isCharMode ? getCharactersPage : getTitlesPage;
+    fetchFn({
+      type: typeFilter === 'all' ? undefined : typeFilter,
+      query: debouncedQuery,
+      page: catalogPage,
+      pageSize: 30,
+      showAdult,
+    }).then((result) => {
+      if (cancelled) return;
+      setPagedEntries(result.items);
+      setCatalogTotalPages(result.totalPages);
+      setCatalogTotal(result.total);
+      setIsLoading(false);
+    }).catch((error) => {
+      if (cancelled) return;
+      setLoadError(error?.message || pick('โหลดแคตตาล็อกสำหรับสร้างเทมเพลตไม่สำเร็จ', 'Failed to load the catalog for template creation'));
+      setIsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [pick, showAdult, user?.id]);
+  }, [entityType, typeFilter, debouncedQuery, catalogPage, showAdult, pick]);
 
-  const catalogEntries = useMemo(
-    () => getCatalogEntities(titles, entityType),
-    [entityType, titles]
-  );
-
-  const availableGenres = useMemo(() => {
-    const counts = new Map();
-    catalogEntries.forEach((title) => {
-      (title.genres || []).forEach((genre) => {
-        counts.set(genre, (counts.get(genre) || 0) + 1);
+  // Load songs when user drills into a title (song picker mode)
+  useEffect(() => {
+    const isSongMode = normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE;
+    if (!isSongMode || !browsingTitle) return undefined;
+    const titleId = Number(browsingTitle.id);
+    if (songEntityCache.has(titleId)) return undefined;
+    let cancelled = false;
+    setIsSongsLoading(true);
+    supabase
+      .from('title_theme_songs')
+      .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
+      .eq('canonical_title_id', titleId)
+      .order('display_order')
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setIsSongsLoading(false);
+        if (error || !data) return;
+        const entities = data.map((song) => buildThemeSongEntity(song, browsingTitle));
+        setSongEntityCache((prev) => {
+          const next = new Map(prev);
+          next.set(titleId, entities);
+          return next;
+        });
       });
-    });
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([genre]) => genre);
-  }, [catalogEntries]);
+    return () => { cancelled = true; };
+  }, [browsingTitle, entityType, songEntityCache]);
 
-  const filtered = useMemo(() => {
-    let result = typeFilter === 'all' ? catalogEntries : catalogEntries.filter((title) => title.type === typeFilter);
-    if (genreFilter.size > 0) {
-      result = result.filter((title) => (title.genres || []).some((genre) => genreFilter.has(genre)));
-    }
-    const query = titleQuery.trim().toLowerCase();
-    if (query) {
-      result = result.filter((title) => {
-        const haystack = [title.title_th, title.title_en, title.title_native, title.sourceTitleName]
-          .map((entry) => String(entry || '').toLowerCase())
-          .join(' ');
-        return haystack.includes(query);
-      });
-    }
-    return result.slice(0, 200);
-  }, [catalogEntries, typeFilter, genreFilter, titleQuery]);
+  const isCharacterMode = normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE;
+
+  const catalogEntries = useMemo(() => pagedEntries, [pagedEntries]);
+
+  // All modes are now server-side paginated
+  const filtered = useMemo(() => catalogEntries, [catalogEntries]);
 
   const selectedTitles = useMemo(
-    () => catalogEntries.filter((title) => selectedIds.has(Number(title.id))),
-    [catalogEntries, selectedIds]
+    () => Array.from(selectedIds).map((id) => selectedEntityCache.get(id)).filter(Boolean),
+    [selectedIds, selectedEntityCache]
   );
 
-  const hasActiveFilters = typeFilter !== 'all' || genreFilter.size > 0 || titleQuery.trim().length > 0;
+  const isSongMode = normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE;
 
-  const toggleTitle = (id) => {
+  // Titles for browsing in song mode — already filtered server-side
+  const filteredForSongBrowse = useMemo(() => {
+    if (!isSongMode) return [];
+    return pagedEntries;
+  }, [isSongMode, pagedEntries]);
+
+  // Songs currently shown in the drill-down panel
+  const currentBrowseSongs = useMemo(() => {
+    if (!isSongMode || !browsingTitle) return [];
+    return songEntityCache.get(Number(browsingTitle.id)) || [];
+  }, [isSongMode, browsingTitle, songEntityCache]);
+
+  // All selected song entities (accumulated across titles)
+  const selectedSongEntities = useMemo(() => {
+    if (!isSongMode) return [];
+    const result = [];
+    for (const songs of songEntityCache.values()) {
+      songs.forEach((s) => { if (selectedIds.has(s.id)) result.push(s); });
+    }
+    return result;
+  }, [isSongMode, selectedIds, songEntityCache]);
+
+  const hasActiveFilters = typeFilter !== 'all' || titleQuery.trim().length > 0;
+
+  const toggleTitle = (id, entity) => {
+    const numId = Number(id);
+    const isCurrentlySelected = selectedIds.has(numId);
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (isCurrentlySelected) next.delete(numId);
+      else next.add(numId);
+      return next;
+    });
+    setSelectedEntityCache((prev) => {
+      const next = new Map(prev);
+      if (isCurrentlySelected) next.delete(numId);
+      else if (entity) next.set(numId, entity);
       return next;
     });
   };
 
   const handleCreate = async () => {
-    if (selectedIds.size < 8) {
-      toast.error(pick('กรุณาเลือกอย่างน้อย 8 เรื่อง', 'Please select at least 8 titles'));
+    const entitiesToUse = isSongMode ? selectedSongEntities : selectedTitles;
+    const minCount = isSongMode ? 2 : 8;
+    if (entitiesToUse.length < minCount) {
+      toast.error(
+        isSongMode
+          ? pick('กรุณาเลือกอย่างน้อย 2 เพลง', 'Please select at least 2 songs')
+          : pick('กรุณาเลือกอย่างน้อย 8 เรื่อง', 'Please select at least 8 titles')
+      );
       return;
     }
 
     setIsSaving(true);
     try {
-      const template = createTemplateFromCatalog(selectedTitles, {
-        title: templateName.trim() || pick('เทมเพลตใหม่', 'New Template'),
+      const template = createTemplateFromCatalog(entitiesToUse, {
+        title: templateName.trim() || (isSongMode ? pick('เทมเพลตเพลงใหม่', 'New Song Template') : pick('เทมเพลตใหม่', 'New Template')),
         description: templateDesc.trim(),
-        category,
+        category: isSongMode ? 'songs' : category,
         entityType,
         isPublic: true,
         isSystem: false,
@@ -2047,7 +2256,7 @@ export function TierListCreatePage() {
       const libraryAfterTemplate = await saveTierTemplate(template, currentLibrary, { userId: user?.id || null });
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const list = buildTierListFromTemplate(savedTemplate);
-      const seeded = seedPoolFromCatalog(list, selectedTitles.map((title) => Number(title.id)));
+      const seeded = seedPoolFromCatalog(list, entitiesToUse.map((e) => Number(e.id)));
       const ownerUsername = getCurrentUsername(user);
       const libraryAfterList = await saveTierList({
         ...seeded,
@@ -2107,14 +2316,16 @@ export function TierListCreatePage() {
           />
         </label>
 
-        <label className="tierlist-field">
-          <span>{pick('หมวดหมู่', 'Category')}</span>
-          <input
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            placeholder={pick('เช่น anime / manga / action / romance', 'e.g. anime / manga / action / romance')}
-          />
-        </label>
+        {!isSongMode && (
+          <label className="tierlist-field">
+            <span>{pick('หมวดหมู่', 'Category')}</span>
+            <input
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              placeholder={pick('เช่น anime / manga / action / romance', 'e.g. anime / manga / action / romance')}
+            />
+          </label>
+        )}
 
         <label className="tierlist-field">
           <span>Catalog</span>
@@ -2123,9 +2334,11 @@ export function TierListCreatePage() {
             onChange={(event) => {
               setEntityType(normalizeCatalogEntityType(event.target.value));
               setSelectedIds(new Set());
+              setSelectedEntityCache(new Map());
+              setBrowsingTitle(null);
               setTypeFilter('all');
-              setGenreFilter(new Set());
               setTitleQuery('');
+              setCatalogPage(1);
             }}
           >
             {ENTITY_TYPE_OPTIONS.map((option) => (
@@ -2139,160 +2352,338 @@ export function TierListCreatePage() {
           <Button
             variant="primary"
             onClick={handleCreate}
-            disabled={isLoading || isSaving || selectedIds.size < 8}
+            disabled={isLoading || isSaving || (isSongMode ? selectedSongEntities.length < 2 : selectedIds.size < 8)}
           >
-            {isSaving ? pick('กำลังสร้าง...', 'Creating...') : `${pick('สร้างและเล่น', 'Create & Play')}${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            {isSaving
+              ? pick('กำลังสร้าง...', 'Creating...')
+              : `${pick('สร้างและเล่น', 'Create & Play')}${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </Button>
         </div>
       </section>
 
-      <section className="container tierlist-section">
-        <div className="tierlist-section-head">
-          <h2>
-            {pick('เลือกเรื่อง', 'Select Titles')}
-            {selectedIds.size > 0 && (
-              <span className="tierlist-count">&nbsp;· {selectedIds.size} {pick('รายการที่เลือก', 'selected')}</span>
-            )}
-          </h2>
-          <div className="tierlist-picker-actions">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedIds(new Set(filtered.map((title) => Number(title.id))))}
-              disabled={filtered.length === 0}
-            >
-              {pick('เลือกทั้งหมด', 'Select All')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedIds(new Set())}
-              disabled={selectedIds.size === 0}
-            >
-              {pick('ล้าง', 'Clear')}
-            </button>
-          </div>
-        </div>
+      {/* ── Song picker (song mode only) ── */}
+      {isSongMode ? (
+        <section className="container tierlist-section">
+          {browsingTitle ? (
+            // ── Song drill-down: songs of the selected title ──
+            <>
+              <div className="tierlist-section-head">
+                <div className="tierlist-songs-drilldown-head">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setBrowsingTitle(null)}
+                  >
+                    <ChevronLeft size={14} /> {pick('กลับเลือกเรื่อง', 'Back to titles')}
+                  </button>
+                  <h2>
+                    {getCatalogEntityName(browsingTitle)}
+                    <span className="tierlist-count">
+                      &nbsp;·&nbsp;
+                      {currentBrowseSongs.filter((s) => selectedIds.has(s.id)).length}/{currentBrowseSongs.length} {pick('เพลงที่เลือก', 'songs selected')}
+                    </span>
+                  </h2>
+                </div>
+                <div className="tierlist-picker-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      currentBrowseSongs.forEach((s) => next.add(s.id));
+                      return next;
+                    })}
+                    disabled={currentBrowseSongs.length === 0}
+                  >
+                    {pick('เลือกทั้งหมด', 'Select All')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      currentBrowseSongs.forEach((s) => next.delete(s.id));
+                      return next;
+                    })}
+                    disabled={currentBrowseSongs.every((s) => !selectedIds.has(s.id))}
+                  >
+                    {pick('ยกเลิกทั้งหมด', 'Deselect All')}
+                  </button>
+                </div>
+              </div>
 
-        <div className="tierlist-picker-filterbar">
-          <div className="tierlist-picker-filterbar-top">
-            <div className="tierlist-picker-type-pills" role="toolbar" aria-label={pick('กรองตามประเภท', 'Filter by type')}>
-              {['all', 'anime', 'manga', 'manhwa'].map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`tierlist-cat-pill${typeFilter === type ? ' is-active' : ''}`}
-                  onClick={() => setTypeFilter(type)}
-                  aria-pressed={typeFilter === type}
-                >
-                  {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="tierlist-picker-search-wrap">
-              <input
-                className="tierlist-picker-search"
-                value={titleQuery}
-                onChange={(event) => setTitleQuery(event.target.value)}
-                placeholder={pick('ค้นหาเรื่อง...', 'Search titles...')}
-                aria-label={pick('ค้นหาเรื่อง', 'Search titles')}
-              />
-              {titleQuery && (
-                <button
-                  type="button"
-                  className="tierlist-picker-search-clear"
-                  onClick={() => setTitleQuery('')}
-                  aria-label={pick('ล้างคำค้นหา', 'Clear search')}
-                ><X size={14} /></button>
+              {isSongsLoading ? (
+                <TierListEmptyPanel
+                  icon={<Loader2 size={24} className="animate-spin" />}
+                  title={pick('กำลังโหลดเพลง', 'Loading songs')}
+                  message={pick('กำลังดึงรายการเพลงสำหรับเรื่องนี้', 'Fetching song list for this title.')}
+                />
+              ) : currentBrowseSongs.length === 0 ? (
+                <TierListEmptyPanel
+                  icon={<Music size={24} />}
+                  title={pick('ไม่พบเพลงสำหรับเรื่องนี้', 'No songs found for this title')}
+                  message={pick('เรื่องนี้ยังไม่มีข้อมูลเพลงในระบบ', 'This title has no song data in the database.')}
+                />
+              ) : (
+                <div className="tierlist-song-picker-list">
+                  {currentBrowseSongs.map((song) => {
+                    const selected = selectedIds.has(song.id);
+                    return (
+                      <button
+                        key={song.id}
+                        type="button"
+                        className={`tierlist-song-picker-row${selected ? ' is-selected' : ''}`}
+                        onClick={() => toggleTitle(song.id)}
+                        aria-pressed={selected}
+                      >
+                        <div className="tierlist-song-picker-thumb">
+                          <img src={getTitleArtwork(song)} alt="" loading="lazy" />
+                        </div>
+                        <div className="tierlist-song-picker-info">
+                          <strong>{song.song_title || getCatalogEntityName(song)}</strong>
+                          <span>{[song.theme_label, song.artist_name].filter(Boolean).join(' · ')}</span>
+                          {song.episodes_text ? <small>{song.episodes_text}</small> : null}
+                        </div>
+                        <span className="tierlist-song-picker-check" aria-hidden="true">
+                          {selected ? <span className="tierlist-picker-check-dot is-on" /> : <span className="tierlist-picker-check-dot" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </div>
-            <span className="tierlist-picker-result-count">
-              {filtered.length} {pick('เรื่อง', 'titles')}
-            </span>
-          </div>
+            </>
+          ) : (
+            // ── Title browser: pick which title to drill into ──
+            <>
+              <div className="tierlist-section-head">
+                <h2>
+                  {pick('เลือกเรื่องที่ต้องการเพลง', 'Pick a title to browse songs')}
+                  {selectedIds.size > 0 && (
+                    <span className="tierlist-count">&nbsp;· {selectedIds.size} {pick('เพลงที่เลือกแล้ว', 'songs selected')}</span>
+                  )}
+                </h2>
+              </div>
 
-          {availableGenres.length > 0 && (
-            <div className="tierlist-picker-genre-row" role="toolbar" aria-label={pick('กรองตามแนว', 'Filter by genre')}>
+              <div className="tierlist-picker-filterbar">
+                <div className="tierlist-picker-filterbar-top">
+                  <div className="tierlist-picker-type-pills" role="toolbar">
+                    {['all', 'anime', 'manga', 'manhwa'].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        className={`tierlist-cat-pill${typeFilter === type ? ' is-active' : ''}`}
+                        onClick={() => setTypeFilter(type)}
+                        aria-pressed={typeFilter === type}
+                      >
+                        {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="tierlist-picker-search-wrap">
+                    <input
+                      className="tierlist-picker-search"
+                      value={titleQuery}
+                      onChange={(e) => setTitleQuery(e.target.value)}
+                      placeholder={pick('ค้นหาชื่อเรื่อง...', 'Search titles...')}
+                    />
+                    {titleQuery && (
+                      <button type="button" className="tierlist-picker-search-clear" onClick={() => setTitleQuery('')}>
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <span className="tierlist-picker-result-count">{filteredForSongBrowse.length} {pick('เรื่อง', 'titles')}</span>
+                </div>
+              </div>
+
+              {isLoading ? (
+                <TierListEmptyPanel
+                  icon={<Loader2 size={28} className="animate-spin" />}
+                  title={pick('กำลังโหลดแคตตาล็อก', 'Loading catalog')}
+                  message={pick('กำลังเตรียมรายชื่อเรื่อง', 'Preparing titles.')}
+                />
+              ) : filteredForSongBrowse.length === 0 ? (
+                <TierListEmptyPanel
+                  icon={<Search size={28} />}
+                  title={pick('ไม่พบเรื่องที่ตรง', 'No titles found')}
+                  message={pick('ลองล้างคำค้นหา', 'Try clearing the search.')}
+                />
+              ) : (
+                <div className="tierlist-picker-grid">
+                  {filteredForSongBrowse.map((title) => {
+                    const titleSongs = songEntityCache.get(Number(title.id)) || [];
+                    const selectedCount = titleSongs.filter((s) => selectedIds.has(s.id)).length;
+                    return (
+                      <button
+                        key={title.id}
+                        type="button"
+                        className={`tierlist-picker-card${selectedCount > 0 ? ' is-selected' : ''}`}
+                        onClick={() => setBrowsingTitle(title)}
+                        title={getDisplayName(title)}
+                      >
+                        <div className="tierlist-picker-thumb">
+                          <img src={getTitleArtwork(title)} alt="" loading="lazy" />
+                          {selectedCount > 0 && (
+                            <div className="tierlist-picker-check">
+                              <Music size={10} /> {selectedCount}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      ) : (
+        /* ── Normal title/character picker ── */
+        <section className="container tierlist-section">
+          <div className="tierlist-section-head">
+            <h2>
+              {pick('เลือกเรื่อง', 'Select Titles')}
+              {selectedIds.size > 0 && (
+                <span className="tierlist-count">&nbsp;· {selectedIds.size} {pick('รายการที่เลือก', 'selected')}</span>
+              )}
+            </h2>
+            <div className="tierlist-picker-actions">
               <button
                 type="button"
-                className={`tierlist-cat-pill${genreFilter.size === 0 ? ' is-active' : ''}`}
-                onClick={() => setGenreFilter(new Set())}
-                aria-pressed={genreFilter.size === 0}
-              >
-                {pick('ทุกแนว', 'All Genres')}
-              </button>
-              {availableGenres.map((genre) => (
-                <button
-                  key={genre}
-                  type="button"
-                  className={`tierlist-cat-pill${genreFilter.has(genre) ? ' is-active' : ''}`}
-                  onClick={() => setGenreFilter((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(genre)) next.delete(genre);
-                    else next.add(genre);
-                    return next;
-                  })}
-                  aria-pressed={genreFilter.has(genre)}
-                >
-                  {genre}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {isLoading ? (
-          <TierListEmptyPanel
-            icon={<Loader2 size={28} className="animate-spin" />}
-            title={pick('กำลังโหลดแคตตาล็อก', 'Loading catalog')}
-            message={pick('กำลังเตรียมรายการเรื่องให้เลือกสำหรับสร้างเทมเพลต', 'Preparing titles you can use in this template.')}
-          />
-        ) : filtered.length === 0 ? (
-          <TierListEmptyPanel
-            icon={<Search size={28} />}
-            title={pick('ไม่พบเรื่องที่ตรง', 'No titles found')}
-            message={
-              hasActiveFilters
-                ? pick('ลองล้างคำค้นหา ปิดตัวกรองบางตัว หรือเลือกทุกประเภท', 'Try clearing search, relaxing filters, or switching back to all types.')
-                : pick('ยังไม่มีข้อมูลเรื่องให้เลือกในตอนนี้', 'There are no titles available to pick right now.')
-            }
-            action={hasActiveFilters ? (
-              <Button
-                type="button"
-                variant="outline"
+                className="btn btn-ghost btn-sm"
                 onClick={() => {
-                  setTypeFilter('all');
-                  setGenreFilter(new Set());
-                  setTitleQuery('');
+                  const toAdd = filtered.filter((t) => !selectedIds.has(Number(t.id)));
+                  setSelectedIds((prev) => { const n = new Set(prev); toAdd.forEach((t) => n.add(Number(t.id))); return n; });
+                  setSelectedEntityCache((prev) => { const n = new Map(prev); toAdd.forEach((t) => n.set(Number(t.id), t)); return n; });
                 }}
+                disabled={filtered.length === 0}
               >
-                {pick('ล้างตัวกรอง', 'Clear filters')}
-              </Button>
-            ) : null}
-          />
-        ) : (
-          <div className="tierlist-picker-grid">
-            {filtered.map((title) => {
-              const selected = selectedIds.has(Number(title.id));
-              return (
-                <button
-                  key={title.id}
-                  type="button"
-                  className={`tierlist-picker-card${selected ? ' is-selected' : ''}`}
-                  onClick={() => toggleTitle(Number(title.id))}
-                  title={getDisplayName(title)}
-                  aria-pressed={selected}
-                >
-                  <div className="tierlist-picker-thumb">
-                    <img src={getTitleArtwork(title)} alt="" loading="lazy" />
-                    {selected && <div className="tierlist-picker-check">{pick('เลือกแล้ว', 'Selected')}</div>}
-                  </div>
-                </button>
-              );
-            })}
+                {pick('เลือกทั้งหมด', 'Select All')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setSelectedIds(new Set()); setSelectedEntityCache(new Map()); }}
+                disabled={selectedIds.size === 0}
+              >
+                {pick('ล้าง', 'Clear')}
+              </button>
+            </div>
           </div>
-        )}
-      </section>
+
+          <div className="tierlist-picker-filterbar">
+            <div className="tierlist-picker-filterbar-top">
+              <div className="tierlist-picker-type-pills" role="toolbar" aria-label={pick('กรองตามประเภท', 'Filter by type')}>
+                {['all', 'anime', 'manga', 'manhwa'].map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`tierlist-cat-pill${typeFilter === type ? ' is-active' : ''}`}
+                    onClick={() => { setTypeFilter(type); setCatalogPage(1); }}
+                    aria-pressed={typeFilter === type}
+                  >
+                    {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="tierlist-picker-search-wrap">
+                <input
+                  className="tierlist-picker-search"
+                  value={titleQuery}
+                  onChange={(event) => setTitleQuery(event.target.value)}
+                  placeholder={pick('ค้นหาเรื่อง...', 'Search titles...')}
+                  aria-label={pick('ค้นหาเรื่อง', 'Search titles')}
+                />
+                {titleQuery && (
+                  <button
+                    type="button"
+                    className="tierlist-picker-search-clear"
+                    onClick={() => setTitleQuery('')}
+                    aria-label={pick('ล้างคำค้นหา', 'Clear search')}
+                  ><X size={14} /></button>
+                )}
+              </div>
+              <span className="tierlist-picker-result-count">
+                {catalogTotal} {pick('เรื่อง', 'titles')}
+              </span>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <TierListEmptyPanel
+              icon={<Loader2 size={28} className="animate-spin" />}
+              title={pick('กำลังโหลดแคตตาล็อก', 'Loading catalog')}
+              message={pick('กำลังเตรียมรายการเรื่องให้เลือกสำหรับสร้างเทมเพลต', 'Preparing titles you can use in this template.')}
+            />
+          ) : filtered.length === 0 ? (
+            <TierListEmptyPanel
+              icon={<Search size={28} />}
+              title={pick('ไม่พบเรื่องที่ตรง', 'No titles found')}
+              message={
+                hasActiveFilters
+                  ? pick('ลองล้างคำค้นหา ปิดตัวกรองบางตัว หรือเลือกทุกประเภท', 'Try clearing search, relaxing filters, or switching back to all types.')
+                  : pick('ยังไม่มีข้อมูลเรื่องให้เลือกในตอนนี้', 'There are no titles available to pick right now.')
+              }
+              action={hasActiveFilters ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { setTypeFilter('all'); setTitleQuery(''); setCatalogPage(1); }}
+                >
+                  {pick('ล้างตัวกรอง', 'Clear filters')}
+                </Button>
+              ) : null}
+            />
+          ) : (
+            <>
+              <div className="tierlist-picker-grid">
+                {filtered.map((title) => {
+                  const selected = selectedIds.has(Number(title.id));
+                  return (
+                    <button
+                      key={title.id}
+                      type="button"
+                      className={`tierlist-picker-card${selected ? ' is-selected' : ''}`}
+                      onClick={() => toggleTitle(Number(title.id), title)}
+                      title={getDisplayName(title)}
+                      aria-pressed={selected}
+                    >
+                      <div className="tierlist-picker-thumb">
+                        <img src={getTitleArtwork(title)} alt="" loading="lazy" />
+                        {selected && <div className="tierlist-picker-check">{pick('เลือกแล้ว', 'Selected')}</div>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {catalogTotalPages > 1 && (
+                <div className="tierlist-picker-pagination">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={catalogPage <= 1}
+                    onClick={() => setCatalogPage((p) => p - 1)}
+                  >
+                    <ChevronLeft size={14} /> {pick('ก่อนหน้า', 'Prev')}
+                  </Button>
+                  <span className="tierlist-picker-page-info">
+                    {pick('หน้า', 'Page')} {catalogPage} / {catalogTotalPages}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={catalogPage >= catalogTotalPages}
+                    onClick={() => setCatalogPage((p) => p + 1)}
+                  >
+                    {pick('ถัดไป', 'Next')} <ChevronRight size={14} />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -2308,6 +2699,7 @@ export function TierListPlayPage() {
   const [tierList, setTierList] = useState(null);
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [songEntityMap, setSongEntityMap] = useState(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -2323,21 +2715,13 @@ export function TierListPlayPage() {
         setTierList(quickList);
       }
 
-      const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
-      if (cancelled) return;
-      const filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
-      setTitles(filteredCatalog);
-      const hydratedLibrary = await loadTierLibrary(filteredCatalog, { userId: user?.id || null });
-      if (!cancelled) {
-        setLibrary(hydratedLibrary);
-      }
-      const list = findTierList(listId, hydratedLibrary);
+      const list = findTierList(listId, initialLibrary);
       if (!list) {
         setLoadError(pick('ไม่พบ Tier List', 'Tier list not found'));
         return;
       }
       const sourceTemplate = list.templateId
-        ? findTierTemplate(list.templateId, hydratedLibrary)
+        ? findTierTemplate(list.templateId, initialLibrary)
         : null;
       const allowedTitleIds = sourceTemplate?.titleIds?.length
         ? sourceTemplate.titleIds
@@ -2345,11 +2729,38 @@ export function TierListPlayPage() {
           ...list.poolTitleIds,
           ...list.rows.flatMap((row) => row.titleIds),
         ];
+
+      // Determine entity type to choose loading strategy
+      const resolvedEntityTypeForLoad = normalizeCatalogEntityType(
+        list.entityType || (sourceTemplate ? sourceTemplate.entityType : null)
+      );
+
+      let filteredCatalog;
+      if (resolvedEntityTypeForLoad === CHARACTER_ENTITY_TYPE) {
+        // Character lists still need full catalog with character data
+        const catalog = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY, includeCharacters: true });
+        if (cancelled) return;
+        filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
+      } else if (resolvedEntityTypeForLoad !== THEME_SONG_ENTITY_TYPE) {
+        // Title lists: fetch only the IDs referenced by this list/template
+        const idsNeeded = [...new Set([
+          ...allowedTitleIds,
+          ...list.poolTitleIds,
+          ...list.rows.flatMap((row) => row.titleIds),
+        ].map(Number).filter(Boolean))];
+        const catalog = await getTitlesByIds(idsNeeded);
+        if (cancelled) return;
+        filteredCatalog = filterTitlesForAgeGate(catalog, showAdult);
+      } else {
+        filteredCatalog = [];
+      }
+      setTitles(filteredCatalog);
+
       const cleanedList = filterTierListToCatalog(list, allowedTitleIds);
       if (cancelled) return;
 
       if (hasTierListStructureChanged(list, cleanedList)) {
-        const cleanedLibrary = await saveTierList(cleanedList, hydratedLibrary, { userId: user?.id || null });
+        const cleanedLibrary = await saveTierList(cleanedList, initialLibrary, { userId: user?.id || null });
         if (cancelled) return;
         setLibrary(cleanedLibrary);
         setTierList(findTierList(cleanedList.id, cleanedLibrary) || cleanedList);
@@ -2357,6 +2768,45 @@ export function TierListPlayPage() {
       }
 
       setTierList(cleanedList);
+
+      // Load song entities for song-type tier lists
+      const resolvedEntityType = normalizeCatalogEntityType(
+        cleanedList.entityType || (sourceTemplate ? sourceTemplate.entityType : null)
+      );
+      if (resolvedEntityType === THEME_SONG_ENTITY_TYPE) {
+        const songIds = [
+          ...(sourceTemplate?.titleIds || []),
+          ...cleanedList.poolTitleIds,
+          ...cleanedList.rows.flatMap((row) => row.titleIds),
+        ].map(Number).filter((id) => Number.isFinite(id) && id > 0);
+
+        const uniqueSongIds = [...new Set(songIds)];
+        if (uniqueSongIds.length > 0) {
+          const { data: songRows, error: songErr } = await supabase
+            .from('title_theme_songs')
+            .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw, canonical_title_id')
+            .in('id', uniqueSongIds);
+
+          if (cancelled) return;
+          if (songErr) throw songErr;
+
+          const uniqueTitleIds = [...new Set((songRows || []).map((r) => r.canonical_title_id).filter(Boolean))];
+          let titleLookup = new Map();
+          if (uniqueTitleIds.length > 0) {
+            const { data: titleRows } = await supabase
+              .from('canonical_titles')
+              .select('id, slug, title_th, title_en, title_native, cover_image, banner_image, is_adult')
+              .in('id', uniqueTitleIds);
+            if (cancelled) return;
+            titleLookup = new Map((titleRows || []).map((t) => [t.id, { ...t, cover: t.cover_image, banner: t.banner_image }]));
+          }
+
+          const songEntities = (songRows || []).map((song) =>
+            buildThemeSongEntity(song, titleLookup.get(song.canonical_title_id) || null)
+          );
+          setSongEntityMap(new Map(songEntities.map((e) => [e.id, e])));
+        }
+      }
     }
     load().catch((error) => {
       if (cancelled) return;
@@ -2372,6 +2822,8 @@ export function TierListPlayPage() {
     () => getEntityMap(entityMaps, activeEntityType),
     [activeEntityType, entityMaps]
   );
+  // For song-type lists, override titleById with the loaded song entity map
+  const effectiveTitleById = songEntityMap.size > 0 ? songEntityMap : titleById;
   const isOwner = Boolean(user?.id && tierList?.ownerUserId && String(user.id) === String(tierList.ownerUserId));
   const canEdit = !tierList?.ownerUserId || isOwner;
   const relatedPublicLists = tierList?.templateId
@@ -2380,7 +2832,7 @@ export function TierListPlayPage() {
         list.isPublic &&
         list.id !== tierList.id &&
         String(list.templateId || '') === String(tierList.templateId) &&
-        hasVisibleTierListTitles(list, titleById)
+        hasVisibleTierListTitles(list, effectiveTitleById)
       ))
     )
     : [];
@@ -2471,7 +2923,7 @@ export function TierListPlayPage() {
       <TierListEditor
         tierList={tierList}
         setTierList={setTierList}
-        titleById={titleById}
+        titleById={effectiveTitleById}
         query={query}
         setQuery={setQuery}
         pick={pick}
@@ -2595,13 +3047,15 @@ export function SongTierListPage() {
         if (cancelled) return;
 
         const songSourceKey = `song-source:${title.id}`;
-        const existing = library.lists.find(
-          (l) => l.entityType === THEME_SONG_ENTITY_TYPE && l.description === songSourceKey
-        );
+        const existing = library.lists.find((list) => list.description === songSourceKey);
 
         const songIds = songEntities.map((s) => s.id);
         const baseList = existing
-          ? seedPoolFromCatalog(existing, songIds)
+          ? seedPoolFromCatalog({
+            ...existing,
+            entityType: THEME_SONG_ENTITY_TYPE,
+            description: songSourceKey,
+          }, songIds)
           : createTierListFromTemplate({
             id: '',
             title: `${pick('เพลงจาก', 'Songs of')} ${getCatalogEntityName(title)}`,
@@ -2641,7 +3095,7 @@ export function SongTierListPage() {
               message={loadError}
               onRetry={() => window.location.reload()}
               backLabel={pick('กลับ', 'Back')}
-              backTo={`/titles/${titleSlug}`}
+              backTo={`/title/${titleSlug}`}
             />
           ) : (
             <TierListEmptyPanel
@@ -2659,8 +3113,8 @@ export function SongTierListPage() {
     <div className="tierlist-play-page">
       <div className="container tierlist-play-topbar">
         <div className="tierlist-play-topbar-left">
-          <Link className="btn btn-ghost btn-sm" to={`/titles/${titleSlug}`}>
-            <ChevronLeft size={14} /> {titleName}
+          <Link className="btn btn-ghost btn-sm" to="/tierlist/songs">
+            <ChevronLeft size={14} /> {pick('Song Tier Lists', 'Song Tier Lists')}
           </Link>
           <span className="tierlist-by-line">
             <Music size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
@@ -2677,6 +3131,182 @@ export function SongTierListPage() {
         setQuery={setQuery}
         pick={pick}
       />
+    </div>
+  );
+}
+
+export function SongTierListBrowsePage() {
+  const { pick } = useLanguage();
+  const { showAdult } = useAgeGate();
+  const [titlesWithSongs, setTitlesWithSongs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setIsLoading(true);
+      setLoadError('');
+
+      // Step 1: get only the title IDs that have songs (fast, no full catalog)
+      const { data: songRows, error: songError } = await supabase
+        .from('title_theme_songs')
+        .select('canonical_title_id');
+
+      if (cancelled) return;
+      if (songError) throw songError;
+
+      const songCountMap = new Map();
+      (songRows || []).forEach((row) => {
+        const id = Number(row.canonical_title_id);
+        songCountMap.set(id, (songCountMap.get(id) || 0) + 1);
+      });
+
+      // Step 2: fetch only those titles (not the full catalog)
+      const uniqueTitleIds = [...songCountMap.keys()];
+      const catalog = await getTitlesByIds(uniqueTitleIds);
+      if (cancelled) return;
+
+      const filtered = filterTitlesForAgeGate(catalog, showAdult);
+
+      const result = filtered
+        .map((t) => ({ ...t, songCount: songCountMap.get(Number(t.id)) || 0 }))
+        .filter((t) => t.songCount > 0)
+        .sort((a, b) => b.songCount - a.songCount);
+
+      setTitlesWithSongs(result);
+      setIsLoading(false);
+    }
+
+    load().catch((err) => {
+      if (!cancelled) {
+        setLoadError(err?.message || pick('โหลดไม่สำเร็จ', 'Failed to load'));
+        setIsLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pick, showAdult]);
+
+  const filteredTitles = useMemo(() => {
+    let result = typeFilter === 'all' ? titlesWithSongs : titlesWithSongs.filter((t) => t.type === typeFilter);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      result = result.filter((t) => {
+        const haystack = [t.title_th, t.title_en, t.canonical_title].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+    return result;
+  }, [titlesWithSongs, typeFilter, query]);
+
+  if (loadError && !isLoading) {
+    return (
+      <div className="tierlist-page">
+        <section className="container tierlist-section">
+          <TierListErrorPanel
+            message={loadError}
+            onRetry={() => window.location.reload()}
+            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+            backTo="/tierlist"
+          />
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tierlist-page">
+      <div className="container tierlist-browse-header">
+        <div className="tierlist-browse-header-left">
+          <h1><Music size={17} /> {pick('Song Tier Lists', 'Song Tier Lists')}</h1>
+          {!isLoading && (
+            <span className="tierlist-count">{filteredTitles.length} {pick('เรื่อง', 'titles')}</span>
+          )}
+        </div>
+        <Link className="btn btn-ghost btn-sm" to="/tierlist">
+          <ChevronLeft size={13} /> {pick('Tier Lists ทั้งหมด', 'All Tier Lists')}
+        </Link>
+      </div>
+
+      <div className="container tierlist-browse-filters">
+        <div className="tierlist-browse-cats">
+          {['all', 'anime', 'manga', 'manhwa'].map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={`tierlist-cat-pill${typeFilter === type ? ' is-active' : ''}`}
+              onClick={() => setTypeFilter(type)}
+              aria-pressed={typeFilter === type}
+            >
+              {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="tierlist-browse-search" role="group">
+          <Search size={15} aria-hidden="true" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={pick('ค้นหาชื่อเรื่อง...', 'Search titles...')}
+            aria-label={pick('ค้นหาชื่อเรื่อง', 'Search titles')}
+          />
+          {query ? (
+            <Button size="sm" variant="ghost" onClick={() => setQuery('')} aria-label={pick('ล้างคำค้นหา', 'Clear search')}>
+              <X size={14} />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="container tierlist-section">
+        {isLoading ? (
+          <TierListEmptyPanel
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title={pick('กำลังโหลดรายชื่อ', 'Loading titles')}
+            message={pick('กำลังค้นหาเรื่องที่มีเพลงสำหรับจัดอันดับ', 'Finding titles with songs available to rank.')}
+          />
+        ) : filteredTitles.length === 0 ? (
+          <TierListEmptyPanel
+            icon={<Music size={28} />}
+            title={pick('ไม่พบเรื่องที่ตรง', 'No titles found')}
+            message={
+              query || typeFilter !== 'all'
+                ? pick('ลองล้างคำค้นหาหรือเปลี่ยนประเภท', 'Try clearing the search or switching the type filter.')
+                : pick('ยังไม่มีเรื่องที่มีข้อมูลเพลงในตอนนี้', 'No titles with song data are available yet.')
+            }
+            action={query || typeFilter !== 'all' ? (
+              <Button variant="outline" onClick={() => { setQuery(''); setTypeFilter('all'); }}>
+                {pick('ล้างตัวกรอง', 'Clear filters')}
+              </Button>
+            ) : null}
+          />
+        ) : (
+          <div className="tierlist-browse-grid">
+            {filteredTitles.map((title) => (
+              <article key={title.id} className="glass-heavy tierlist-browse-card">
+                <div className="tierlist-browse-cover">
+                  <img src={getTitleArtwork(title)} alt="" loading="lazy" />
+                </div>
+                <div className="tierlist-browse-card-body">
+                  <small className="tierlist-chip">{title.type || 'anime'}</small>
+                  <h3>{getCatalogEntityName(title)}</h3>
+                  <small className="tierlist-meta">
+                    <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
+                    {title.songCount} {pick('เพลง', 'songs')}
+                  </small>
+                </div>
+                <div className="tierlist-browse-card-actions">
+                  <Link className="btn btn-primary btn-sm" to={`/tierlist/songs/${title.slug}`}>
+                    <Play size={12} /> {pick('จัดอันดับเพลง', 'Rank Songs')}
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
