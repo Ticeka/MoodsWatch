@@ -1,18 +1,42 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ExternalLink } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
+import { normalizeTrailer } from '@/shared/lib/trailers';
+import './TrailerModal.css';
 import './ThemeSongModal.css';
 
+function isDirectVideoUrl(url) {
+  const value = String(url || '').trim().toLowerCase();
+  return (
+    value.endsWith('.mp4') ||
+    value.endsWith('.webm') ||
+    value.endsWith('.ogg') ||
+    value.includes('.mp4?') ||
+    value.includes('.webm?') ||
+    value.includes('.ogg?')
+  );
+}
+
 export function ThemeSongModal({ song, onClose }) {
+  const rawUrl = String(song?.video_url || '').trim();
+  const trailer = normalizeTrailer({ trailer_url: rawUrl });
+  const modalTitle = song?.sourceTitleName || song?.song_title || 'Theme song';
+  const canPlayInlineVideo = Boolean(rawUrl) && !trailer?.embedUrl && isDirectVideoUrl(rawUrl);
+
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleKey = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, []);
 
   if (typeof document === 'undefined') {
@@ -20,51 +44,63 @@ export function ThemeSongModal({ song, onClose }) {
   }
 
   return createPortal(
-    <div className="trailer-modal-backdrop" onClick={onClose}>
-      <div className="trailer-modal theme-song-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="trailer-modal-backdrop theme-song-modal-backdrop" onClick={onClose}>
+      <div className="trailer-modal theme-song-modal" onClick={(event) => event.stopPropagation()}>
         <div className="trailer-modal-header">
-          <div className="theme-song-modal-info">
-            <span className="song-type-badge theme-song-modal-type-badge">
-              {song.theme_type}{song.theme_sequence > 1 ? ` ${song.theme_sequence}` : ''}
-            </span>
-            <div className="theme-song-modal-text">
-              <span className="trailer-modal-title">{song.song_title}</span>
-              {song.artist_name && <span className="theme-song-modal-artist">{song.artist_name}</span>}
-            </div>
-          </div>
+          <span className="trailer-modal-title">{modalTitle}</span>
           <div className="trailer-modal-controls">
-            {song.video_url && (
-              <a href={song.video_url} target="_blank" rel="noreferrer" className="trailer-modal-ext" title="Open in new tab">
+            {(trailer?.watchUrl || rawUrl) ? (
+              <a
+                href={trailer?.watchUrl || rawUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="trailer-modal-ext"
+                title="Open in new tab"
+              >
                 <ExternalLink size={15} />
               </a>
-            )}
-            <button type="button" className="trailer-modal-close" onClick={onClose} aria-label="Close">
+            ) : null}
+            <button
+              type="button"
+              className="trailer-modal-close"
+              onClick={onClose}
+              aria-label="Close trailer"
+            >
               <X size={18} />
             </button>
           </div>
         </div>
+
         <div className="trailer-modal-frame-wrap">
-          {song.video_url ? (
+          {trailer?.embedUrl ? (
+            <iframe
+              className="trailer-modal-frame"
+              src={trailer.embedUrl}
+              title={`Trailer: ${modalTitle}`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          ) : canPlayInlineVideo ? (
             <video
-              className="theme-song-video"
-              src={song.video_url}
+              className="theme-song-modal-video"
+              src={rawUrl}
               controls
               autoPlay
+              playsInline
             />
+          ) : (trailer?.watchUrl || rawUrl) ? (
+            <div className="trailer-modal-no-embed">
+              <p>Cannot embed this preview here.</p>
+              <a href={trailer?.watchUrl || rawUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+                <ExternalLink size={14} /> Open Preview
+              </a>
+            </div>
           ) : (
             <div className="trailer-modal-no-embed">
-              <p>ไม่มีลิงก์วิดีโอ</p>
+              <p>No preview link available.</p>
             </div>
           )}
         </div>
-        {(song.episodes_text || song.is_creditless || song.is_spoiler || song.is_nsfw) && (
-          <div className="theme-song-modal-meta">
-            {song.episodes_text && <span className="theme-song-modal-eps">{song.episodes_text}</span>}
-            {song.is_creditless && <span className="song-badge song-badge--nc">NC</span>}
-            {song.is_spoiler && <span className="song-badge song-badge--spoiler">Spoiler</span>}
-            {song.is_nsfw && <span className="song-badge song-badge--nsfw">NSFW</span>}
-          </div>
-        )}
       </div>
     </div>,
     document.body

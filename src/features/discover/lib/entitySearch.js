@@ -1,6 +1,6 @@
 import { loadTierLibrary } from '@/features/tierlist/lib/tierlistStore';
 import { supabase } from '@/shared/lib/supabase';
-import { buildTitleSearchCandidates, getAllTitles } from '@/features/discover/lib/recommend';
+import { buildTitleSearchCandidates, getAllTitles, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { BRAND_NAME } from '@/shared/config/brand';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { CANONICAL_TITLE_BROWSE_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
@@ -273,12 +273,17 @@ export async function searchTierlists({ query = '', userId = null, limit = 6 } =
   const normalizedQuery = sanitizeSearchTerm(query);
   const intent = getSearchIntent(normalizedQuery);
   const library = await getCachedTierlistLibrary(userId);
-  const allTitles = await getAllTitles().catch(() => []);
+  // Only fetch full catalog for cover URLs when the cache is already warm.
+  // When cold, skip cover resolution to avoid blocking search on a full
+  // catalog download — covers will show a placeholder instead.
+  const allTitles = isCatalogCacheWarm()
+    ? await getAllTitles().catch(() => [])
+    : [];
   const entries = sortTierlistEntries(normalizeTierlistEntries(library))
     .filter((entry) => matchesTierlistQuery(entry, normalizedQuery))
     .map((entry) => {
       let coverUrl = null;
-      if (entry.coverTitleId) {
+      if (entry.coverTitleId && allTitles.length > 0) {
         const title = allTitles.find((t) => t.id === entry.coverTitleId);
         if (title) coverUrl = title.cover;
       }

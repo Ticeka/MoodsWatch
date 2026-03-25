@@ -17,8 +17,8 @@
 
 .discover-header {
   position: relative;
-  overflow: hidden;
-  padding: clamp(3rem, 7vw, 5.5rem) 0 clamp(1.75rem, 4vw, 3rem);
+  overflow: visible;
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0 clamp(1.5rem, 3.5vw, 2.5rem);
 }
 
 .discover-header::before {
@@ -36,7 +36,7 @@
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 1.15rem;
+  gap: 1rem;
 }
 
 .discover-hero-badge {
@@ -54,38 +54,35 @@
 
 .discover-hero-copy {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.6rem;
   max-width: 52rem;
 }
 
 .discover-title {
   max-width: 12ch;
-  font-size: clamp(3rem, 6vw, 5.4rem);
+  font-size: clamp(2.4rem, 5.5vw, 4.6rem);
   line-height: 0.96;
   text-wrap: balance;
 }
 
 .discover-subtitle {
-  max-width: 45rem;
+  max-width: 42rem;
   color: var(--text-secondary);
-  font-size: clamp(1rem, 2vw, 1.15rem);
-  line-height: 1.75;
+  font-size: clamp(0.92rem, 1.6vw, 1.05rem);
+  line-height: 1.7;
 }
 
 .discover-search-shell {
   display: grid;
-  gap: 1.35rem;
-  padding: clamp(1rem, 2.6vw, 1.5rem);
+  gap: 0.9rem;
+  padding: clamp(0.85rem, 2vw, 1.25rem);
   margin-top: 0.5rem;
   border-radius: 1.4rem;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 
-    0 10px 40px rgba(0, 0, 0, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: #ffffff;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 12px 36px rgba(70, 44, 36, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.07);
 }
 
 .discover-search-shell-head {
@@ -110,6 +107,7 @@
 .discover-search-form {
   display: block;
   position: relative;
+  z-index: 1;
 }
 
 .discover-field {
@@ -230,22 +228,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  padding-top: 0.15rem;
 }
 
 .discover-search-tools {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .discover-search-hint {
   color: var(--text-secondary);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  min-width: 0;
+}
+
+.discover-catalog-note {
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
 }
 
 .discover-live-status {
@@ -290,23 +294,23 @@
 .discover-search-quickbar,
 .discover-search-workbench {
   display: grid;
-  gap: 0.85rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 45%, transparent);
 }
 
 .discover-search-helper-grid {
   display: grid;
-  gap: 1rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
+  gap: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 45%, transparent);
 }
 
 .discover-lane-panel {
   display: grid;
-  gap: 0.85rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 45%, transparent);
 }
 
 .discover-lane-subtitle {
@@ -1397,23 +1401,29 @@
     max-width: 9ch;
   }
 
-  .discover-search-shell-head {
-    align-items: stretch;
+  .discover-subtitle {
+    font-size: 0.88rem;
+    line-height: 1.6;
   }
 
   .discover-search-shell {
-    gap: 1rem;
-    border-radius: 1.2rem;
+    gap: 0.75rem;
+    border-radius: 1.15rem;
   }
 
   .search-box {
     gap: 0.5rem;
-    padding-inline: 0.95rem 0.38rem;
+    padding-inline: 0.9rem 0.38rem;
   }
 
   .search-submit {
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 2.4rem;
+    height: 2.4rem;
+  }
+
+  .discover-search-foot {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
   }
 
   .discover-search-quickbar,
@@ -1421,7 +1431,7 @@
   .discover-search-helper-grid,
   .discover-lane-panel,
   .discover-refine-panel {
-    padding-top: 0.8rem;
+    padding-top: 0.7rem;
   }
 
   .discover-lane-grid {
@@ -1546,12 +1556,11 @@
 }
 
 [data-theme="dark"] .discover-search-shell {
-  background: rgba(32, 23, 21, 0.8);
+  background: #1e1512;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 
-    0 10px 40px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 12px 36px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="dark"] .search-box {

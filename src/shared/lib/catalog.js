@@ -72,6 +72,39 @@ const CANONICAL_TITLE_BROWSE_SELECT = `
   moods:title_moods(mood_id)
 `;
 
+const CANONICAL_TITLE_PREVIEW_SELECT = `
+  id,
+  slug,
+  canonical_title,
+  type,
+  subtype,
+  release_year,
+  is_adult,
+  cover_image,
+  banner_image,
+  avg_score,
+  popularity_score,
+  aliases:title_aliases(alias, language_code, alias_type, is_primary)
+`;
+
+// Lightweight select for search autocomplete — excludes trailers, banner,
+// heavy metadata that search doesn't need.  Keeps aliases/genres/moods for
+// client-side fuzzy matching and display.
+const CANONICAL_TITLE_SEARCH_SELECT = `
+  id,
+  slug,
+  canonical_title,
+  type,
+  subtype,
+  release_year,
+  is_adult,
+  cover_image,
+  popularity_score,
+  aliases:title_aliases(alias, language_code, alias_type, is_primary),
+  genres:title_genres(genre_name),
+  moods:title_moods(mood_id)
+`;
+
 const CANONICAL_TITLE_DETAIL_SELECT = `
   ${CANONICAL_TITLE_LIST_SELECT},
   availability:title_availability(platform_name, region_code, url, is_official),
@@ -323,6 +356,8 @@ export function buildAliasRows(titleId, formData, sourceProvider = 'manual') {
 
 export {
   CANONICAL_TITLE_BROWSE_SELECT,
+  CANONICAL_TITLE_PREVIEW_SELECT,
+  CANONICAL_TITLE_SEARCH_SELECT,
   CANONICAL_TITLE_LIST_SELECT,
   CANONICAL_TITLE_DETAIL_SELECT,
   CANONICAL_TITLE_SELECT,

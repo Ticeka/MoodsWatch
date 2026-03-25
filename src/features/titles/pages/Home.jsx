@@ -904,8 +904,8 @@ export function Home() {
               <SkeletonGrid />
             ) : (
               <div className="results-grid stagger-children">
-                {displayTrending.map((title) => (
-                  <TitleCard key={title.id} title={title} />
+                {displayTrending.map((title, index) => (
+                  <TitleCard key={title.id} title={title} priority={index < 4} />
                 ))}
               </div>
             )}

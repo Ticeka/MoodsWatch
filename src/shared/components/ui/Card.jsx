@@ -14,7 +14,7 @@ import './Card.css';
 const moodMap = new Map(MOODS.map((mood) => [mood.id, mood]));
 const statusOptionMap = new Map(LIST_STATUS_OPTIONS.map((option) => [option.id, option]));
 
-export const TitleCard = React.memo(function TitleCard({ title, hideActions = false, primaryAction = 'list' }) {
+export const TitleCard = React.memo(function TitleCard({ title, hideActions = false, primaryAction = 'list', priority = false }) {
   const { language, t } = useLanguage();
   const { isInList, addToList, removeFromList, getItem, getStatus, updateItem } = useWatchlist();
   const { isFavorite, toggleFavorite } = useFavoriteTitles();
@@ -148,8 +148,11 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
           src={title.cover}
           alt={title.title_en || title.title_th}
           className="card-image"
-          loading="lazy"
+          loading={priority ? 'eager' : 'lazy'}
           decoding="async"
+          fetchPriority={priority ? 'high' : undefined}
+          width={280}
+          height={420}
         />
         {(favorite || topTitle) && (
           <div className="card-persistent-pills">

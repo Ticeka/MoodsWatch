@@ -47,6 +47,7 @@ const AdminFetch = lazy(() => import('@/features/admin/pages/AdminFetch').then((
 const AdminGuide = lazy(() => import('@/features/admin/pages/AdminGuide').then((module) => ({ default: module.AdminGuide })));
 const AdminLinks = lazy(() => import('@/features/admin/pages/AdminLinks').then((module) => ({ default: module.AdminLinks })));
 const AdminDailyChallenge = lazy(() => import('@/features/admin/pages/AdminDailyChallenge').then((module) => ({ default: module.AdminDailyChallenge })));
+const AdminTierlists = lazy(() => import('@/features/admin/pages/AdminTierlists').then((module) => ({ default: module.AdminTierlists })));
 
 function PageLoader() {
   const { t } = useLanguage();
@@ -151,6 +152,7 @@ function App() {
                       <Route path="fetch" element={<AdminFetch />} />
                       <Route path="links" element={<AdminLinks />} />
                       <Route path="daily" element={<AdminDailyChallenge />} />
+                      <Route path="tierlists" element={<AdminTierlists />} />
                       <Route path="guide" element={<AdminGuide />} />
                       <Route path="*" element={<AdminFallback />} />
                     </Route>

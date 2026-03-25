@@ -46,6 +46,7 @@
   height: 100%;
   object-fit: cover;
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-elevated) 100%);
 }
 
 .title-card:hover .card-image {

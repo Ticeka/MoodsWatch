@@ -1362,32 +1362,6 @@ export function Discover() {
           </div>
 
           <div className="discover-search-shell glass animate-fade-in-up" style={{ animationDelay: '0.14s' }}>
-            <div className="discover-search-shell-head">
-              <div className="discover-search-shell-copy">
-                <span className="discover-field-label">{t('discover.searchInputLabel')}</span>
-                <p className="discover-search-shell-note">{t('discover.searchHint')}</p>
-              </div>
-              <div className="discover-search-tools">
-                <span className="catalog-pill">
-                  {t('discover.catalogLabel')}
-                  <span className="catalog-pill-meta">
-                    {catalogInfo.count > 0 ? t('discover.loaded', { count: catalogInfo.count }) : t('common.loading').toLowerCase()}
-                  </span>
-                </span>
-                {hasSavableSearch ? (
-                  <button
-                    type="button"
-                    className={`discover-save-search ${isCurrentSearchSaved ? 'is-saved' : ''}`}
-                    onClick={saveCurrentSearch}
-                    disabled={isCurrentSearchSaved || isSavedSearchesLoading}
-                  >
-                    {isCurrentSearchSaved ? <BookmarkCheck size={14} aria-hidden="true" /> : <Bookmark size={14} aria-hidden="true" />}
-                    {isCurrentSearchSaved ? t('discover.searchSaved') : t('discover.saveSearch')}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
             <form ref={searchFormRef} className="discover-search-form" onSubmit={handleSearchSubmit}>
               <label className="discover-field">
                 <span className="visually-hidden">{t('discover.searchInputLabel')}</span>
@@ -1469,21 +1443,34 @@ export function Discover() {
                   <span className="discover-live-status"><Info size={14} aria-hidden="true" /> {t('discover.shortQueryHint')}</span>
                 ) : searchIntent.isBroad ? (
                   <span className="discover-live-status"><Info size={14} aria-hidden="true" /> {t('discover.broadQueryHint')}</span>
-                ) : (
-                  t('discover.searchHint')
-                )}
+                ) : catalogInfo.count > 0 ? (
+                  <span className="discover-catalog-note">{t('discover.loaded', { count: catalogInfo.count })}</span>
+                ) : null}
               </p>
-              <button
-                type="button"
-                className={`discover-workbench-toggle ${isSearchWorkbenchOpen ? 'is-open' : ''}`}
-                onClick={() => setShowSearchWorkbench((current) => !current)}
-                aria-expanded={isSearchWorkbenchOpen}
-                aria-controls="discover-search-workbench"
-              >
-                <SlidersHorizontal size={15} aria-hidden="true" />
-                <span>{isSearchWorkbenchOpen ? t('discover.hideRefineSearch') : t('discover.refineSearch')}</span>
-                <ChevronDown size={15} className="discover-workbench-chevron" aria-hidden="true" />
-              </button>
+              <div className="discover-search-tools">
+                {hasSavableSearch ? (
+                  <button
+                    type="button"
+                    className={`discover-save-search ${isCurrentSearchSaved ? 'is-saved' : ''}`}
+                    onClick={saveCurrentSearch}
+                    disabled={isCurrentSearchSaved || isSavedSearchesLoading}
+                  >
+                    {isCurrentSearchSaved ? <BookmarkCheck size={14} aria-hidden="true" /> : <Bookmark size={14} aria-hidden="true" />}
+                    {isCurrentSearchSaved ? t('discover.searchSaved') : t('discover.saveSearch')}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={`discover-workbench-toggle ${isSearchWorkbenchOpen ? 'is-open' : ''}`}
+                  onClick={() => setShowSearchWorkbench((current) => !current)}
+                  aria-expanded={isSearchWorkbenchOpen}
+                  aria-controls="discover-search-workbench"
+                >
+                  <SlidersHorizontal size={15} aria-hidden="true" />
+                  <span>{isSearchWorkbenchOpen ? t('discover.hideRefineSearch') : t('discover.refineSearch')}</span>
+                  <ChevronDown size={15} className="discover-workbench-chevron" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <div className="discover-search-quickbar">

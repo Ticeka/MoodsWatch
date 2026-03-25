@@ -21,6 +21,7 @@ import {
   Download,
   BookOpen,
   CalendarDays,
+  ListOrdered,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -83,6 +84,9 @@ export function AdminLayout() {
             </NavLink>
             <NavLink to="/admin/fetch" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Download className="sidebar-link-icon" size={18} /> {t('admin.nav.fetchData')}
+            </NavLink>
+            <NavLink to="/admin/tierlists" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
+              <ListOrdered className="sidebar-link-icon" size={18} /> {t('layout.tierlist')}
             </NavLink>
           </div>
 

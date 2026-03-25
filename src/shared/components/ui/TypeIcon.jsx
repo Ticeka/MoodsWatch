@@ -6,7 +6,6 @@ export function TypeIcon({ option, size = '1.2em' }) {
     return (
       <ReactCountryFlag
         countryCode={option.countryCode}
-        svg
         style={{ width: size, height: size }}
         title={option.countryCode}
       />

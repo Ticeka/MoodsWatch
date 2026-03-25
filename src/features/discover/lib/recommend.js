@@ -2,6 +2,8 @@
 import { MOODS, isExplicitMood } from '@/shared/data/moods';
 import {
   CANONICAL_TITLE_BROWSE_SELECT,
+  CANONICAL_TITLE_PREVIEW_SELECT,
+  CANONICAL_TITLE_SEARCH_SELECT,
   CANONICAL_TITLE_DETAIL_SELECT,
   CANONICAL_TITLE_LIST_SELECT,
   mapCanonicalTitle,
@@ -498,6 +500,14 @@ export async function getAllTitles({
   return request;
 }
 
+// Called from main.jsx during idle time to warm the catalog cache so the
+// first search is instant.  Silently swallows errors — the cache will be
+// populated on the next real request instead.
+export function prefetchCatalog() {
+  if (isCatalogCacheWarm()) return;
+  void getAllTitles().catch(() => {});
+}
+
 export function clearTitlesCache() {
   cachedTitles = null;
   cachedTitlesPromise = null;
@@ -513,6 +523,61 @@ export function clearTitlesCache() {
   titleByIdsRequestCache.clear();
   titleBySlugCache.clear();
   titleBySlugRequestCache.clear();
+}
+
+// Returns true when the full catalog is already cached and usable for
+// client-side search.  Callers can use this to decide between the fast
+// DB-side search path and the richer client-side path.
+export function isCatalogCacheWarm() {
+  return (
+    !!cachedTitles &&
+    cachedTitles.length > 0 &&
+    Date.now() - cacheTimestamp < CACHE_TTL_MS
+  );
+}
+
+// Fast DB-side search for autocomplete when the catalog cache is cold.
+// Uses the lightweight SEARCH_SELECT (no trailers/banner/tags) and pushes
+// filtering to PostgreSQL so the first search doesn't block on a full
+// catalog download.
+async function fetchSearchResultsFromDB({ query = '', type = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = false } = {}) {
+  ensureSupabaseConnected();
+
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.max(1, pageSize);
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  let titleQuery = supabase
+    .from('canonical_titles')
+    .select(CANONICAL_TITLE_SEARCH_SELECT, { count: 'planned' });
+
+  titleQuery = applyTypeFilter(titleQuery, type);
+
+  if (showAdult) {
+    titleQuery = titleQuery.eq('is_adult', true);
+  } else {
+    titleQuery = titleQuery.eq('is_adult', false);
+  }
+
+  const normalizedQuery = query.trim();
+  if (normalizedQuery.length >= 2) {
+    const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
+    titleQuery = titleQuery.or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`);
+  }
+
+  titleQuery = applySort(titleQuery, 'popularity');
+
+  const { data, error, count } = await titleQuery.range(from, to);
+  if (error) throw error;
+
+  return {
+    items: mapRecords(data),
+    total: count || 0,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil((count || 0) / safePageSize)),
+  };
 }
 
 export function getCacheInfo() {
@@ -730,7 +795,18 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
     return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize, showAdult });
   }
 
-  // Query/tag discovery requires client-side matching because genres/tags/moods are joined data.
+  // Fast path: when the catalog cache is cold and we only have a text query
+  // (no tag filter), use DB-side search to avoid blocking on a full catalog
+  // download.  This makes the first search near-instant instead of waiting
+  // for 1000+ row fetches.  Once the cache warms up (prefetch or first full
+  // load), subsequent searches use the richer client-side path below.
+  if (!isCatalogCacheWarm() && !tag.trim() && normalizedQuery.length >= 2) {
+    // Kick off a background cache warm so the next search can use client-side
+    void getAllTitles().catch(() => {});
+    return fetchSearchResultsFromDB({ query: normalizedQuery, type, page, pageSize, showAdult });
+  }
+
+  // Rich path: client-side matching with genres/tags/moods (requires cached catalog)
   let titles = await getAllTitles();
   titles = filterTitlesForAgeGate(titles, showAdult);
   const filtered = sortTitlesCollection(sortTitles(
@@ -1229,14 +1305,18 @@ export async function getTitlesPage({ type = 'all', query = '', sortBy = 'popula
   return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize, showAdult });
 }
 
-export async function getCharactersPage({ type = 'all', query = '', page = 1, pageSize = 30, showAdult = true } = {}) {
-  const result = await fetchTitlesPageFromSupabase({ type, query, page, pageSize, showAdult });
+export async function getCharactersPage({ type = 'all', query = '', sortBy = 'popularity', page = 1, pageSize = 30, showAdult = true } = {}) {
+  // Character catalogs are built from title records, so over-fetch titles per page
+  // to avoid sparse/empty character pages when many titles lack character rows.
+  const titleWindowSize = Math.max(pageSize * 4, 120);
+  const result = await fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize: titleWindowSize, showAdult });
   const titleIds = result.items.map((t) => t.id);
   const characters = await fetchTitleCharacters(titleIds);
   const titlesWithChars = attachCharactersToTitles(result.items, characters);
+  const characterItems = buildCharacterCatalog(titlesWithChars);
   return {
-    items: buildCharacterCatalog(titlesWithChars),
-    total: result.total,
+    items: characterItems.slice(0, pageSize),
+    total: Math.max(characterItems.length, result.total),
     page: result.page,
     pageSize: result.pageSize,
     totalPages: result.totalPages,
@@ -1286,4 +1366,31 @@ export async function getTitlesByIds(ids) {
   }
 
   return normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
+}
+
+export async function getTitlePreviewByIds(ids, options = {}) {
+  if (!ids?.length) return [];
+
+  const normalizedIds = [...new Set(ids.map((id) => Number(id)).filter(Boolean))];
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  ensureSupabaseConnected();
+
+  let query = supabase
+    .from('canonical_titles')
+    .select(CANONICAL_TITLE_PREVIEW_SELECT)
+    .in('id', normalizedIds);
+
+  if (typeof options?.showAdult === 'boolean') {
+    query = query.eq('is_adult', options.showAdult);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const mapped = mapRecords(data);
+  const previewById = new Map(mapped.map((title) => [Number(title.id), title]));
+  return normalizedIds.map((id) => previewById.get(id)).filter(Boolean);
 }

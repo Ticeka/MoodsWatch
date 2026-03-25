@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { listTitles } from '@/features/discover/lib/recommend';
+import { listTitles, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { searchPosts, searchProfiles, searchTierlists } from '@/features/discover/lib/entitySearch';
 import { getAutocompleteSelectionBoost } from '@/features/discover/lib/autocompleteFeedback';
 import { getSearchIntent, scoreSearchCandidates } from '@/features/discover/lib/searchMatch';
@@ -408,7 +408,9 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
       }
     });
 
-    // 220ms debounce: balances responsiveness with network consolidation.
+    // Adaptive debounce: 80ms when catalog cache is warm (client-side search
+    // is near-instant), 220ms when cold (needs network round-trip).
+    const debounceMs = isCatalogCacheWarm() ? 80 : 220;
     const timeoutId = window.setTimeout(async () => {
       const intent = getSearchIntent(searchQuery);
 
@@ -434,7 +436,7 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
       _groupResultCache.set(cacheKey, { groups, ts: Date.now() });
       setLiveGroups(groups);
       setIsLoading(false);
-    }, 220);
+    }, debounceMs);
 
     return () => {
       window.cancelAnimationFrame(loadingFrameId);

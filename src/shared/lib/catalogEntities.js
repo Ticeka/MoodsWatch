@@ -1,3 +1,5 @@
+import { buildTrailerThumbnailUrl, parseTrailerUrl } from '@/shared/lib/trailers';
+
 export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';
 export const THEME_SONG_ENTITY_TYPE = 'theme_song';
@@ -115,6 +117,11 @@ export function buildThemeSongEntity(song, sourceTitle) {
   const sourceTitleName = sourceTitle
     ? (sourceTitle.title_th || sourceTitle.title_en || sourceTitle.title_native || '')
     : '';
+  const parsedTrailer = parseTrailerUrl(song.video_url || '');
+  const fallbackSongArtwork = buildTrailerThumbnailUrl({
+    site: parsedTrailer.site,
+    videoId: parsedTrailer.videoId,
+  });
 
   return {
     id: Number(song.id),
@@ -123,8 +130,8 @@ export function buildThemeSongEntity(song, sourceTitle) {
     title_en: song.song_title,
     title_th: song.song_title,
     title_native: '',
-    cover: sourceTitle?.cover || '',
-    banner: sourceTitle?.banner || '',
+    cover: sourceTitle?.cover || fallbackSongArtwork || '',
+    banner: sourceTitle?.banner || fallbackSongArtwork || '',
     synopsis: '',
     // Store in existing serializable fields so they survive battle session serialization:
     role: themeLabel,
@@ -136,6 +143,8 @@ export function buildThemeSongEntity(song, sourceTitle) {
     theme_sequence: song.theme_sequence || 1,
     theme_label: themeLabel,
     video_url: song.video_url || null,
+    trailer_url: song.video_url || null,
+    trailer_thumbnail_url: fallbackSongArtwork || null,
     is_creditless: Boolean(song.is_creditless),
     is_spoiler: Boolean(song.is_spoiler),
     is_nsfw: Boolean(song.is_nsfw),

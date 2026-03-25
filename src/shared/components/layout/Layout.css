@@ -6,13 +6,12 @@
 
 .main-content {
   flex: 1;
-  padding-top: var(--header-height);
   padding-bottom: 5.5rem;
 }
 
 .header {
-  position: fixed;
-  inset: 0 0 auto;
+  position: sticky;
+  top: 0;
   z-index: 1000;
   height: var(--header-height);
   background: var(--bg-glass-heavy);
@@ -1106,7 +1105,6 @@
   }
 
   .main-content {
-    padding-top: 60px;
     padding-bottom: 68px;
   }
 
