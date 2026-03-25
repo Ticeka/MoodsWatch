@@ -645,7 +645,8 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
-  const requestKey = `${userId || 'anon'}::${publicLimit ?? 'all'}`;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const requestKey = `${userId || 'anon'}::${publicLimit ?? 'all'}::${showAdult ?? 'any'}`;
 
   if (remoteTemplatesRequestCache.has(requestKey)) {
     return remoteTemplatesRequestCache.get(requestKey);
@@ -658,6 +659,10 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
       .eq('is_public', true)
       .order('plays', { ascending: false })
       .order('updated_at', { ascending: false });
+
+    if (showAdult !== null) {
+      publicTemplatesQuery = publicTemplatesQuery.eq('has_adult_content', showAdult);
+    }
 
     if (publicLimit !== null) {
       publicTemplatesQuery = publicTemplatesQuery.limit(publicLimit);
@@ -1022,7 +1027,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
 
     const [remoteTemplates, remoteLists] = await Promise.all([
       shouldFetchTemplates
-        ? fetchRemoteTemplates(userId, { publicLimit: options?.publicTemplateLimit })
+        ? fetchRemoteTemplates(userId, { publicLimit: options?.publicTemplateLimit, showAdult: options?.showAdult })
         : Promise.resolve([]),
       fetchRemoteLists(userId, { publicLimit: options?.publicListLimit }),
     ]);
@@ -1056,7 +1061,7 @@ export async function loadTierTemplates(catalog = [], options = {}) {
   }
 
   try {
-    const remoteTemplates = await fetchRemoteTemplates(userId, { publicLimit: options?.publicTemplateLimit });
+    const remoteTemplates = await fetchRemoteTemplates(userId, { publicLimit: options?.publicTemplateLimit, showAdult: options?.showAdult });
     const merged = mergeLibraries(
       { templates: localLibrary.templates.filter((template) => template.isSystem), lists: [] },
       { templates: remoteTemplates, lists: [] },

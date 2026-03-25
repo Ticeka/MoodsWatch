@@ -2326,6 +2326,7 @@ export function TierListBrowsePage() {
       // Step 1: load library fast (no full catalog needed) and show content immediately
       const fastTemplates = await loadTierTemplates([], {
         userId: user?.id || null,
+        showAdult,
       });
       if (cancelled) return;
       setLibrary((current) => ({ ...current, templates: fastTemplates }));
@@ -2335,6 +2336,7 @@ export function TierListBrowsePage() {
         userId: user?.id || null,
         fetchTemplates: false,
         publicListLimit: BROWSE_ENTITY_LIST_LIMIT,
+        showAdult,
       });
       if (cancelled) return;
       setLibrary(nextLibrary);
