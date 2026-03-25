@@ -179,22 +179,40 @@ export function getTierTemplateIdentityKey(template) {
 }
 
 export function dedupeTierTemplatesByIdentity(templates = []) {
-  const seen = new Set();
+  return collapseTierTemplatesByIdentity(templates).templates;
+}
 
-  return [...templates]
+export function collapseTierTemplatesByIdentity(templates = []) {
+  const seen = new Map();
+  const canonicalIdById = new Map();
+  const collapsed = [];
+
+  [...templates]
     .map((template) => normalizeTemplate(template))
     .sort(compareTemplatesByIdentityPriority)
-    .filter((template) => {
+    .forEach((template) => {
       const identityKey = getTierTemplateIdentityKey(template);
       if (!identityKey) {
-        return true;
+        canonicalIdById.set(template.id, template.id);
+        collapsed.push(template);
+        return;
       }
-      if (seen.has(identityKey)) {
-        return false;
+
+      const canonical = seen.get(identityKey);
+      if (canonical) {
+        canonicalIdById.set(template.id, canonical.id);
+        return;
       }
-      seen.add(identityKey);
-      return true;
+
+      seen.set(identityKey, template);
+      canonicalIdById.set(template.id, template.id);
+      collapsed.push(template);
     });
+
+  return {
+    templates: collapsed,
+    canonicalIdById,
+  };
 }
 
 export function createTierListFromTemplate(template) {
@@ -919,7 +937,8 @@ async function syncLocalLibraryToSupabase(localLibrary, userId) {
   }
 
   const normalized = normalizeLibrary(localLibrary);
-  const sourceTemplates = normalized.templates
+  const { templates: collapsedTemplates, canonicalIdById } = collapseTierTemplatesByIdentity(normalized.templates);
+  const sourceTemplates = collapsedTemplates
     .filter((template) => (
       !template.isSystem &&
       (!template.ownerUserId || template.ownerUserId === userId)
@@ -944,7 +963,8 @@ async function syncLocalLibraryToSupabase(localLibrary, userId) {
   );
 
   const localLists = sourceLists.map((list) => {
-    const nextTemplateId = templateIdMap.get(list.templateId) || list.templateId || '';
+    const canonicalTemplateId = canonicalIdById.get(String(list.templateId || '')) || list.templateId || '';
+    const nextTemplateId = templateIdMap.get(canonicalTemplateId) || canonicalTemplateId || '';
     const preparedList = normalizeTierList({
       ...list,
       templateId: nextTemplateId,
@@ -966,7 +986,10 @@ async function syncLocalLibraryToSupabase(localLibrary, userId) {
     ...normalized,
     templates: [
       ...savedTemplates,
-      ...normalized.templates.filter((template) => !syncedTemplateIds.has(template.id)),
+      ...normalized.templates.filter((template) => (
+        !syncedTemplateIds.has(template.id)
+        && (canonicalIdById.get(String(template.id || '')) || String(template.id || '')) === String(template.id || '')
+      )),
     ],
     lists: [
       ...savedLists,
@@ -979,6 +1002,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
   const userId = options?.userId || null;
   const shouldFetchTemplates = options?.fetchTemplates !== false;
   const localLibrary = withSystemTemplates(loadLibraryRaw(), catalog);
+  let workingLocalLibrary = localLibrary;
   saveLibraryRaw(localLibrary);
 
   if (!supabase) {
@@ -988,7 +1012,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
   try {
     if (userId) {
       try {
-        await syncLocalLibraryToSupabase(localLibrary, userId);
+        workingLocalLibrary = await syncLocalLibraryToSupabase(localLibrary, userId);
       } catch (syncError) {
         if (!isNetworkLikeError(syncError) && !isPermissionLikeError(syncError)) {
           throw syncError;
@@ -1004,18 +1028,18 @@ export async function loadTierLibrary(catalog = [], options = {}) {
     ]);
 
     const merged = mergeLibraries(
-      { templates: localLibrary.templates.filter((template) => template.isSystem), lists: [] },
+      { templates: workingLocalLibrary.templates.filter((template) => template.isSystem), lists: [] },
       { templates: remoteTemplates, lists: remoteLists },
       // Always include local non-system data so unsaved local changes survive
       // (sort-by-updatedAt in normalizeLibrary ensures the newest version wins)
-      { templates: localLibrary.templates.filter((template) => !template.isSystem), lists: localLibrary.lists }
+      { templates: workingLocalLibrary.templates.filter((template) => !template.isSystem), lists: workingLocalLibrary.lists }
     );
 
     saveLibraryRaw(merged);
     return withSystemTemplates(merged, catalog);
   } catch (error) {
     if (isNetworkLikeError(error)) {
-      return localLibrary;
+      return workingLocalLibrary;
     }
 
     throw error;

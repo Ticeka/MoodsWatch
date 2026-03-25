@@ -95,7 +95,7 @@ vi.mock('@/shared/lib/catalogEntities', () => ({
   normalizeCatalogEntityType: (value) => (value ? String(value) : 'title'),
 }), { virtual: true });
 
-import { saveTierList } from '../tierlistStore.js';
+import { collapseTierTemplatesByIdentity, saveTierList } from '../tierlistStore.js';
 
 function makeTemplate(overrides = {}) {
   return {
@@ -219,5 +219,29 @@ describe('tierlistStore saveTierList recovery', () => {
     expect(mockState.listInsertPayloads[0]?.template_id).toBe('template-public-stale');
     expect(mockState.listInsertPayloads[1]?.template_id).toBe('template-public-stale');
     expect(mockState.listInsertPayloads[1]?.id).not.toBe(mockState.listInsertPayloads[0]?.id);
+  });
+});
+
+describe('tierlistStore template identity collapse', () => {
+  it('keeps the strongest template and maps stale copies back to it', () => {
+    const canonical = makeTemplate({
+      id: 'template-owned',
+      ownerUserId: 'user-1',
+      plays: 12,
+      updatedAt: '2026-03-02T00:00:00.000Z',
+    });
+    const staleLocal = makeTemplate({
+      id: 'template-local-stale',
+      ownerUserId: null,
+      plays: 0,
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+
+    const result = collapseTierTemplatesByIdentity([staleLocal, canonical]);
+
+    expect(result.templates).toHaveLength(1);
+    expect(result.templates[0]?.id).toBe('template-owned');
+    expect(result.canonicalIdById.get('template-owned')).toBe('template-owned');
+    expect(result.canonicalIdById.get('template-local-stale')).toBe('template-owned');
   });
 });

@@ -250,46 +250,45 @@ async function fetchCharacterEntitiesByIds(characterIds = [], options = {}) {
   const sourceTitles = [];
   const resolvedIds = new Set();
 
+  const mainChunks = [];
   for (let index = 0; index < uniqueCharacterIds.length; index += 200) {
-    const chunk = uniqueCharacterIds.slice(index, index + 200);
-    let characterQuery = supabase
-      .from('title_characters')
-      .select(`
-        canonical_title_id,
-        anilist_id,
-        name_full,
-        name_native,
-        image_url,
-        role,
-        voice_actor_name,
-        voice_actor_image,
-        sort_order,
-        canonical_titles!inner(${CANONICAL_TITLE_PREVIEW_SELECT})
-      `)
-      .in('anilist_id', chunk);
+    mainChunks.push(uniqueCharacterIds.slice(index, index + 200));
+  }
 
-    if (typeof options?.showAdult === 'boolean') {
-      characterQuery = characterQuery.eq('canonical_titles.is_adult', options.showAdult);
-    }
+  const mainResults = await Promise.all(
+    mainChunks.map((chunk) => {
+      let query = supabase
+        .from('title_characters')
+        .select(`
+          canonical_title_id,
+          anilist_id,
+          name_full,
+          name_native,
+          image_url,
+          role,
+          voice_actor_name,
+          voice_actor_image,
+          sort_order,
+          canonical_titles!inner(${CANONICAL_TITLE_PREVIEW_SELECT})
+        `)
+        .in('anilist_id', chunk);
 
-    const { data, error } = await characterQuery;
+      if (typeof options?.showAdult === 'boolean') {
+        query = query.eq('canonical_titles.is_adult', options.showAdult);
+      }
 
-    if (error) {
-      throw error;
-    }
+      return query;
+    })
+  );
 
+  for (const { data, error } of mainResults) {
+    if (error) throw error;
     characterRows.push(...(data || []));
-
     (data || []).forEach((row) => {
       const anilistId = Number(row?.anilist_id || 0);
-      if (anilistId > 0) {
-        resolvedIds.add(anilistId);
-      }
-
+      if (anilistId > 0) resolvedIds.add(anilistId);
       const sourceTitle = normalizeJoinedTitleRecord(row.canonical_titles);
-      if (sourceTitle) {
-        sourceTitles.push(sourceTitle);
-      }
+      if (sourceTitle) sourceTitles.push(sourceTitle);
     });
   }
 
@@ -301,39 +300,43 @@ async function fetchCharacterEntitiesByIds(characterIds = [], options = {}) {
   )];
 
   if (fallbackSourceIds.length > 0) {
-    for (const chunk of chunkIds(fallbackSourceIds)) {
-      let titleQuery = supabase
-        .from('canonical_titles')
-        .select(CANONICAL_TITLE_PREVIEW_SELECT)
-        .in('id', chunk);
+    const titleResults = await Promise.all(
+      chunkIds(fallbackSourceIds).map((chunk) => {
+        let query = supabase
+          .from('canonical_titles')
+          .select(CANONICAL_TITLE_PREVIEW_SELECT)
+          .in('id', chunk);
 
-      if (typeof options?.showAdult === 'boolean') {
-        titleQuery = titleQuery.eq('is_adult', options.showAdult);
+        if (typeof options?.showAdult === 'boolean') {
+          query = query.eq('is_adult', options.showAdult);
+        }
+
+        return query;
+      })
+    );
+
+    const allAllowedTitleIds = [];
+    for (const { data: titleData, error: titleError } of titleResults) {
+      if (titleError) throw titleError;
+      const mapped = (titleData || []).map((title) => mapCanonicalTitle(title));
+      sourceTitles.push(...mapped);
+      allAllowedTitleIds.push(...mapped.map((title) => Number(title.id)).filter(Boolean));
+    }
+
+    if (allAllowedTitleIds.length > 0) {
+      const fallbackCharResults = await Promise.all(
+        chunkIds(allAllowedTitleIds).map((chunk) =>
+          supabase
+            .from('title_characters')
+            .select('canonical_title_id, anilist_id, name_full, name_native, image_url, role, voice_actor_name, voice_actor_image, sort_order')
+            .in('canonical_title_id', chunk)
+        )
+      );
+
+      for (const { data: fallbackRows, error: fallbackError } of fallbackCharResults) {
+        if (fallbackError) throw fallbackError;
+        characterRows.push(...(fallbackRows || []));
       }
-
-      const { data: titleData, error: titleError } = await titleQuery;
-      if (titleError) {
-        throw titleError;
-      }
-
-      const mappedTitles = (titleData || []).map((title) => mapCanonicalTitle(title));
-      sourceTitles.push(...mappedTitles);
-
-      const allowedTitleIds = mappedTitles.map((title) => Number(title.id)).filter(Boolean);
-      if (allowedTitleIds.length === 0) {
-        continue;
-      }
-
-      const { data: fallbackRows, error: fallbackError } = await supabase
-        .from('title_characters')
-        .select('canonical_title_id, anilist_id, name_full, name_native, image_url, role, voice_actor_name, voice_actor_image, sort_order')
-        .in('canonical_title_id', allowedTitleIds);
-
-      if (fallbackError) {
-        throw fallbackError;
-      }
-
-      characterRows.push(...(fallbackRows || []));
     }
   }
 
@@ -620,63 +623,51 @@ async function fetchEntityVisibilityByAdultMode({ titleIds = [], songIds = [], c
 
   const visibility = createEmptyBrowseVisibility();
 
-  for (const chunk of chunkIds(titleIds)) {
-    const { data, error } = await supabase
-      .from('canonical_titles')
-      .select('id, is_adult')
-      .in('id', chunk);
+  const [titleResults, songResults, characterResults] = await Promise.all([
+    Promise.all(
+      chunkIds(titleIds).map((chunk) =>
+        supabase.from('canonical_titles').select('id, is_adult').in('id', chunk)
+      )
+    ),
+    Promise.all(
+      chunkIds(songIds).map((chunk) =>
+        supabase.from('title_theme_songs').select('id, canonical_titles!inner(is_adult)').in('id', chunk)
+      )
+    ),
+    Promise.all(
+      chunkIds(characterIds).map((chunk) =>
+        supabase.from('title_characters').select('anilist_id, canonical_titles!inner(is_adult)').in('anilist_id', chunk)
+      )
+    ),
+  ]);
 
-    if (error) {
-      throw error;
-    }
-
+  for (const { data, error } of titleResults) {
+    if (error) throw error;
     (data || []).forEach((row) => {
       const id = Number(row.id);
-      if (!id) {
-        return;
-      }
+      if (!id) return;
       const bucket = Boolean(row.is_adult) === showAdult ? 'allowedByType' : 'blockedByType';
       visibility[bucket][TITLE_ENTITY_TYPE].add(id);
     });
   }
 
-  for (const chunk of chunkIds(songIds)) {
-    const { data, error } = await supabase
-      .from('title_theme_songs')
-      .select('id, canonical_titles!inner(is_adult)')
-      .in('id', chunk);
-
-    if (error) {
-      throw error;
-    }
-
+  for (const { data, error } of songResults) {
+    if (error) throw error;
     (data || []).forEach((row) => {
       const id = Number(row.id);
       const titleRecord = Array.isArray(row.canonical_titles) ? row.canonical_titles[0] : row.canonical_titles;
-      if (!id || titleRecord?.is_adult === undefined) {
-        return;
-      }
+      if (!id || titleRecord?.is_adult === undefined) return;
       const bucket = Boolean(titleRecord.is_adult) === showAdult ? 'allowedByType' : 'blockedByType';
       visibility[bucket][THEME_SONG_ENTITY_TYPE].add(id);
     });
   }
 
-  for (const chunk of chunkIds(characterIds)) {
-    const { data, error } = await supabase
-      .from('title_characters')
-      .select('anilist_id, canonical_titles!inner(is_adult)')
-      .in('anilist_id', chunk);
-
-    if (error) {
-      throw error;
-    }
-
+  for (const { data, error } of characterResults) {
+    if (error) throw error;
     (data || []).forEach((row) => {
       const id = Number(row.anilist_id);
       const titleRecord = Array.isArray(row.canonical_titles) ? row.canonical_titles[0] : row.canonical_titles;
-      if (!id || titleRecord?.is_adult === undefined) {
-        return;
-      }
+      if (!id || titleRecord?.is_adult === undefined) return;
       const bucket = Boolean(titleRecord.is_adult) === showAdult ? 'allowedByType' : 'blockedByType';
       visibility[bucket][CHARACTER_ENTITY_TYPE].add(id);
     });
@@ -692,26 +683,23 @@ async function fetchEntityVisibilityByAdultMode({ titleIds = [], songIds = [], c
       .filter((id) => Number.isFinite(id) && id > 0)
   )];
 
-  for (const chunk of chunkIds(fallbackSourceIds)) {
-    const { data, error } = await supabase
-      .from('canonical_titles')
-      .select('id, is_adult')
-      .in('id', chunk);
+  if (fallbackSourceIds.length > 0) {
+    const fallbackResults = await Promise.all(
+      chunkIds(fallbackSourceIds).map((chunk) =>
+        supabase.from('canonical_titles').select('id, is_adult').in('id', chunk)
+      )
+    );
 
-    if (error) {
-      throw error;
+    for (const { data, error } of fallbackResults) {
+      if (error) throw error;
+      const titleById = new Map((data || []).map((row) => [Number(row.id), Boolean(row.is_adult)]));
+      unresolvedCharacterIds.forEach((characterId) => {
+        const sourceId = getFallbackCharacterSourceId(characterId);
+        if (!titleById.has(sourceId)) return;
+        const bucket = titleById.get(sourceId) === showAdult ? 'allowedByType' : 'blockedByType';
+        visibility[bucket][CHARACTER_ENTITY_TYPE].add(Number(characterId));
+      });
     }
-
-    const titleById = new Map((data || []).map((row) => [Number(row.id), Boolean(row.is_adult)]));
-    unresolvedCharacterIds.forEach((characterId) => {
-      const sourceId = getFallbackCharacterSourceId(characterId);
-      if (!titleById.has(sourceId)) {
-        return;
-      }
-
-      const bucket = titleById.get(sourceId) === showAdult ? 'allowedByType' : 'blockedByType';
-      visibility[bucket][CHARACTER_ENTITY_TYPE].add(Number(characterId));
-    });
   }
 
   return visibility;
@@ -719,11 +707,10 @@ async function fetchEntityVisibilityByAdultMode({ titleIds = [], songIds = [], c
 
 async function resolveTierLibraryBrowseEntities(library, options = {}) {
   const { titleIds, songIds, characterIds } = collectTierLibraryBrowseEntityIds(library);
-  const visibilityIds = collectTierLibraryVisibilityEntityIds(library);
   const [titles, characterEntities, visibility] = await Promise.all([
     getTitlePreviewByIds(titleIds, { showAdult: options?.showAdult }),
     fetchCharacterEntitiesByIds(characterIds, { showAdult: options?.showAdult }),
-    fetchEntityVisibilityByAdultMode(visibilityIds, options?.showAdult),
+    fetchEntityVisibilityByAdultMode({ titleIds, songIds, characterIds }, options?.showAdult),
   ]);
   const resolvedTitleIdSet = new Set((titles || []).map((entry) => Number(entry.id)));
   const missingTitleIds = titleIds.filter((id) => !resolvedTitleIdSet.has(Number(id)));
