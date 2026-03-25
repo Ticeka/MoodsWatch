@@ -13,6 +13,8 @@
     "db:push": "supabase db push",
     "preview": "vite preview",
     "catalog:ingest:anilist": "node scripts/catalog/ingest-anilist.mjs",
+    "catalog:ingest:jikan": "node scripts/catalog/ingest-jikan.mjs",
+    "catalog:ingest:pornhwadb": "node scripts/catalog/ingest-pornhwadb.mjs",
     "catalog:ingest:all": "node scripts/catalog/run-all.mjs",
     "catalog:resume:all": "node scripts/catalog/resume-all.mjs",
     "catalog:dedupe": "node scripts/catalog/dedupe-catalog.mjs",

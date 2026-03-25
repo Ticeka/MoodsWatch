@@ -829,9 +829,9 @@ export const translations = {
   "selectors": {
     "moodTitle": "What kind of vibe are you after?",
     "moodSubtitle": "(pick up to 3)",
-    "moodTitleAdult": "What kind of 18+ vibe are you after?",
-    "moodSubtitleAdult": "(general + 18+ moods, pick up to 3)",
-    "moodHelperAdult": "Adult mode still keeps general moods available, so it is easier to narrow adult titles by tone.",
+    "moodTitleAdult": "Which 18+ tag are you after?",
+    "moodSubtitleAdult": "(pick up to 3 tags, mix with general moods)",
+    "moodHelperAdult": "These 18+ options use relationship and trope labels common on mature platforms, while general moods still stay available for mixing.",
     "timeTitle": "Completed or ongoing?"
   },
   "profile": {
@@ -1584,6 +1584,10 @@ export const translations = {
       "searchTitles": "Search titles",
       "searchPlaceholder": "Search by title, slug, or reason",
       "filterStatus": "Status",
+      "filterAdult": "Content",
+      "adultAll": "All content",
+      "adultOnly": "18+ only",
+      "adultSfw": "Non-18+ only",
       "filtersToolbar": "Duplicate filters toolbar",
       "allStatuses": "All statuses",
       "reviewTitle": "Review and merge",

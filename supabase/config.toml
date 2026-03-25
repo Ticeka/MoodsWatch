@@ -1,1 +1,4 @@
 project_id = "ntwgbtaxsovsnafpvbkj"
+
+[functions.pornhwadb-proxy]
+verify_jwt = false

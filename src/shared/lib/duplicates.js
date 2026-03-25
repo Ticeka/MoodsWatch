@@ -22,6 +22,7 @@ export const DUPLICATE_CANDIDATE_SELECT = `
     origin_country,
     popularity_score,
     cover_image,
+    is_adult,
     aliases:title_aliases(alias, language_code, alias_type, is_primary),
     source_refs:title_source_refs(provider, external_id)
   ),
@@ -35,6 +36,7 @@ export const DUPLICATE_CANDIDATE_SELECT = `
     origin_country,
     popularity_score,
     cover_image,
+    is_adult,
     aliases:title_aliases(alias, language_code, alias_type, is_primary),
     source_refs:title_source_refs(provider, external_id)
   )
@@ -78,6 +80,7 @@ function mapDuplicateTitle(record) {
     originCountry: record?.origin_country || '',
     popularity: record?.popularity_score || 0,
     cover: record?.cover_image || '',
+    isAdult: Boolean(record?.is_adult),
     aliases: (record?.aliases || []).map((alias) => alias.alias).filter(Boolean),
     sourceRefs: (record?.source_refs || []).map((ref) => ({
       provider: ref.provider,

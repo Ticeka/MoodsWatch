@@ -6,37 +6,37 @@ const explicitMoodIds = new Set(
 );
 
 const EXPLICIT_MOOD_FALLBACKS = {
-  'adult-ecchi': {
-    tagKeywords: ['erotica', 'ecchi', 'fanservice', 'adult', 'mature'],
-    textKeywords: ['erotic', 'naughty', 'sensual', 'one-night', 'heat', 'teasing', 'playful'],
-  },
-  'adult-flirty': {
-    tagKeywords: ['romance', 'adult', 'mature', 'ecchi'],
-    textKeywords: ['seductive', 'temptation', 'attraction', 'chemistry', 'desire', 'flirty', 'teasing', 'sensual'],
-  },
   'adult-harem': {
-    tagKeywords: ['harem', 'reverse harem'],
-    textKeywords: ['harem', 'reverse harem', 'multiple lovers', 'many men', 'many women'],
+    tagKeywords: ['harem', 'reverse harem', 'love polygon', 'multiple heroines', 'harem protagonist'],
+    textKeywords: ['harem', 'reverse harem', 'multiple lovers', 'many girls', 'many boys', 'love triangle', 'harem route'],
   },
-  'adult-romance': {
-    tagKeywords: ['drama', 'romance', 'historical', 'reverse harem'],
-    textKeywords: ['love', 'romance', 'romantic', 'marriage', 'married', 'wedding', 'bride', 'groom', 'husband', 'wife', 'dating', 'kiss', 'affair'],
+  'adult-ntr': {
+    tagKeywords: ['ntr', 'netorare', 'cheating', 'cuckold', 'affair', 'infidelity', 'adultery'],
+    textKeywords: ['ntr', 'netorare', 'cheating', 'cuckold', 'affair', 'infidelity', 'adultery', 'stolen', 'cheated', 'cheats on'],
+  },
+  'adult-office': {
+    tagKeywords: ['office', 'ceo', 'boss', 'secretary', 'workplace', 'contract marriage', 'contract relationship', 'deal', 'power gap'],
+    textKeywords: ['ceo', 'boss', 'secretary', 'contract marriage', 'contract relationship', 'deal', 'workplace', 'office', 'executive', 'employee', 'master servant', 'power gap', 'arranged marriage'],
   },
   'adult-forbidden': {
-    tagKeywords: ['romance', 'drama', 'mature', 'adult'],
-    textKeywords: ['forbidden', 'secret relationship', 'affair', 'scandal', 'cheat', 'cheating', 'taboo', 'hidden love'],
+    tagKeywords: ['taboo', 'forbidden', 'forbidden love', 'secret relationship', 'affair', 'teacher student', 'hidden relationship'],
+    textKeywords: ['forbidden', 'taboo', 'secret relationship', 'affair', 'scandal', 'cheat', 'cheating', 'hidden love', 'teacher student', 'can never be together', 'must not fall in love'],
   },
-  'adult-power-play': {
-    tagKeywords: ['drama', 'romance', 'mature', 'adult'],
-    textKeywords: ['ceo', 'boss', 'secretary', 'contract marriage', 'deal', 'power', 'dominant', 'workplace'],
+  'adult-yandere': {
+    tagKeywords: ['yandere', 'obsessive', 'possessive', 'obsession', 'stalker', 'controlling', 'yandere love'],
+    textKeywords: ['yandere', 'obsession', 'obsessed', 'possessive', 'fixated', 'clingy', 'stalker', "can't let go", 'controlling', 'mine alone', 'only for me'],
   },
-  'adult-obsession': {
-    tagKeywords: ['psychological', 'romance', 'mature'],
-    textKeywords: ['obsession', 'obsessed', 'possessive', 'fixated', 'clingy', 'stalker', "can't let go"],
+  'adult-femdom': {
+    tagKeywords: ['femdom', 'female dominant', 'dominant woman', 'submissive male', 'female led'],
+    textKeywords: ['femdom', 'female dominant', 'dominant woman', 'submissive man', 'submissive male', 'female led', 'she controls', 'she dominates'],
+  },
+  'adult-revenge': {
+    tagKeywords: ['revenge', 'blackmail', 'manipulation', 'betrayal', 'vengeance', 'grudge'],
+    textKeywords: ['revenge', 'blackmail', 'manipulation', 'betray', 'betrayal', 'vengeance', 'grudge', 'payback', 'get back at', 'use her', 'use him', 'trap'],
   },
   'adult-dark': {
-    tagKeywords: ['psychological', 'drama', 'thriller', 'horror'],
-    textKeywords: ['revenge', 'curse', 'cursed', 'murder', 'kill', 'killer', 'obsession', 'obsessed', 'abuse', 'violent', 'violence', 'dark', 'secret', 'midnight', 'blood', 'blackmail', 'prison', 'trauma'],
+    tagKeywords: ['dark', 'dark romance', 'violence', 'trauma', 'toxic relationship', 'psychological', 'abuse', 'non-consensual'],
+    textKeywords: ['dark', 'violence', 'violent', 'abuse', 'abusive', 'trauma', 'toxic', 'manipulation', 'murder', 'kill', 'blood', 'prison', 'blackmail', 'non-con', 'force', 'forced', 'midnight', 'cursed', 'curse'],
   },
 };
 
@@ -94,14 +94,10 @@ describe('getMoodOptionsForAgeGate', () => {
     expect(moods.every((mood) => !mood.isAdult)).toBe(true);
   });
 
-  it('shows both adult and general moods when 18+ mode is on, with adult moods first', () => {
+  it('shows only adult moods when 18+ mode is on', () => {
     const moods = getMoodOptionsForAgeGate(true);
-    const firstGeneralMoodIndex = moods.findIndex((mood) => !mood.isAdult);
-    const lastAdultMoodIndex = moods.map((mood) => Boolean(mood.isAdult)).lastIndexOf(true);
-
-    expect(moods.some((mood) => mood.isAdult)).toBe(true);
-    expect(moods.some((mood) => !mood.isAdult)).toBe(true);
-    expect(lastAdultMoodIndex).toBeLessThan(firstGeneralMoodIndex);
+    expect(moods.length).toBeGreaterThan(0);
+    expect(moods.every((mood) => mood.isAdult)).toBe(true);
   });
 });
 
@@ -111,11 +107,11 @@ describe('matchesMoodSelection', () => {
       is_adult: false,
       moods: ['romantic'],
       genres: ['Romance'],
-      tags: ['chemistry'],
+      tags: ['office'],
       synopsis: 'A sweet office romance.',
     };
 
-    expect(matchesMoodSelection(title, 'adult-flirty')).toBe(false);
+    expect(matchesMoodSelection(title, 'adult-office')).toBe(false);
   });
 
   it('matches new adult mood fallbacks from text and tag signals', () => {
@@ -123,13 +119,13 @@ describe('matchesMoodSelection', () => {
       is_adult: true,
       moods: [],
       genres: ['Drama', 'Romance'],
-      tags: ['mature', 'psychological'],
+      tags: ['yandere', 'ceo'],
       synopsis: 'A CEO starts a secret relationship that turns obsessive fast.',
     };
 
     expect(matchesMoodSelection(title, 'adult-forbidden')).toBe(true);
-    expect(matchesMoodSelection(title, 'adult-obsession')).toBe(true);
-    expect(matchesMoodSelection(title, 'adult-power-play')).toBe(true);
+    expect(matchesMoodSelection(title, 'adult-yandere')).toBe(true);
+    expect(matchesMoodSelection(title, 'adult-office')).toBe(true);
   });
 
   it('still matches direct non-adult mood ids exactly', () => {

@@ -6,6 +6,7 @@ const MEDIA_QUERY = `
     $perPage: Int!
     $type: MediaType!
     $sort: [MediaSort!]
+    $isAdult: Boolean
     $formatIn: [MediaFormat!]
     $status: MediaStatus
     $countryOfOrigin: CountryCode
@@ -20,7 +21,7 @@ const MEDIA_QUERY = `
       media(
         type: $type
         sort: $sort
-        isAdult: false
+        isAdult: $isAdult
         format_in: $formatIn
         status: $status
         countryOfOrigin: $countryOfOrigin
@@ -124,6 +125,7 @@ export async function fetchAniListPage({
   perPage = 25,
   type = 'ANIME',
   sort = ['POPULARITY_DESC'],
+  isAdult = false,
   formatIn,
   status,
   countryOfOrigin,
@@ -143,6 +145,7 @@ export async function fetchAniListPage({
         perPage,
         type,
         sort,
+        isAdult,
         formatIn,
         status,
         countryOfOrigin,

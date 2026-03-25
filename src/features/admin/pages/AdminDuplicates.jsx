@@ -41,6 +41,7 @@ export function AdminDuplicates() {
   const [filters, setFilters] = useState({
     searchTerm: '',
     status: 'pending',
+    adultFilter: 'all',
   });
   const [editorState, setEditorState] = useState({
     status: 'pending',
@@ -107,6 +108,12 @@ export function AdminDuplicates() {
         });
       }
 
+      if (filters.adultFilter === 'adult') {
+        mapped = mapped.filter((c) => c.titleA.isAdult || c.titleB.isAdult);
+      } else if (filters.adultFilter === 'sfw') {
+        mapped = mapped.filter((c) => !c.titleA.isAdult && !c.titleB.isAdult);
+      }
+
       setCandidates(mapped);
 
       if (mapped.length === 0) {
@@ -127,7 +134,7 @@ export function AdminDuplicates() {
     } finally {
       setIsLoading(false);
     }
-  }, [filters.searchTerm, filters.status, selectedId, syncEditorState, t]);
+  }, [filters.adultFilter, filters.searchTerm, filters.status, selectedId, syncEditorState, t]);
 
   useEffect(() => {
     fetchCandidates();
@@ -150,16 +157,32 @@ export function AdminDuplicates() {
 
     setIsScanning(true);
     try {
-      const { data, error } = await supabase
-        .from('canonical_titles')
-        .select(TITLE_SCAN_SELECT)
-        .order('popularity_score', { ascending: false, nullsFirst: false })
-        .limit(1500);
+      const [{ data, error }, { data: adultData, error: adultError }] = await Promise.all([
+        supabase
+          .from('canonical_titles')
+          .select(TITLE_SCAN_SELECT)
+          .order('popularity_score', { ascending: false, nullsFirst: false })
+          .limit(1500),
+        supabase
+          .from('canonical_titles')
+          .select(TITLE_SCAN_SELECT)
+          .eq('is_adult', true)
+          .order('popularity_score', { ascending: false, nullsFirst: false })
+          .limit(500),
+      ]);
 
       if (error) throw error;
+      if (adultError) throw adultError;
+
+      const seenIds = new Set();
+      const allRecords = [...(data || []), ...(adultData || [])].filter((record) => {
+        if (seenIds.has(record.id)) return false;
+        seenIds.add(record.id);
+        return true;
+      });
 
       const generated = buildDuplicateCandidates(
-        (data || []).map((record) => ({
+        allRecords.map((record) => ({
           id: record.id,
           slug: record.slug,
           canonicalTitle: record.canonical_title,
@@ -242,6 +265,17 @@ export function AdminDuplicates() {
 
     setIsSaving(true);
     try {
+      const { error: approveError } = await supabase
+        .from('duplicate_candidates')
+        .update({
+          status: 'approved',
+          review_note: editorState.reviewNote.trim() || null,
+          suggested_primary_title_id: primaryTitleId || null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', selectedCandidate.id);
+      if (approveError) throw approveError;
+
       const { data, error } = await supabase.rpc('admin_merge_duplicate_titles', {
         p_candidate_id: selectedCandidate.id,
         p_primary_title_id: primaryTitleId,
@@ -311,6 +345,16 @@ export function AdminDuplicates() {
               {DUPLICATE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
+          </SortSelect>
+          <SortSelect
+            value={filters.adultFilter}
+            onChange={(value) => setFilters((current) => ({ ...current, adultFilter: value }))}
+            label={t('admin.duplicates.filterAdult')}
+            className="results-sorter"
+          >
+            <option value="all">{t('admin.duplicates.adultAll')}</option>
+            <option value="adult">{t('admin.duplicates.adultOnly')}</option>
+            <option value="sfw">{t('admin.duplicates.adultSfw')}</option>
           </SortSelect>
         </div>
       </section>

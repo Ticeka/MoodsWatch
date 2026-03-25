@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+﻿import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Download, Play, Square, RefreshCw,
   CheckCircle2, XCircle, SkipForward, Info,
@@ -241,6 +241,130 @@ async function fetchJikanPage(page, jikanCfg, signal) {
   const res = await fetch(`${JIKAN_BASE}/manga?${params}`, { signal });
   if (!res.ok) throw new Error(`Jikan ตอบกลับ ${res.status}`);
   return res.json();
+}
+
+function normalizePornhwaTag(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isBoysLovePornhwa(item) {
+  const tags = [item.orientation, ...(item.genreTags || []), ...(item.tags || [])].map(normalizePornhwaTag);
+  return tags.some((tag) => ['yaoi', 'boys love', 'boys-love', 'bl', 'shounen ai', 'shonen ai'].includes(tag));
+}
+
+function normalizePornhwaDbEntry(item) {
+  const title = item.title || `pornhwadb-${item.id}`;
+  const slugBase = item.slug || item.title || `manhwa-${item.id}`;
+  const genreTags = [...new Set((item.genreTags || []).filter(Boolean))];
+  const allTags = [...new Set([...genreTags, item.orientation || null].filter(Boolean))];
+  const averageRating = Number(item.averageRating);
+  const normalizedScore = Number.isFinite(averageRating) ? averageRating * 20 : null;
+
+  return {
+    pornhwaId: String(item.id),
+    displayTitle: title,
+    coverImage: item.coverImage || null,
+    canonical: {
+      slug: `${slugify(slugBase) || 'manhwa'}-pwdb-${item.id}`,
+      canonical_title: title,
+      type: 'manga',
+      subtype: 'manhwa',
+      origin_country: 'KR',
+      origin_language: 'ko',
+      status: mapStatus(item.status),
+      release_year: item.releaseYear || null,
+      chapters: item.totalChapters || item.chapterCount || null,
+      volumes: null,
+      episodes: null,
+      duration_minutes: null,
+      is_adult: true,
+      cover_image: item.coverImage || null,
+      banner_image: null,
+      synopsis: item.description || null,
+      avg_score: normalizedScore,
+      popularity_score: item.totalRatings || null,
+      last_synced_at: new Date().toISOString(),
+    },
+    aliases: title
+      ? [{ alias: title, language_code: 'en', alias_type: 'english', is_primary: true }]
+      : [],
+    genres: genreTags.map((genre_name) => ({ genre_name })),
+    tags: allTags.map((tag_name) => ({ tag_name, weight: null, source_provider: 'pornhwadb' })),
+    moodIds: deriveMoodIds([item.description, ...allTags]),
+    staff: (item.creators || [])
+      .filter((c) => c?.canonicalName)
+      .map((c, i) => ({
+        name_full: c.canonicalName,
+        role: c.role || 'creator',
+        sort_order: i,
+      })),
+    sourceRef: {
+      provider: 'pornhwadb',
+      external_id: String(item.id),
+      external_url: null,
+      source_priority: 15,
+      raw_payload: item,
+    },
+  };
+}
+
+async function fetchPornhwaDbPage(page, pornhwaCfg, signal) {
+  if (!supabase) throw new Error('Supabase unavailable');
+  const { data, error } = await supabase.functions.invoke('pornhwadb-proxy', {
+    body: {
+      apiKey: pornhwaCfg.apiKey || undefined,
+      page,
+      limit: pornhwaCfg.perPage,
+      sort: pornhwaCfg.sort,
+      order: 'desc',
+      status: pornhwaCfg.status || undefined,
+      orientation: pornhwaCfg.orientation || undefined,
+      minRatings: pornhwaCfg.minRatings || undefined,
+      tags: pornhwaCfg.tags || undefined,
+    },
+    signal,
+  });
+  if (error) {
+    if (typeof error.context?.json === 'function') {
+      try {
+        const payload = await error.context.json();
+        throw new Error(payload?.error || payload?.message || error.message || 'PornhwaDB fetch failed');
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message) {
+          throw contextError;
+        }
+      }
+    }
+    if (typeof error.context?.text === 'function') {
+      try {
+        const message = await error.context.text();
+        if (message) {
+          throw new Error(message);
+        }
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message) {
+          throw contextError;
+        }
+      }
+    }
+    throw new Error(error.message || 'PornhwaDB fetch failed');
+  }
+
+  return data;
+}
+
+function hasPornhwaDbNextPage(pageData, page, perPage) {
+  const pagination = pageData?.pagination || {};
+  if (typeof pagination.hasNextPage === 'boolean') return pagination.hasNextPage;
+  if (typeof pagination.has_next_page === 'boolean') return pagination.has_next_page;
+
+  const totalPages = Number(pagination.totalPages || pagination.total_pages || 0);
+  if (totalPages > 0) return page < totalPages;
+
+  const total = Number(pagination.total || pagination.totalItems || pagination.total_items || 0);
+  if (total > 0) return page * perPage < total;
+
+  return Array.isArray(pageData?.data) && pageData.data.length >= perPage;
 }
 
 const ANIMETHEMES_BASE = 'https://api.animethemes.moe';
@@ -579,6 +703,96 @@ async function upsertJikanTitle(norm, skipDuplicates) {
   return wasExisting ? 'updated' : 'imported';
 }
 
+async function fetchPornhwaDbCharactersViaProxy(slug, apiKey, signal) {
+  if (!supabase) throw new Error('Supabase unavailable');
+  const { data, error } = await supabase.functions.invoke('pornhwadb-proxy', {
+    body: { path: 'title-characters', slug, apiKey: apiKey || undefined },
+    signal,
+  });
+  if (error) {
+    if (typeof error.context?.json === 'function') {
+      try {
+        const payload = await error.context.json();
+        throw new Error(payload?.error || payload?.message || error.message || 'PornhwaDB characters fetch failed');
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message) throw contextError;
+      }
+    }
+    if (typeof error.context?.text === 'function') {
+      try {
+        const message = await error.context.text();
+        if (message) throw new Error(message);
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message) throw contextError;
+      }
+    }
+    throw new Error(error.message || 'PornhwaDB characters fetch failed');
+  }
+  return data;
+}
+
+async function upsertPornhwaDbCharacters(titleId, characters) {
+  const { error: delErr } = await supabase.from('title_characters').delete().eq('canonical_title_id', titleId);
+  if (delErr) throw delErr;
+  const rows = (characters || []).map((char, i) => ({
+    canonical_title_id: titleId,
+    anilist_id: null,
+    name_full: char.name || null,
+    name_native: (char.alternativeNames || []).find((n) => /[가-힣]/.test(n)) || null,
+    image_url: char.image || null,
+    role: char.role ? char.role.toUpperCase() : null,
+    sort_order: i,
+  }));
+  if (rows.length) {
+    const { error } = await supabase.from('title_characters').insert(rows);
+    if (error) throw error;
+  }
+  return rows.length;
+}
+
+async function upsertPornhwaDbTitle(norm, skipDuplicates) {
+  const { data: existingRef } = await supabase.from('title_source_refs').select('canonical_title_id')
+    .eq('provider', 'pornhwadb').eq('external_id', norm.pornhwaId).maybeSingle();
+  if (existingRef?.canonical_title_id && skipDuplicates) return 'skipped';
+
+  let titleId = existingRef?.canonical_title_id || null;
+  const wasExisting = !!titleId;
+
+  if (!titleId) {
+    const { data: bySlug } = await supabase.from('canonical_titles').select('id').eq('slug', norm.canonical.slug).maybeSingle();
+    if (bySlug?.id && skipDuplicates) return 'skipped';
+    titleId = bySlug?.id || null;
+  }
+
+  if (titleId) {
+    const { error } = await supabase.from('canonical_titles').update(norm.canonical).eq('id', titleId);
+    if (error) throw error;
+  } else {
+    const { data, error } = await supabase.from('canonical_titles').upsert(norm.canonical, { onConflict: 'slug' }).select('id').single();
+    if (error) throw error;
+    titleId = data.id;
+  }
+
+  for (const { table, rows } of [
+    { table: 'title_aliases', rows: norm.aliases.map((a) => ({ canonical_title_id: titleId, source_provider: 'pornhwadb', ...a })) },
+    { table: 'title_genres', rows: norm.genres.map((g) => ({ canonical_title_id: titleId, ...g })) },
+    { table: 'title_tags', rows: norm.tags.map((t) => ({ canonical_title_id: titleId, ...t })) },
+    { table: 'title_moods', rows: norm.moodIds.map((mood_id) => ({ canonical_title_id: titleId, mood_id })) },
+    { table: 'title_staff', rows: (norm.staff || []).map((s) => ({ canonical_title_id: titleId, ...s })) },
+  ]) {
+    const { error: delErr } = await supabase.from(table).delete().eq('canonical_title_id', titleId);
+    if (delErr) throw delErr;
+    if (rows.length) { const { error: insErr } = await supabase.from(table).insert(rows); if (insErr) throw insErr; }
+  }
+
+  const { error: refErr } = await supabase.from('title_source_refs').upsert(
+    { canonical_title_id: titleId, ...norm.sourceRef, last_synced_at: new Date().toISOString(), fetched_at: new Date().toISOString() },
+    { onConflict: 'provider,external_id' },
+  );
+  if (refErr && refErr.code !== 'PGRST205') throw refErr;
+  return wasExisting ? 'updated' : 'imported';
+}
+
 // ─── Config options ───────────────────────────────────────────────────────────
 
 const SORT_OPTIONS = [
@@ -636,11 +850,11 @@ function matchesTrailerCategory(titleRecord, category) {
 
 const LOG_ICON = {
   imported: <CheckCircle2 size={12} />,
-  updated:  <RefreshCw size={12} />,
-  skipped:  <SkipForward size={12} />,
-  error:    <XCircle size={12} />,
-  info:     <Info size={12} />,
-  success:  <CheckCircle2 size={12} />,
+  updated: <RefreshCw size={12} />,
+  skipped: <SkipForward size={12} />,
+  error: <XCircle size={12} />,
+  info: <Info size={12} />,
+  success: <CheckCircle2 size={12} />,
 };
 const LOG_COLOR = {
   imported: '#16a34a', updated: '#2563eb', skipped: '#9ca3af',
@@ -806,6 +1020,21 @@ export function AdminFetch() {
   const [activeTab, setActiveTab] = useState('titles');
   const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
   const [jikanConfig, setJikanConfig] = useState({ sort: 'score', pages: 3, perPage: 25 });
+  const [pornhwaConfig, setPornhwaConfig] = useState({
+    sort: 'updated_at',
+    status: 'On Going',
+    orientation: '',
+    tags: '',
+    pages: 5,
+    perPage: 50,
+    minRatings: 3,
+    apiKey: localStorage.getItem('admin-pornhwadb-api-key') || '',
+  });
+  const [pornhwaCharsConfig, setPornhwaCharsConfig] = useState({
+    onlyMissing: true,
+    limit: 50,
+    delayMs: 800,
+  });
   const [trailerConfig, setTrailerConfig] = useState({ onlyMissing: true, category: 'all', limit: 100, delayMs: 1200 });
   const [themeConfig, setThemeConfig] = useState({ onlyMissing: true, limit: 100, delayMs: 1200 });
   const abortRef = useRef(null);
@@ -824,6 +1053,10 @@ export function AdminFetch() {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
+
+  useEffect(() => {
+    localStorage.setItem('admin-pornhwadb-api-key', pornhwaConfig.apiKey || '');
+  }, [pornhwaConfig.apiKey]);
 
   // Build AniList variables from config
   const buildVars = useCallback((page) => {
@@ -886,8 +1119,8 @@ export function AdminFetch() {
             setProgress((p) => ({
               ...p, fetched: p.fetched + 1,
               imported: result === 'imported' ? p.imported + 1 : p.imported,
-              updated:  result === 'updated'  ? p.updated  + 1 : p.updated,
-              skipped:  result === 'skipped'  ? p.skipped  + 1 : p.skipped,
+              updated: result === 'updated' ? p.updated + 1 : p.updated,
+              skipped: result === 'skipped' ? p.skipped + 1 : p.skipped,
             }));
             const label = result === 'imported'
               ? t('admin.fetch.resultImported')
@@ -1248,6 +1481,79 @@ export function AdminFetch() {
     }
   };
 
+  const handlePornhwaCharsFetch = async () => {
+    if (!supabase) { toast.error('Supabase unavailable'); return; }
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress(null);
+
+    try {
+      addLog('info', 'เริ่ม fetch Characters สำหรับ PornhwaDB titles...');
+
+      const { data: refs, error: refsError } = await supabase
+        .from('title_source_refs')
+        .select('canonical_title_id, external_id, raw_payload, canonical_titles!inner(canonical_title)')
+        .eq('provider', 'pornhwadb');
+      if (refsError) throw refsError;
+
+      let targets = refs || [];
+
+      if (pornhwaCharsConfig.onlyMissing) {
+        const { data: existing } = await supabase.from('title_characters').select('canonical_title_id');
+        const existingSet = new Set((existing || []).map((r) => r.canonical_title_id));
+        targets = targets.filter((r) => !existingSet.has(r.canonical_title_id));
+      }
+
+      if (pornhwaCharsConfig.limit > 0) targets = targets.slice(0, pornhwaCharsConfig.limit);
+
+      addLog('info', `พบ ${targets.length} titles ที่ต้องดึง characters`);
+      setProgress({ total: targets.length, done: 0, chars: 0, errors: 0 });
+
+      for (const ref of targets) {
+        if (abortRef.current.signal.aborted) break;
+        const titleName = (Array.isArray(ref.canonical_titles)
+          ? ref.canonical_titles[0]
+          : ref.canonical_titles)?.canonical_title || `#${ref.canonical_title_id}`;
+        const slug = ref.raw_payload?.slug;
+        if (!slug) {
+          setProgress((p) => ({ ...p, done: p.done + 1, errors: p.errors + 1 }));
+          addLog('error', `${titleName}: ไม่พบ slug ใน raw_payload`);
+          continue;
+        }
+        try {
+          const result = await fetchPornhwaDbCharactersViaProxy(
+            slug,
+            pornhwaConfig.apiKey,
+            abortRef.current.signal,
+          );
+          const count = await upsertPornhwaDbCharacters(ref.canonical_title_id, result?.data || []);
+          setProgress((p) => ({ ...p, done: p.done + 1, chars: p.chars + count }));
+          addLog('imported', `${titleName} — ${count} characters`);
+        } catch (err) {
+          if (err.name === 'AbortError') break;
+          setProgress((p) => ({ ...p, done: p.done + 1, errors: p.errors + 1 }));
+          addLog('error', `${titleName}: ${err.message}`);
+        }
+        if (!abortRef.current.signal.aborted && pornhwaCharsConfig.delayMs > 0) {
+          await sleep(pornhwaCharsConfig.delayMs);
+        }
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', 'PornhwaDB Characters fetch เสร็จสมบูรณ์');
+        toast.success('PornhwaDB Characters fetch เสร็จสมบูรณ์');
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') { addLog('error', err.message); toast.error(err.message); }
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const handleJikanFetch = async () => {
     if (!supabase) { toast.error('Supabase unavailable'); return; }
     abortRef.current = new AbortController();
@@ -1282,8 +1588,8 @@ export function AdminFetch() {
             setProgress((p) => ({
               ...p, fetched: p.fetched + 1,
               imported: result === 'imported' ? p.imported + 1 : p.imported,
-              updated:  result === 'updated'  ? p.updated  + 1 : p.updated,
-              skipped:  result === 'skipped'  ? p.skipped  + 1 : p.skipped,
+              updated: result === 'updated' ? p.updated + 1 : p.updated,
+              skipped: result === 'skipped' ? p.skipped + 1 : p.skipped,
             }));
             const label = result === 'imported' ? 'นำเข้า' : result === 'updated' ? 'อัปเดต' : 'ข้าม';
             addLog(result, `[${label}] ${norm.displayTitle}`);
@@ -1302,6 +1608,81 @@ export function AdminFetch() {
       if (!abortRef.current.signal.aborted) {
         addLog('success', 'Fetch เสร็จสมบูรณ์');
         toast.success('Jikan fetch เสร็จสมบูรณ์');
+      } else {
+        addLog('info', t('admin.fetch.logStoppedByUser'));
+        toast(t('admin.fetch.stopped'));
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') { addLog('error', err.message); toast.error(err.message); }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handlePornhwaFetch = async () => {
+    if (!supabase) { toast.error('Supabase unavailable'); return; }
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setLogs([]);
+    setProgress({ page: 0, totalPages: pornhwaConfig.pages, fetched: 0, imported: 0, updated: 0, skipped: 0, errors: 0 });
+    addLog('info', `เริ่ม fetch Adult Manhwa จาก PornhwaDB - ${pornhwaConfig.pages} หน้า, ${pornhwaConfig.perPage}/หน้า`);
+
+    try {
+      for (let page = 1; page <= pornhwaConfig.pages; page++) {
+        if (abortRef.current.signal.aborted) break;
+        setProgress((p) => ({ ...p, page }));
+        addLog('info', `หน้า ${page}/${pornhwaConfig.pages}`);
+
+        let pageData;
+        try {
+          pageData = await fetchPornhwaDbPage(page, pornhwaConfig, abortRef.current.signal);
+        } catch (err) {
+          if (err.name === 'AbortError') break;
+          addLog('error', `Fetch ล้มเหลว: ${err.message}`);
+          break;
+        }
+
+        const items = pageData.data || [];
+        addLog('info', `ได้รับ ${items.length} รายการ`);
+
+        for (const item of items) {
+          if (abortRef.current.signal.aborted) break;
+          if (isBoysLovePornhwa(item)) {
+            setProgress((p) => ({ ...p, fetched: p.fetched + 1, skipped: p.skipped + 1 }));
+            addLog('skipped', `[ข้าม BL/Yaoi] ${item.title || item.id}`);
+            continue;
+          }
+          const norm = normalizePornhwaDbEntry(item);
+          try {
+            const result = await upsertPornhwaDbTitle(norm, skipDuplicates);
+            setProgress((p) => ({
+              ...p, fetched: p.fetched + 1,
+              imported: result === 'imported' ? p.imported + 1 : p.imported,
+              updated: result === 'updated' ? p.updated + 1 : p.updated,
+              skipped: result === 'skipped' ? p.skipped + 1 : p.skipped,
+            }));
+            const label = result === 'imported' ? 'นำเข้า' : result === 'updated' ? 'อัปവ' : 'ข้าม';
+            addLog(result, `[${label}] ${norm.displayTitle}`);
+          } catch (err) {
+            setProgress((p) => ({ ...p, fetched: p.fetched + 1, errors: p.errors + 1 }));
+            addLog('error', `${norm.displayTitle}: ${err.message}`);
+          }
+          await new Promise((r) => setTimeout(r, 0));
+        }
+
+        if (!hasPornhwaDbNextPage(pageData, page, pornhwaConfig.perPage)) {
+          addLog('info', 'ไม่มีหน้าถัดไป');
+          break;
+        }
+
+        if (page < pornhwaConfig.pages && !abortRef.current.signal.aborted) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
+
+      if (!abortRef.current.signal.aborted) {
+        addLog('success', 'PornhwaDB fetch เสร็จสมบูรณ์');
+        toast.success('PornhwaDB fetch เสร็จสมบูรณ์');
       } else {
         addLog('info', t('admin.fetch.logStoppedByUser'));
         toast(t('admin.fetch.stopped'));
@@ -1332,9 +1713,13 @@ export function AdminFetch() {
                 ? t('admin.fetch.themes.tabSubtitle')
                 : activeTab === 'trailers'
                   ? t('admin.fetch.trailers.tabSubtitle')
-                  : activeTab === 'jikan'
-                    ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)'
-                    : t('admin.fetch.cs.tabSubtitle')}
+                  : activeTab === 'pornhwa'
+                    ? 'ดึง Adult Manhwa จาก PornhwaDB ผ่าน proxy'
+                    : activeTab === 'pornhwa-chars'
+                      ? 'ดึง Characters สำหรับ PornhwaDB titles ที่นำเข้าแล้ว'
+                      : activeTab === 'jikan'
+                        ? 'ดึง Manhwa Adult จาก MyAnimeList (ไม่มี BL)'
+                        : t('admin.fetch.cs.tabSubtitle')}
           </p>
         </div>
       </div>
@@ -1345,6 +1730,8 @@ export function AdminFetch() {
           { id: 'titles', label: t('admin.fetch.tabTitles'), Icon: Download },
           { id: 'themes', label: t('admin.fetch.themes.tabTitle'), Icon: Hash },
           { id: 'trailers', label: t('admin.fetch.trailers.tabTitle'), Icon: RefreshCw },
+          { id: 'pornhwa', label: 'PornhwaDB', Icon: Flame },
+          { id: 'pornhwa-chars', label: 'PWDB Chars', Icon: Users },
           { id: 'jikan', label: 'Jikan (MAL)', Icon: Globe },
           { id: 'charstaff', label: t('admin.fetch.cs.tabTitle'), Icon: Users },
         ].map(({ id, label, Icon }) => (
@@ -1378,8 +1765,8 @@ export function AdminFetch() {
               <Section title={t('admin.fetch.typeLabel')}>
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                   {[
-                    { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '🎌' },
-                    { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '📚' },
+                    { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '๐' },
+                    { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '๐“' },
                   ].map((tp) => (
                     <button
                       key={tp.value}
@@ -1410,17 +1797,17 @@ export function AdminFetch() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                   {config.type === 'ANIME'
                     ? ANIME_FORMATS.map((f) => (
-                        <Chip key={f.value} active={config.animeFormat === f.value} disabled={running}
-                          onClick={() => set('animeFormat', f.value)}>
-                          {t(f.labelKey)}
-                        </Chip>
-                      ))
+                      <Chip key={f.value} active={config.animeFormat === f.value} disabled={running}
+                        onClick={() => set('animeFormat', f.value)}>
+                        {t(f.labelKey)}
+                      </Chip>
+                    ))
                     : MANGA_SUBTYPES.map((s) => (
-                        <Chip key={s.value} active={config.mangaSubtype === s.value} disabled={running}
-                          onClick={() => set('mangaSubtype', s.value)}>
-                          {t(s.labelKey)}
-                        </Chip>
-                      ))
+                      <Chip key={s.value} active={config.mangaSubtype === s.value} disabled={running}
+                        onClick={() => set('mangaSubtype', s.value)}>
+                        {t(s.labelKey)}
+                      </Chip>
+                    ))
                   }
                 </div>
                 {config.type === 'MANGA' && config.mangaSubtype && (
@@ -1658,6 +2045,192 @@ export function AdminFetch() {
                 </div>
               </Section>
             </>
+          ) : activeTab === 'pornhwa' ? (
+            <>
+              <Section title="แหล่งข้อมูล">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}>
+                  <Flame size={28} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>PornhwaDB via Supabase Edge Function</div>
+                    <div style={{ fontSize: '0.77rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                      Adult manhwa metadata แบบ secure proxy สำหรับ admin/editor เท่านั้น
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="PornhwaDB API Key">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="pwdb_xxxxxxxxxxxxx"
+                    value={pornhwaConfig.apiKey}
+                    onChange={(event) => setPornhwaConfig((current) => ({ ...current, apiKey: event.target.value }))}
+                    disabled={running}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    Paste key ที่นี่ได้เลย ระบบจะใช้ค่านี้ก่อน secret ฝั่ง Supabase และ key ต้องขึ้นต้นด้วย <code>pwdb_</code>
+                  </p>
+                </div>
+              </Section>
+
+              <Section title="เรียงลำดับ">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    { value: 'updated_at', label: 'Updated', Icon: Clock },
+                    { value: 'average_rating', label: 'Rating', Icon: Star },
+                    { value: 'release_year', label: 'Release Year', Icon: CalendarDays },
+                    { value: 'total_ratings', label: 'Ratings Count', Icon: Users },
+                  ].map(({ value, label, Icon }) => (
+                    <Chip key={value} active={pornhwaConfig.sort === value} disabled={running}
+                      onClick={() => setPornhwaConfig((p) => ({ ...p, sort: value }))}>
+                      <Icon size={13} /> {label}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="สถานะ">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    { value: '', label: 'All' },
+                    { value: 'On Going', label: 'On Going' },
+                    { value: 'Completed', label: 'Completed' },
+                    { value: 'Hiatus', label: 'Hiatus' },
+                  ].map(({ value, label }) => (
+                    <Chip key={label} active={pornhwaConfig.status === value} disabled={running}
+                      onClick={() => setPornhwaConfig((p) => ({ ...p, status: value }))}>
+                      {label}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="Orientation">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    { value: '', label: 'All' },
+                    { value: 'yuri', label: 'Yuri' },
+                  ].map(({ value, label }) => (
+                    <Chip key={label} active={pornhwaConfig.orientation === value} disabled={running}
+                      onClick={() => setPornhwaConfig((p) => ({ ...p, orientation: value }))}>
+                      {label}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="Genre Tag (filter)">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="เช่น Harem, Romance, Vanilla (เว้นว่างเพื่อดึงทั้งหมด)"
+                    value={pornhwaConfig.tags}
+                    onChange={(e) => setPornhwaConfig((p) => ({ ...p, tags: e.target.value }))}
+                    disabled={running}
+                  />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                    {['', 'Harem', 'Romance', 'Vanilla', 'Office', 'Milf', 'Incest', 'NTR', 'Isekai', 'Fantasy', 'System', 'Netorare', 'Revenge', 'College', 'Action'].map((tag) => (
+                      <Chip key={tag || 'all'} active={pornhwaConfig.tags === tag} disabled={running}
+                        onClick={() => setPornhwaConfig((p) => ({ ...p, tags: tag }))}>
+                        {tag || 'All'}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="ขั้นต่ำจำนวนเรต">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={pornhwaConfig.minRatings}
+                    onChange={(v) => setPornhwaConfig((p) => ({ ...p, minRatings: v }))}
+                    min={0}
+                    max={500}
+                    disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    ลดข้อมูลบางเกินไปก่อนนำเข้าฐาน
+                  </p>
+                </div>
+              </Section>
+            </>
+          ) : activeTab === 'pornhwa-chars' ? (
+            <>
+              <Section title="แหล่งข้อมูล">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}>
+                  <Users size={28} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>PornhwaDB — Characters</div>
+                    <div style={{ fontSize: '0.77rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                      ดึง characters ของ PornhwaDB titles ผ่าน proxy (ใช้ API Key จาก tab PornhwaDB)
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="โหมด">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {[
+                    { key: true, label: 'เฉพาะที่ยังไม่มี characters', hint: 'ข้าม titles ที่มี characters ในฐานข้อมูลแล้ว' },
+                    { key: false, label: 'Refresh ทั้งหมด', hint: 'ดึงซ้ำแม้จะมีข้อมูลอยู่แล้ว' },
+                  ].map(({ key, label, hint }) => (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      disabled={running}
+                      onClick={() => setPornhwaCharsConfig((p) => ({ ...p, onlyMissing: key }))}
+                      style={{
+                        padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
+                        border: `2px solid ${pornhwaCharsConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: pornhwaCharsConfig.onlyMissing === key
+                          ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                          : 'var(--bg-primary)',
+                        textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: pornhwaCharsConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="จำนวนสูงสุด">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <Stepper
+                    value={pornhwaCharsConfig.limit}
+                    onChange={(v) => setPornhwaCharsConfig((p) => ({ ...p, limit: v }))}
+                    min={0} max={500} disabled={running}
+                  />
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    0 = ไม่จำกัด — แต่ละ title ใช้ 1 API call
+                  </p>
+                </div>
+              </Section>
+
+              <Section title="Delay ระหว่าง title">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    {[400, 800, 1200, 2000].map((ms) => (
+                      <Chip key={ms} active={pornhwaCharsConfig.delayMs === ms} disabled={running}
+                        onClick={() => setPornhwaCharsConfig((p) => ({ ...p, delayMs: ms }))}>
+                        {ms}ms
+                      </Chip>
+                    ))}
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    ป้องกัน rate limit — แนะนำ 800ms+
+                  </p>
+                </div>
+              </Section>
+            </>
           ) : activeTab === 'jikan' ? (
             <>
               {/* Jikan — Source info */}
@@ -1667,7 +2240,7 @@ export function AdminFetch() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Jikan API v4 (MyAnimeList)</div>
                     <div style={{ fontSize: '0.77rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      Manhwa · Erotica (genre 49) · ไม่มี BL/Yaoi (genre 28, 26) · เรียงตาม Score
+                      Manhwa ยท Erotica (genre 49) ยท ไม่มี BL/Yaoi (genre 28, 26) ยท เรียงตาม Score
                     </div>
                   </div>
                 </div>
@@ -1677,8 +2250,8 @@ export function AdminFetch() {
               <Section title="เรียงลำดับ">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                   {[
-                    { value: 'score',      label: 'Score',      Icon: Star },
-                    { value: 'scored_by',  label: 'Most Rated', Icon: Users },
+                    { value: 'score', label: 'Score', Icon: Star },
+                    { value: 'scored_by', label: 'Most Rated', Icon: Users },
                     { value: 'popularity', label: 'Popularity', Icon: TrendingUp },
                     { value: 'start_date', label: 'Start Date', Icon: CalendarDays },
                   ].map(({ value, label, Icon }) => (
@@ -1696,8 +2269,8 @@ export function AdminFetch() {
               <Section title={t('admin.fetch.cs.modeLabel')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {[
-                    { key: true,  label: t('admin.fetch.cs.onlyMissing'), hint: t('admin.fetch.cs.onlyMissingHint') },
-                    { key: false, label: t('admin.fetch.cs.refetchAll'),  hint: t('admin.fetch.cs.refetchAllHint') },
+                    { key: true, label: t('admin.fetch.cs.onlyMissing'), hint: t('admin.fetch.cs.onlyMissingHint') },
+                    { key: false, label: t('admin.fetch.cs.refetchAll'), hint: t('admin.fetch.cs.refetchAllHint') },
                   ].map(({ key, label, hint }) => (
                     <button
                       key={String(key)}
@@ -1743,26 +2316,32 @@ export function AdminFetch() {
         {/* ── Right: Options + Action ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', position: 'sticky', top: 'calc(var(--header-height) + 1rem)' }}>
 
-          {/* Pages + Per page (titles + jikan tabs) */}
-          {(activeTab === 'titles' || activeTab === 'jikan') && (
+          {/* Pages + Per page (titles + pornhwa + jikan tabs) */}
+          {(activeTab === 'titles' || activeTab === 'pornhwa' || activeTab === 'jikan') && (
             <Section title={t('admin.fetch.volumeLabel')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
                   <label className="form-label">{t('admin.fetch.pages')}</label>
                   {activeTab === 'titles'
                     ? <Stepper value={config.pages} onChange={(v) => set('pages', v)} min={1} max={20} disabled={running} />
-                    : <Stepper value={jikanConfig.pages} onChange={(v) => setJikanConfig((p) => ({ ...p, pages: v }))} min={1} max={20} disabled={running} />
+                    : activeTab === 'jikan'
+                      ? <Stepper value={jikanConfig.pages} onChange={(v) => setJikanConfig((p) => ({ ...p, pages: v }))} min={1} max={20} disabled={running} />
+                      : <Stepper value={pornhwaConfig.pages} onChange={(v) => setPornhwaConfig((p) => ({ ...p, pages: v }))} min={1} max={20} disabled={running} />
                   }
                 </div>
                 <div>
                   <label className="form-label">{t('admin.fetch.perPage')}</label>
                   <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                    {(activeTab === 'jikan' ? [10, 25] : [10, 25, 50]).map((n) => (
+                    {(activeTab === 'jikan' ? [10, 25] : activeTab === 'pornhwa' ? [25, 50, 100] : [10, 25, 50]).map((n) => (
                       <Chip
                         key={n}
-                        active={activeTab === 'titles' ? config.perPage === n : jikanConfig.perPage === n}
+                        active={activeTab === 'titles' ? config.perPage === n : activeTab === 'jikan' ? jikanConfig.perPage === n : pornhwaConfig.perPage === n}
                         disabled={running}
-                        onClick={() => activeTab === 'titles' ? set('perPage', n) : setJikanConfig((p) => ({ ...p, perPage: n }))}
+                        onClick={() => activeTab === 'titles'
+                          ? set('perPage', n)
+                          : activeTab === 'jikan'
+                            ? setJikanConfig((p) => ({ ...p, perPage: n }))
+                            : setPornhwaConfig((p) => ({ ...p, perPage: n }))}
                       >
                         {n}
                       </Chip>
@@ -1773,6 +2352,11 @@ export function AdminFetch() {
                       Jikan จำกัด 25 items/หน้า
                     </p>
                   )}
+                  {activeTab === 'pornhwa' && (
+                    <p style={{ margin: 'var(--space-2) 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                      PornhwaDB proxy รองรับได้ถึง 100 items/หน้า
+                    </p>
+                  )}
                 </div>
                 <div style={{
                   padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',
@@ -1780,7 +2364,11 @@ export function AdminFetch() {
                   textAlign: 'center',
                 }}>
                   <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    ~{activeTab === 'titles' ? totalEstimate : jikanConfig.pages * jikanConfig.perPage}
+                    ~{activeTab === 'titles'
+                      ? totalEstimate
+                      : activeTab === 'jikan'
+                        ? jikanConfig.pages * jikanConfig.perPage
+                        : pornhwaConfig.pages * pornhwaConfig.perPage}
                   </span>
                   <p style={{ margin: '2px 0 0', fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>{t('admin.fetch.willFetch')}</p>
                 </div>
@@ -1788,8 +2376,8 @@ export function AdminFetch() {
             </Section>
           )}
 
-          {/* Duplicate mode (titles + jikan tabs) */}
-          {(activeTab === 'titles' || activeTab === 'jikan') && (
+          {/* Duplicate mode (titles + pornhwa + jikan tabs) */}
+          {(activeTab === 'titles' || activeTab === 'pornhwa' || activeTab === 'jikan') && (
             <Section title={t('admin.fetch.duplicateLabel')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', cursor: running ? 'default' : 'pointer' }}>
@@ -1822,11 +2410,15 @@ export function AdminFetch() {
                     ? handleFetch
                     : activeTab === 'themes'
                       ? handleThemeBackfill
-                    : activeTab === 'trailers'
-                      ? handleTrailerBackfill
-                      : activeTab === 'jikan'
-                        ? handleJikanFetch
-                        : handleCharStaff
+                      : activeTab === 'trailers'
+                        ? handleTrailerBackfill
+                        : activeTab === 'pornhwa'
+                          ? handlePornhwaFetch
+                          : activeTab === 'pornhwa-chars'
+                            ? handlePornhwaCharsFetch
+                            : activeTab === 'jikan'
+                              ? handleJikanFetch
+                              : handleCharStaff
                 }
                 style={{ width: '100%', justifyContent: 'center', padding: 'var(--space-4)' }}>
                 <Play size={16} /> {
@@ -1834,11 +2426,15 @@ export function AdminFetch() {
                     ? t('admin.fetch.fetchBtn')
                     : activeTab === 'themes'
                       ? t('admin.fetch.themes.startBtn')
-                    : activeTab === 'trailers'
-                      ? t('admin.fetch.trailers.startBtn')
-                      : activeTab === 'jikan'
-                        ? 'Fetch Manhwa Adult'
-                        : t('admin.fetch.cs.startBtn')
+                      : activeTab === 'trailers'
+                        ? t('admin.fetch.trailers.startBtn')
+                        : activeTab === 'pornhwa'
+                          ? 'Fetch PornhwaDB'
+                          : activeTab === 'pornhwa-chars'
+                            ? 'Fetch PWDB Characters'
+                            : activeTab === 'jikan'
+                              ? 'Fetch Manhwa Adult'
+                              : t('admin.fetch.cs.startBtn')
                 }
               </button>
             ) : (
@@ -1863,7 +2459,7 @@ export function AdminFetch() {
           {/* Progress stats */}
           {progress && (
             <Section title={running ? t('admin.fetch.runningTitle') : t('admin.fetch.resultTitle')}>
-              {(activeTab === 'titles' || activeTab === 'jikan') && running && (
+              {(activeTab === 'titles' || activeTab === 'pornhwa' || activeTab === 'jikan') && running && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
                     <span>{t('admin.fetch.pageProgress', { page: progress.page, total: progress.totalPages })}</span>
@@ -1878,10 +2474,11 @@ export function AdminFetch() {
                   </div>
                 </div>
               )}
-              {activeTab === 'charstaff' && running && progress.total > 0 && (
+              {(activeTab === 'charstaff' || activeTab === 'pornhwa-chars') && running && progress?.total > 0 && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
                     <span>{progress.done}/{progress.total}</span>
+                    {activeTab === 'pornhwa-chars' && <span>{pornhwaCharsConfig.delayMs}ms delay</span>}
                   </div>
                   <div style={{ height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
                     <div style={{
@@ -1923,33 +2520,40 @@ export function AdminFetch() {
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-                {(activeTab === 'titles' || activeTab === 'jikan'
+                {(activeTab === 'titles' || activeTab === 'pornhwa' || activeTab === 'jikan'
                   ? [
-                      { label: t('admin.fetch.statNew'),     value: progress.imported, color: '#16a34a' },
-                      { label: t('admin.fetch.statUpdated'), value: progress.updated,  color: '#2563eb' },
-                      { label: t('admin.fetch.statSkipped'), value: progress.skipped,  color: 'var(--text-tertiary)' },
-                      { label: t('admin.fetch.statErrors'),  value: progress.errors,   color: '#dc2626' },
-                    ]
-                  : activeTab === 'themes'
+                    { label: t('admin.fetch.statNew'), value: progress.imported, color: '#16a34a' },
+                    { label: t('admin.fetch.statUpdated'), value: progress.updated, color: '#2563eb' },
+                    { label: t('admin.fetch.statSkipped'), value: progress.skipped, color: 'var(--text-tertiary)' },
+                    { label: t('admin.fetch.statErrors'), value: progress.errors, color: '#dc2626' },
+                  ]
+                  : activeTab === 'pornhwa-chars'
                     ? [
+                      { label: 'Done', value: progress.done, color: '#2563eb' },
+                      { label: 'Characters', value: progress.chars, color: '#16a34a' },
+                      { label: 'Errors', value: progress.errors, color: '#dc2626' },
+                      { label: 'Total', value: progress.total, color: 'var(--text-tertiary)' },
+                    ]
+                    : activeTab === 'themes'
+                      ? [
                         { label: t('admin.fetch.themes.statSynced'), value: progress.synced, color: '#16a34a' },
                         { label: t('admin.fetch.themes.statRows'), value: progress.rows, color: '#2563eb' },
                         { label: t('admin.fetch.themes.statNoMatch'), value: progress.noMatch, color: 'var(--text-tertiary)' },
                         { label: t('admin.fetch.themes.statErrors'), value: progress.errors, color: '#dc2626' },
                       ]
-                  : activeTab === 'trailers'
-                    ? [
-                        { label: t('admin.fetch.trailers.statDone'), value: progress.done, color: '#2563eb' },
-                        { label: t('admin.fetch.trailers.statUpdated'), value: progress.updated, color: '#16a34a' },
-                        { label: t('admin.fetch.trailers.statNoTrailer'), value: progress.noTrailer, color: 'var(--text-tertiary)' },
-                        { label: t('admin.fetch.trailers.statErrors'), value: progress.errors, color: '#dc2626' },
-                      ]
-                  : [
-                      { label: t('admin.fetch.cs.statDone'),   value: progress.done,   color: '#2563eb' },
-                      { label: t('admin.fetch.cs.statChars'),  value: progress.chars,  color: '#16a34a' },
-                      { label: t('admin.fetch.cs.statStaff'),  value: progress.staff,  color: '#7c3aed' },
-                      { label: t('admin.fetch.cs.statErrors'), value: progress.errors, color: '#dc2626' },
-                    ]
+                      : activeTab === 'trailers'
+                        ? [
+                          { label: t('admin.fetch.trailers.statDone'), value: progress.done, color: '#2563eb' },
+                          { label: t('admin.fetch.trailers.statUpdated'), value: progress.updated, color: '#16a34a' },
+                          { label: t('admin.fetch.trailers.statNoTrailer'), value: progress.noTrailer, color: 'var(--text-tertiary)' },
+                          { label: t('admin.fetch.trailers.statErrors'), value: progress.errors, color: '#dc2626' },
+                        ]
+                        : [
+                          { label: t('admin.fetch.cs.statDone'), value: progress.done, color: '#2563eb' },
+                          { label: t('admin.fetch.cs.statChars'), value: progress.chars, color: '#16a34a' },
+                          { label: t('admin.fetch.cs.statStaff'), value: progress.staff, color: '#7c3aed' },
+                          { label: t('admin.fetch.cs.statErrors'), value: progress.errors, color: '#dc2626' },
+                        ]
                 ).map((stat) => (
                   <div key={stat.label} style={{
                     padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)',

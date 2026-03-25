@@ -96,6 +96,18 @@ const steps = [
     'scripts/catalog/ingest-anilist.mjs',
     [
       '--type=MANGA',
+      '--pages=6',
+      '--perPage=25',
+      '--countryOfOrigin=KR',
+      '--status=RELEASING',
+      '--isAdult=true',
+      '--sort=START_DATE_DESC',
+    ],
+  ],
+  [
+    'scripts/catalog/ingest-anilist.mjs',
+    [
+      '--type=MANGA',
       `--startPage=${mangaJPStartPage}`,
       '--all=true',
       '--perPage=25',
@@ -105,12 +117,37 @@ const steps = [
       '--sort=POPULARITY_DESC',
     ],
   ],
+  [
+    'scripts/catalog/ingest-jikan.mjs',
+    [
+      '--pages=8',
+      '--perPage=25',
+      '--orderBy=start_date',
+      '--direction=desc',
+      '--excludeBoysLove=true',
+    ],
+  ],
   ['scripts/catalog/dedupe-catalog.mjs', []],
 ];
+
+if (process.env.PORNHWADB_API_KEY) {
+  steps.splice(5, 0, [
+    'scripts/catalog/ingest-pornhwadb.mjs',
+    [
+      '--pages=10',
+      '--limit=50',
+      '--sort=updated_at',
+      '--order=desc',
+      '--status=On Going',
+    ],
+  ]);
+} else {
+  console.log('Skipping PornhwaDB sync because PORNHWADB_API_KEY is not configured.');
+}
 
 for (const [script, args] of steps) {
   console.log(`Running ${script} ${args.join(' ')}`);
   await runScript(script, args);
 }
 
-console.log('AniList resume sync completed.');
+console.log('Catalog resume sync completed.');

@@ -57,7 +57,7 @@ Delivered capabilities:
 
 - canonical catalog schema
 - title aliases, source refs, genres, tags, relations, availability, moods
-- AniList ingestion scripts
+- multi-source ingestion scripts (AniList, Jikan, optional PornhwaDB)
 - catalog-backed home, discover, title detail, and admin title management
 
 Core migrations:
@@ -68,6 +68,8 @@ Core migrations:
 Core scripts:
 
 - `npm run catalog:ingest:anilist`
+- `npm run catalog:ingest:jikan`
+- `npm run catalog:ingest:pornhwadb`
 - `npm run catalog:ingest:all`
 - `npm run catalog:resume:all`
 - `npm run catalog:dedupe`

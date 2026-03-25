@@ -829,9 +829,9 @@ export const translations = {
   "selectors": {
     "moodTitle": "อยากได้โทนเรื่องแบบไหน?",
     "moodSubtitle": "(เลือกได้สูงสุด 3)",
-    "moodTitleAdult": "อยากได้โทน 18+ แบบไหน?",
-    "moodSubtitleAdult": "(รวมมู้ดทั่วไป + 18+ เลือกได้สูงสุด 3)",
-    "moodHelperAdult": "โหมด 18+ ยังเลือกมู้ดทั่วไปได้ เพื่อช่วยหาเรื่องผู้ใหญ่ที่ตรงโทนมากขึ้น",
+    "moodTitleAdult": "อยากได้แท็ก 18+ แบบไหน?",
+    "moodSubtitleAdult": "(เลือกได้สูงสุด 3 แท็ก ผสมมู้ดทั่วไปได้)",
+    "moodHelperAdult": "แท็ก 18+ จะเน้นแนวความสัมพันธ์แบบที่เจอบนเว็บ mature จริง เช่น รักลับ ต่างสถานะ หรือหวงแรง ส่วนมู้ดทั่วไปยังเลือกผสมได้เหมือนเดิม",
     "timeTitle": "เรื่องจบหรือยัง?"
   },
   "profile": {
@@ -1584,6 +1584,10 @@ export const translations = {
       "searchTitles": "ค้นหาชื่อเรื่อง",
       "searchPlaceholder": "ค้นหาด้วยชื่อ, slug หรือเหตุผล",
       "filterStatus": "สถานะ",
+      "filterAdult": "เนื้อหา",
+      "adultAll": "ทุกประเภท",
+      "adultOnly": "18+ เท่านั้น",
+      "adultSfw": "ไม่ใช่ 18+ เท่านั้น",
       "filtersToolbar": "แถบเครื่องมือกรองข้อมูลซ้ำ",
       "allStatuses": "ทุกสถานะ",
       "reviewTitle": "ตรวจสอบและ Merge",
