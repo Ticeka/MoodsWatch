@@ -2093,6 +2093,59 @@
   }
 }
 
+@media (max-width: 480px) {
+  .tierlist-browse-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-block: 1rem 0.5rem;
+  }
+
+  .tierlist-browse-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.7rem;
+  }
+
+  .tierlist-browse-cover {
+    height: 130px;
+  }
+
+  .tierlist-browse-cover img {
+    height: 130px;
+  }
+
+  .tierlist-browse-filters {
+    padding: 0.5rem 0.65rem;
+    gap: 0.5rem;
+  }
+
+  .tiermaker-tile {
+    width: 60px;
+    height: 80px;
+  }
+
+  .tiermaker-pool .tiermaker-tile {
+    height: 80px;
+  }
+
+  .tiermaker-row {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .tiermaker-label {
+    min-height: 80px;
+  }
+
+  .tiermaker-dropzone {
+    min-height: 80px;
+  }
+
+  .tiermaker-pool-rail {
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    max-height: 260px;
+  }
+}
+
 /* ============================================
    ANIMATIONS
    ============================================ */

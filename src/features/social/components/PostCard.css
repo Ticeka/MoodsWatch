@@ -401,3 +401,56 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* ── Mobile ─────────────────────────────────────────── */
+@media (max-width: 479px) {
+  .post-card-header {
+    padding: 12px 12px 8px;
+  }
+
+  .post-card-avatar,
+  .post-card-avatar.fallback {
+    width: 38px;
+    height: 38px;
+  }
+
+  .post-card-author-name {
+    font-size: 0.875rem;
+  }
+
+  .post-card-content {
+    font-size: 0.9rem;
+    padding: 2px 12px 12px;
+  }
+
+  .post-card-actions {
+    padding: 8px 6px 2px;
+  }
+
+  .post-card-action-btn {
+    padding: 8px 8px;
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  .post-card-like-line {
+    padding: 2px 12px 6px;
+    font-size: 0.825rem;
+  }
+
+  .post-card-divider {
+    margin: 0 12px;
+  }
+
+  .post-card-comments {
+    padding: 8px 12px 12px;
+  }
+
+  .post-card-title-info {
+    padding: 36px 12px 12px;
+  }
+
+  .post-card-title-name {
+    font-size: 0.875rem;
+  }
+}

@@ -183,3 +183,32 @@
   }
   .lb-elo { display: none; }
 }
+
+@media (max-width: 479px) {
+  .leaderboard-page {
+    padding-bottom: 4rem;
+  }
+
+  .leaderboard-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .leaderboard-filter-row {
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .leaderboard-filter-btn {
+    padding: 0.45rem 0.9rem;
+    font-size: 0.825rem;
+  }
+
+  .leaderboard-table-head,
+  .leaderboard-row {
+    grid-template-columns: 2rem 1fr 4.5rem;
+    padding-inline: 0.75rem;
+    font-size: 0.825rem;
+  }
+
+  .lb-wins { display: none; }
+}

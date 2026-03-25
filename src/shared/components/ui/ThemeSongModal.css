@@ -59,3 +59,31 @@
   color: var(--text-secondary, #aaa);
   margin-right: auto;
 }
+
+@media (max-width: 600px) {
+  .theme-song-modal {
+    max-width: 100%;
+  }
+
+  .theme-song-modal-info {
+    gap: 0.45rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .theme-song-modal-type-badge {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    padding: 2px 7px;
+  }
+
+  .theme-song-modal-meta {
+    padding: 0.5rem 0.875rem;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .theme-song-modal-eps {
+    width: 100%;
+  }
+}
