@@ -173,6 +173,16 @@ export function Home() {
   }, [refreshToken, showAdult]);
 
   useEffect(() => {
+    document.documentElement.classList.add('home-scroll-snap');
+    document.body.classList.add('home-scroll-snap');
+
+    return () => {
+      document.documentElement.classList.remove('home-scroll-snap');
+      document.body.classList.remove('home-scroll-snap');
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadContinueTitles() {
@@ -534,7 +544,7 @@ export function Home() {
               </div>
             ) : randomPick ? (
               <div className="random-modal-card">
-                <TitleCard title={randomPick} />
+                <TitleCard title={randomPick} hideActions />
               </div>
             ) : (
               <EmptyState
@@ -656,10 +666,13 @@ export function Home() {
                     type="button"
                     aria-pressed={type === opt.id}
                     className={`type-btn ${type === opt.id ? 'active' : ''}`}
+                    data-type={opt.id}
                     onClick={() => setType(opt.id)}
                   >
-                    <span className="type-icon"><TypeIcon option={opt} /></span>
-                    {getLocalizedLabel(opt, language)}
+                    <span className="type-icon">
+                      <TypeIcon option={opt} className="type-icon-graphic" />
+                    </span>
+                    <span className="type-btn-label">{getLocalizedLabel(opt, language)}</span>
                   </button>
                 ))}
               </div>

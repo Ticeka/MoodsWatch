@@ -1230,7 +1230,16 @@ export const translations = {
       "sortAsc": "น้อยไปมาก / เก่าสุด",
       "statusUnknown": "ไม่ทราบสถานะ",
       "notAvailable": "ไม่มีข้อมูล",
-      "confirmDelete": "ลบสื่อนี้?"
+      "confirmDelete": "ลบสื่อนี้?",
+      "exportGroupLabel": "ส่งออกรายชื่อแยกตามประเภท",
+      "exportLabel": "Export TXT",
+      "exportAnime": "Anime",
+      "exportManga": "Manga",
+      "exportManhwa": "Manhwa",
+      "exporting": "กำลัง export...",
+      "exportEmpty": "ไม่มีรายการ {label} สำหรับ export",
+      "exportSuccess": "export {label} {count} รายการแล้ว",
+      "exportFailed": "export {label} ไม่สำเร็จ"
     },
     "titleEdit": {
       "editTitle": "แก้ไขสื่อ",

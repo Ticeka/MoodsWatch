@@ -14,6 +14,20 @@ const WatchlistContext = createContext();
 const WATCHLIST_STORAGE_KEY = 'moodtoon-watchlist';
 const WATCHLIST_REQUEST_TIMEOUT_MS = 20000;
 
+function scheduleWhenIdle(callback, timeout = 1500) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout });
+    return () => window.cancelIdleCallback(handle);
+  }
+
+  const handle = window.setTimeout(callback, Math.min(timeout, 400));
+  return () => window.clearTimeout(handle);
+}
+
 function getWatchlistStorageKey(userId) {
   return userId ? `${WATCHLIST_STORAGE_KEY}:${userId}` : WATCHLIST_STORAGE_KEY;
 }
@@ -439,6 +453,7 @@ export function WatchlistProvider({ children }) {
     }
 
     let cancelled = false;
+    let cancelIdleWork = null;
 
     const fetchWatchlist = async () => {
       setIsLoading(true);
@@ -504,22 +519,35 @@ export function WatchlistProvider({ children }) {
               });
           }
 
-          // Fetch title details separately to avoid a slow JOIN on the critical path
           const titleIds = mergedWatchlist.map((item) => item.titleId).filter(Boolean);
-          if (titleIds.length > 0 && !cancelled) {
-            const { data: titlesData, error: titlesError } = await withTimeout(
-              supabase
-                .from('canonical_titles')
-                .select(CANONICAL_TITLE_BROWSE_SELECT)
-                .in('id', titleIds),
-              WATCHLIST_REQUEST_TIMEOUT_MS,
-              'Watchlist titles fetch'
-            );
-            if (titlesError) {
-              throw titlesError;
-            }
-            if (titlesData && !cancelled) {
-              setWatchlistTitles(titlesData.map(mapCanonicalTitle));
+          if (!cancelled) {
+            if (titleIds.length === 0) {
+              setWatchlistTitles([]);
+            } else {
+              cancelIdleWork?.();
+              cancelIdleWork = scheduleWhenIdle(async () => {
+                try {
+                  const { data: titlesData, error: titlesError } = await withTimeout(
+                    supabase
+                      .from('canonical_titles')
+                      .select(CANONICAL_TITLE_BROWSE_SELECT)
+                      .in('id', titleIds),
+                    WATCHLIST_REQUEST_TIMEOUT_MS,
+                    'Watchlist titles fetch'
+                  );
+                  if (titlesError) {
+                    throw titlesError;
+                  }
+                  if (!cancelled && titlesData) {
+                    setWatchlistTitles(titlesData.map(mapCanonicalTitle));
+                  }
+                } catch (titlesLoadError) {
+                  if (!cancelled) {
+                    console.warn('Failed to load watchlist titles:', titlesLoadError.message);
+                    setWatchlistTitles([]);
+                  }
+                }
+              }, 2500);
             }
           }
         }
@@ -535,14 +563,15 @@ export function WatchlistProvider({ children }) {
     } finally {
       if (!cancelled) {
         setIsLoading(false);
-        }
       }
-    };
+    }
+  };
 
     fetchWatchlist();
 
     return () => {
       cancelled = true;
+      cancelIdleWork?.();
     };
   }, [userId]);
 
@@ -553,6 +582,7 @@ export function WatchlistProvider({ children }) {
     }
 
     let cancelled = false;
+    let cancelIdleWork = null;
 
     const fetchHistory = async () => {
       setIsHistoryLoading(true);
@@ -597,10 +627,13 @@ export function WatchlistProvider({ children }) {
       }
     };
 
-    fetchHistory();
+    cancelIdleWork = scheduleWhenIdle(() => {
+      void fetchHistory();
+    }, 3000);
 
     return () => {
       cancelled = true;
+      cancelIdleWork?.();
     };
   }, [userId]);
 

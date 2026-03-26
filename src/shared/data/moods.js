@@ -1,15 +1,6 @@
 // MoodsWatch — Mood taxonomy (หัวใจของระบบ)
 export const MOODS = [
   {
-    id: 'light',
-    name_th: 'เบาสมอง',
-    name_en: 'Light-hearted',
-    icon: '😄',
-    color: '#fbbf24',
-    description: 'ดูสบายๆ ไม่ต้องคิดเยอะ',
-    tags: ['comedy', 'slice of life', 'school', 'wholesome', 'family'],
-  },
-  {
     id: 'funny',
     name_th: 'ตลก',
     name_en: 'Comedy',

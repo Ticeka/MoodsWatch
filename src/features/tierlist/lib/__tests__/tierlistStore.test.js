@@ -17,16 +17,27 @@ function nextResponse(queue, fallback) {
 }
 
 function createDeleteBuilder(table) {
-  return {
-    eq: vi.fn(async (column, value) => {
+  const state = {
+    filters: [],
+  };
+
+  const builder = {
+    eq: vi.fn((column, value) => {
+      state.filters.push({ type: 'eq', column, value });
+      return builder;
+    }),
+    in: vi.fn(async (column, value) => {
+      state.filters.push({ type: 'in', column, value });
       if (table === 'tierlist_list_rows') {
-        mockState.rowDeletes.push({ column, value });
+        mockState.rowDeletes.push(state.filters.slice());
       } else if (table === 'tierlist_list_pool_items') {
-        mockState.poolDeletes.push({ column, value });
+        mockState.poolDeletes.push(state.filters.slice());
       }
       return { error: null };
     }),
   };
+
+  return builder;
 }
 
 function createTableClient(table) {
@@ -219,6 +230,46 @@ describe('tierlistStore saveTierList recovery', () => {
     expect(mockState.listInsertPayloads[0]?.template_id).toBe('template-public-stale');
     expect(mockState.listInsertPayloads[1]?.template_id).toBe('template-public-stale');
     expect(mockState.listInsertPayloads[1]?.id).not.toBe(mockState.listInsertPayloads[0]?.id);
+  });
+
+  it('deletes only removed rows and pool items for existing lists', async () => {
+    mockState.listUpdateResponses.push({
+      data: [{ id: 'tierlist-local-1' }],
+      error: null,
+    });
+
+    const previousList = makeList({
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [1], color: '' },
+        { id: 'row-2', label: 'A', titleIds: [4], color: '' },
+      ],
+      poolTitleIds: [2, 3, 5],
+    });
+    const nextList = makeList({
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [1], color: '' },
+      ],
+      poolTitleIds: [2],
+    });
+
+    await saveTierList(
+      nextList,
+      { templates: [], lists: [previousList] },
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.rowDeletes).toEqual([
+      [
+        { type: 'eq', column: 'list_id', value: 'tierlist-local-1' },
+        { type: 'in', column: 'id', value: ['row-2'] },
+      ],
+    ]);
+    expect(mockState.poolDeletes).toEqual([
+      [
+        { type: 'eq', column: 'list_id', value: 'tierlist-local-1' },
+        { type: 'in', column: 'title_id', value: [3, 5] },
+      ],
+    ]);
   });
 });
 

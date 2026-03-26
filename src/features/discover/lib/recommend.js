@@ -1323,7 +1323,7 @@ export async function getCharactersPage({ type = 'all', query = '', sortBy = 'po
   };
 }
 
-export async function getTitlesByIds(ids) {
+export async function getTitlesByIds(ids, options = {}) {
   if (!ids?.length) return [];
 
   const normalizedIds = [...new Set(ids.map((id) => Number(id)).filter(Boolean))];
@@ -1331,23 +1331,34 @@ export async function getTitlesByIds(ids) {
     return [];
   }
 
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const applyAgeGateFilter = (titles = []) => (
+    showAdult === null ? titles : filterTitlesForAgeGate(titles, showAdult)
+  );
+
   const cachedMatches = normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
   if (cachedMatches.length === normalizedIds.length) {
     const idMap = new Map(cachedMatches.map((title) => [title.id, title]));
-    return normalizedIds.map((id) => idMap.get(id)).filter(Boolean);
+    return applyAgeGateFilter(normalizedIds.map((id) => idMap.get(id)).filter(Boolean));
   }
 
   const missingIds = normalizedIds.filter((id) => !titleByIdCache.has(id));
-  const requestKey = missingIds.slice().sort((a, b) => a - b).join(',');
+  const requestKey = `${showAdult === null ? 'any' : String(showAdult)}::${missingIds.slice().sort((a, b) => a - b).join(',')}`;
 
   ensureSupabaseConnected();
 
   if (!titleByIdsRequestCache.has(requestKey)) {
     const request = (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('canonical_titles')
         .select(CANONICAL_TITLE_BROWSE_SELECT)
         .in('id', missingIds);
+
+      if (showAdult !== null) {
+        query = query.eq('is_adult', showAdult);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -1365,7 +1376,7 @@ export async function getTitlesByIds(ids) {
     titleByIdsRequestCache.delete(requestKey);
   }
 
-  return normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
+  return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
 }
 
 export async function getTitlePreviewByIds(ids, options = {}) {

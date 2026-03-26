@@ -1230,7 +1230,16 @@ export const translations = {
       "sortAsc": "Low to high / oldest first",
       "statusUnknown": "unknown",
       "notAvailable": "N/A",
-      "confirmDelete": "Delete this title?"
+      "confirmDelete": "Delete this title?",
+      "exportGroupLabel": "Export title lists by type",
+      "exportLabel": "Export TXT",
+      "exportAnime": "Anime",
+      "exportManga": "Manga",
+      "exportManhwa": "Manhwa",
+      "exporting": "Exporting...",
+      "exportEmpty": "No {label} titles available to export",
+      "exportSuccess": "Exported {count} {label} titles",
+      "exportFailed": "Failed to export {label}"
     },
     "titleEdit": {
       "editTitle": "Edit Title",

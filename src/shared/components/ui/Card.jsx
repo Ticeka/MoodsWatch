@@ -269,15 +269,19 @@ export const TitleCard = React.memo(function TitleCard({ title, hideActions = fa
 
         {(title.moods && title.moods.length > 0) && (
           <div className="card-mood-tags">
-            {title.moods.slice(0, 3).map((moodId) => (
-              <span
-                key={moodId}
-                className="mood-tag"
-                style={{ '--mood-tag-color': moodMap.get(moodId)?.color || '#818cf8' }}
-              >
-                {getLocalizedMoodName(moodMap.get(moodId), language) || moodId}
-              </span>
-            ))}
+            {title.moods
+              .map((moodId) => moodMap.get(moodId))
+              .filter(Boolean)
+              .slice(0, 3)
+              .map((mood) => (
+                <span
+                  key={mood.id}
+                  className="mood-tag"
+                  style={{ '--mood-tag-color': mood.color }}
+                >
+                  {getLocalizedMoodName(mood, language)}
+                </span>
+              ))}
           </div>
         )}
 

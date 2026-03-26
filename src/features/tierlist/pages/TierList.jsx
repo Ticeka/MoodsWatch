@@ -953,8 +953,50 @@ function splitByAdultFlag(items = []) {
   }, { safe: [], adult: [] });
 }
 
+function normalizeTierListIdentityText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getTierListCommunityIdentityKey(list) {
+  if (!list) {
+    return '';
+  }
+
+  return JSON.stringify({
+    owner: normalizeTierListIdentityText(list.ownerUserId || list.ownerUsername || list.ownerName || ''),
+    templateId: String(list.templateId || ''),
+    entityType: normalizeCatalogEntityType(list.entityType),
+    title: normalizeTierListIdentityText(list.title),
+    description: normalizeTierListIdentityText(list.description),
+    rows: (list.rows || []).map((row) => ({
+      label: normalizeTierListIdentityText(row?.label),
+      color: String(row?.color || ''),
+      titleIds: (row?.titleIds || []).map(Number).filter(Boolean),
+    })),
+    poolTitleIds: (list.poolTitleIds || []).map(Number).filter(Boolean),
+  });
+}
+
+function dedupeTierListsByIdentity(lists = []) {
+  const seen = new Set();
+  return [...lists]
+    .sort((a, b) => {
+      const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+      if (updatedDelta !== 0) return updatedDelta;
+      return Number(b.playCount || 0) - Number(a.playCount || 0);
+    })
+    .filter((list) => {
+    const identityKey = getTierListCommunityIdentityKey(list);
+    if (!identityKey || seen.has(identityKey)) {
+      return false;
+    }
+    seen.add(identityKey);
+    return true;
+    });
+}
+
 function sortListsByRecentAndPopularity(lists = []) {
-  return [...lists].sort((a, b) => {
+  return dedupeTierListsByIdentity(lists).sort((a, b) => {
     const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
     if (updatedDelta !== 0) return updatedDelta;
     return Number(b.playCount || 0) - Number(a.playCount || 0);
@@ -2365,7 +2407,9 @@ export function TierListBrowsePage() {
     [songEntities, titles]
   );
   const canApplyEntityFilters = !isCatalogHydrating;
-  const shouldHoldBrowseResults = !showAdult && isCatalogHydrating;
+  // Hold browse results until age-gate visibility finishes hydrating so mixed local
+  // data cannot flash the wrong templates before filtering settles.
+  const shouldHoldBrowseResults = isCatalogHydrating;
   const publicTemplates = useMemo(
     () => dedupeTierTemplatesByIdentity(
       library.templates.filter((template) => (
@@ -2738,7 +2782,7 @@ export function TierListTemplatePage() {
       }
 
       if (!quickTemplate) {
-        const fastTemplates = await loadTierTemplates([], { userId: user?.id || null });
+        const fastTemplates = await loadTierTemplates([], { userId: user?.id || null, showAdult });
         if (cancelled) return;
         const fastTemplate = fastTemplates.find((entry) => String(entry.id) === String(templateId));
         if (fastTemplate) {
@@ -2748,7 +2792,7 @@ export function TierListTemplatePage() {
         }
       }
 
-      const loadedLibrary = await loadTierLibrary([], { userId: user?.id || null });
+      const loadedLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
       if (cancelled) return;
       setLibrary(loadedLibrary);
 
@@ -2788,7 +2832,7 @@ export function TierListTemplatePage() {
         if (cancelled) return;
         setSongEntities(fetchedSongs);
       } else {
-        fetchedTitles = await getTitlesByIds(previewIds);
+        fetchedTitles = await getTitlesByIds(previewIds, { showAdult });
         if (cancelled) return;
         setSongEntities([]);
       }
@@ -3045,8 +3089,8 @@ export function TierListCreatePage() {
 
   // Initialise library in background (no catalog needed)
   useEffect(() => {
-    loadTierLibrary([], { userId: user?.id || null }).catch(() => { });
-  }, [user?.id]);
+    loadTierLibrary([], { userId: user?.id || null, showAdult }).catch(() => { });
+  }, [showAdult, user?.id]);
 
   // Debounce search query and reset to page 1
   useEffect(() => {
@@ -3229,7 +3273,7 @@ export function TierListCreatePage() {
         ownerUserId: user?.id || null,
       });
 
-      const currentLibrary = await loadTierLibrary([], { userId: user?.id || null });
+      const currentLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
       const libraryAfterTemplate = await saveTierTemplate(template, currentLibrary, { userId: user?.id || null });
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const normalizedSavedTemplate = isSongMode
@@ -3925,7 +3969,7 @@ export function TierListPlayPage() {
       setLoadError('');
       setSongEntityMap(new Map());
 
-      const initialLibrary = await loadTierLibrary([], { userId: user?.id || null });
+      const initialLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
       if (!cancelled) {
         setLibrary(initialLibrary);
       }
@@ -3971,7 +4015,7 @@ export function TierListPlayPage() {
         filteredCatalog = catalog;
         availableCatalogIds = catalog.map((entity) => Number(entity.id)).filter(Boolean);
       } else if (resolvedEntityTypeForLoad !== THEME_SONG_ENTITY_TYPE) {
-        const catalog = await getTitlesByIds(referencedEntityIds);
+        const catalog = await getTitlesByIds(referencedEntityIds, { showAdult });
         if (cancelled) return;
         filteredCatalog = catalog;
         availableCatalogIds = catalog.map((entry) => Number(entry.id)).filter(Boolean);
@@ -4036,24 +4080,11 @@ export function TierListPlayPage() {
 
         let uniqueSongIds = [...new Set(songIds)];
         if (uniqueSongIds.length > 0) {
-          const fetchSongRows = async (ids) => {
-            const { data, error } = await supabase
-              .from('title_theme_songs')
-              .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw, canonical_title_id')
-              .in('id', ids);
-
-            if (error) {
-              throw error;
-            }
-
-            return data || [];
-          };
-
-          let fetchedSongRows = await fetchSongRows(uniqueSongIds);
+          let songEntities = await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult });
 
           if (cancelled) return;
           if (
-            fetchedSongRows.length === 0 &&
+            songEntities.length === 0 &&
             canRepairFromTemplate
           ) {
             const repairedSongList = seedPoolFromCatalog({
@@ -4064,21 +4095,12 @@ export function TierListPlayPage() {
             setTierList(repairedSongList);
             songIds = [...new Set(sourceTemplate.titleIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))];
             uniqueSongIds = songIds;
-            fetchedSongRows = uniqueSongIds.length > 0 ? await fetchSongRows(uniqueSongIds) : [];
+            songEntities = uniqueSongIds.length > 0
+              ? await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult })
+              : [];
             if (cancelled) return;
           }
 
-          const uniqueTitleIds = [...new Set((fetchedSongRows || []).map((r) => r.canonical_title_id).filter(Boolean))];
-          let titleLookup = new Map();
-          if (uniqueTitleIds.length > 0) {
-            const titleRows = await getTitlesByIds(uniqueTitleIds);
-            if (cancelled) return;
-            titleLookup = new Map((titleRows || []).map((title) => [Number(title.id), title]));
-          }
-
-          const songEntities = (fetchedSongRows || []).map((song) =>
-            buildThemeSongEntity(song, titleLookup.get(song.canonical_title_id) || null)
-          );
           setSongEntityMap(new Map(songEntities.map((e) => [e.id, e])));
         }
       }

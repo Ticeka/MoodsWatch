@@ -2540,6 +2540,8 @@
 
 .tierlist-picker-filterbar .results-sorter {
   gap: 0;
+  flex: 0 0 155px;
+  min-width: 155px;
 }
 
 .tierlist-picker-filterbar .results-sorter > span {

@@ -747,6 +747,56 @@ textarea.form-input {
   flex-wrap: wrap;
 }
 
+.admin-list-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-export-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 95%, transparent);
+  border: 1px solid var(--border-default);
+}
+
+.admin-export-label {
+  padding-inline: 0.45rem 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.admin-export-btn {
+  min-height: 2.3rem;
+}
+
+.admin-export-btn.is-active {
+  background: color-mix(in srgb, var(--accent-500) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
+  color: var(--accent-700);
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.action-btn:disabled:hover {
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
 .admin-list-summary {
   color: var(--text-secondary);
   font-size: 0.9rem;

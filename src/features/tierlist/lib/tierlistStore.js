@@ -823,7 +823,48 @@ async function saveRemoteTemplateWithRecovery(template, userId = null) {
   }
 }
 
-async function saveRemoteList(list, userId = null) {
+function getRemovedTierRowIds(previousList, nextList) {
+  const previousIds = new Set((previousList?.rows || []).map((row) => String(row?.id || '')).filter(Boolean));
+  const nextIds = new Set((nextList?.rows || []).map((row) => String(row?.id || '')).filter(Boolean));
+  return [...previousIds].filter((id) => !nextIds.has(id));
+}
+
+function getRemovedPoolTitleIds(previousList, nextList) {
+  const previousIds = new Set(dedupeNumberIds(previousList?.poolTitleIds || []));
+  const nextIds = new Set(dedupeNumberIds(nextList?.poolTitleIds || []));
+  return [...previousIds].filter((id) => !nextIds.has(id));
+}
+
+async function deleteRemoteListChildrenDiff(previousList, nextList) {
+  if (!supabase || !previousList?.id) {
+    return;
+  }
+
+  const removedRowIds = getRemovedTierRowIds(previousList, nextList);
+  const removedPoolTitleIds = getRemovedPoolTitleIds(previousList, nextList);
+
+  if (removedRowIds.length > 0) {
+    const { error: deleteRowsError } = await supabase
+      .from('tierlist_list_rows')
+      .delete()
+      .eq('list_id', String(previousList.id))
+      .in('id', removedRowIds);
+
+    if (deleteRowsError) throw deleteRowsError;
+  }
+
+  if (removedPoolTitleIds.length > 0) {
+    const { error: deletePoolError } = await supabase
+      .from('tierlist_list_pool_items')
+      .delete()
+      .eq('list_id', String(previousList.id))
+      .in('title_id', removedPoolTitleIds);
+
+    if (deletePoolError) throw deletePoolError;
+  }
+}
+
+async function saveRemoteList(list, userId = null, previousList = null) {
   if (!supabase) {
     return normalizeTierList(list);
   }
@@ -854,23 +895,8 @@ async function saveRemoteList(list, userId = null) {
     throw error;
   }
 
-  // Brand-new lists do not have child rows yet, so skip the cleanup deletes.
-  // This avoids extra DELETE requests during first save and reduces chances of
-  // transient browser/network issues surfacing as save errors.
-  if (updatedRow) {
-    const { error: deleteRowsError } = await supabase
-      .from('tierlist_list_rows')
-      .delete()
-      .eq('list_id', normalized.id);
-
-    if (deleteRowsError) throw deleteRowsError;
-
-    const { error: deletePoolError } = await supabase
-      .from('tierlist_list_pool_items')
-      .delete()
-      .eq('list_id', normalized.id);
-
-    if (deletePoolError) throw deletePoolError;
+  if (updatedRow && previousList) {
+    await deleteRemoteListChildrenDiff(previousList, normalized);
   }
 
   const rowPayload = normalized.rows.map((row, index) => ({
@@ -905,7 +931,7 @@ async function saveRemoteList(list, userId = null) {
   return fromRemoteList(data || payload, rowPayload, poolPayload);
 }
 
-async function saveRemoteListWithRecovery(list, userId = null, allowRetry = true) {
+async function saveRemoteListWithRecovery(list, userId = null, previousList = null, allowRetry = true) {
   const shouldRetryAfterConflict = (error) => (
     getErrorStatus(error) === 409 ||
     isUniqueConflictError(error) ||
@@ -913,26 +939,26 @@ async function saveRemoteListWithRecovery(list, userId = null, allowRetry = true
   );
 
   try {
-    return await saveRemoteList(list, userId);
+    return await saveRemoteList(list, userId, previousList);
   } catch (error) {
     if (isForeignKeyError(error)) {
       // template_id references a template that doesn't exist remotely — save without it
       const listWithoutTemplate = normalizeTierList({ ...list, templateId: '' });
       try {
-        return await saveRemoteList(listWithoutTemplate, userId);
+        return await saveRemoteList(listWithoutTemplate, userId, previousList);
       } catch (retryError) {
         // If the no-template retry also conflicts (duplicate ID), rekey and retry
         if (!userId || !allowRetry || !shouldRetryAfterConflict(retryError)) {
           throw retryError;
         }
-        return saveRemoteListWithRecovery(rekeyTierListForOwner(listWithoutTemplate, userId), userId, false);
+        return saveRemoteListWithRecovery(rekeyTierListForOwner(listWithoutTemplate, userId), userId, null, false);
       }
     }
     if (!userId || !allowRetry || !shouldRetryAfterConflict(error)) {
       throw error;
     }
 
-    return saveRemoteListWithRecovery(rekeyTierListForOwner(list, userId), userId, false);
+    return saveRemoteListWithRecovery(rekeyTierListForOwner(list, userId), userId, null, false);
   }
 }
 
@@ -1162,6 +1188,7 @@ export async function saveTierTemplate(template, library = null, options = {}) {
 export async function saveTierList(tierList, library = null, options = {}) {
   const userId = options?.userId || null;
   const source = normalizeLibrary(library || loadLibraryRaw());
+  const existingList = source.lists.find((entry) => String(entry.id || '') === String(tierList?.id || '')) || null;
   const baseTierList = shouldPromoteTierListToOwnedCopy(tierList, userId)
     ? rekeyTierListForOwner(tierList, userId)
     : tierList;
@@ -1184,7 +1211,7 @@ export async function saveTierList(tierList, library = null, options = {}) {
   }
 
   try {
-    const remoteList = await saveRemoteListWithRecovery(normalized, userId);
+    const remoteList = await saveRemoteListWithRecovery(normalized, userId, existingList);
     return saveLibraryRaw({
       ...localLibrary,
       lists: [

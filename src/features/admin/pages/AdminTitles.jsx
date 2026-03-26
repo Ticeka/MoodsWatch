@@ -8,6 +8,46 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
 
 const PAGE_SIZE = 10;
+const EXPORT_BATCH_SIZE = 500;
+const EXPORT_TITLE_SELECT = `
+  id,
+  slug,
+  canonical_title,
+  type,
+  subtype,
+  aliases:title_aliases(alias, language_code, alias_type, is_primary)
+`;
+
+function getAdminPrimaryTitle(record) {
+  const englishAlias = record.aliases?.find((alias) => alias.alias_type === 'english' || alias.language_code === 'en')?.alias;
+  const thaiAlias = record.aliases?.find((alias) => alias.language_code === 'th')?.alias;
+  return englishAlias || thaiAlias || record.canonical_title || record.slug || `#${record.id}`;
+}
+
+function buildExportFilters(filters, exportType) {
+  switch (exportType) {
+    case 'anime':
+      return { ...filters, type: 'anime', subtype: 'anime' };
+    case 'manga':
+      return { ...filters, type: 'manga', subtype: 'manga' };
+    case 'manhwa':
+      return { ...filters, type: 'manga', subtype: 'manhwa' };
+    default:
+      return filters;
+  }
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
 
 function applyCatalogFilters(query, filters) {
   let nextQuery = query;
@@ -127,7 +167,7 @@ async function resolveMatchingIds(searchTerm, filters) {
 }
 
 export function AdminTitles() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const SUBTYPE_OPTIONS = [
     { value: 'all', label: t('admin.titles.allSubtypes') },
@@ -179,6 +219,7 @@ export function AdminTitles() {
   const [titles, setTitles] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [exportingType, setExportingType] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState({
     searchTerm: '',
@@ -198,6 +239,12 @@ export function AdminTitles() {
   });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const exportOptions = useMemo(() => ([
+    { id: 'anime', label: t('admin.titles.exportAnime') },
+    { id: 'manga', label: t('admin.titles.exportManga') },
+    { id: 'manhwa', label: t('admin.titles.exportManhwa') },
+  ]), [t]);
 
   const fetchTitles = useCallback(async () => {
     if (!supabase) {
@@ -382,6 +429,96 @@ export function AdminTitles() {
     });
   };
 
+  const handleExport = useCallback(async (exportType) => {
+    if (!supabase) {
+      toast.error(t('admin.titles.supabaseUnavailable'));
+      return;
+    }
+
+    const exportFilters = buildExportFilters(filters, exportType);
+    const exportLabel = getTitleTypeMeta(exportType, language).displayLabel;
+    setExportingType(exportType);
+
+    try {
+      const searchTerm = exportFilters.searchTerm.trim();
+      let linkIds = null;
+
+      if (exportFilters.hasLinks !== 'all') {
+        linkIds = await resolveOfficialLinkIds();
+        if (exportFilters.hasLinks === 'yes' && linkIds.length === 0) {
+          toast.error(t('admin.titles.exportEmpty', { label: exportLabel }));
+          return;
+        }
+      }
+
+      let matchingIds = null;
+      if (searchTerm) {
+        matchingIds = await resolveMatchingIds(searchTerm, exportFilters);
+
+        if (linkIds !== null) {
+          const linkSet = new Set(linkIds);
+          matchingIds = exportFilters.hasLinks === 'yes'
+            ? matchingIds.filter((id) => linkSet.has(id))
+            : matchingIds.filter((id) => !linkSet.has(id));
+        }
+
+        if (matchingIds.length === 0) {
+          toast.error(t('admin.titles.exportEmpty', { label: exportLabel }));
+          return;
+        }
+      }
+
+      const collected = [];
+      let from = 0;
+
+      while (true) {
+        let query = supabase
+          .from('canonical_titles')
+          .select(EXPORT_TITLE_SELECT);
+
+        query = applyCatalogFilters(query, exportFilters);
+
+        if (matchingIds) {
+          query = query.in('id', matchingIds);
+        } else if (linkIds !== null) {
+          if (exportFilters.hasLinks === 'yes') {
+            query = query.in('id', linkIds);
+          } else if (linkIds.length > 0) {
+            query = query.not('id', 'in', `(${linkIds.join(',')})`);
+          }
+        }
+
+        query = applyCatalogSorting(query, exportFilters.sortBy, exportFilters.sortDirection);
+
+        const { data, error } = await query.range(from, from + EXPORT_BATCH_SIZE - 1);
+        if (error) throw error;
+
+        const batch = data || [];
+        if (batch.length === 0) break;
+
+        collected.push(...batch);
+
+        if (batch.length < EXPORT_BATCH_SIZE) break;
+        from += EXPORT_BATCH_SIZE;
+      }
+
+      const exportLines = [...new Set(collected.map(getAdminPrimaryTitle).filter(Boolean))];
+      if (exportLines.length === 0) {
+        toast.error(t('admin.titles.exportEmpty', { label: exportLabel }));
+        return;
+      }
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadTextFile(`moodtoon-${exportType}-${stamp}.txt`, exportLines.join('\r\n'));
+      toast.success(t('admin.titles.exportSuccess', { count: exportLines.length, label: exportLabel }));
+    } catch (error) {
+      console.error(`Export ${exportType} error:`, error);
+      toast.error(error.message || t('admin.titles.exportFailed', { label: exportLabel }));
+    } finally {
+      setExportingType('');
+    }
+  }, [filters, language, t]);
+
   return (
     <div className="admin-page-content animate-fade-in">
       <div className="admin-header">
@@ -561,7 +698,23 @@ export function AdminTitles() {
             ? t('admin.titles.loading')
             : t('admin.titles.results', { total: totalCount, page: currentPage, pages: totalPages, s: totalCount === 1 ? '' : 's' })}
         </span>
-        <span className="admin-list-summary subtle">{t('admin.titles.perPage')}</span>
+        <div className="admin-list-actions">
+          <span className="admin-list-summary subtle">{t('admin.titles.perPage')}</span>
+          <div className="admin-export-group" role="group" aria-label={t('admin.titles.exportGroupLabel')}>
+            <span className="admin-export-label">{t('admin.titles.exportLabel')}</span>
+            {exportOptions.map((option) => (
+              <button
+                key={option.id}
+                className={`action-btn admin-export-btn ${exportingType === option.id ? 'is-active' : ''}`}
+                type="button"
+                onClick={() => handleExport(option.id)}
+                disabled={isLoading || exportingType !== ''}
+              >
+                {exportingType === option.id ? t('admin.titles.exporting') : option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="admin-table-container">

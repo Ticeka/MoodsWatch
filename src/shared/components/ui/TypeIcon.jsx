@@ -1,15 +1,18 @@
 import React from 'react';
-import ReactCountryFlag from 'react-country-flag';
+import japanFlag from '@/assets/japan.png';
+import koreanFlag from '@/assets/korean.png';
 
-export function TypeIcon({ option, size = '1.2em' }) {
-  if (option?.countryCode) {
-    return (
-      <ReactCountryFlag
-        countryCode={option.countryCode}
-        style={{ width: size, height: size }}
-        title={option.countryCode}
-      />
-    );
+const FLAG_ASSETS = {
+  JP: japanFlag,
+  KR: koreanFlag,
+};
+
+export function TypeIcon({ option, className = '' }) {
+  const flagAsset = option?.countryCode ? FLAG_ASSETS[option.countryCode] : null;
+
+  if (flagAsset) {
+    return <img src={flagAsset} alt="" aria-hidden="true" className={className} />;
   }
-  return <span>{option?.icon}</span>;
+
+  return <span className={className}>{option?.icon}</span>;
 }

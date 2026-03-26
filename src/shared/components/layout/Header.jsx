@@ -16,6 +16,20 @@ import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared
 import { supabase } from '@/shared/lib/supabase';
 import './Layout.css';
 
+function scheduleWhenIdle(callback, timeout = 1500) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout });
+    return () => window.cancelIdleCallback(handle);
+  }
+
+  const handle = window.setTimeout(callback, Math.min(timeout, 400));
+  return () => window.clearTimeout(handle);
+}
+
 function LanguageToggle() {
   const { language, setLanguage, t } = useLanguage();
 
@@ -70,6 +84,7 @@ function NotificationBell({ userId }) {
   useEffect(() => {
     if (!userId || !supabase) return;
     let cancelled = false;
+    let cancelIdleWork = null;
 
     async function load() {
       const { data } = await supabase
@@ -81,7 +96,9 @@ function NotificationBell({ userId }) {
       if (!cancelled) setNotifications(data || []);
     }
 
-    load();
+    cancelIdleWork = scheduleWhenIdle(() => {
+      void load();
+    }, 2000);
 
     const channel = supabase
       .channel(`notifications:${userId}`)
@@ -92,6 +109,7 @@ function NotificationBell({ userId }) {
 
     return () => {
       cancelled = true;
+      cancelIdleWork?.();
       supabase.removeChannel(channel);
     };
   }, [userId]);
