@@ -37,10 +37,10 @@ const CANONICAL_TITLE_LIST_SELECT = `
   created_at,
   updated_at,
   last_synced_at,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary),
-  genres:title_genres(genre_name),
-  tags:title_tags(tag_name, weight),
-  moods:title_moods(mood_id),
+  aliases:aliases_cache,
+  genres:genres_cache,
+  tags:tags_cache,
+  moods:moods_cache,
   studios:title_studios(studio_name, is_animation_studio)
 `;
 
@@ -66,10 +66,10 @@ const CANONICAL_TITLE_BROWSE_SELECT = `
   trailer_video_id,
   trailer_thumbnail_url,
   trailer_source,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary),
-  genres:title_genres(genre_name),
-  tags:title_tags(tag_name, weight),
-  moods:title_moods(mood_id)
+  aliases:aliases_cache,
+  genres:genres_cache,
+  tags:tags_cache,
+  moods:moods_cache
 `;
 
 const CANONICAL_TITLE_PREVIEW_SELECT = `
@@ -84,7 +84,7 @@ const CANONICAL_TITLE_PREVIEW_SELECT = `
   banner_image,
   avg_score,
   popularity_score,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary)
+  aliases:aliases_cache
 `;
 
 // Lightweight select for search autocomplete — excludes trailers, banner,
@@ -100,9 +100,9 @@ const CANONICAL_TITLE_SEARCH_SELECT = `
   is_adult,
   cover_image,
   popularity_score,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary),
-  genres:title_genres(genre_name),
-  moods:title_moods(mood_id)
+  aliases:aliases_cache,
+  genres:genres_cache,
+  moods:moods_cache
 `;
 
 const CANONICAL_TITLE_DETAIL_SELECT = `
