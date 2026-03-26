@@ -708,7 +708,8 @@ async function fetchRemoteLists(userId = null, options = {}) {
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
-  const requestKey = `${userId || 'anon'}::${publicLimit ?? 'all'}`;
+  const skipPoolItems = options?.skipPoolItems !== false;
+  const requestKey = `${userId || 'anon'}::${publicLimit ?? 'all'}::${skipPoolItems ? 'npool' : 'pool'}`;
 
   if (remoteListsRequestCache.has(requestKey)) {
     return remoteListsRequestCache.get(requestKey);
@@ -751,15 +752,26 @@ async function fetchRemoteLists(userId = null, options = {}) {
     }
 
     const listIds = dedupedLists.map((entry) => entry.id);
-    const [
-      { data: rowsData, error: rowsError },
-      { data: poolData, error: poolError },
-    ] = await Promise.all([
-      supabase.from('tierlist_list_rows').select('id, list_id, position, label, color, title_ids').in('list_id', listIds),
-      supabase.from('tierlist_list_pool_items').select('list_id, title_id, position').in('list_id', listIds),
-    ]);
+    const { data: rowsData, error: rowsError } = await supabase
+      .from('tierlist_list_rows')
+      .select('id, list_id, position, label, color, title_ids')
+      .in('list_id', listIds);
 
     if (rowsError) throw rowsError;
+
+    if (skipPoolItems) {
+      return dedupedLists.map((listRow) => fromRemoteList(
+        listRow,
+        (rowsData || []).filter((entry) => entry.list_id === listRow.id),
+        []
+      ));
+    }
+
+    const { data: poolData, error: poolError } = await supabase
+      .from('tierlist_list_pool_items')
+      .select('list_id, title_id, position')
+      .in('list_id', listIds);
+
     if (poolError) throw poolError;
 
     return dedupedLists.map((listRow) => fromRemoteList(
@@ -776,6 +788,17 @@ async function fetchRemoteLists(userId = null, options = {}) {
   } finally {
     remoteListsRequestCache.delete(requestKey);
   }
+}
+
+export async function loadListPoolItems(listId) {
+  if (!supabase || !listId) return [];
+  const { data, error } = await supabase
+    .from('tierlist_list_pool_items')
+    .select('title_id, position')
+    .eq('list_id', String(listId))
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return (data || []).map((row) => Number(row.title_id));
 }
 
 async function saveRemoteTemplate(template, userId = null) {
@@ -922,10 +945,14 @@ async function saveRemoteList(list, userId = null, previousList = null) {
   }
 
   if (poolPayload.length > 0) {
-    const { error: poolInsertError } = await supabase
-      .from('tierlist_list_pool_items')
-      .upsert(poolPayload, { onConflict: 'list_id,title_id' });
-    if (poolInsertError) throw poolInsertError;
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < poolPayload.length; i += CHUNK_SIZE) {
+      const chunk = poolPayload.slice(i, i + CHUNK_SIZE);
+      const { error: poolInsertError } = await supabase
+        .from('tierlist_list_pool_items')
+        .upsert(chunk, { onConflict: 'list_id,title_id' });
+      if (poolInsertError) throw poolInsertError;
+    }
   }
 
   return fromRemoteList(data || payload, rowPayload, poolPayload);
@@ -1055,7 +1082,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
       shouldFetchTemplates
         ? fetchRemoteTemplates(userId, { publicLimit: options?.publicTemplateLimit, showAdult: options?.showAdult })
         : Promise.resolve([]),
-      fetchRemoteLists(userId, { publicLimit: options?.publicListLimit }),
+      fetchRemoteLists(userId, { publicLimit: options?.publicListLimit, skipPoolItems: true }),
     ]);
 
     const merged = mergeLibraries(

@@ -44,11 +44,13 @@ import {
   CHARACTER_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  TRAILER_ENTITY_TYPE,
   buildThemeSongEntity,
   getCatalogEntities,
   getCatalogEntityMeta,
   getCatalogEntityName,
   isThemeSongEntity,
+  isTrailerEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { supabase } from '@/shared/lib/supabase';
@@ -70,6 +72,7 @@ const ENTITY_TYPE_OPTIONS = [
   { value: TITLE_ENTITY_TYPE, label: 'Titles' },
   { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
   { value: THEME_SONG_ENTITY_TYPE, label: 'Songs' },
+  { value: TRAILER_ENTITY_TYPE, label: 'Trailers' },
 ];
 
 const SIZE_OPTIONS = [8, 16, 24, 32, 48];
@@ -846,99 +849,155 @@ function BattleCatalogCardSkeleton() {
   );
 }
 
-function BattleMatchCard({
-  title,
-  trailer,
-  voteLabel,
-  voteIcon,
-  onVote,
-  onPlayTrailer,
-}) {
+function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTrailer }) {
   const { t } = useLanguage();
 
-  if (!title) {
-    return null;
-  }
+  if (!title) return null;
 
   const displayName = getDisplayName(title) || t('battle.catalogFallback');
   const isSong = isThemeSongEntity(title);
-  const entryBadges = getBattleEntryBadges(title, t);
+
+  // ── SONG TYPE: Inline video card ─────────────────────────────────
+  if (isSong) {
+    let embedUrl = null;
+    let watchUrl = null;
+    let isDirectVideo = false;
+
+    if (title.video_url) {
+      const rawUrl = String(title.video_url).trim();
+      const normalized = normalizeTrailer({ trailer_url: rawUrl });
+      embedUrl = normalized?.embedUrl || null;
+      watchUrl = normalized?.watchUrl || rawUrl;
+      const lower = rawUrl.toLowerCase();
+      isDirectVideo = !embedUrl && (
+        lower.endsWith('.mp4') || lower.endsWith('.webm') ||
+        lower.includes('.mp4?') || lower.includes('.webm?')
+      );
+    }
+
+    const hasSongMedia = Boolean(embedUrl || isDirectVideo || watchUrl);
+
+    return (
+      <article className="battle-card battle-card--media glass-heavy">
+        <div className="battle-card-media-wrap">
+          {embedUrl ? (
+            <iframe
+              className="battle-card-media-frame"
+              src={embedUrl}
+              title={displayName}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          ) : isDirectVideo ? (
+            <video
+              className="battle-card-media-frame"
+              src={watchUrl}
+              controls
+              playsInline
+              preload="metadata"
+            />
+          ) : hasSongMedia ? (
+            <div className="battle-card-media-nonembed">
+              <img src={getTitleArtwork(title)} alt="" />
+              <div className="battle-card-media-nonembed-overlay">
+                <a href={watchUrl} target="_blank" rel="noreferrer" className="battle-card-media-open-btn">
+                  <ExternalLink size={18} />
+                  <span>Open Song</span>
+                </a>
+              </div>
+            </div>
+          ) : (
+            <img src={getTitleArtwork(title)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          )}
+        </div>
+        <div className="battle-card-info">
+          <div className="battle-card-info-text">
+            <span className="battle-card-song-type-badge">
+              <Music size={10} />
+              {getBattleSongRoleLabel(title)}
+            </span>
+            <h2>{displayName}</h2>
+            <p className="battle-card-info-sub">
+              {[title.artist_name || title.voice_actor_name, title.sourceTitleName].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+        </div>
+      </article>
+    );
+  }
+
+  // ── TRAILER TYPE: Inline embed card ──────────────────────────────
+  if (isTrailerEntity(title)) {
+    const trailerNorm = normalizeTrailer(title);
+    const embedUrl = title.trailer_embed_url || trailerNorm?.embedUrl || null;
+    const watchUrl = title.trailer_watch_url || trailerNorm?.watchUrl || null;
+    const thumbnailUrl = title.trailer_thumbnail_url || getTitleArtwork(title);
+    const providerName = trailerNorm?.provider || title.trailer_site || 'Trailer';
+    const providerBadge = String(providerName).charAt(0).toUpperCase() + String(providerName).slice(1);
+
+    return (
+      <article className="battle-card battle-card--media glass-heavy">
+        <div className="battle-card-media-wrap">
+          {embedUrl ? (
+            <iframe
+              className="battle-card-media-frame"
+              src={embedUrl}
+              title={displayName}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          ) : watchUrl ? (
+            <div className="battle-card-media-nonembed">
+              <img src={thumbnailUrl} alt="" />
+              <div className="battle-card-media-nonembed-overlay">
+                <a href={watchUrl} target="_blank" rel="noreferrer" className="battle-card-media-open-btn">
+                  <ExternalLink size={18} />
+                  <span>ดู {providerBadge}</span>
+                </a>
+              </div>
+            </div>
+          ) : (
+            <img src={thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          )}
+        </div>
+        <div className="battle-card-info">
+          <div className="battle-card-info-text">
+            <span className="battle-card-song-type-badge">
+              <Play size={10} />
+              {providerBadge}
+            </span>
+            <h2>{displayName}</h2>
+            <p className="battle-card-info-sub">{getMetaLine(title)}</p>
+          </div>
+          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+        </div>
+      </article>
+    );
+  }
+
+  // ── TITLE / CHARACTER TYPE: Classic cover card ────────────────────
   const providerLabel = trailer?.site
     ? `${String(trailer.site).charAt(0).toUpperCase()}${String(trailer.site).slice(1)}`
     : '';
 
   return (
-    <article className="battle-card glass-heavy">
+    <article className="battle-card battle-card--title glass-heavy">
       <div className="battle-card-cover">
         <img src={getTitleArtwork(title)} alt="" />
-        {isSong && (
-          <span className="battle-card-song-badge">
-            <Music size={10} />
-            {getBattleSongRoleLabel(title)}
-          </span>
-        )}
         <div className="battle-card-body">
           <small className="battle-card-meta">{getMetaLine(title)}</small>
           <h2>{displayName}</h2>
-          {isSong && entryBadges.length > 0 ? (
-            <div className="battle-card-tags">
-              {entryBadges.map((badge) => (
-                <span key={`${badge.tone}-${badge.label}`} className={`battle-card-tag is-${badge.tone || 'default'}`}>
-                  {badge.label}
-                </span>
-              ))}
-            </div>
-          ) : !isSong ? (
-            <div className="battle-card-tags">
-              {(title?.tags || []).slice(0, 3).map((tag) => (
-                <span key={tag} className="battle-card-tag">{tag}</span>
-              ))}
-            </div>
-          ) : null}
-          {isSong ? (
-            <div className="battle-card-song-details">
-              {title.artist_name || title.voice_actor_name ? <span>{title.artist_name || title.voice_actor_name}</span> : null}
-              {title.sourceTitleName ? <span>{title.sourceTitleName}</span> : null}
-            </div>
-          ) : null}
+          <div className="battle-card-tags">
+            {(title?.tags || []).slice(0, 3).map((tag) => (
+              <span key={tag} className="battle-card-tag">{tag}</span>
+            ))}
+          </div>
           <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
         </div>
       </div>
 
-      {isSong ? (
-        <div className="battle-card-song-panel">
-          <div className="battle-card-song-panel-copy">
-            <span className="battle-card-trailer-label">Song preview</span>
-            <strong className="battle-card-trailer-provider">
-              {title.video_url ? 'Ready to play' : 'Preview unavailable'}
-            </strong>
-          </div>
-          <div className="battle-card-trailer-actions">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              icon={<Play size={14} />}
-              className="battle-card-trailer-inline-action"
-              onClick={onPlayTrailer}
-              disabled={!title.video_url}
-            >
-              Play song
-            </Button>
-            {title.video_url ? (
-              <a
-                href={title.video_url}
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-ghost btn-sm battle-card-trailer-inline-action battle-card-trailer-link"
-              >
-                <span className="btn-slot" aria-hidden="true"><ExternalLink size={14} /></span>
-                <span className="btn-text">Open video</span>
-              </a>
-            ) : null}
-          </div>
-        </div>
-      ) : trailer ? (
+      {trailer ? (
         <div className="battle-card-trailer">
           <div className="battle-card-trailer-head">
             <div className="battle-card-trailer-copy">
@@ -970,7 +1029,6 @@ function BattleMatchCard({
               ) : null}
             </div>
           </div>
-
         </div>
       ) : null}
     </article>
@@ -1126,7 +1184,9 @@ export function BattleHub() {
         ? visibleCharacterCatalog.length
         : normalizeCatalogEntityType(deck?.filters?.entityType) === THEME_SONG_ENTITY_TYPE
           ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-          : visibleCatalogTitles.length,
+          : normalizeCatalogEntityType(deck?.filters?.entityType) === TRAILER_ENTITY_TYPE
+            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
+            : visibleCatalogTitles.length,
       hiddenExcludedCount,
       excludesAdultContent: !showAdult,
     }));
@@ -2684,38 +2744,41 @@ export function BattleSessionPage() {
 
   return (
     <div className="battle-page">
-      <section className="container battle-session-head">
-        <div>
-            <span className="battle-kicker"><Swords size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> {t('battle.soloBattle')}</span>
-          <h1>{session.deckLabel}</h1>
-          <p>{t('battle.deckProgress', { count: session.titles.length, current: decisionCount, total: session.targetRounds })}</p>
-        </div>
-        {session.status !== 'completed' && (
-          <div className="battle-session-actions">
-            <Link className="btn btn-ghost btn-sm" to="/battle">{t('battle.hub')}</Link>
-            <Button variant="secondary" size="sm" icon={<RotateCcw size={16} />} onClick={handleRestart}>{t('battle.restart')}</Button>
+      <div className="battle-play-bar">
+        <div className="container battle-play-bar-inner">
+          <Link className="battle-play-back" to="/battle">
+            <ChevronLeft size={15} />
+            <span>{t('battle.hub')}</span>
+          </Link>
+          <div className="battle-play-bar-center">
+            <span className="battle-play-deck-name">{session.deckLabel}</span>
+            <div className="battle-play-progress-wrap">
+              <div className="battle-play-progress-track">
+                <div className="battle-play-progress-fill" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <span className="battle-play-progress-pct">{progressPercent}%</span>
+            </div>
           </div>
-        )}
-      </section>
+          {session.status !== 'completed' && (
+            <div className="battle-play-bar-actions">
+              <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={handleRestart}>{t('battle.restart')}</Button>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="battle-play-bar-spacer" />
 
       {session.status !== 'completed' ? (
         <>
-          <section className="container battle-progress-panel glass-heavy">
-            <div className="battle-progress-copy">
-              <strong>{t('battle.percentComplete', { percent: progressPercent })}</strong>
-              <span>{t('battle.remainingMatchesEstimate', { count: Math.max(0, session.targetRounds - decisionCount) })}</span>
-            </div>
-            <div className="battle-phase-note">
-              <strong>{battlePhase}</strong>
-              <span>{battlePhaseDescription}</span>
-            </div>
-            <div className="battle-progress-bar">
-              <div className="battle-progress-fill" style={{ width: `${progressPercent}%` }} />
-            </div>
-          </section>
+          <div className="container battle-play-phase">
+            <span className="battle-play-phase-badge">{battlePhase}</span>
+            <span className="battle-play-phase-desc">{battlePhaseDescription}</span>
+            <span className="battle-play-phase-remain">{t('battle.remainingMatchesEstimate', { count: Math.max(0, session.targetRounds - decisionCount) })}</span>
+          </div>
 
-          <section className="container battle-match-grid">
+          <section className="battle-match-grid">
             <BattleMatchCard
+              key={leftTitle?.id}
               title={leftTitle}
               trailer={leftTrailer}
               voteLabel={t('battle.chooseLeft')}
@@ -2726,15 +2789,10 @@ export function BattleSessionPage() {
 
             <div className="battle-vs-column">
               <div className="battle-vs-badge">{t('battle.versus')}</div>
-              <div className="battle-center-actions">
-                <Button variant="ghost" size="sm" onClick={() => handleVote('tie')}>{t('battle.tie')}</Button>
-                <Button variant="ghost" size="sm" onClick={() => handleVote('skip')}>{t('battle.skip')}</Button>
-                <Button variant="ghost" size="sm" onClick={handleUndo} disabled={session.history.length === 0}>{t('battle.back')}</Button>
-                <Button variant="secondary" size="sm" onClick={handleFinish}>{t('battle.finishNow')}</Button>
-              </div>
             </div>
 
             <BattleMatchCard
+              key={rightTitle?.id}
               title={rightTitle}
               trailer={rightTrailer}
               voteLabel={t('battle.chooseRight')}
@@ -2744,28 +2802,6 @@ export function BattleSessionPage() {
             />
           </section>
 
-          <section className="container battle-section">
-            <div className="battle-section-head">
-              <h2>{t('battle.currentLeaders')}</h2>
-              <p>{t('battle.currentLeadersHint')}</p>
-            </div>
-            <div className="battle-leaderboard glass-heavy">
-              {leaders.length === 0 ? (
-                <p>{t('battle.noLeaderYet')}</p>
-              ) : (
-                leaders.map((title, index) => (
-                  <div key={title.id} className="battle-leader-row">
-                    <span className="battle-leader-pos">#{index + 1}</span>
-                    <div className="battle-leader-thumb">
-                      <img src={getTitleArtwork(title)} alt="" loading="lazy" />
-                    </div>
-                    <strong className="battle-leader-name">{getDisplayName(title)}</strong>
-                    <small className="battle-leader-score">{t('battle.points', { count: title.score || 0 })}</small>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
         </>
       ) : (
         <>

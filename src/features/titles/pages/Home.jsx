@@ -631,15 +631,6 @@ export function Home() {
               <span>{t('common.list')}</span> {t('home.watchlistLink')}
             </Link>
           </div>
-
-          <div className="catalog-badge-wrap animate-fade-in-up" style={{ animationDelay: '0.3s', marginTop: 'var(--space-4)' }}>
-            <span className="catalog-badge">
-              {t('home.catalogLabel')}
-              <span className="catalog-badge-count">
-                {catalogInfo.count > 0 ? t('home.catalogLoaded', { count: catalogInfo.count }) : t('common.loading')}
-              </span>
-            </span>
-          </div>
         </div>
       </section>
 

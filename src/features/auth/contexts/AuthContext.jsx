@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { supabase } from '@/shared/lib/supabase';
 
 const AuthContext = createContext();
-const PROFILE_REQUEST_TIMEOUT_MS = 8000;
+const PROFILE_REQUEST_TIMEOUT_MS = 15000;
 
 const profileRequestCache = new Map();
 

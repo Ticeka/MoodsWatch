@@ -55,6 +55,7 @@ import {
   findTierList,
   findTierTemplate,
   filterTierListToCatalog,
+  loadListPoolItems,
   loadTierLibrary,
   loadTierTemplates,
   moveTitle,
@@ -2343,7 +2344,7 @@ function TierListCommentSection({ listId, listOwnerId, pick }) {
 export function TierListBrowsePage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [songEntities, setSongEntities] = useState([]);
@@ -2359,6 +2360,7 @@ export function TierListBrowsePage() {
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
+    if (isAuthLoading) return;
     let cancelled = false;
     async function load() {
       setIsLoading(true);
@@ -2400,7 +2402,7 @@ export function TierListBrowsePage() {
       }
     });
     return () => { cancelled = true; };
-  }, [pick, showAdult, user?.id]);
+  }, [pick, showAdult, user?.id, isAuthLoading]);
 
   const entityMaps = useMemo(
     () => buildEntityMaps([...titles, ...songEntities]),
@@ -2758,7 +2760,7 @@ export function TierListTemplatePage() {
   const navigate = useNavigate();
   const { templateId } = useParams();
   const { pick } = useLanguage();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [songEntities, setSongEntities] = useState([]);
@@ -2769,6 +2771,7 @@ export function TierListTemplatePage() {
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
+    if (isAuthLoading) return;
     let cancelled = false;
     async function load() {
       setIsTemplateLoading(true);
@@ -2849,7 +2852,7 @@ export function TierListTemplatePage() {
     });
 
     return () => { cancelled = true; };
-  }, [pick, templateId, showAdult, user?.id]);
+  }, [pick, templateId, showAdult, user?.id, isAuthLoading]);
 
   const entityMaps = useMemo(() => buildEntityMaps([...titles, ...songEntities]), [songEntities, titles]);
   const titleById = useMemo(
@@ -3060,7 +3063,7 @@ export function TierListTemplatePage() {
 export function TierListCreatePage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult, toggleAdult } = useAgeGate();
   const [pagedEntries, setPagedEntries] = useState([]);
   const [catalogPage, setCatalogPage] = useState(1);
@@ -3089,8 +3092,9 @@ export function TierListCreatePage() {
 
   // Initialise library in background (no catalog needed)
   useEffect(() => {
+    if (isAuthLoading) return;
     loadTierLibrary([], { userId: user?.id || null, showAdult }).catch(() => { });
-  }, [showAdult, user?.id]);
+  }, [showAdult, user?.id, isAuthLoading]);
 
   // Debounce search query and reset to page 1
   useEffect(() => {
@@ -3954,7 +3958,7 @@ export function TierListPlayPage() {
   const { listId } = useParams();
   const navigate = useNavigate();
   const { pick } = useLanguage();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [library, setLibrary] = useState({ templates: [], lists: [] });
@@ -3964,6 +3968,7 @@ export function TierListPlayPage() {
   const [songEntityMap, setSongEntityMap] = useState(new Map());
 
   useEffect(() => {
+    if (isAuthLoading) return;
     let cancelled = false;
     async function load() {
       setLoadError('');
@@ -3973,15 +3978,22 @@ export function TierListPlayPage() {
       if (!cancelled) {
         setLibrary(initialLibrary);
       }
-      const quickList = findTierList(listId, initialLibrary);
-      if (!cancelled && quickList) {
-        setTierList(quickList);
-      }
 
-      const list = findTierList(listId, initialLibrary);
-      if (!list) {
+      const foundList = findTierList(listId, initialLibrary);
+      if (!foundList) {
         setLoadError(pick('ไม่พบ Tier List', 'Tier list not found'));
         return;
+      }
+
+      // Pool items are skipped in loadTierLibrary for performance — fetch them now for this specific list
+      const remotePoolIds = await loadListPoolItems(listId);
+      if (cancelled) return;
+      const list = remotePoolIds.length > 0
+        ? { ...foundList, poolTitleIds: remotePoolIds }
+        : foundList;
+
+      if (!cancelled) {
+        setTierList(list);
       }
       const sourceTemplate = list.templateId
         ? findTierTemplate(list.templateId, initialLibrary)
@@ -4056,16 +4068,16 @@ export function TierListPlayPage() {
       }
       if (cancelled) return;
 
+      let nextPlayableList = cleanedList;
+
       if (hasTierListStructureChanged(list, cleanedList)) {
         const cleanedLibrary = await saveTierList(cleanedList, initialLibrary, { userId: user?.id || null });
         if (cancelled) return;
         setLibrary(cleanedLibrary);
-        setTierList(findTierList(cleanedList.id, cleanedLibrary) || cleanedList);
-        return;
+        nextPlayableList = findTierList(cleanedList.id, cleanedLibrary) || cleanedList;
       }
 
-      let nextPlayableList = cleanedList;
-      setTierList(cleanedList);
+      setTierList(nextPlayableList);
 
       // Load song entities for song-type tier lists
       const resolvedEntityType = normalizeCatalogEntityType(
@@ -4110,7 +4122,7 @@ export function TierListPlayPage() {
       setLoadError(error?.message || pick('โหลด Tier List ไม่สำเร็จ', 'Failed to load tier list'));
     });
     return () => { cancelled = true; };
-  }, [listId, pick, showAdult, user?.id]);
+  }, [listId, pick, showAdult, user?.id, isAuthLoading]);
 
   const sourceTemplate = tierList?.templateId ? findTierTemplate(tierList.templateId, library) : null;
   const entityMaps = useMemo(() => buildEntityMaps(titles), [titles]);
