@@ -188,9 +188,10 @@ export async function fetchTitleCharacters(titleIds = []) {
   const idChunks = normalizedTitleIds.length > 0
     ? chunkIds(normalizedTitleIds)
     : [null];
-  const allCharacters = [];
 
-  for (const titleIdChunk of idChunks) {
+  // Fetch all chunks in parallel; pages within each chunk remain sequential
+  const chunkResults = await Promise.all(idChunks.map(async (titleIdChunk) => {
+    const rows = [];
     let lastRowId = null;
     let hasMore = true;
 
@@ -213,16 +214,18 @@ export async function fetchTitleCharacters(titleIds = []) {
       if (error) throw error;
 
       if (data?.length) {
-        allCharacters.push(...data);
+        rows.push(...data);
         lastRowId = data[data.length - 1].id;
         hasMore = data.length === SUPABASE_BATCH_SIZE;
       } else {
         hasMore = false;
       }
     }
-  }
 
-  return allCharacters;
+    return rows;
+  }));
+
+  return chunkResults.flat();
 }
 
 export function attachCharactersToTitles(titles = [], characterRows = []) {
@@ -972,14 +975,11 @@ function scoreSimilarityAgainstLiked(title, liked) {
   return Math.min(genreScore * 0.45 + tagScore * 0.30 + moodScore * 0.20 + typeBonus, 1);
 }
 
-function scoreSimilarity(title, likedTitleIds, allTitles) {
-  if (!likedTitleIds?.length) return 0;
+function scoreSimilarity(title, likedTitles) {
+  if (!likedTitles?.length) return 0;
 
-  const similarities = likedTitleIds
-    .map((likedTitleId) => {
-      const liked = allTitles.find((entry) => entry.id === likedTitleId);
-      return scoreSimilarityAgainstLiked(title, liked);
-    })
+  const similarities = likedTitles
+    .map((liked) => scoreSimilarityAgainstLiked(title, liked))
     .filter((value) => value > 0)
     .sort((a, b) => b - a);
 
@@ -1001,7 +1001,7 @@ function resolveLikedTitleIds(likedTitleId, likedTitleIds = []) {
   return [...new Set([likedTitleId, ...(likedTitleIds || [])].map(Number).filter(Boolean))];
 }
 
-function buildReason(title, moods, timeOption, likedTitleId, allTitles) {
+function buildReason(title, moods, timeOption, primaryLikedTitle) {
   const parts = [];
 
   if (moods?.length) {
@@ -1015,12 +1015,9 @@ function buildReason(title, moods, timeOption, likedTitleId, allTitles) {
   const eps = title.episodes || title.chapters || 0;
   if (eps > 0 && eps <= 13) parts.push(`เรื่องสั้น ${eps} ตอน/ตอนอ่าน`);
 
-  if (likedTitleId) {
-    const liked = allTitles.find((t) => t.id === likedTitleId);
-    if (liked) {
-      const sharedGenres = (title.genres || []).filter((genre) => (liked.genres || []).includes(genre));
-      if (sharedGenres.length) parts.push(`คล้าย ${liked.title_en || liked.title_th} ด้าน ${sharedGenres.join(', ')}`);
-    }
+  if (primaryLikedTitle) {
+    const sharedGenres = (title.genres || []).filter((genre) => (primaryLikedTitle.genres || []).includes(genre));
+    if (sharedGenres.length) parts.push(`คล้าย ${primaryLikedTitle.title_en || primaryLikedTitle.title_th} ด้าน ${sharedGenres.join(', ')}`);
   }
 
   if (title.status === 'completed') parts.push('จบแล้ว');
@@ -1029,23 +1026,19 @@ function buildReason(title, moods, timeOption, likedTitleId, allTitles) {
   return parts.join(' | ') || null;
 }
 
-function buildDebugBreakdown(title, moods, timeOption, resolvedLikedTitleIds, allTitles, recommendationState, weights) {
+function buildDebugBreakdown(title, moods, timeOption, likedTitles, primaryLikedTitle, recommendationState, weights) {
   const moodScore = scoreMoodMatch(title, moods);
   const genreScore = scoreGenreTagMatch(title, moods);
   const lengthScore = scoreLengthFit(title, timeOption);
   const qualityScore = scoreQuality(title);
-  const simScore = scoreSimilarity(title, resolvedLikedTitleIds, allTitles);
+  const simScore = scoreSimilarity(title, likedTitles);
   const freshnessScore = scoreFreshness(title);
   const matchedMoods = (moods || []).filter((mood) => matchesMoodSelection(title, mood));
-  const primaryLikedTitleId = resolvedLikedTitleIds[0] || null;
-  const likedTitle = primaryLikedTitleId
-    ? allTitles.find((entry) => entry.id === primaryLikedTitleId) || null
-    : null;
-  const sharedGenres = likedTitle
-    ? (title.genres || []).filter((genre) => (likedTitle.genres || []).includes(genre))
+  const sharedGenres = primaryLikedTitle
+    ? (title.genres || []).filter((genre) => (primaryLikedTitle.genres || []).includes(genre))
     : [];
-  const sharedTags = likedTitle
-    ? (title.tags || []).filter((tag) => (likedTitle.tags || []).includes(tag))
+  const sharedTags = primaryLikedTitle
+    ? (title.tags || []).filter((tag) => (primaryLikedTitle.tags || []).includes(tag))
     : [];
 
   return {
@@ -1125,13 +1118,18 @@ export async function recommend({
 
   const weights = resolveWeights(moods.length > 0, resolvedLikedTitleIds.length > 0);
 
+  // Pre-resolve liked titles once — avoids O(pool × liked × allTitles) find() inside the map
+  const allTitlesMap = new Map(allTitles.map((t) => [t.id, t]));
+  const likedTitles = resolvedLikedTitleIds.map((id) => allTitlesMap.get(id)).filter(Boolean);
+  const primaryLikedTitle = likedTitles[0] || null;
+
   const scored = pool.map((title) => {
     const breakdown = buildDebugBreakdown(
       title,
       moods,
       timeOption,
-      resolvedLikedTitleIds,
-      allTitles,
+      likedTitles,
+      primaryLikedTitle,
       recommendationState,
       weights
     );
@@ -1139,7 +1137,7 @@ export async function recommend({
     return {
       ...title,
       _score: breakdown.total,
-      _reason: buildReason(title, moods, timeOption, resolvedLikedTitleIds[0] || null, allTitles),
+      _reason: buildReason(title, moods, timeOption, primaryLikedTitle),
       ...(debug ? { _debug: breakdown } : {}),
     };
   });

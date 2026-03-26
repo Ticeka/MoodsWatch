@@ -25,7 +25,7 @@ const TITLE_SCAN_SELECT = `
   origin_country,
   popularity_score,
   cover_image,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary),
+  aliases:aliases_cache,
   source_refs:title_source_refs(provider, external_id)
 `;
 

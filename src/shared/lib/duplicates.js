@@ -23,7 +23,7 @@ export const DUPLICATE_CANDIDATE_SELECT = `
     popularity_score,
     cover_image,
     is_adult,
-    aliases:title_aliases(alias, language_code, alias_type, is_primary),
+    aliases:aliases_cache,
     source_refs:title_source_refs(provider, external_id)
   ),
   title_b:canonical_titles!duplicate_candidates_title_b_id_fkey(
@@ -37,7 +37,7 @@ export const DUPLICATE_CANDIDATE_SELECT = `
     popularity_score,
     cover_image,
     is_adult,
-    aliases:title_aliases(alias, language_code, alias_type, is_primary),
+    aliases:aliases_cache,
     source_refs:title_source_refs(provider, external_id)
   )
 `;

@@ -15,7 +15,7 @@ const EXPORT_TITLE_SELECT = `
   canonical_title,
   type,
   subtype,
-  aliases:title_aliases(alias, language_code, alias_type, is_primary)
+  aliases:aliases_cache
 `;
 
 function getAdminPrimaryTitle(record) {

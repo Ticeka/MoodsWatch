@@ -29,7 +29,7 @@ export const EDITOR_COLLECTION_SELECT = `
       cover_image,
       avg_score,
       popularity_score,
-      aliases:title_aliases(alias, language_code, alias_type, is_primary)
+      aliases:aliases_cache
     )
   )
 `;
@@ -98,7 +98,7 @@ export const HOMEPAGE_BLOCK_PUBLIC_SELECT = `
         cover_image,
         avg_score,
         popularity_score,
-        aliases:title_aliases(alias, language_code, alias_type, is_primary)
+        aliases:aliases_cache
       )
     )
   )

@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Mail, Lock, UserRound, Sparkles } from 'lucide-react';
-import { Button } from '@/shared/components/ui/Button';
-import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
+import { Mail, Lock, UserRound, Sparkles, ArrowLeft } from 'lucide-react';
+import { BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
+import lightThemeBg from '@/assets/ligh-theme.jpeg';
+import darkThemeBg from '@/assets/dark-theme.jpg';
+import { useTheme } from '@/shared/contexts/ThemeContext';
 import './Auth.css';
 
 export function Auth() {
   const { signInWithEmail, signUpWithEmail, user, isLoading } = useAuth();
+  const { theme } = useTheme();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,6 +22,8 @@ export function Auth() {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const isDark = theme === 'dark';
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -51,131 +56,150 @@ export function Auth() {
 
   if (isLoading) {
     return (
-      <section className="auth-page auth-loading-state">
-        <div className="container">
-          <div className="auth-shell glass-heavy">
-            <p>{t('auth.loadingUser')}</p>
-          </div>
+      <div className="auth-root">
+        <div className="auth-loading">
+          <div className="auth-loading-spinner" />
+          <p>{t('auth.loadingUser')}</p>
         </div>
-      </section>
+      </div>
     );
   }
 
-  if (user) {
-    return null;
-  }
+  if (user) return null;
 
   return (
-    <section className="auth-page">
-      <div className="auth-orb auth-orb-left" />
-      <div className="auth-orb auth-orb-right" />
+    <div className="auth-root">
+      {/* Left decorative panel */}
+      <div className="auth-panel-left">
+        <div
+          className={`auth-panel-bg ${isDark ? 'is-hidden' : 'is-active'}`}
+          style={{ backgroundImage: `url(${lightThemeBg})` }}
+          aria-hidden="true"
+        />
+        <div
+          className={`auth-panel-bg ${isDark ? 'is-active' : 'is-hidden'}`}
+          style={{ backgroundImage: `url(${darkThemeBg})` }}
+          aria-hidden="true"
+        />
 
-      <div className="container auth-layout">
-        <div className="auth-story animate-fade-in-up">
-          <span className="auth-kicker">
-            <Sparkles size={14} />
-            {BRAND_NAME}
+        <div className="auth-brand">
+          <span className="auth-brand-icon">
+            <Sparkles size={20} />
           </span>
-          <h1>{isLogin ? t('auth.signIn') : t('auth.signUp')}</h1>
-          <p>
-            {t('auth.storyDescription')}
-          </p>
-          <div className="auth-story-pills">
-            <span>{t('auth.storyPillWatchlist')}</span>
-            <span>{t('auth.storyPillFavorites')}</span>
-            <span>{t('auth.storyPillRecommendations')}</span>
-          </div>
-          <Link to="/" className="auth-back-link">
-            {t('titleDetail.backHome')}
-          </Link>
+          <span className="auth-brand-name">
+            {BRAND_WORDMARK_LEAD}
+            <span className="auth-brand-accent">{BRAND_WORDMARK_ACCENT}</span>
+          </span>
         </div>
 
-        <div className="auth-shell glass-heavy animate-scale-in">
-          <div className="auth-card-bar" />
+        <div className="auth-panel-footer-dots">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
 
-          <div className="auth-mobile-brand">
-            <span className="logo-icon logo-icon-sm"><Sparkles size={15} /></span>
-            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
+      {/* Right form panel */}
+      <div className="auth-panel-right">
+        <Link to="/" className="auth-back">
+          <ArrowLeft size={16} />
+          {t('titleDetail.backHome')}
+        </Link>
+
+        <div className="auth-form-wrapper animate-auth-in">
+          <div className="auth-form-head">
+            <p className="auth-eyebrow">
+              {isLogin ? t('auth.signIn') : t('auth.signUp')}
+            </p>
+            <h2>{isLogin ? t('auth.welcomeBack') : t('auth.createCozyAccount')}</h2>
+            <p className="auth-subhead">
+              {isLogin ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
+              <button type="button" className="auth-toggle-link" onClick={() => setIsLogin((v) => !v)}>
+                {isLogin ? t('auth.signUpNow') : t('auth.signInNow')}
+              </button>
+            </p>
           </div>
 
-          <div className="auth-shell-head">
-            <div>
-              <span className="auth-panel-eyebrow">{isLogin ? t('auth.signIn') : t('auth.signUp')}</span>
-              <h2>{isLogin ? t('auth.welcomeBack') : t('auth.createCozyAccount')}</h2>
+          {error && (
+            <div className="auth-error">
+              <span className="auth-error-dot" />
+              {error}
             </div>
-            <button
-              type="button"
-              className="auth-switch"
-              onClick={() => setIsLogin((current) => !current)}
-            >
-              {isLogin ? t('auth.signUpNow') : t('auth.signInNow')}
-            </button>
-          </div>
-
-          {error && <div className="auth-error">{error}</div>}
+          )}
 
           <form className="auth-form" onSubmit={handleSubmit}>
             {!isLogin && (
-              <label className="auth-field">
-                <span>{t('auth.username')}</span>
-                <div className="auth-input-shell">
-                  <UserRound size={18} />
+              <div className="auth-field">
+                <label className="auth-field-label">{t('auth.username')}</label>
+                <div className="auth-input-wrap">
+                  <UserRound size={17} className="auth-input-icon" />
                   <input
                     type="text"
                     value={username}
-                    onChange={(event) => setUsername(event.target.value)}
+                    onChange={(e) => setUsername(e.target.value)}
                     required={!isLogin}
                     placeholder={t('auth.usernamePlaceholder')}
                   />
                 </div>
-              </label>
+              </div>
             )}
 
-            <label className="auth-field">
-              <span>{t('auth.email')}</span>
-              <div className="auth-input-shell">
-                <Mail size={18} />
+            <div className="auth-field">
+              <label className="auth-field-label">{t('auth.email')}</label>
+              <div className="auth-input-wrap">
+                <Mail size={17} className="auth-input-icon" />
                 <input
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder={t('auth.emailPlaceholder')}
                 />
               </div>
-            </label>
+            </div>
 
-            <label className="auth-field">
-              <span>{t('auth.password')}</span>
-              <div className="auth-input-shell">
-                <Lock size={18} />
+            <div className="auth-field">
+              <div className="auth-field-row">
+                <label className="auth-field-label">{t('auth.password')}</label>
+                {isLogin && (
+                  <button type="button" className="auth-forgot">
+                    {t('auth.forgotPassword') || 'Forgot password?'}
+                  </button>
+                )}
+              </div>
+              <div className="auth-input-wrap">
+                <Lock size={17} className="auth-input-icon" />
                 <input
                   type="password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
                   placeholder={t('auth.passwordHint')}
                 />
               </div>
-            </label>
+            </div>
 
-            <Button type="submit" size="lg" fullWidth disabled={loading}>
+            <button type="submit" className="auth-submit" disabled={loading}>
               {loading
-                ? (isLogin ? t('common.loading') : t('auth.creating'))
-                : (isLogin ? t('auth.signIn') : t('auth.signUp'))}
-            </Button>
+                ? isLogin
+                  ? t('common.loading')
+                  : t('auth.creating')
+                : isLogin
+                  ? t('auth.signIn')
+                  : t('auth.signUp')}
+            </button>
           </form>
 
           <p className="auth-footnote">
             {isLogin ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
-            <button type="button" onClick={() => setIsLogin((current) => !current)}>
+            <button type="button" className="auth-toggle-link" onClick={() => setIsLogin((v) => !v)}>
               {isLogin ? t('auth.signUpNow') : t('auth.signInNow')}
             </button>
           </p>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 

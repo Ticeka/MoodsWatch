@@ -19,7 +19,7 @@ export const CONTENT_REPORT_SELECT = `
     type,
     subtype,
     cover_image,
-    aliases:title_aliases(alias, language_code, alias_type, is_primary)
+    aliases:aliases_cache
   )
 `;
 

@@ -90,7 +90,7 @@ export function AdminCollections() {
           .order('updated_at', { ascending: false }),
         supabase
           .from('canonical_titles')
-          .select('id, canonical_title, type, subtype, aliases:title_aliases(alias, language_code, alias_type, is_primary)')
+          .select('id, canonical_title, type, subtype, aliases:aliases_cache')
           .order('popularity_score', { ascending: false, nullsFirst: false })
           .limit(200),
       ]);
