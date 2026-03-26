@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, BarChart3, CalendarDays, Copy, ExternalLink, Music, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Copy, ExternalLink, Music, RotateCcw, Swords, Trash2, Play, Search, Layers, Trophy, Medal, Crown, Plus, Wand2, Sparkles, Globe, Lock } from 'lucide-react';
 import { getAllTitles, getTitleBySlug, fetchTitleCharacters } from '@/features/discover/lib/recommend';
 import {
   buildBattleDeck,
@@ -759,6 +759,68 @@ function BattlePresetCardSkeleton() {
   );
 }
 
+function BattlePresetRow({ preset, deck, disabled, onApply }) {
+  const { t } = useLanguage();
+  const canStart = (deck?.titles?.length || 0) >= 8;
+  const artTile = deck?.titles?.[0];
+
+  return (
+    <button
+      type="button"
+      className={`battle-preset-row${!canStart ? ' is-disabled' : ''}`}
+      onClick={() => onApply(preset, deck)}
+      disabled={disabled || !canStart}
+    >
+      <div className="battle-preset-row-art">
+        {artTile ? (
+          <img src={getTitleArtwork(artTile)} alt="" loading="lazy" />
+        ) : (
+          <Play size={16} />
+        )}
+      </div>
+      <div className="battle-preset-row-info">
+        <strong>{preset.label}</strong>
+        <span>{(preset.filters.type || 'all').toUpperCase()} · {t('battle.titlesReady', { count: deck?.titles?.length || 0 })}</span>
+      </div>
+      <span className="battle-preset-row-cta">
+        {disabled ? '···' : canStart ? t('battle.startInstantly') : t('battle.needMoreTitles')}
+      </span>
+    </button>
+  );
+}
+
+function BattleSavedDeckRow({ deck, disabled, onStart }) {
+  const { t } = useLanguage();
+  const canStart = (deck?.titles?.length || 0) >= 8;
+  const artTile = deck?.titles?.[0];
+  const ownerLabel = deck?.ownerUsername || deck?.ownerDisplayName || '';
+
+  return (
+    <div className={`battle-preset-row${!canStart ? ' is-disabled' : ''}`}>
+      <div className="battle-preset-row-art">
+        {artTile ? (
+          <img src={getTitleArtwork(artTile)} alt="" loading="lazy" />
+        ) : (
+          <Play size={16} />
+        )}
+      </div>
+      <div className="battle-preset-row-info">
+        <strong>{deck.label}</strong>
+        <span>{ownerLabel ? t('battle.publicDeckBy', { owner: ownerLabel }) : getBattleDeckMeta(deck)}</span>
+      </div>
+      <button
+        type="button"
+        className="battle-preset-row-cta-btn"
+        onClick={() => onStart(deck)}
+        disabled={disabled || !canStart}
+      >
+        <Play size={13} />
+        {t('battle.startInstantly')}
+      </button>
+    </div>
+  );
+}
+
 function BattleSlotCardSkeleton() {
   return (
     <div className="battle-slot-card-skeleton" aria-hidden="true">
@@ -927,6 +989,10 @@ export function BattleHub() {
   const [recentSessions, setRecentSessions] = useState([]);
   const [savedDecks, setSavedDecks] = useState([]);
   const [publicDecks, setPublicDecks] = useState([]);
+  const [publicDecksPage, setPublicDecksPage] = useState(0);
+  const [hasNextPublicPage, setHasNextPublicPage] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const PUBLIC_DECK_PAGE_SIZE = 8;
 
   useEffect(() => {
     let cancelled = false;
@@ -938,7 +1004,7 @@ export function BattleHub() {
         const [allTitles, remoteSessions, remotePublicDecks] = await Promise.all([
           getAllTitles({ maxRows: Number.POSITIVE_INFINITY }),
           user?.id ? fetchRemoteBattleSessions(user.id).catch(() => []) : Promise.resolve([]),
-          fetchPublicBattleDecks().catch(() => []),
+          fetchPublicBattleDecks({ limit: PUBLIC_DECK_PAGE_SIZE + 1, offset: 0 }).catch(() => []),
         ]);
         if (!cancelled) {
           setTitles(allTitles);
@@ -949,7 +1015,10 @@ export function BattleHub() {
           });
           setRecentSessions(getStoredBattleSessions());
           setSavedDecks(getStoredBattleDecks());
-          setPublicDecks(remotePublicDecks);
+          const hasNext = remotePublicDecks.length > PUBLIC_DECK_PAGE_SIZE;
+          setPublicDecks(hasNext ? remotePublicDecks.slice(0, PUBLIC_DECK_PAGE_SIZE) : remotePublicDecks);
+          setHasNextPublicPage(hasNext);
+          setPublicDecksPage(0);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -957,6 +1026,7 @@ export function BattleHub() {
           setRecentSessions(getStoredBattleSessions());
           setSavedDecks(getStoredBattleDecks());
           setPublicDecks([]);
+          setHasNextPublicPage(false);
         }
       } finally {
         if (!cancelled) {
@@ -970,6 +1040,25 @@ export function BattleHub() {
       cancelled = true;
     };
   }, [user?.id]);
+
+  const handlePublicDecksPage = async (newPage) => {
+    if (isLoadingMore || newPage < 0) return;
+    setIsLoadingMore(true);
+    try {
+      const fetched = await fetchPublicBattleDecks({
+        limit: PUBLIC_DECK_PAGE_SIZE + 1,
+        offset: newPage * PUBLIC_DECK_PAGE_SIZE,
+      });
+      const hasNext = fetched.length > PUBLIC_DECK_PAGE_SIZE;
+      setPublicDecks(hasNext ? fetched.slice(0, PUBLIC_DECK_PAGE_SIZE) : fetched);
+      setHasNextPublicPage(hasNext);
+      setPublicDecksPage(newPage);
+    } catch {
+      // silently fail — page stays
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const deckOptions = useMemo(() => ({
     hiddenTitleIds,
@@ -1070,86 +1159,63 @@ export function BattleHub() {
 
   return (
     <div className="battle-page">
-      <section className="battle-hero container">
-        <div className="battle-hero-copy">
-          <span className="battle-kicker">{t('battle.mode')}</span>
-          <h1>{t('battle.heroTitle')}</h1>
-          <p>{t('battle.heroSubtitle')}</p>
-          <div className="battle-hero-actions">
+      {/* ── Compact Header ── */}
+      <div className="battle-hub-header-wrap">
+      <div className="battle-hub-header container">
+        <div className="battle-hub-header-content">
+          <div>
+            <h1 className="battle-hub-title">
+              <Swords size={20} />
+              {t('battle.heroTitle')}
+            </h1>
+            <p className="battle-hub-subtitle">{t('battle.heroSubtitle')}</p>
+          </div>
+          <div className="battle-hub-header-actions">
             <Link className="btn btn-primary" to="/battle/build">
-              <Plus size={16} />
-              <span>{t('battle.buildDeck')}</span>
+              <Plus size={15} />
+              {t('battle.buildDeck')}
             </Link>
             <Link className="btn btn-secondary" to="/battle/decks">
-              <Layers size={16} />
-              <span>{t('battle.manageDecks')}</span>
+              <Layers size={15} />
+              {t('battle.manageDecks')}
             </Link>
           </div>
         </div>
-        <div className="battle-hero-panel glass-heavy">
-          {isLoading ? (
-            <>
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="battle-hero-stat" aria-hidden="true">
-                  <div className="battle-skeleton-block" style={{ height: '1.75rem', width: '3.5rem', borderRadius: '6px' }} />
-                  <div className="battle-skeleton-block" style={{ height: '0.85rem', width: '6rem', borderRadius: '5px', marginTop: '0.1rem' }} />
-                </div>
-              ))}
-            </>
-          ) : (
-            <>
-              <div className="battle-hero-stat">
-                <strong>{readyPresetDecks.length + publicSavedDecks.length}</strong>
-                <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.readyDecks')}</span>
-              </div>
-              <div className="battle-hero-stat">
-                <strong>{recentSessions.length}</strong>
-                <span><Swords size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.savedRuns')}</span>
-              </div>
-              <div className="battle-hero-stat">
-                <strong>{visibleCatalogTitles.length}</strong>
-                <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.visibleCatalogTitles')}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* ── Hub Shortcuts ── */}
-      <section className="container battle-hub-shortcuts">
-        <Link to="/battle/daily" className="battle-hub-shortcut-card battle-hub-shortcut-daily">
-          <CalendarDays size={28} className="battle-hub-shortcut-icon" />
-          <div className="battle-hub-shortcut-body">
-            <span className="battle-hub-shortcut-eyebrow">{t('dailyChallenge.eyebrow')}</span>
-            <span className="battle-hub-shortcut-title">{t('dailyChallenge.todayTheme')}</span>
+        {!isLoading && (
+          <div className="battle-hub-stats">
+            <span><Layers size={12} /> {readyPresetDecks.length + publicSavedDecks.length} {t('battle.readyDecks')}</span>
+            <span><Swords size={12} /> {recentSessions.length} {t('battle.savedRuns')}</span>
+            <span><Play size={12} /> {visibleCatalogTitles.length} {t('battle.visibleCatalogTitles')}</span>
           </div>
-          <span className="battle-hub-shortcut-arrow">→</span>
-        </Link>
-        <Link to="/battle/leaderboard" className="battle-hub-shortcut-card battle-hub-shortcut-leaderboard">
-          <Trophy size={28} className="battle-hub-shortcut-icon" />
-          <div className="battle-hub-shortcut-body">
-            <span className="battle-hub-shortcut-eyebrow">{t('leaderboard.eyebrow')}</span>
-            <span className="battle-hub-shortcut-title">{t('leaderboard.title')}</span>
-          </div>
-          <span className="battle-hub-shortcut-arrow">→</span>
-        </Link>
-      </section>
+        )}
+      </div>
+      </div>
 
-      <section className="container battle-section">
-        <div className="battle-section-head">
-          <h2>{t('battle.quickPresets')}</h2>
-          <p>{t('battle.quickPresetsHint')}</p>
-        </div>
+      {/* ── Quick Nav Pills ── */}
+      <div className="container battle-hub-nav">
+        <Link to="/battle/daily" className="battle-hub-nav-item">
+          <CalendarDays size={15} />
+          {t('dailyChallenge.todayTheme')}
+        </Link>
+        <Link to="/battle/leaderboard" className="battle-hub-nav-item">
+          <Trophy size={15} />
+          {t('leaderboard.title')}
+        </Link>
+      </div>
+
+      {/* ── Quick Presets ── */}
+      <div className="container battle-hub-section">
+        <h2 className="battle-hub-section-title">{t('battle.quickPresets')}</h2>
         {isLoading || isComputingPresets ? (
-          <div className="battle-preset-grid">
-            {[0, 1, 2, 3].map((i) => <BattlePresetCardSkeleton key={i} />)}
+          <div className="battle-preset-list">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="battle-preset-row-skeleton battle-skeleton-block" />)}
           </div>
         ) : readyPresetDecks.length === 0 ? (
-          <div className="glass-heavy battle-empty-state">{t('battle.noPresetReady')}</div>
+          <p className="battle-hub-empty">{t('battle.noPresetReady')}</p>
         ) : (
-          <div className="battle-preset-grid">
+          <div className="battle-preset-list">
             {readyPresetDecks.map(({ preset, deck }) => (
-              <BattlePresetCard
+              <BattlePresetRow
                 key={preset.id}
                 preset={preset}
                 deck={deck}
@@ -1159,27 +1225,48 @@ export function BattleHub() {
             ))}
           </div>
         )}
-      </section>
+      </div>
 
-      <section className="container battle-section">
-        <div className="battle-section-head">
-          <h2>{t('battle.publicDecks')}</h2>
-          <p>{t('battle.publicDecksHint')}</p>
+      {/* ── Public Decks ── */}
+      <div className="container battle-hub-section">
+        <div className="battle-hub-section-header">
+          <h2 className="battle-hub-section-title">{t('battle.publicDecks')}</h2>
+          {(publicDecksPage > 0 || hasNextPublicPage) && !isLoading && (
+            <div className="battle-hub-pagination">
+              <button
+                type="button"
+                className="battle-hub-page-btn"
+                onClick={() => handlePublicDecksPage(publicDecksPage - 1)}
+                disabled={publicDecksPage === 0 || isLoadingMore}
+                aria-label="หน้าก่อนหน้า"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="battle-hub-page-label">{publicDecksPage + 1}</span>
+              <button
+                type="button"
+                className="battle-hub-page-btn"
+                onClick={() => handlePublicDecksPage(publicDecksPage + 1)}
+                disabled={!hasNextPublicPage || isLoadingMore}
+                aria-label="หน้าถัดไป"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
         {isLoading ? (
-          <div className="battle-preset-grid battle-preset-grid-compact">
-            {[0, 1, 2, 3].map((i) => <BattlePresetCardSkeleton key={i} />)}
+          <div className="battle-preset-list">
+            {[0, 1, 2].map((i) => <div key={i} className="battle-preset-row-skeleton battle-skeleton-block" />)}
           </div>
         ) : publicSavedDecks.length === 0 ? (
-          <div className="glass-heavy battle-empty-state">
-            <strong>{t('battle.noPublicDeck')}</strong>
-            <p>{t('battle.publicDeckEmptyHint')}</p>
-            <Link className="btn btn-secondary" to="/battle/decks">{t('battle.manageDecks')}</Link>
-          </div>
+          <p className="battle-hub-empty">
+            {t('battle.noPublicDeck')} <Link to="/battle/decks" className="battle-hub-empty-link">{t('battle.manageDecks')}</Link>
+          </p>
         ) : (
-          <div className="battle-preset-grid battle-preset-grid-compact">
+          <div className={`battle-preset-list${isLoadingMore ? ' is-paging' : ''}`}>
             {publicSavedDecks.map((deck) => (
-              <BattleSavedDeckPresetCard
+              <BattleSavedDeckRow
                 key={deck.id}
                 deck={deck}
                 disabled={isLoading || Boolean(error)}
@@ -1188,8 +1275,7 @@ export function BattleHub() {
             ))}
           </div>
         )}
-      </section>
-
+      </div>
     </div>
   );
 }

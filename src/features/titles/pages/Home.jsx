@@ -610,7 +610,11 @@ export function Home() {
                 <span className="btn-text">{heroCtaLabel}</span>
               </Link>
             ) : (
-              <Button size="lg" icon={<Sparkles size={18} />} onClick={() => document.getElementById('finder-section').scrollIntoView({ behavior: 'smooth' })}>
+              <Button size="lg" icon={<Sparkles size={18} />} onClick={() => {
+                const el = document.getElementById('finder-section');
+                if (!el) return;
+                window.scrollTo({ top: el.offsetTop, behavior: 'smooth' });
+              }}>
                 {heroCtaLabel}
               </Button>
             )}

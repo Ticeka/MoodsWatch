@@ -474,7 +474,7 @@ export async function fetchBattleCommunityRollup(deckFingerprint) {
   return data || null;
 }
 
-export async function fetchPublicBattleDecks({ limit = 24 } = {}) {
+export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
   if (!supabase) {
     return [];
   }
@@ -483,7 +483,7 @@ export async function fetchPublicBattleDecks({ limit = 24 } = {}) {
     .from('battle_public_decks')
     .select('*')
     .order('updated_at', { ascending: false })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
 
   if (error) {
     if (isMissingRelation(error, 'battle_public_decks')) {

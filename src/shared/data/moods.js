@@ -56,12 +56,12 @@ export const MOODS = [
   },
   {
     id: 'op-mc',
-    name_th: 'พระเอกโหด',
-    name_en: 'OP Hero',
+    name_th: 'พระเอกเก่ง',
+    name_en: 'Exceptional Lead',
     icon: '⚡',
     color: '#a78bfa',
-    description: 'พระเอกแกร่งสุดๆ ดูแล้วสะใจ',
-    tags: ['overpowered mc', 'power fantasy'],
+    description: 'ตัวเอกเด่นมากทั้งสายพลัง มันสมอง หรือทักษะเฉพาะทาง',
+    tags: ['overpowered mc', 'power fantasy', 'genius mc', 'mind games', 'prodigy'],
     matchMode: 'explicit',
   },
   {

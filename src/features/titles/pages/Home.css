@@ -143,6 +143,7 @@ body.home-scroll-snap {
   padding-bottom: 6rem;
   scroll-snap-align: start;
   scroll-snap-stop: always;
+  scroll-margin-top: var(--header-height, 80px);
 }
 
 .glass-panel {

@@ -316,9 +316,14 @@ export function matchesMoodSelection(title, moodId) {
     return false;
   }
 
+  // Always honour explicit DB tags regardless of explicit/fuzzy or adult flag
+  if ((title?.moods || []).includes(moodId)) {
+    return true;
+  }
+
   return isExplicitMood(moodId)
     ? matchesExplicitMoodFallback(title, moodId)
-    : (title?.moods || []).includes(moodId);
+    : false;
 }
 
 function storeTitlesInCaches(titles) {

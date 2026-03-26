@@ -15,7 +15,7 @@ const TITLES = [
     banner: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-wf37VakJmZqs.jpg',
     score: 88, popularity: 300000, status: 'ongoing', year: 1999, episodes: 1100, duration: 24,
     genres: ['action', 'adventure', 'comedy', 'fantasy'], tags: ['pirate', 'shounen', 'friendship', 'world-building', 'power fantasy'],
-    moods: ['hype', 'funny', 'light', 'fantasy-escape'], season: 'fall',
+    moods: ['hype', 'funny', 'op-mc', 'fantasy-escape'], season: 'fall',
     platforms: [{ name: 'Crunchyroll', url: '#' }, { name: 'Netflix', url: '#' }],
   },
   {
@@ -24,7 +24,7 @@ const TITLES = [
     banner: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/1535.jpg',
     score: 85, popularity: 400000, status: 'completed', year: 2006, episodes: 37, duration: 23,
     genres: ['mystery', 'psychological', 'thriller'], tags: ['detective', 'mind games', 'cat and mouse', 'supernatural'],
-    moods: ['dark', 'thrilling', 'mystery', 'serious'], season: 'fall',
+    moods: ['dark', 'thrilling', 'mystery', 'serious', 'op-mc'], season: 'fall',
     platforms: [{ name: 'Netflix', url: '#' }, { name: 'Crunchyroll', url: '#' }],
   },
   {
@@ -60,7 +60,7 @@ const TITLES = [
     banner: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/108465-tMCMsDI2CWKB.jpg',
     score: 85, popularity: 200000, status: 'ongoing', year: 2021, episodes: 35, duration: 24,
     genres: ['adventure', 'drama', 'fantasy'], tags: ['isekai', 'magic', 'world-building', 'coming of age'],
-    moods: ['fantasy-escape', 'coming-of-age', 'serious'], season: 'winter',
+    moods: ['fantasy-escape', 'coming-of-age', 'serious', 'op-mc'], season: 'winter',
     platforms: [{ name: 'Crunchyroll', url: '#' }],
   },
   {
@@ -207,7 +207,7 @@ const TITLES = [
     title_native: 'ベルセルク', synopsis: 'นักรบที่ถูกทรยศเดินทางล้างแค้นในโลกมืดมิด', cover: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30002-7EzO7o21jEMn.jpg',
     banner: '', score: 94, popularity: 180000, status: 'ongoing', year: 1989, chapters: 380, volumes: 42,
     genres: ['action', 'adventure', 'drama', 'fantasy', 'horror'], tags: ['dark fantasy', 'gore', 'revenge', 'medieval'],
-    moods: ['dark', 'hype', 'serious'], platforms: [],
+    moods: ['dark', 'hype', 'serious', 'op-mc'], platforms: [],
   },
   {
     id: 105, slug: 'spy-x-family-manga', type: 'manga', title_en: 'SPY×FAMILY (Manga)', title_th: 'สปาย × แฟมิลี่ (มังงะ)',
