@@ -1,4 +1,4 @@
-import { loadTierLibrary } from '@/features/tierlist/lib/tierlistStore';
+// loadTierLibrary removed — tierlists are now searched directly via DB
 import { supabase } from '@/shared/lib/supabase';
 import { buildTitleSearchCandidates, getAllTitles, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { BRAND_NAME } from '@/shared/config/brand';
@@ -8,7 +8,7 @@ import { getSearchIntent, sortBySearchRelevance, textMatchesQuery } from '@/feat
 
 const PROFILE_SELECT = 'id, name, username, avatar_url, bio, favorite_moods, created_at';
 const POST_AUTHOR_SELECT = 'id, name, username, avatar_url';
-const TIERLIST_CACHE_TTL_MS = 2 * 60 * 1000;
+const TIERLIST_DB_FETCH_LIMIT = 24; // over-fetch before ranking/slice
 const POST_DEFAULT_SAMPLE_LIMIT = 24;
 const POST_SELECT = `
   id,
@@ -20,7 +20,8 @@ const POST_SELECT = `
   title:canonical_titles(${CANONICAL_TITLE_BROWSE_SELECT})
 `;
 
-const tierlistLibraryCache = new Map();
+const tierlistResultCache = new Map(); // key → { data, ts }
+const tierlistInflight    = new Map(); // key → Promise
 
 // ── Entity result cache + in-flight deduplication ───────────────────────────
 // Both Header and Discover mount simultaneously with the same query, so they
@@ -63,86 +64,76 @@ function sanitizeSearchTerm(value) {
   return String(value || '').trim().replace(/[%_,]/g, '');
 }
 
-function normalizeTierlistEntries(library = {}) {
-  const templates = (library.templates || []).map((template) => ({
-    id: template.id,
+const TEMPLATE_SELECT = 'id, title, description, category, is_public, is_system, plays, title_ids, updated_at';
+const LIST_SEARCH_SELECT = 'id, title, description, is_public, play_count, owner_name, owner_username, updated_at';
+
+async function _fetchTierlists(query, userId) {
+  if (!supabase) return [];
+  const wildcard = `%${query}%`;
+
+  const [templateRes, publicListRes, ownListRes] = await Promise.all([
+    supabase
+      .from('tierlist_templates')
+      .select(TEMPLATE_SELECT)
+      .eq('is_public', true)
+      .or(`title.ilike.${wildcard},description.ilike.${wildcard}`)
+      .order('plays', { ascending: false })
+      .limit(TIERLIST_DB_FETCH_LIMIT),
+    supabase
+      .from('tierlist_lists')
+      .select(LIST_SEARCH_SELECT)
+      .eq('is_public', true)
+      .or(`title.ilike.${wildcard},description.ilike.${wildcard},owner_name.ilike.${wildcard},owner_username.ilike.${wildcard}`)
+      .order('play_count', { ascending: false })
+      .limit(TIERLIST_DB_FETCH_LIMIT),
+    userId
+      ? supabase
+          .from('tierlist_lists')
+          .select(LIST_SEARCH_SELECT)
+          .eq('owner_user_id', userId)
+          .or(`title.ilike.${wildcard},description.ilike.${wildcard}`)
+          .limit(Math.ceil(TIERLIST_DB_FETCH_LIMIT / 2))
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const templates = (templateRes.data || []).map((row) => ({
+    id: row.id,
     kind: 'template',
-    title: template.title,
-    description: template.description,
-    category: template.category,
-    ownerName: template.isSystem ? BRAND_NAME : null,
+    title: row.title,
+    description: row.description || '',
+    category: row.category || 'general',
+    ownerName: row.is_system ? BRAND_NAME : null,
     ownerUsername: null,
-    isPublic: template.isPublic,
-    itemCount: Array.isArray(template.titleIds) ? template.titleIds.length : 0,
-    coverTitleId: Array.isArray(template.titleIds) ? template.titleIds[0] : null,
-    playCount: Number(template.plays || 0),
-    updatedAt: template.updatedAt,
-    href: `/tierlist/template/${template.id}`,
+    coverTitleId: Array.isArray(row.title_ids) && row.title_ids.length > 0 ? row.title_ids[0] : null,
+    playCount: Number(row.plays || 0),
+    updatedAt: row.updated_at,
+    href: `/tierlist/template/${row.id}`,
   }));
 
-  const lists = (library.lists || []).map((list) => {
-    const listItems = [
-      ...(list.rows || []).flatMap((row) => row.titleIds || []),
-      ...(list.poolTitleIds || []),
-    ];
-    return {
-      id: list.id,
-      kind: 'list',
-      title: list.title,
-      description: list.description,
-      category: 'community',
-      ownerName: list.ownerName || null,
-      ownerUsername: list.ownerUsername || null,
-      isPublic: list.isPublic,
-      itemCount: listItems.length,
-      coverTitleId: listItems[0] || null,
-      playCount: Number(list.playCount || 0),
-      updatedAt: list.updatedAt,
-      href: `/tierlist/play/${list.id}`,
-    };
+  const toListEntry = (row) => ({
+    id: row.id,
+    kind: 'list',
+    title: row.title,
+    description: row.description || '',
+    category: 'community',
+    ownerName: row.owner_name || null,
+    ownerUsername: row.owner_username || null,
+    // coverTitleId not available without fetching rows; resolved below if cache is warm
+    coverTitleId: null,
+    playCount: Number(row.play_count || 0),
+    updatedAt: row.updated_at,
+    href: `/tierlist/play/${row.id}`,
   });
 
-  return [...lists, ...templates];
-}
+  const seen = new Set();
+  const lists = [
+    ...(publicListRes.data || []),
+    ...(ownListRes.data || []),
+  ]
+    .filter((row) => { if (seen.has(row.id)) return false; seen.add(row.id); return true; })
+    .map(toListEntry);
 
-function sortTierlistEntries(entries = []) {
-  return [...entries].sort((a, b) => {
-    const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
-    if (updatedDelta !== 0) return updatedDelta;
-
-    return Number(b.playCount || 0) - Number(a.playCount || 0);
-  });
-}
-
-function matchesTierlistQuery(entry, query) {
-  if (!query || query.length < 2) {
-    return true;
-  }
-
-  return (
-    textMatchesQuery(entry.title, query, { allowTypo: true }) ||
-    textMatchesQuery(entry.ownerName, query, { allowTypo: true }) ||
-    textMatchesQuery(entry.ownerUsername, query, { allowTypo: true }) ||
-    textMatchesQuery(entry.category, query) ||
-    textMatchesQuery(entry.kind, query) ||
-    textMatchesQuery(entry.description, query)
-  );
-}
-
-async function getCachedTierlistLibrary(userId = null) {
-  const cacheKey = userId || 'anon';
-  const cached = tierlistLibraryCache.get(cacheKey);
-
-  if (cached && (Date.now() - cached.timestamp) < TIERLIST_CACHE_TTL_MS) {
-    return cached.library;
-  }
-
-  const library = await loadTierLibrary([], { userId });
-  tierlistLibraryCache.set(cacheKey, {
-    library,
-    timestamp: Date.now(),
-  });
-  return library;
+  return [...templates, ...lists];
 }
 
 // Fixed sample sizes match the max any surface will request, so the cached
@@ -271,24 +262,26 @@ export async function searchProfiles({ query = '', limit = 6 } = {}) {
 
 export async function searchTierlists({ query = '', userId = null, limit = 6 } = {}) {
   const normalizedQuery = sanitizeSearchTerm(query);
+  if (!normalizedQuery || normalizedQuery.length < 2) return [];
+
   const intent = getSearchIntent(normalizedQuery);
-  const library = await getCachedTierlistLibrary(userId);
-  // Only fetch full catalog for cover URLs when the cache is already warm.
-  // When cold, skip cover resolution to avoid blocking search on a full
-  // catalog download — covers will show a placeholder instead.
-  const allTitles = isCatalogCacheWarm()
-    ? await getAllTitles().catch(() => [])
-    : [];
-  const entries = sortTierlistEntries(normalizeTierlistEntries(library))
-    .filter((entry) => matchesTierlistQuery(entry, normalizedQuery))
-    .map((entry) => {
-      let coverUrl = null;
-      if (entry.coverTitleId && allTitles.length > 0) {
-        const title = allTitles.find((t) => t.id === entry.coverTitleId);
-        if (title) coverUrl = title.cover;
-      }
-      return { ...entry, coverUrl };
-    });
+  // Cache key includes userId so logged-in results (own lists) stay separate.
+  const cacheKey = `${normalizedQuery}::${userId || 'anon'}`;
+  const rawEntries = await withCacheDedup(
+    tierlistResultCache,
+    tierlistInflight,
+    cacheKey,
+    () => _fetchTierlists(normalizedQuery, userId)
+  );
+
+  // Resolve cover URLs from the catalog cache only when already warm —
+  // avoids blocking search on a full catalog download.
+  const allTitles = isCatalogCacheWarm() ? await getAllTitles().catch(() => []) : [];
+  const titleById = new Map(allTitles.map((t) => [t.id, t]));
+  const entries = rawEntries.map((entry) => ({
+    ...entry,
+    coverUrl: entry.coverTitleId ? (titleById.get(entry.coverTitleId)?.cover ?? null) : null,
+  }));
 
   return sortBySearchRelevance(entries, normalizedQuery, (entry) => ([
     {
@@ -521,7 +514,8 @@ export async function searchPosts({ query = '', limit = 6, showAdult = false } =
 }
 
 export function clearEntitySearchCache() {
-  tierlistLibraryCache.clear();
+  tierlistResultCache.clear();
+  tierlistInflight.clear();
   profileResultCache.clear();
   postResultCache.clear();
   profileInflight.clear();

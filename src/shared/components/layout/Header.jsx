@@ -80,11 +80,14 @@ function NotificationBell({ userId }) {
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const bellRef = useRef(null);
   const panelRef = useRef(null);
+  // Stable ref so handleOpen can trigger a fresh fetch without being inside the effect
+  const loadRef = useRef(null);
 
   useEffect(() => {
     if (!userId || !supabase) return;
     let cancelled = false;
     let cancelIdleWork = null;
+    let pollInterval = null;
 
     async function load() {
       const { data } = await supabase
@@ -94,23 +97,53 @@ function NotificationBell({ userId }) {
         .order('created_at', { ascending: false })
         .limit(20);
       if (!cancelled) setNotifications(data || []);
+      return data || [];
+    }
+
+    loadRef.current = load;
+
+    function startPolling() {
+      if (pollInterval) return;
+      // Add up to 5 s of jitter so multiple open tabs don't all fire at once.
+      const jitter = Math.floor(Math.random() * 5000);
+      pollInterval = window.setInterval(() => {
+        if (document.visibilityState !== 'hidden') void load();
+      }, 30000 + jitter);
+    }
+
+    function stopPolling() {
+      if (pollInterval) {
+        window.clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        stopPolling();
+      } else {
+        void load();
+        startPolling();
+      }
     }
 
     cancelIdleWork = scheduleWhenIdle(() => {
-      void load();
+      // Don't fire the initial load or start polling if the tab is already hidden.
+      // handleVisibilityChange will kick things off when the tab becomes visible.
+      if (document.visibilityState !== 'hidden') {
+        void load();
+        startPolling();
+      }
     }, 2000);
 
-    const channel = supabase
-      .channel(`notifications:${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => {
-        setNotifications((prev) => [payload.new, ...prev].slice(0, 20));
-      })
-      .subscribe();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       cancelled = true;
+      loadRef.current = null;
       cancelIdleWork?.();
-      supabase.removeChannel(channel);
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [userId]);
 
@@ -126,21 +159,29 @@ function NotificationBell({ userId }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const markAllRead = async () => {
+  const markAllRead = async (freshData) => {
     if (!supabase || !userId) return;
-    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    // Prefer freshData from a just-completed load so we mark unread items that
+    // arrived since the last poll, rather than the stale pre-open state.
+    const source = freshData || notifications;
+    const unreadIds = source.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
     await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
   };
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     if (!open && bellRef.current) {
       const rect = bellRef.current.getBoundingClientRect();
       setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
     }
     setOpen((v) => !v);
-    if (!open) markAllRead();
+    if (!open) {
+      // Await the fresh fetch so markAllRead sees the latest notifications,
+      // not the stale state from before the panel was opened.
+      const freshData = await loadRef.current?.();
+      void markAllRead(freshData);
+    }
   };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;

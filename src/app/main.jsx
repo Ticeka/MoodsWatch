@@ -26,7 +26,9 @@ async function bootstrap() {
   // doesn't block on a full Supabase download.  Uses requestIdleCallback
   // to avoid competing with initial render.
   const pathname = window.location.pathname || '';
-  const shouldPrefetchCatalog = !pathname.startsWith('/tierlist');
+  // Only warm the catalog on pages where search/discovery is the primary action.
+  // Running prefetch on every route wastes DB quota and inflates cold-start load.
+  const shouldPrefetchCatalog = pathname === '/' || pathname.startsWith('/discover');
 
   if (shouldPrefetchCatalog) {
     if (typeof window.requestIdleCallback === 'function') {

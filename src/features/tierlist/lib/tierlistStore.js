@@ -846,6 +846,43 @@ async function saveRemoteTemplateWithRecovery(template, userId = null) {
   }
 }
 
+// Returns only the row payloads that are new or have changed vs previousList.
+// When previousList is absent (first save), all rows are returned as-is.
+function getChangedRowPayloads(previousRows, nextRowPayloads) {
+  if (!previousRows || previousRows.length === 0) return nextRowPayloads;
+
+  const prevByRowId = new Map(
+    previousRows.map((row, index) => [
+      String(row.id),
+      {
+        label: String(row.label || ''),
+        color: String(row.color || ''),
+        title_ids: dedupeNumberIds(row.titleIds),
+        position: index,
+      },
+    ])
+  );
+
+  return nextRowPayloads.filter((payload) => {
+    const prev = prevByRowId.get(String(payload.id));
+    if (!prev) return true; // new row
+    return (
+      prev.label !== payload.label ||
+      prev.color !== payload.color ||
+      prev.position !== payload.position ||
+      JSON.stringify(prev.title_ids) !== JSON.stringify(payload.title_ids)
+    );
+  });
+}
+
+// Returns true if the pool title IDs or their order has changed.
+function poolTitleIdsChanged(previousList, nextPoolTitleIds) {
+  if (!previousList) return nextPoolTitleIds.length > 0;
+  const prevPool = dedupeNumberIds(previousList.poolTitleIds || []);
+  if (prevPool.length !== nextPoolTitleIds.length) return true;
+  return prevPool.some((id, index) => id !== nextPoolTitleIds[index]);
+}
+
 function getRemovedTierRowIds(previousList, nextList) {
   const previousIds = new Set((previousList?.rows || []).map((row) => String(row?.id || '')).filter(Boolean));
   const nextIds = new Set((nextList?.rows || []).map((row) => String(row?.id || '')).filter(Boolean));
@@ -937,14 +974,18 @@ async function saveRemoteList(list, userId = null, previousList = null) {
     position: index,
   }));
 
-  if (rowPayload.length > 0) {
+  // Only upsert rows that are new or changed since the last save.
+  const changedRowPayload = getChangedRowPayloads(previousList?.rows, rowPayload);
+  if (changedRowPayload.length > 0) {
     const { error: rowInsertError } = await supabase
       .from('tierlist_list_rows')
-      .upsert(rowPayload, { onConflict: 'id' });
+      .upsert(changedRowPayload, { onConflict: 'id' });
     if (rowInsertError) throw rowInsertError;
   }
 
-  if (poolPayload.length > 0) {
+  // Only upsert pool items when the pool has actually changed.
+  const nextPoolIds = dedupeNumberIds(normalized.poolTitleIds);
+  if (poolTitleIdsChanged(previousList, nextPoolIds) && poolPayload.length > 0) {
     const CHUNK_SIZE = 500;
     for (let i = 0; i < poolPayload.length; i += CHUNK_SIZE) {
       const chunk = poolPayload.slice(i, i + CHUNK_SIZE);

@@ -105,6 +105,52 @@ const CANONICAL_TITLE_SEARCH_SELECT = `
   moods:moods_cache
 `;
 
+// Same as CANONICAL_TITLE_LIST_SELECT but without the studios join, suitable
+// for admin list views where studio data is not displayed and the join adds
+// unnecessary per-row subqueries.
+const CANONICAL_TITLE_ADMIN_LIST_SELECT = `
+  id,
+  slug,
+  canonical_title,
+  type,
+  subtype,
+  origin_country,
+  origin_language,
+  status,
+  release_year,
+  format,
+  season,
+  season_year,
+  episodes,
+  chapters,
+  volumes,
+  duration_minutes,
+  is_adult,
+  cover_image,
+  banner_image,
+  synopsis,
+  avg_score,
+  mean_score,
+  popularity_score,
+  favorites_count,
+  hashtag,
+  trailer_url,
+  trailer_site,
+  trailer_video_id,
+  trailer_thumbnail_url,
+  trailer_source,
+  start_date,
+  end_date,
+  editorial_score,
+  created_at,
+  updated_at,
+  last_synced_at,
+  aliases:aliases_cache,
+  genres:genres_cache,
+  tags:tags_cache,
+  moods:moods_cache
+`;
+
 const CANONICAL_TITLE_DETAIL_SELECT = `
   ${CANONICAL_TITLE_LIST_SELECT},
   availability:title_availability(platform_name, region_code, url, is_official),
@@ -359,6 +405,7 @@ export {
   CANONICAL_TITLE_PREVIEW_SELECT,
   CANONICAL_TITLE_SEARCH_SELECT,
   CANONICAL_TITLE_LIST_SELECT,
+  CANONICAL_TITLE_ADMIN_LIST_SELECT,
   CANONICAL_TITLE_DETAIL_SELECT,
   CANONICAL_TITLE_SELECT,
 };

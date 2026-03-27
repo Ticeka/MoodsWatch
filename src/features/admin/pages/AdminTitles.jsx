@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
-import { CANONICAL_TITLE_LIST_SELECT, CANONICAL_TITLE_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
+import { CANONICAL_TITLE_ADMIN_LIST_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta } from '@/shared/lib/titleType';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -306,7 +306,7 @@ export function AdminTitles() {
 
         let query = supabase
           .from('canonical_titles')
-          .select(CANONICAL_TITLE_LIST_SELECT, { count: 'planned' })
+          .select(CANONICAL_TITLE_ADMIN_LIST_SELECT, { count: 'planned' })
           .in('id', matchingIds);
 
         query = applyCatalogFilters(query, filters);
@@ -319,7 +319,7 @@ export function AdminTitles() {
       } else {
         let query = supabase
           .from('canonical_titles')
-          .select(CANONICAL_TITLE_LIST_SELECT, { count: 'planned' });
+          .select(CANONICAL_TITLE_ADMIN_LIST_SELECT, { count: 'planned' });
 
         query = applyCatalogFilters(query, filters);
         query = applyLinkFilter(query);

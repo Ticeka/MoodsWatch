@@ -273,6 +273,80 @@ describe('tierlistStore saveTierList recovery', () => {
   });
 });
 
+describe('tierlistStore diff-save (no-op / changed-only / pool guard)', () => {
+  beforeEach(() => {
+    mockState.listUpdateResponses = [];
+    mockState.listInsertResponses = [];
+    mockState.listUpdatePayloads = [];
+    mockState.listInsertPayloads = [];
+    mockState.rowUpserts = [];
+    mockState.poolUpserts = [];
+    mockState.rowDeletes = [];
+    mockState.poolDeletes = [];
+    mockState.from.mockImplementation((table) => createTableClient(table));
+  });
+
+  it('does not upsert rows or pool when nothing changed', async () => {
+    mockState.listUpdateResponses.push({ data: [{ id: 'tierlist-local-1' }], error: null });
+
+    const list = makeList({
+      rows: [{ id: 'row-1', label: 'S', titleIds: [1, 2], color: '' }],
+      poolTitleIds: [3],
+    });
+
+    await saveTierList(list, { templates: [], lists: [list] }, { userId: 'user-1' });
+
+    expect(mockState.rowUpserts).toHaveLength(0);
+    expect(mockState.poolUpserts).toHaveLength(0);
+  });
+
+  it('upserts only the row whose title_ids changed, skips unchanged rows', async () => {
+    mockState.listUpdateResponses.push({ data: [{ id: 'tierlist-local-1' }], error: null });
+
+    const previousList = makeList({
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [1, 2], color: '' },
+        { id: 'row-2', label: 'A', titleIds: [3], color: '' },
+      ],
+      poolTitleIds: [],
+    });
+    const nextList = makeList({
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [2, 1], color: '' }, // order changed
+        { id: 'row-2', label: 'A', titleIds: [3], color: '' },    // unchanged
+      ],
+      poolTitleIds: [],
+    });
+
+    await saveTierList(nextList, { templates: [], lists: [previousList] }, { userId: 'user-1' });
+
+    expect(mockState.rowUpserts).toHaveLength(1);
+    // Only row-1 (whose title_ids changed order) should appear in the upsert payload
+    const upsertedIds = mockState.rowUpserts[0].map((r) => r.id);
+    expect(upsertedIds).toContain('row-1');
+    expect(upsertedIds).not.toContain('row-2');
+  });
+
+  it('does not upsert pool when pool is identical', async () => {
+    mockState.listUpdateResponses.push({ data: [{ id: 'tierlist-local-1' }], error: null });
+
+    const list = makeList({
+      rows: [{ id: 'row-1', label: 'S', titleIds: [99], color: '' }],
+      poolTitleIds: [10, 20],
+    });
+    const nextList = makeList({
+      rows: [{ id: 'row-1', label: 'S', titleIds: [99], color: 'red' }], // row changed
+      poolTitleIds: [10, 20], // pool unchanged
+    });
+
+    await saveTierList(nextList, { templates: [], lists: [list] }, { userId: 'user-1' });
+
+    // Row should be upserted (color changed), pool should not
+    expect(mockState.rowUpserts).toHaveLength(1);
+    expect(mockState.poolUpserts).toHaveLength(0);
+  });
+});
+
 describe('tierlistStore template identity collapse', () => {
   it('keeps the strongest template and maps stale copies back to it', () => {
     const canonical = makeTemplate({
