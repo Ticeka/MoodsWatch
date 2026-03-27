@@ -62,6 +62,7 @@ export function Home() {
   const resultsSectionRef = useRef(null);
   const recommendRequestRef = useRef(0);
   const adultAutoLoadRef = useRef(false);
+  const pendingScrollRef = useRef(false);
 
   const { watchlist, advanceProgress, updateItem, setConsumptionTarget, catchUpToTarget } = useWatchlist();
   const { favoriteTitleIds } = useFavoriteTitles();
@@ -122,6 +123,13 @@ export function Home() {
   useEffect(() => {
     setHideSeen(showAdult ? false : prefs.hideSeenByDefault);
   }, [prefs.hideSeenByDefault, showAdult]);
+
+  useEffect(() => {
+    if (pendingScrollRef.current && resultsSectionRef.current) {
+      pendingScrollRef.current = false;
+      resultsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [results]);
 
   useEffect(() => {
     setMoods((current) => {
@@ -254,6 +262,7 @@ export function Home() {
         showAdult,
       });
       if (requestId !== recommendRequestRef.current) return;
+      if (scrollToResults) pendingScrollRef.current = true;
       startTransition(() => {
         setResults(recs);
         setResultsPage(1);
@@ -267,11 +276,6 @@ export function Home() {
     } finally {
       if (requestId === recommendRequestRef.current) {
         setIsLoading(false);
-        if (scrollToResults) {
-          setTimeout(() => {
-            document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
-          }, 100);
-        }
       }
     }
   }, [
@@ -682,7 +686,7 @@ export function Home() {
                 size="lg"
                 fullWidth
                 onClick={handleRecommend}
-                disabled={isLoading || !canRequestRecommendations}
+                disabled={isLoading}
                 icon={isLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
                 className={isLoading ? 'spinning-icon' : 'pulse-glow-btn'}
               >

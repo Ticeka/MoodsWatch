@@ -69,6 +69,21 @@ export function Auth() {
 
   return (
     <div className="auth-root">
+      {/* Full-page blurred image — sits behind right panel */}
+      <div
+        className={`auth-blur-bg ${isDark ? 'is-hidden' : 'is-active'}`}
+        style={{ backgroundImage: `url(${lightThemeBg})` }}
+        aria-hidden="true"
+      />
+      <div
+        className={`auth-blur-bg ${isDark ? 'is-active' : 'is-hidden'}`}
+        style={{ backgroundImage: `url(${darkThemeBg})` }}
+        aria-hidden="true"
+      />
+
+      {/* Color + brightness overlay for form readability */}
+      <div className="auth-blur-overlay" aria-hidden="true" />
+
       {/* Left decorative panel */}
       <div className="auth-panel-left">
         <div

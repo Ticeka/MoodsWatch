@@ -207,7 +207,7 @@ export function AdminLinks() {
 
       let query = supabase
         .from('title_availability')
-        .select('id, platform_name, url, region_code, is_official, canonical_title_id', { count: 'exact' })
+        .select('id, platform_name, url, region_code, is_official, canonical_title_id', { count: 'planned' })
         .order('platform_name', { ascending: true });
 
       if (filterPlatform !== 'all') query = query.eq('platform_name', filterPlatform);
@@ -243,7 +243,7 @@ export function AdminLinks() {
 
       let query = supabase
         .from('canonical_titles')
-        .select('id, canonical_title, slug, type, subtype', { count: 'exact' })
+        .select('id, canonical_title, slug, type, subtype', { count: 'planned' })
         .order('canonical_title', { ascending: true });
 
       if (linkedIds.length > 0) query = query.not('id', 'in', `(${linkedIds.join(',')})`);

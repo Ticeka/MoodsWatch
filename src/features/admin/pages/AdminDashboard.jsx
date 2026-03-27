@@ -61,14 +61,14 @@ export function AdminDashboard() {
           pendingDuplicatesCount,
           recentUsersData,
         ] = await Promise.all([
-          supabase.from('user_profiles').select('*', { count: 'exact', head: true }),
-          supabase.from('canonical_titles').select('*', { count: 'exact', head: true }),
-          supabase.from('user_lists').select('*', { count: 'exact', head: true }),
-          supabase.from('title_moods').select('*', { count: 'exact', head: true }),
-          supabase.from('editor_collections').select('*', { count: 'exact', head: true }),
-          supabase.from('homepage_content_blocks').select('*', { count: 'exact', head: true }),
-          supabase.from('content_reports').select('*', { count: 'exact', head: true }).in('status', ['open', 'in_review']),
-          supabase.from('duplicate_candidates').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('user_profiles').select('*', { count: 'estimated', head: true }),
+          supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }),
+          supabase.from('user_lists').select('*', { count: 'estimated', head: true }),
+          supabase.from('title_moods').select('*', { count: 'estimated', head: true }),
+          supabase.from('editor_collections').select('*', { count: 'estimated', head: true }),
+          supabase.from('homepage_content_blocks').select('*', { count: 'estimated', head: true }),
+          supabase.from('content_reports').select('*', { count: 'estimated', head: true }).in('status', ['open', 'in_review']),
+          supabase.from('duplicate_candidates').select('*', { count: 'estimated', head: true }).eq('status', 'pending'),
           supabase.from('user_profiles').select('id, name, role, created_at').order('created_at', { ascending: false }).limit(6),
         ]);
 

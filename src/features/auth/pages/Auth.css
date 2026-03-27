@@ -23,6 +23,43 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   min-height: 100vh;
+  position: relative;
+}
+
+/* ============================================================
+   Gradient overlay — ABOVE both panels (z:6) so it spans the seam
+   image tones → primary → bg-primary, pointer-events:none for form interaction
+   ============================================================ */
+.auth-blur-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent             0%,
+    transparent             28%,
+    rgba(216,180,210, 0.15) 36%,
+    rgba(236, 72,153, 0.20) 46%,
+    rgba(252,231,243, 0.55) 54%,
+    rgba(253,248,250, 0.80) 65%,
+    rgba(253,250,246, 0.95) 76%,
+    #fdfaf6                 100%
+  );
+}
+
+[data-theme="dark"] .auth-blur-overlay {
+  background: linear-gradient(
+    to right,
+    transparent             0%,
+    transparent             28%,
+    rgba(80, 40, 65,  0.18) 36%,
+    rgba(244,114,182, 0.15) 46%,
+    rgba(42, 21, 34,  0.60) 54%,
+    rgba(22, 12, 16,  0.82) 65%,
+    rgba(18, 14, 13,  0.96) 76%,
+    #120e0d                 100%
+  );
 }
 
 /* ============================================================
@@ -30,6 +67,7 @@
    ============================================================ */
 .auth-panel-left {
   position: relative;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -38,6 +76,25 @@
   isolation: isolate;
 }
 
+/* Full-page blurred image — behind both panels, only visible through right panel */
+.auth-blur-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  filter: blur(36px) saturate(1.15);
+  transform: scale(1.1);
+  will-change: opacity;
+}
+
+.auth-blur-bg.is-active { opacity: 1; }
+.auth-blur-bg.is-hidden { opacity: 0; }
+
+/* Left panel sharp image */
 .auth-panel-bg {
   position: absolute;
   inset: 0;
@@ -58,7 +115,7 @@
   opacity: 0;
 }
 
-/* Soft vignette for light/white background image */
+/* Soft vignette — top/bottom/left edge */
 .auth-panel-left::before {
   content: '';
   position: absolute;
@@ -136,16 +193,19 @@
    ============================================================ */
 .auth-panel-right {
   position: relative;
+  z-index: 7;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: clamp(2rem, 5vw, 3.5rem);
-  background: linear-gradient(160deg,
-      rgba(255, 240, 248, 0.9) 0%,
-      rgba(255, 248, 252, 0.6) 30%,
-      transparent 60%), var(--bg-base, #fff);
-  transition: background 0.25s ease;
+  /* transparent left edge → overlay (z:6) shows through → solid bg-primary right */
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(253,250,246,0.4) 25%,
+    var(--bg-primary) 55%
+  );
 }
 
 /* Back button */
@@ -401,6 +461,15 @@
    Dark Mode
    ============================================================ */
 
+[data-theme="dark"] .auth-panel-right {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(18,14,13,0.4) 25%,
+    var(--bg-primary) 55%
+  );
+}
+
 /* Left panel — dark image overlay */
 [data-theme="dark"] .auth-panel-left::before {
   background:
@@ -434,12 +503,6 @@
   box-shadow: 0 0 8px rgba(233, 30, 140, 0.6);
 }
 
-[data-theme="dark"] .auth-panel-right {
-  background: linear-gradient(160deg,
-      rgba(155, 16, 96, 0.14) 0%,
-      rgba(233, 30, 140, 0.06) 35%,
-      transparent 65%), var(--bg-base, #0f0a09);
-}
 
 [data-theme="dark"] .auth-input-wrap input {
   background: var(--bg-elevated, #1c1210);

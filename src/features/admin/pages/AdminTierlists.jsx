@@ -217,9 +217,9 @@ export function AdminTierlists() {
         templateResult,
         listResult,
       ] = await Promise.all([
-        supabase.from('tierlist_templates').select('*', { count: 'exact', head: true }),
-        supabase.from('tierlist_lists').select('*', { count: 'exact', head: true }),
-        supabase.from('tierlist_comments').select('*', { count: 'exact', head: true }),
+        supabase.from('tierlist_templates').select('*', { count: 'estimated', head: true }),
+        supabase.from('tierlist_lists').select('*', { count: 'estimated', head: true }),
+        supabase.from('tierlist_comments').select('*', { count: 'estimated', head: true }),
         supabase.from('tierlist_templates').select(TEMPLATE_SELECT).order('updated_at', { ascending: false }),
         supabase.from('tierlist_lists').select(LIST_SELECT).order('updated_at', { ascending: false }),
       ]);

@@ -152,13 +152,13 @@ export function AdminAnalytics() {
         duplicatesRes,
         discoverEventsRes,
       ] = await Promise.all([
-        supabase.from('canonical_titles').select('*', { count: 'exact', head: true }),
-        supabase.from('canonical_titles').select('*', { count: 'exact', head: true }).eq('type', 'anime'),
-        supabase.from('canonical_titles').select('*', { count: 'exact', head: true }).eq('type', 'manga').eq('subtype', 'manga'),
-        supabase.from('canonical_titles').select('*', { count: 'exact', head: true }).eq('type', 'manga').eq('subtype', 'manhwa'),
-        supabase.from('user_profiles').select('*', { count: 'exact', head: true }),
-        supabase.from('user_lists').select('*', { count: 'exact', head: true }),
-        supabase.from('moods').select('*', { count: 'exact', head: true }),
+        supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }),
+        supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'anime'),
+        supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manga'),
+        supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manhwa'),
+        supabase.from('user_profiles').select('*', { count: 'estimated', head: true }),
+        supabase.from('user_lists').select('*', { count: 'estimated', head: true }),
+        supabase.from('moods').select('*', { count: 'estimated', head: true }),
         supabase.from('canonical_titles')
           .select('id, slug, canonical_title, type, subtype, avg_score, cover_image, popularity_score')
           .order('avg_score', { ascending: false, nullsFirst: false })
@@ -168,7 +168,7 @@ export function AdminAnalytics() {
           .order('created_at', { ascending: false })
           .limit(8),
         supabase.from('editor_collections').select('id, status, visibility, is_featured, created_at, updated_at'),
-        supabase.from('editor_collection_items').select('*', { count: 'exact', head: true }),
+        supabase.from('editor_collection_items').select('*', { count: 'estimated', head: true }),
         supabase.from('homepage_content_blocks').select('id, status, visibility, block_type, created_at, updated_at'),
         supabase.from('content_reports').select(CONTENT_REPORT_SELECT).order('created_at', { ascending: false }).limit(1000),
         supabase.from('duplicate_candidates').select(DUPLICATE_CANDIDATE_SELECT).order('created_at', { ascending: false }).limit(1000),
