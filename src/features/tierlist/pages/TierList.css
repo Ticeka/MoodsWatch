@@ -3671,3 +3671,9 @@
 .tl-comment-reply-btn:hover {
   color: var(--accent-500);
 }
+
+.tierlist-browse-preview-note {
+  margin: 0 0 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}

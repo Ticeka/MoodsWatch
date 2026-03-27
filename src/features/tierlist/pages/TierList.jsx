@@ -74,7 +74,7 @@ import './TierList.css';
 
 const BROWSE_PAGE_SIZE = 9;
 const BROWSE_ENTITY_LIST_LIMIT = 16;
-const BROWSE_ENTITY_ID_LIMIT = 1200;
+const BROWSE_ENTITY_ID_LIMIT = 320;
 const BROWSE_ENTITY_IDS_PER_TEMPLATE = 8;
 const BROWSE_ENTITY_IDS_PER_LIST = 18;
 const ENTITY_VISIBILITY_CHUNK_SIZE = 200;
@@ -534,20 +534,12 @@ function buildCharacterEntitiesFromRows(sourceTitles = [], characterRows = []) {
   return entities;
 }
 
-function collectTierLibraryBrowseEntityIds(library) {
-  const publicTemplates = sortTemplates(
-    (library?.templates || []).filter((template) => template.isPublic),
-    'popular'
-  );
-  const publicLists = sortListsByRecentAndPopularity(
-    (library?.lists || []).filter((list) => list.isPublic)
-  ).slice(0, BROWSE_ENTITY_LIST_LIMIT);
-  const entries = [...publicTemplates, ...publicLists];
+function collectBrowseEntityIdsFromEntries(entries = []) {
   const titleIds = new Set();
   const songIds = new Set();
   const characterIds = new Set();
 
-  entries.forEach((entry) => {
+  (entries || []).forEach((entry) => {
     if (titleIds.size + songIds.size + characterIds.size >= BROWSE_ENTITY_ID_LIMIT) {
       return;
     }
@@ -583,16 +575,23 @@ function collectTierLibraryBrowseEntityIds(library) {
   };
 }
 
-function collectTierLibraryVisibilityEntityIds(library) {
-  const entries = [
-    ...((library?.templates || []).filter((template) => template.isPublic)),
-    ...((library?.lists || []).filter((list) => list.isPublic)),
-  ];
+function collectTierLibraryBrowseEntityIds(library) {
+  const publicTemplates = sortTemplates(
+    (library?.templates || []).filter((template) => template.isPublic),
+    'popular'
+  );
+  const publicLists = sortListsByRecentAndPopularity(
+    (library?.lists || []).filter((list) => list.isPublic)
+  ).slice(0, BROWSE_ENTITY_LIST_LIMIT);
+  return collectBrowseEntityIdsFromEntries([...publicTemplates, ...publicLists]);
+}
+
+function collectVisibilityEntityIdsFromEntries(entries = []) {
   const titleIds = new Set();
   const songIds = new Set();
   const characterIds = new Set();
 
-  entries.forEach((entry) => {
+  (entries || []).forEach((entry) => {
     const entityType = normalizeCatalogEntityType(entry.entityType);
     const ids = getTierEntryEntityIds(entry);
     ids.forEach((id) => {
@@ -616,6 +615,13 @@ function collectTierLibraryVisibilityEntityIds(library) {
     songIds: [...songIds],
     characterIds: [...characterIds],
   };
+}
+
+function collectTierLibraryVisibilityEntityIds(library) {
+  return collectVisibilityEntityIdsFromEntries([
+    ...((library?.templates || []).filter((template) => template.isPublic)),
+    ...((library?.lists || []).filter((list) => list.isPublic)),
+  ]);
 }
 
 async function fetchEntityVisibilityByAdultMode({ titleIds = [], songIds = [], characterIds = [] }, showAdult = false) {
@@ -709,6 +715,10 @@ async function fetchEntityVisibilityByAdultMode({ titleIds = [], songIds = [], c
 
 async function resolveTierLibraryBrowseEntities(library, options = {}) {
   const { titleIds, songIds, characterIds } = collectTierLibraryBrowseEntityIds(library);
+  return resolveTierBrowseEntitiesForIds({ titleIds, songIds, characterIds }, options);
+}
+
+async function resolveTierBrowseEntitiesForIds({ titleIds = [], songIds = [], characterIds = [] }, options = {}) {
   const [titles, characterEntities, visibility] = await Promise.all([
     getTitlePreviewByIds(titleIds, { showAdult: options?.showAdult }),
     fetchCharacterEntitiesByIds(characterIds, { showAdult: options?.showAdult }),
@@ -727,6 +737,11 @@ async function resolveTierLibraryBrowseEntities(library, options = {}) {
     songEntities,
     visibility,
   };
+}
+
+async function resolveTierBrowseEntitiesForEntries(entries = [], options = {}) {
+  const entityIds = collectBrowseEntityIdsFromEntries(entries);
+  return resolveTierBrowseEntitiesForIds(entityIds, options);
 }
 
 function getCurrentUsername(user) {
@@ -942,6 +957,60 @@ function matchesTierEntryAgeGate(entry, entityMaps, showAdult = false, visibilit
 
   const hasAdultEntity = resolvedEntities.some((entity) => Boolean(entity?.is_adult));
   return showAdult ? hasAdultEntity : !hasAdultEntity;
+}
+
+function matchesTemplateMetadataAgeGate(template, showAdult = false) {
+  if (!template) {
+    return false;
+  }
+
+  const entityType = normalizeCatalogEntityType(template.entityType);
+  if (entityType !== TITLE_ENTITY_TYPE) {
+    return true;
+  }
+
+  if (typeof template.hasAdultContent !== 'boolean') {
+    return true;
+  }
+
+  return template.hasAdultContent === showAdult;
+}
+
+function filterHydratedTemplatesForAgeGate(
+  templates = [],
+  entityMaps,
+  showAdult = false,
+  visibility = null,
+  hydratedTemplateIds = new Set()
+) {
+  return (templates || []).filter((template) => {
+    if (!template?.id) {
+      return false;
+    }
+
+    const entityType = normalizeCatalogEntityType(template.entityType);
+    if (entityType === TITLE_ENTITY_TYPE && typeof template.hasAdultContent === 'boolean') {
+      return template.hasAdultContent === showAdult;
+    }
+
+    if (!hydratedTemplateIds.has(String(template.id))) {
+      return false;
+    }
+
+    return matchesTierEntryAgeGate(template, entityMaps, showAdult, visibility);
+  });
+}
+
+function matchesListMetadataAgeGate(list, showAdult = false) {
+  if (!list) {
+    return false;
+  }
+
+  if (typeof list.hasAdultContent !== 'boolean') {
+    return true;
+  }
+
+  return list.hasAdultContent === showAdult;
 }
 
 function splitByAdultFlag(items = []) {
@@ -2367,32 +2436,33 @@ export function TierListBrowsePage() {
       setIsLoading(true);
       setIsCatalogHydrating(true);
       setLoadError('');
+      setTitles([]);
+      setSongEntities([]);
       setBrowseVisibility(createEmptyBrowseVisibility());
       // Step 1: load library fast (no full catalog needed) and show content immediately
-      const fastTemplates = await loadTierTemplates([], {
+      const fastTemplatesPromise = loadTierTemplates([], {
         userId: user?.id || null,
+        includeOwned: false,
         showAdult,
       });
-      if (cancelled) return;
-      setLibrary((current) => ({ ...current, templates: fastTemplates }));
-      setIsLoading(false);
-
-      const nextLibrary = await loadTierLibrary([], {
+      const libraryPromise = loadTierLibrary([], {
         userId: user?.id || null,
+        includeOwned: false,
         fetchTemplates: false,
         publicListLimit: BROWSE_ENTITY_LIST_LIMIT,
         showAdult,
       });
+      const fastTemplates = await fastTemplatesPromise;
       if (cancelled) return;
-      setLibrary(nextLibrary);
+      setLibrary((current) => ({ ...current, templates: fastTemplates }));
+      setIsLoading(false);
 
-      const { titles: fetchedTitles, songEntities: fetchedSongs, visibility } = await resolveTierLibraryBrowseEntities(nextLibrary, {
-        showAdult,
-      });
+      const nextLibrary = await libraryPromise;
       if (cancelled) return;
-      setTitles(fetchedTitles);
-      setSongEntities(fetchedSongs);
-      setBrowseVisibility(visibility);
+      setLibrary((current) => ({
+        ...nextLibrary,
+        templates: current.templates,
+      }));
       setIsCatalogHydrating(false);
     }
     load().catch((error) => {
@@ -2405,38 +2475,13 @@ export function TierListBrowsePage() {
     return () => { cancelled = true; };
   }, [pick, showAdult, user?.id, isAuthLoading]);
 
-  const entityMaps = useMemo(
-    () => buildEntityMaps([...titles, ...songEntities]),
-    [songEntities, titles]
-  );
-  const canApplyEntityFilters = !isCatalogHydrating;
-  // Hold browse results until age-gate visibility finishes hydrating so mixed local
-  // data cannot flash the wrong templates before filtering settles.
-  const shouldHoldBrowseResults = isCatalogHydrating;
   const publicTemplates = useMemo(
-    () => dedupeTierTemplatesByIdentity(
-      library.templates.filter((template) => (
-        template.isPublic &&
-        !shouldHoldBrowseResults &&
-        (!canApplyEntityFilters || matchesTierEntryAgeGate(template, entityMaps, showAdult, browseVisibility))
-      ))
-    ),
-    [browseVisibility, canApplyEntityFilters, entityMaps, library.templates, shouldHoldBrowseResults, showAdult]
+    () => dedupeTierTemplatesByIdentity(library.templates.filter((template) => (
+      template.isPublic &&
+      matchesTemplateMetadataAgeGate(template, showAdult)
+    ))),
+    [library.templates, showAdult]
   );
-  const publicLists = useMemo(
-    () => library.lists.filter((list) => (
-      list.isPublic &&
-      hasMeaningfulTierRanking(list) &&
-      !shouldHoldBrowseResults &&
-      (!canApplyEntityFilters || matchesTierEntryAgeGate(list, entityMaps, showAdult, browseVisibility))
-    )),
-    [browseVisibility, canApplyEntityFilters, entityMaps, library.lists, shouldHoldBrowseResults, showAdult]
-  );
-  const recentCommunityLists = useMemo(
-    () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
-    [publicLists]
-  );
-
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return publicTemplates.filter((template) => {
@@ -2452,6 +2497,133 @@ export function TierListBrowsePage() {
     const sorted = sortTemplates(filteredTemplates, sortBy);
     return paginate(sorted, page, BROWSE_PAGE_SIZE);
   }, [filteredTemplates, page, sortBy]);
+
+  const trendingTemplates = useMemo(
+    () => sortTemplates(publicTemplates, 'popular').slice(0, 6),
+    [publicTemplates]
+  );
+  const communityPreviewCandidates = useMemo(
+    () => sortListsByRecentAndPopularity(
+      library.lists.filter((list) => (
+        list.isPublic &&
+        hasMeaningfulTierRanking(list) &&
+        matchesListMetadataAgeGate(list, showAdult)
+      ))
+    ).slice(0, 8),
+    [library.lists, showAdult]
+  );
+  const previewHydrationEntries = useMemo(() => {
+    const seen = new Set();
+    return [
+      ...pagedTemplates.items,
+      ...trendingTemplates,
+      ...communityPreviewCandidates,
+    ].filter((entry) => {
+      const key = `${entry?.rows ? 'list' : 'template'}:${entry?.id || ''}`;
+      if (!entry?.id || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }, [communityPreviewCandidates, pagedTemplates.items, trendingTemplates]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function hydrateBrowseEntities() {
+      if (previewHydrationEntries.length === 0) {
+        setTitles([]);
+        setSongEntities([]);
+        setBrowseVisibility(createEmptyBrowseVisibility());
+        setIsCatalogHydrating(false);
+        return;
+      }
+
+      setIsCatalogHydrating(true);
+
+      try {
+        const { titles: fetchedTitles, songEntities: fetchedSongs, visibility } = await resolveTierBrowseEntitiesForEntries(
+          previewHydrationEntries,
+          { showAdult }
+        );
+        if (cancelled) return;
+        setTitles(fetchedTitles);
+        setSongEntities(fetchedSongs);
+        setBrowseVisibility(visibility);
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('Failed to hydrate tierlist browse previews:', error?.message || error);
+        setTitles([]);
+        setSongEntities([]);
+        setBrowseVisibility(createEmptyBrowseVisibility());
+      } finally {
+        if (!cancelled) {
+          setIsCatalogHydrating(false);
+        }
+      }
+    }
+
+    hydrateBrowseEntities();
+
+    return () => { cancelled = true; };
+  }, [isLoading, previewHydrationEntries, showAdult]);
+
+  const entityMaps = useMemo(
+    () => buildEntityMaps([...titles, ...songEntities]),
+    [songEntities, titles]
+  );
+  const hydratedTemplateIds = useMemo(() => {
+    if (isCatalogHydrating) {
+      return new Set();
+    }
+
+    return new Set(
+      previewHydrationEntries
+        .filter((entry) => entry && !entry.rows && entry.id)
+        .map((entry) => String(entry.id))
+    );
+  }, [isCatalogHydrating, previewHydrationEntries]);
+  const visiblePagedTemplates = useMemo(
+    () => filterHydratedTemplatesForAgeGate(
+      pagedTemplates.items,
+      entityMaps,
+      showAdult,
+      browseVisibility,
+      hydratedTemplateIds
+    ),
+    [browseVisibility, entityMaps, hydratedTemplateIds, pagedTemplates.items, showAdult]
+  );
+  const visibleTrendingTemplates = useMemo(
+    () => filterHydratedTemplatesForAgeGate(
+      trendingTemplates,
+      entityMaps,
+      showAdult,
+      browseVisibility,
+      hydratedTemplateIds
+    ),
+    [browseVisibility, entityMaps, hydratedTemplateIds, showAdult, trendingTemplates]
+  );
+  const publicLists = useMemo(
+    () => {
+      if (isCatalogHydrating) {
+        return [];
+      }
+
+      return communityPreviewCandidates.filter((list) => (
+        matchesTierEntryAgeGate(list, entityMaps, showAdult, browseVisibility)
+      ));
+    },
+    [browseVisibility, communityPreviewCandidates, entityMaps, isCatalogHydrating, showAdult]
+  );
+  const recentCommunityLists = useMemo(
+    () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
+    [publicLists]
+  );
 
   const handlePlayTemplate = async (template) => {
     try {
@@ -2498,11 +2670,6 @@ export function TierListBrowsePage() {
       .filter(Boolean)
   )];
   const hasActiveFilters = entityTypeFilter !== 'all' || category !== 'all' || query.trim().length > 0 || sortBy !== 'popular';
-
-  const trendingTemplates = useMemo(
-    () => sortTemplates(publicTemplates, 'popular').slice(0, 6),
-    [publicTemplates]
-  );
 
   if (loadError && !isLoading) {
     return (
@@ -2580,7 +2747,7 @@ export function TierListBrowsePage() {
           </div>
 
           <div className="tierlist-browse-sort-row">
-            {!isLoading && !shouldHoldBrowseResults && (
+            {!isLoading && (
               <span className="tierlist-browse-result-count">{filteredTemplates.length} {pick('เทมเพลต', 'templates')}</span>
             )}
             <SortSelect
@@ -2596,13 +2763,18 @@ export function TierListBrowsePage() {
           </div>
 
           <section className="tierlist-browse-content">
-            {isLoading || shouldHoldBrowseResults ? (
+            {!isLoading && isCatalogHydrating ? (
+              <p className="tierlist-browse-preview-note">
+                {pick('กำลังเติมปกและพรีวิวล่าสุดของชุมชน', 'Loading covers and recent community previews.')}
+              </p>
+            ) : null}
+            {isLoading ? (
               <TierListEmptyPanel
                 icon={<Loader2 size={28} className="animate-spin" />}
                 title={pick('กำลังโหลดเทมเพลต', 'Loading templates')}
                 message={pick('กำลังเตรียมเทมเพลตและอันดับล่าสุดจากชุมชน', 'Fetching templates and recent community rankings.')}
               />
-            ) : pagedTemplates.items.length === 0 ? (
+            ) : visiblePagedTemplates.length === 0 ? (
               <TierListEmptyPanel
                 icon={<Compass size={28} />}
                 title={pick('ยังไม่พบเทมเพลตที่ตรง', 'No matching templates')}
@@ -2629,7 +2801,7 @@ export function TierListBrowsePage() {
               />
             ) : (
               <div className="tierlist-browse-grid">
-                {pagedTemplates.items.map((template) => {
+                {visiblePagedTemplates.map((template) => {
                   const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
                   const cover = template.titleIds
                     .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
@@ -2728,7 +2900,7 @@ export function TierListBrowsePage() {
           <div className="tierlist-browse-sidebar-card">
             <h3>{pick('เทมเพลตยอดนิยม', 'Trending Templates')}</h3>
             <ul className="tierlist-trending-list">
-              {trendingTemplates.map((template, index) => {
+              {visibleTrendingTemplates.map((template, index) => {
                 const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
                 const coverEntity = template.titleIds
                   .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
@@ -4404,7 +4576,7 @@ export function SongTierListPage() {
         }
 
         // Load library to find an existing song tierlist for this title
-        const library = await loadTierLibrary([], { userId: user?.id || null });
+        const library = await loadTierLibrary([], { userId: user?.id || null, showAdult });
         if (cancelled) return;
 
         const songSourceKey = `song-source:${title.id}`;
@@ -4435,6 +4607,7 @@ export function SongTierListPage() {
             defaultRows: ['S', 'A', 'B', 'C', 'D'],
             titleIds: songIds,
             entityType: THEME_SONG_ENTITY_TYPE,
+            hasAdultContent: Boolean(title?.is_adult),
           });
 
         if (!cancelled) {

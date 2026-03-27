@@ -1,11 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
   from: vi.fn(),
+  templateUpdateResponses: [],
+  templateInsertResponses: [],
+  templateUpdatePayloads: [],
+  templateInsertPayloads: [],
+  templateSelectResponses: [],
+  templateSelectCalls: [],
   listUpdateResponses: [],
   listInsertResponses: [],
   listUpdatePayloads: [],
   listInsertPayloads: [],
+  listSelectResponses: [],
+  listSelectCalls: [],
+  rowSelectResponses: [],
+  rowSelectCalls: [],
+  poolSelectResponses: [],
+  poolSelectCalls: [],
   rowUpserts: [],
   poolUpserts: [],
   rowDeletes: [],
@@ -40,9 +52,103 @@ function createDeleteBuilder(table) {
   return builder;
 }
 
+function createSelectBuilder(table, responseQueue, fallbackResponse, callLog) {
+  const state = {
+    filters: [],
+  };
+
+  const builder = Promise.resolve().then(() => {
+    callLog.push({
+      table,
+      filters: state.filters.slice(),
+    });
+    return nextResponse(responseQueue, fallbackResponse);
+  });
+
+  builder.eq = vi.fn((column, value) => {
+    state.filters.push({ type: 'eq', column, value });
+    return builder;
+  });
+  builder.neq = vi.fn((column, value) => {
+    state.filters.push({ type: 'neq', column, value });
+    return builder;
+  });
+  builder.order = vi.fn((column, options) => {
+    state.filters.push({ type: 'order', column, options });
+    return builder;
+  });
+  builder.limit = vi.fn((value) => {
+    state.filters.push({ type: 'limit', value });
+    return builder;
+  });
+  builder.in = vi.fn((column, value) => {
+    state.filters.push({ type: 'in', column, value });
+    return builder;
+  });
+  builder.maybeSingle = vi.fn(async () => {
+    callLog.push({
+      table,
+      filters: [...state.filters, { type: 'maybeSingle' }],
+    });
+    return nextResponse(responseQueue, fallbackResponse);
+  });
+  builder.single = vi.fn(async () => {
+    callLog.push({
+      table,
+      filters: [...state.filters, { type: 'single' }],
+    });
+    return nextResponse(responseQueue, fallbackResponse);
+  });
+
+  return builder;
+}
+
 function createTableClient(table) {
+  if (table === 'tierlist_templates') {
+    return {
+      select: vi.fn(() => createSelectBuilder(
+        table,
+        mockState.templateSelectResponses,
+        { data: [], error: null },
+        mockState.templateSelectCalls
+      )),
+      update: vi.fn((payload) => {
+        mockState.templateUpdatePayloads.push(payload);
+        return {
+          eq: vi.fn(() => ({
+            select: vi.fn(async () => nextResponse(
+              mockState.templateUpdateResponses,
+              { data: [], error: null }
+            )),
+          })),
+        };
+      }),
+      insert: vi.fn((payload) => {
+        mockState.templateInsertPayloads.push(payload);
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn(async () => nextResponse(
+              mockState.templateInsertResponses,
+              { data: payload, error: null }
+            )),
+            maybeSingle: vi.fn(async () => nextResponse(
+              mockState.templateInsertResponses,
+              { data: payload, error: null }
+            )),
+          })),
+        };
+      }),
+    };
+  }
+
   if (table === 'tierlist_lists') {
     return {
+      select: vi.fn(() => createSelectBuilder(
+        table,
+        mockState.listSelectResponses,
+        { data: [], error: null },
+        mockState.listSelectCalls
+      )),
       update: vi.fn((payload) => {
         mockState.listUpdatePayloads.push(payload);
         return {
@@ -70,6 +176,12 @@ function createTableClient(table) {
 
   if (table === 'tierlist_list_rows') {
     return {
+      select: vi.fn(() => createSelectBuilder(
+        table,
+        mockState.rowSelectResponses,
+        { data: [], error: null },
+        mockState.rowSelectCalls
+      )),
       delete: vi.fn(() => createDeleteBuilder(table)),
       upsert: vi.fn(async (payload) => {
         mockState.rowUpserts.push(payload);
@@ -80,6 +192,12 @@ function createTableClient(table) {
 
   if (table === 'tierlist_list_pool_items') {
     return {
+      select: vi.fn(() => createSelectBuilder(
+        table,
+        mockState.poolSelectResponses,
+        { data: [], error: null },
+        mockState.poolSelectCalls
+      )),
       delete: vi.fn(() => createDeleteBuilder(table)),
       upsert: vi.fn(async (payload) => {
         mockState.poolUpserts.push(payload);
@@ -89,7 +207,12 @@ function createTableClient(table) {
   }
 
   return {
-    select: vi.fn(async () => ({ data: [], error: null })),
+    select: vi.fn(() => createSelectBuilder(
+      table,
+      [],
+      { data: [], error: null },
+      []
+    )),
   };
 }
 
@@ -106,7 +229,7 @@ vi.mock('@/shared/lib/catalogEntities', () => ({
   normalizeCatalogEntityType: (value) => (value ? String(value) : 'title'),
 }), { virtual: true });
 
-import { collapseTierTemplatesByIdentity, findTierList, saveTierList } from '../tierlistStore.js';
+import { collapseTierTemplatesByIdentity, findTierList, loadTierLibrary, loadTierTemplates, saveTierList, saveTierTemplate } from '../tierlistStore.js';
 
 function makeTemplate(overrides = {}) {
   return {
@@ -149,10 +272,22 @@ function makeList(overrides = {}) {
 
 describe('tierlistStore saveTierList recovery', () => {
   beforeEach(() => {
+    mockState.templateUpdateResponses = [];
+    mockState.templateInsertResponses = [];
+    mockState.templateUpdatePayloads = [];
+    mockState.templateInsertPayloads = [];
+    mockState.templateSelectResponses = [];
+    mockState.templateSelectCalls = [];
     mockState.listUpdateResponses = [];
     mockState.listInsertResponses = [];
     mockState.listUpdatePayloads = [];
     mockState.listInsertPayloads = [];
+    mockState.listSelectResponses = [];
+    mockState.listSelectCalls = [];
+    mockState.rowSelectResponses = [];
+    mockState.rowSelectCalls = [];
+    mockState.poolSelectResponses = [];
+    mockState.poolSelectCalls = [];
     mockState.rowUpserts = [];
     mockState.poolUpserts = [];
     mockState.rowDeletes = [];
@@ -275,10 +410,22 @@ describe('tierlistStore saveTierList recovery', () => {
 
 describe('tierlistStore diff-save (no-op / changed-only / pool guard)', () => {
   beforeEach(() => {
+    mockState.templateUpdateResponses = [];
+    mockState.templateInsertResponses = [];
+    mockState.templateUpdatePayloads = [];
+    mockState.templateInsertPayloads = [];
+    mockState.templateSelectResponses = [];
+    mockState.templateSelectCalls = [];
     mockState.listUpdateResponses = [];
     mockState.listInsertResponses = [];
     mockState.listUpdatePayloads = [];
     mockState.listInsertPayloads = [];
+    mockState.listSelectResponses = [];
+    mockState.listSelectCalls = [];
+    mockState.rowSelectResponses = [];
+    mockState.rowSelectCalls = [];
+    mockState.poolSelectResponses = [];
+    mockState.poolSelectCalls = [];
     mockState.rowUpserts = [];
     mockState.poolUpserts = [];
     mockState.rowDeletes = [];
@@ -392,5 +539,414 @@ describe('tierlistStore entity type normalization', () => {
     });
 
     expect(resolved?.entityType).toBe('theme_song');
+  });
+});
+
+describe('tierlistStore load performance guards', () => {
+  const originalWindow = global.window;
+  const storage = new Map();
+
+  beforeEach(() => {
+    mockState.templateUpdateResponses = [];
+    mockState.templateInsertResponses = [];
+    mockState.templateUpdatePayloads = [];
+    mockState.templateInsertPayloads = [];
+    mockState.templateSelectResponses = [];
+    mockState.templateSelectCalls = [];
+    mockState.listUpdateResponses = [];
+    mockState.listInsertResponses = [];
+    mockState.listUpdatePayloads = [];
+    mockState.listInsertPayloads = [];
+    mockState.listSelectResponses = [];
+    mockState.listSelectCalls = [];
+    mockState.rowSelectResponses = [];
+    mockState.rowSelectCalls = [];
+    mockState.poolSelectResponses = [];
+    mockState.poolSelectCalls = [];
+    mockState.rowUpserts = [];
+    mockState.poolUpserts = [];
+    mockState.rowDeletes = [];
+    mockState.poolDeletes = [];
+    mockState.from.mockImplementation((table) => createTableClient(table));
+    storage.clear();
+    global.window = {
+      localStorage: {
+        getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+        setItem: (key, value) => {
+          storage.set(key, value);
+        },
+        removeItem: (key) => {
+          storage.delete(key);
+        },
+      },
+    };
+  });
+
+  afterAll(() => {
+    global.window = originalWindow;
+  });
+
+  it('does not sync local tierlist data to Supabase during read-only library loads', async () => {
+    storage.set('moodtoon-tierlist-v3', JSON.stringify({
+      templates: [makeTemplate({ id: 'template-local-1', ownerUserId: null })],
+      lists: [makeList({ id: 'tierlist-local-1', templateId: 'template-local-1', ownerUserId: null })],
+    }));
+
+    await loadTierLibrary([], { userId: 'user-1' });
+
+    expect(mockState.templateInsertPayloads).toHaveLength(0);
+    expect(mockState.templateUpdatePayloads).toHaveLength(0);
+    expect(mockState.listInsertPayloads).toHaveLength(0);
+    expect(mockState.listUpdatePayloads).toHaveLength(0);
+  });
+
+  it('reuses tierlist template fetches until a mutation invalidates the cache', async () => {
+    mockState.templateSelectResponses.push(
+      {
+        data: [
+          {
+            id: 'template-public-1',
+            title: 'Cached template',
+            description: '',
+            category: 'general',
+            title_ids: [1, 2, 3],
+            default_rows: ['S', 'A'],
+            is_public: true,
+            is_system: false,
+            plays: 0,
+            owner_user_id: null,
+            created_at: '2026-03-01T00:00:00.000Z',
+            updated_at: '2026-03-01T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: 'template-public-2',
+            title: 'After invalidation',
+            description: '',
+            category: 'general',
+            title_ids: [4, 5, 6],
+            default_rows: ['S', 'A'],
+            is_public: true,
+            is_system: false,
+            plays: 0,
+            owner_user_id: null,
+            created_at: '2026-03-02T00:00:00.000Z',
+            updated_at: '2026-03-02T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      }
+    );
+
+    const first = await loadTierTemplates([]);
+    const second = await loadTierTemplates([]);
+    expect(first[0]?.id).toBe('template-public-1');
+    expect(second[0]?.id).toBe('template-public-1');
+    expect(mockState.templateSelectCalls).toHaveLength(1);
+
+    await saveTierTemplate(makeTemplate({ id: 'template-local-new', ownerUserId: null }), null, { userId: null });
+
+    const third = await loadTierTemplates([]);
+    expect(third.some((template) => template.id === 'template-public-2')).toBe(true);
+    expect(mockState.templateSelectCalls).toHaveLength(2);
+  });
+
+  it('skips owned tierlist queries when browse only needs public data', async () => {
+    mockState.templateSelectResponses.push({
+      data: [
+        {
+          id: 'template-public-browse',
+          title: 'Browse Template',
+          description: '',
+          category: 'general',
+          title_ids: [1, 2, 3],
+          default_rows: ['S', 'A'],
+          is_public: true,
+          is_system: false,
+          plays: 10,
+          owner_user_id: null,
+          created_at: '2026-03-03T00:00:00.000Z',
+          updated_at: '2026-03-03T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    mockState.listSelectResponses.push({
+      data: [
+        {
+          id: 'tierlist-public-browse',
+          template_id: null,
+          title: 'Browse List',
+          description: '',
+          is_public: true,
+          play_count: 3,
+          owner_name: 'Public User',
+          owner_username: 'public-user',
+          has_adult_content: false,
+          owner_user_id: null,
+          created_at: '2026-03-03T00:00:00.000Z',
+          updated_at: '2026-03-03T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    mockState.rowSelectResponses.push({
+      data: [
+        {
+          id: 'row-public-browse',
+          list_id: 'tierlist-public-browse',
+          label: 'S',
+          color: '',
+          position: 0,
+          title_ids: [1, 2],
+        },
+      ],
+      error: null,
+    });
+
+    await loadTierLibrary([], {
+      userId: 'browse-user',
+      includeOwned: false,
+      publicListLimit: 8,
+      showAdult: false,
+    });
+
+    expect(mockState.templateSelectCalls).toHaveLength(1);
+    expect(mockState.listSelectCalls).toHaveLength(1);
+    expect(mockState.templateSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'owner_user_id'
+    ))).toBe(false);
+    expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'owner_user_id'
+    ))).toBe(false);
+  });
+
+  it('keeps owned template fetches separated by age mode', async () => {
+    mockState.templateSelectResponses.push(
+      {
+        data: [
+          {
+            id: 'template-safe-public',
+            title: 'Safe Template',
+            description: '',
+            category: 'general',
+            title_ids: [1, 2, 3],
+            default_rows: ['S', 'A'],
+            is_public: true,
+            is_system: false,
+            plays: 1,
+            has_adult_content: false,
+            owner_user_id: null,
+            created_at: '2026-03-04T00:00:00.000Z',
+            updated_at: '2026-03-04T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: 'template-safe-owned',
+            title: 'Owned Safe Template',
+            description: '',
+            category: 'general',
+            title_ids: [4, 5, 6],
+            default_rows: ['S', 'A'],
+            is_public: false,
+            is_system: false,
+            plays: 0,
+            has_adult_content: false,
+            owner_user_id: 'user-1',
+            created_at: '2026-03-04T00:00:00.000Z',
+            updated_at: '2026-03-04T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      }
+    );
+
+    await loadTierTemplates([], { userId: 'user-1', showAdult: false });
+
+    expect(mockState.templateSelectCalls).toHaveLength(2);
+    expect(mockState.templateSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+    ))).toBe(true);
+    expect(mockState.templateSelectCalls[1]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+    ))).toBe(true);
+  });
+
+  it('keeps owned list fetches separated by age mode', async () => {
+    mockState.listSelectResponses.push(
+      {
+        data: [
+          {
+            id: 'tierlist-safe-public',
+            template_id: null,
+            title: 'Safe Public List',
+            description: '',
+            is_public: true,
+            play_count: 1,
+            owner_name: 'Public User',
+            owner_username: 'public-user',
+            has_adult_content: false,
+            owner_user_id: null,
+            created_at: '2026-03-04T00:00:00.000Z',
+            updated_at: '2026-03-04T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: 'tierlist-safe-owned',
+            template_id: null,
+            title: 'Owned Safe List',
+            description: '',
+            is_public: false,
+            play_count: 0,
+            owner_name: 'You',
+            owner_username: 'user-1',
+            has_adult_content: false,
+            owner_user_id: 'user-1',
+            created_at: '2026-03-04T00:00:00.000Z',
+            updated_at: '2026-03-04T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      }
+    );
+    mockState.rowSelectResponses.push({
+      data: [
+        {
+          id: 'row-safe-owned',
+          list_id: 'tierlist-safe-public',
+          label: 'S',
+          color: '',
+          position: 0,
+          title_ids: [1],
+        },
+        {
+          id: 'row-safe-owned-2',
+          list_id: 'tierlist-safe-owned',
+          label: 'S',
+          color: '',
+          position: 0,
+          title_ids: [2],
+        },
+      ],
+      error: null,
+    });
+
+    await loadTierLibrary([], {
+      userId: 'user-1',
+      fetchTemplates: false,
+      showAdult: false,
+    });
+
+    expect(mockState.listSelectCalls).toHaveLength(2);
+    expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+    ))).toBe(true);
+    expect(mockState.listSelectCalls[1]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+    ))).toBe(true);
+  });
+
+  it('does not reuse list fetch cache across adult mode switches', async () => {
+    mockState.listSelectResponses.push(
+      {
+        data: [
+          {
+            id: 'tierlist-safe-mode',
+            template_id: null,
+            title: 'Safe Browse List',
+            description: '',
+            is_public: true,
+            play_count: 1,
+            owner_name: 'Safe User',
+            owner_username: 'safe-user',
+            has_adult_content: false,
+            owner_user_id: null,
+            created_at: '2026-03-05T00:00:00.000Z',
+            updated_at: '2026-03-05T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: 'tierlist-adult-mode',
+            template_id: null,
+            title: 'Adult Browse List',
+            description: '',
+            is_public: true,
+            play_count: 2,
+            owner_name: 'Adult User',
+            owner_username: 'adult-user',
+            has_adult_content: true,
+            owner_user_id: null,
+            created_at: '2026-03-05T00:00:00.000Z',
+            updated_at: '2026-03-05T00:00:00.000Z',
+          },
+        ],
+        error: null,
+      }
+    );
+    mockState.rowSelectResponses.push(
+      {
+        data: [
+          {
+            id: 'row-safe-mode',
+            list_id: 'tierlist-safe-mode',
+            label: 'S',
+            color: '',
+            position: 0,
+            title_ids: [1],
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            id: 'row-adult-mode',
+            list_id: 'tierlist-adult-mode',
+            label: 'S',
+            color: '',
+            position: 0,
+            title_ids: [2],
+          },
+        ],
+        error: null,
+      }
+    );
+
+    await loadTierLibrary([], {
+      userId: 'mode-user',
+      includeOwned: false,
+      fetchTemplates: false,
+      showAdult: false,
+    });
+    await loadTierLibrary([], {
+      userId: 'mode-user',
+      includeOwned: false,
+      fetchTemplates: false,
+      showAdult: true,
+    });
+
+    expect(mockState.listSelectCalls).toHaveLength(2);
+    expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+    ))).toBe(true);
+    expect(mockState.listSelectCalls[1]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === true
+    ))).toBe(true);
   });
 });
