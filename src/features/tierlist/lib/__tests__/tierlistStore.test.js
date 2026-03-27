@@ -106,7 +106,7 @@ vi.mock('@/shared/lib/catalogEntities', () => ({
   normalizeCatalogEntityType: (value) => (value ? String(value) : 'title'),
 }), { virtual: true });
 
-import { collapseTierTemplatesByIdentity, saveTierList } from '../tierlistStore.js';
+import { collapseTierTemplatesByIdentity, findTierList, saveTierList } from '../tierlistStore.js';
 
 function makeTemplate(overrides = {}) {
   return {
@@ -368,5 +368,29 @@ describe('tierlistStore template identity collapse', () => {
     expect(result.templates[0]?.id).toBe('template-owned');
     expect(result.canonicalIdById.get('template-owned')).toBe('template-owned');
     expect(result.canonicalIdById.get('template-local-stale')).toBe('template-owned');
+  });
+});
+
+describe('tierlistStore entity type normalization', () => {
+  it('inherits a non-title entity type from the linked template when the list falls back to title', () => {
+    const template = makeTemplate({
+      id: 'template-song-1',
+      category: 'songs',
+      entityType: 'theme_song',
+      titleIds: [1013, 1014, 1015],
+    });
+    const list = makeList({
+      id: 'tierlist-song-1',
+      templateId: 'template-song-1',
+      entityType: 'title',
+      poolTitleIds: [1013, 1014, 1015],
+    });
+
+    const resolved = findTierList('tierlist-song-1', {
+      templates: [template],
+      lists: [list],
+    });
+
+    expect(resolved?.entityType).toBe('theme_song');
   });
 });

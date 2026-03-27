@@ -12,6 +12,12 @@ const DEFAULT_LIBRARY = {
 };
 const remoteTemplatesRequestCache = new Map();
 const remoteListsRequestCache = new Map();
+const tierTemplateDetailRequestCache = new Map();
+const tierListDetailRequestCache = new Map();
+const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, created_at, updated_at';
+const REMOTE_LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, created_at, updated_at';
+const REMOTE_LIST_ROWS_SELECT = 'id, list_id, position, label, color, title_ids';
+const REMOTE_LIST_POOL_SELECT = 'list_id, title_id, position';
 
 function encodeTemplateCategory(category, entityType = TITLE_ENTITY_TYPE) {
   const normalizedCategory = String(category || 'general');
@@ -166,6 +172,56 @@ function compareTemplatesByIdentityPriority(left, right) {
   return String(right?.id || '').localeCompare(String(left?.id || ''));
 }
 
+function normalizeTierListIdentityText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getTierListCommunityIdentityKey(list) {
+  if (!list) {
+    return '';
+  }
+
+  return JSON.stringify({
+    owner: normalizeTierListIdentityText(list.ownerUserId || list.ownerUsername || list.ownerName || ''),
+    templateId: String(list.templateId || ''),
+    entityType: normalizeCatalogEntityType(list.entityType),
+    title: normalizeTierListIdentityText(list.title),
+    description: normalizeTierListIdentityText(list.description),
+    rows: (list.rows || []).map((row) => ({
+      label: normalizeTierListIdentityText(row?.label),
+      color: String(row?.color || ''),
+      titleIds: (row?.titleIds || []).map(Number).filter(Boolean),
+    })),
+    poolTitleIds: (list.poolTitleIds || []).map(Number).filter(Boolean),
+  });
+}
+
+function dedupeTierListsByIdentity(lists = []) {
+  const seen = new Set();
+  return [...lists]
+    .sort((a, b) => {
+      const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+      if (updatedDelta !== 0) return updatedDelta;
+      return Number(b.playCount || 0) - Number(a.playCount || 0);
+    })
+    .filter((list) => {
+      const identityKey = getTierListCommunityIdentityKey(list);
+      if (!identityKey || seen.has(identityKey)) {
+        return false;
+      }
+      seen.add(identityKey);
+      return true;
+    });
+}
+
+function sortListsByRecentAndPopularity(lists = []) {
+  return dedupeTierListsByIdentity(lists).sort((a, b) => {
+    const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    if (updatedDelta !== 0) return updatedDelta;
+    return Number(b.playCount || 0) - Number(a.playCount || 0);
+  });
+}
+
 export function getTierTemplateIdentityKey(template) {
   const normalized = normalizeTemplate(template);
   return [
@@ -285,6 +341,17 @@ function normalizeTierList(raw, index = 0) {
   };
 }
 
+function resolveTierListEntityType(list, templateById) {
+  const templateEntityType = normalizeCatalogEntityType(templateById.get(list.templateId)?.entityType);
+  const listEntityType = normalizeCatalogEntityType(list?.entityType);
+
+  if (listEntityType === TITLE_ENTITY_TYPE && templateEntityType !== TITLE_ENTITY_TYPE) {
+    return templateEntityType;
+  }
+
+  return listEntityType || templateEntityType || TITLE_ENTITY_TYPE;
+}
+
 function normalizeLibrary(raw) {
   const templates = Array.isArray(raw?.templates)
     ? raw.templates.map((template, index) => normalizeTemplate(template, index))
@@ -301,11 +368,7 @@ function normalizeLibrary(raw) {
     templates: uniqueById(sortedTemplates),
     lists: uniqueById(sortedLists).map((list) => ({
       ...list,
-      entityType: normalizeCatalogEntityType(
-        list.entityType
-        || templateById.get(list.templateId)?.entityType
-        || TITLE_ENTITY_TYPE
-      ),
+      entityType: resolveTierListEntityType(list, templateById),
     })),
   };
 }
@@ -641,7 +704,6 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
     return [];
   }
 
-  const select = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, created_at, updated_at';
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
@@ -655,7 +717,7 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
   const request = (async () => {
     let publicTemplatesQuery = supabase
       .from('tierlist_templates')
-      .select(select)
+      .select(REMOTE_TEMPLATE_SELECT)
       .eq('is_public', true)
       .order('plays', { ascending: false })
       .order('updated_at', { ascending: false });
@@ -671,7 +733,7 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
     const requests = userId
       ? [
           publicTemplatesQuery,
-          supabase.from('tierlist_templates').select(select).eq('owner_user_id', userId),
+          supabase.from('tierlist_templates').select(REMOTE_TEMPLATE_SELECT).eq('owner_user_id', userId),
         ]
       : [
           publicTemplatesQuery,
@@ -704,7 +766,6 @@ async function fetchRemoteLists(userId = null, options = {}) {
     return [];
   }
 
-  const select = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, created_at, updated_at';
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
@@ -718,7 +779,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
   const request = (async () => {
     let publicListsQuery = supabase
       .from('tierlist_lists')
-      .select(select)
+      .select(REMOTE_LIST_SELECT)
       .eq('is_public', true)
       .order('updated_at', { ascending: false })
       .order('play_count', { ascending: false });
@@ -730,7 +791,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
     const requests = userId
       ? [
           publicListsQuery,
-          supabase.from('tierlist_lists').select(select).eq('owner_user_id', userId),
+          supabase.from('tierlist_lists').select(REMOTE_LIST_SELECT).eq('owner_user_id', userId),
         ]
       : [
           publicListsQuery,
@@ -754,7 +815,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
     const listIds = dedupedLists.map((entry) => entry.id);
     const { data: rowsData, error: rowsError } = await supabase
       .from('tierlist_list_rows')
-      .select('id, list_id, position, label, color, title_ids')
+      .select(REMOTE_LIST_ROWS_SELECT)
       .in('list_id', listIds);
 
     if (rowsError) throw rowsError;
@@ -769,7 +830,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
 
     const { data: poolData, error: poolError } = await supabase
       .from('tierlist_list_pool_items')
-      .select('list_id, title_id, position')
+      .select(REMOTE_LIST_POOL_SELECT)
       .in('list_id', listIds);
 
     if (poolError) throw poolError;
@@ -799,6 +860,298 @@ export async function loadListPoolItems(listId) {
     .order('position', { ascending: true });
   if (error) throw error;
   return (data || []).map((row) => Number(row.title_id));
+}
+
+async function fetchRowsForListIds(listIds = []) {
+  const normalizedIds = [...new Set((listIds || []).map(String).filter(Boolean))];
+  if (!supabase || normalizedIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('tierlist_list_rows')
+    .select(REMOTE_LIST_ROWS_SELECT)
+    .in('list_id', normalizedIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+function buildPartialTierLibrary({ template = null, currentList = null, relatedPublicLists = [] } = {}) {
+  return normalizeLibrary({
+    templates: template ? [normalizeTemplate(template)] : [],
+    lists: [
+      ...(currentList ? [normalizeTierList(currentList)] : []),
+      ...(relatedPublicLists || []).map((list) => normalizeTierList(list)),
+    ],
+  });
+}
+
+export async function loadTierTemplateDetail(templateId, options = {}) {
+  const normalizedTemplateId = String(templateId || '');
+  const userId = options?.userId || null;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const requestKey = `${normalizedTemplateId}::${userId || 'anon'}::${showAdult ?? 'any'}`;
+
+  if (!normalizedTemplateId) {
+    return { template: null, library: { ...DEFAULT_LIBRARY } };
+  }
+
+  if (tierTemplateDetailRequestCache.has(requestKey)) {
+    return tierTemplateDetailRequestCache.get(requestKey);
+  }
+
+  const request = (async () => {
+    const localLibrary = normalizeLibrary(loadLibraryRaw());
+    const localTemplate = findTierTemplate(normalizedTemplateId, localLibrary);
+    const localRelatedPublicLists = sortListsByRecentAndPopularity(
+      localLibrary.lists.filter((list) => (
+        list.isPublic &&
+        String(list.templateId || '') === normalizedTemplateId
+      ))
+    );
+
+    if (!supabase) {
+      return {
+        template: localTemplate,
+        library: buildPartialTierLibrary({
+          template: localTemplate,
+          relatedPublicLists: localRelatedPublicLists,
+        }),
+      };
+    }
+
+    try {
+      const { data: templateRow, error: templateError } = await supabase
+        .from('tierlist_templates')
+        .select(REMOTE_TEMPLATE_SELECT)
+        .eq('id', normalizedTemplateId)
+        .maybeSingle();
+
+      if (templateError) {
+        throw templateError;
+      }
+
+      const remoteTemplate = templateRow ? fromRemoteTemplate(templateRow) : null;
+      if (!remoteTemplate) {
+        return {
+          template: localTemplate,
+          library: buildPartialTierLibrary({
+            template: localTemplate,
+            relatedPublicLists: localRelatedPublicLists,
+          }),
+        };
+      }
+
+      const { data: relatedListRows, error: relatedListsError } = await supabase
+        .from('tierlist_lists')
+        .select(REMOTE_LIST_SELECT)
+        .eq('template_id', normalizedTemplateId)
+        .eq('is_public', true)
+        .order('updated_at', { ascending: false })
+        .order('play_count', { ascending: false });
+
+      if (relatedListsError) {
+        throw relatedListsError;
+      }
+
+      const relatedIds = (relatedListRows || []).map((row) => row.id);
+      const relatedRows = await fetchRowsForListIds(relatedIds);
+
+      return {
+        template: remoteTemplate,
+        library: buildPartialTierLibrary({
+          template: remoteTemplate,
+          relatedPublicLists: (relatedListRows || []).map((row) => fromRemoteList(
+            row,
+            relatedRows.filter((entry) => entry.list_id === row.id),
+            []
+          )),
+        }),
+      };
+    } catch (error) {
+      if (isNetworkLikeError(error)) {
+        return {
+          template: localTemplate,
+          library: buildPartialTierLibrary({
+            template: localTemplate,
+            relatedPublicLists: localRelatedPublicLists,
+          }),
+        };
+      }
+
+      throw error;
+    }
+  })();
+
+  tierTemplateDetailRequestCache.set(requestKey, request);
+
+  try {
+    return await request;
+  } finally {
+    tierTemplateDetailRequestCache.delete(requestKey);
+  }
+}
+
+export async function loadTierListDetail(listId, options = {}) {
+  const normalizedListId = String(listId || '');
+  const userId = options?.userId || null;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const requestKey = `${normalizedListId}::${userId || 'anon'}::${showAdult ?? 'any'}`;
+
+  if (!normalizedListId) {
+    return { list: null, library: { ...DEFAULT_LIBRARY } };
+  }
+
+  if (tierListDetailRequestCache.has(requestKey)) {
+    return tierListDetailRequestCache.get(requestKey);
+  }
+
+  const request = (async () => {
+    const localLibrary = normalizeLibrary(loadLibraryRaw());
+    const localList = findTierList(normalizedListId, localLibrary);
+    const localTemplate = localList?.templateId ? findTierTemplate(localList.templateId, localLibrary) : null;
+    const localRelatedPublicLists = localList?.templateId
+      ? sortListsByRecentAndPopularity(
+        localLibrary.lists.filter((list) => (
+          list.isPublic &&
+          list.id !== normalizedListId &&
+          String(list.templateId || '') === String(localList.templateId || '')
+        ))
+      )
+      : [];
+
+    if (!supabase) {
+      return {
+        list: localList,
+        library: buildPartialTierLibrary({
+          template: localTemplate,
+          currentList: localList,
+          relatedPublicLists: localRelatedPublicLists,
+        }),
+      };
+    }
+
+    try {
+      const { data: listRow, error: listError } = await supabase
+        .from('tierlist_lists')
+        .select(REMOTE_LIST_SELECT)
+        .eq('id', normalizedListId)
+        .maybeSingle();
+
+      if (listError) {
+        throw listError;
+      }
+
+      if (!listRow) {
+        return {
+          list: localList,
+          library: buildPartialTierLibrary({
+            template: localTemplate,
+            currentList: localList,
+            relatedPublicLists: localRelatedPublicLists,
+          }),
+        };
+      }
+
+      const templateId = String(listRow.template_id || '');
+      const currentListRequests = [
+        supabase
+          .from('tierlist_list_rows')
+          .select(REMOTE_LIST_ROWS_SELECT)
+          .eq('list_id', normalizedListId),
+        supabase
+          .from('tierlist_list_pool_items')
+          .select(REMOTE_LIST_POOL_SELECT)
+          .eq('list_id', normalizedListId)
+          .order('position', { ascending: true }),
+      ];
+
+      if (templateId) {
+        currentListRequests.push(
+          supabase
+            .from('tierlist_templates')
+            .select(REMOTE_TEMPLATE_SELECT)
+            .eq('id', templateId)
+            .maybeSingle()
+        );
+      }
+
+      const [rowsResult, poolResult, templateResult] = await Promise.all(currentListRequests);
+
+      if (rowsResult.error) {
+        throw rowsResult.error;
+      }
+      if (poolResult.error) {
+        throw poolResult.error;
+      }
+      if (templateResult?.error) {
+        throw templateResult.error;
+      }
+
+      const remoteTemplate = templateResult?.data ? fromRemoteTemplate(templateResult.data) : localTemplate;
+      const currentList = fromRemoteList(listRow, rowsResult.data || [], poolResult.data || []);
+      let relatedPublicLists = [];
+
+      if (templateId) {
+        const { data: relatedListRows, error: relatedListsError } = await supabase
+          .from('tierlist_lists')
+          .select(REMOTE_LIST_SELECT)
+          .eq('template_id', templateId)
+          .eq('is_public', true)
+          .neq('id', normalizedListId)
+          .order('updated_at', { ascending: false })
+          .order('play_count', { ascending: false });
+
+        if (relatedListsError) {
+          throw relatedListsError;
+        }
+
+        const relatedIds = (relatedListRows || []).map((row) => row.id);
+        const relatedRows = await fetchRowsForListIds(relatedIds);
+        relatedPublicLists = (relatedListRows || []).map((row) => fromRemoteList(
+          row,
+          relatedRows.filter((entry) => entry.list_id === row.id),
+          []
+        ));
+      }
+
+      const library = buildPartialTierLibrary({
+        template: remoteTemplate,
+        currentList,
+        relatedPublicLists,
+      });
+
+      return {
+        list: findTierList(normalizedListId, library) || currentList,
+        library,
+      };
+    } catch (error) {
+      if (isNetworkLikeError(error)) {
+        return {
+          list: localList,
+          library: buildPartialTierLibrary({
+            template: localTemplate,
+            currentList: localList,
+            relatedPublicLists: localRelatedPublicLists,
+          }),
+        };
+      }
+
+      throw error;
+    }
+  })();
+
+  tierListDetailRequestCache.set(requestKey, request);
+
+  try {
+    return await request;
+  } finally {
+    tierListDetailRequestCache.delete(requestKey);
+  }
 }
 
 async function saveRemoteTemplate(template, userId = null) {

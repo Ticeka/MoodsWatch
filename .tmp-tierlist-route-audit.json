@@ -1,0 +1,94 @@
+[
+  {
+    "path": "/tierlist/play/tierlist-1d8b10df-d80f-4236-9daf-4acbb2010949",
+    "requestCount": 6,
+    "grouped": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_comments",
+        "count": 1,
+        "maxDurationMs": 1790,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_lists",
+        "count": 1,
+        "maxDurationMs": 1405,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_templates",
+        "count": 1,
+        "maxDurationMs": 1269,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 1,
+        "maxDurationMs": 1184,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_rows",
+        "count": 1,
+        "maxDurationMs": 718,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_pool_items",
+        "count": 1,
+        "maxDurationMs": 360,
+        "statuses": [
+          200
+        ]
+      }
+    ]
+  },
+  {
+    "path": "/tierlist/template/template-0a4a6307-14b2-4071-b140-3e9c9cad7158",
+    "requestCount": 4,
+    "grouped": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_rows",
+        "count": 1,
+        "maxDurationMs": 1061,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs",
+        "count": 1,
+        "maxDurationMs": 694,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_lists",
+        "count": 1,
+        "maxDurationMs": 604,
+        "statuses": [
+          200
+        ]
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_templates",
+        "count": 1,
+        "maxDurationMs": 308,
+        "statuses": [
+          200
+        ]
+      }
+    ]
+  }
+]

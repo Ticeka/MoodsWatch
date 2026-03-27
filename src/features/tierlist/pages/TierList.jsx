@@ -55,8 +55,9 @@ import {
   findTierList,
   findTierTemplate,
   filterTierListToCatalog,
-  loadListPoolItems,
+  loadTierListDetail,
   loadTierLibrary,
+  loadTierTemplateDetail,
   loadTierTemplates,
   moveTitle,
   removeTierRow,
@@ -2455,7 +2456,7 @@ export function TierListBrowsePage() {
   const handlePlayTemplate = async (template) => {
     try {
       const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, {
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, null, {
         userId: user?.id || null,
         preserveOwnership: true,
       });
@@ -2778,28 +2779,14 @@ export function TierListTemplatePage() {
       setIsPreviewLoading(true);
       setLoadError('');
 
-      const quickTemplate = findTierTemplate(templateId);
-      if (quickTemplate && !cancelled) {
-        setTemplate(quickTemplate);
-        setIsTemplateLoading(false);
-      }
-
-      if (!quickTemplate) {
-        const fastTemplates = await loadTierTemplates([], { userId: user?.id || null, showAdult });
-        if (cancelled) return;
-        const fastTemplate = fastTemplates.find((entry) => String(entry.id) === String(templateId));
-        if (fastTemplate) {
-          setTemplate(fastTemplate);
-          setLibrary((current) => ({ ...current, templates: fastTemplates }));
-          setIsTemplateLoading(false);
-        }
-      }
-
-      const loadedLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
+      const loadedDetail = await loadTierTemplateDetail(templateId, {
+        userId: user?.id || null,
+        showAdult,
+      });
       if (cancelled) return;
-      setLibrary(loadedLibrary);
+      setLibrary(loadedDetail.library);
 
-      const found = findTierTemplate(templateId, loadedLibrary);
+      const found = loadedDetail.template;
       if (!found) {
         setIsTemplateLoading(false);
         setIsPreviewLoading(false);
@@ -2813,7 +2800,7 @@ export function TierListTemplatePage() {
       setTemplate(resolvedTemplate);
       setIsTemplateLoading(false);
 
-      const communityListIds = loadedLibrary.lists
+      const communityListIds = loadedDetail.library.lists
         .filter((l) => String(l.templateId) === String(templateId))
         .flatMap((l) => [
           ...(l.rows || []).flatMap((r) => r.titleIds || []),
@@ -2890,7 +2877,7 @@ export function TierListTemplatePage() {
         ownerName: ownerUsername || 'You',
         ownerUsername,
         ownerUserId: user?.id || null,
-      }, libraryAfterTemplate, { userId: user?.id || null });
+      }, null, { userId: user?.id || null });
       const savedList = findTierList(seeded.id, libraryAfterList) || libraryAfterList.lists[0];
       navigate(`/tierlist/play/${savedList.id}`);
     } catch (error) {
@@ -2900,7 +2887,7 @@ export function TierListTemplatePage() {
 
   const handleRemix = async (list) => {
     try {
-      const saved = await saveTierList(buildRemixedTierList(list, user), library, { userId: user?.id || null });
+      const saved = await saveTierList(buildRemixedTierList(list, user), null, { userId: user?.id || null });
       setLibrary(saved);
       navigate(`/tierlist/play/${saved.lists[0].id}`);
     } catch (error) {
@@ -3974,29 +3961,27 @@ export function TierListPlayPage() {
       setLoadError('');
       setSongEntityMap(new Map());
 
-      const initialLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
+      const loadedDetail = await loadTierListDetail(listId, {
+        userId: user?.id || null,
+        showAdult,
+      });
       if (!cancelled) {
-        setLibrary(initialLibrary);
+        setLibrary(loadedDetail.library);
       }
 
-      const foundList = findTierList(listId, initialLibrary);
+      const foundList = loadedDetail.list;
       if (!foundList) {
         setLoadError(pick('ไม่พบ Tier List', 'Tier list not found'));
         return;
       }
 
-      // Pool items are skipped in loadTierLibrary for performance — fetch them now for this specific list
-      const remotePoolIds = await loadListPoolItems(listId);
-      if (cancelled) return;
-      const list = remotePoolIds.length > 0
-        ? { ...foundList, poolTitleIds: remotePoolIds }
-        : foundList;
+      const list = foundList;
 
       if (!cancelled) {
         setTierList(list);
       }
       const sourceTemplate = list.templateId
-        ? findTierTemplate(list.templateId, initialLibrary)
+        ? findTierTemplate(list.templateId, loadedDetail.library)
         : null;
       const allowedTitleIds = sourceTemplate?.titleIds?.length
         ? sourceTemplate.titleIds
@@ -4071,18 +4056,22 @@ export function TierListPlayPage() {
       let nextPlayableList = cleanedList;
 
       if (hasTierListStructureChanged(list, cleanedList)) {
-        const cleanedLibrary = await saveTierList(cleanedList, initialLibrary, { userId: user?.id || null });
+        const cleanedLibrary = await saveTierList(cleanedList, null, { userId: user?.id || null });
         if (cancelled) return;
         setLibrary(cleanedLibrary);
         nextPlayableList = findTierList(cleanedList.id, cleanedLibrary) || cleanedList;
       }
 
-      setTierList(nextPlayableList);
-
       // Load song entities for song-type tier lists
       const resolvedEntityType = normalizeCatalogEntityType(
         cleanedList.entityType || (sourceTemplate ? sourceTemplate.entityType : null)
       );
+      nextPlayableList = {
+        ...nextPlayableList,
+        entityType: resolvedEntityType,
+      };
+      setTierList(nextPlayableList);
+
       if (resolvedEntityType === THEME_SONG_ENTITY_TYPE) {
         let songIds = [
           ...(sourceTemplate?.titleIds || []),
@@ -4193,7 +4182,7 @@ export function TierListPlayPage() {
 
   const handleRemixTierList = async (list) => {
     try {
-      const saved = await saveTierList(buildRemixedTierList(list, user), library, { userId: user?.id || null });
+      const saved = await saveTierList(buildRemixedTierList(list, user), null, { userId: user?.id || null });
       setLibrary(saved);
       navigate(`/tierlist/play/${saved.lists[0].id}`);
     } catch (error) {

@@ -1,0 +1,536 @@
+[
+  {
+    "path": "/",
+    "totalDurationMs": 9233,
+    "requestCount": 5,
+    "duplicates": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 4,
+        "maxDurationMs": 2091,
+        "statuses": [
+          200,
+          206
+        ],
+        "maxContentLength": null
+      }
+    ],
+    "slowest": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 4,
+        "maxDurationMs": 2091,
+        "statuses": [
+          200,
+          206
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/homepage_content_blocks",
+        "count": 1,
+        "maxDurationMs": 616,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 2
+      }
+    ],
+    "raw": [
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627216224,
+        "end": 1774627218315,
+        "durationMs": 2091,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&is_adult=eq.false&order=popularity_score.desc.nullslast%2Cavg_score.desc.nullslast%2Cid.asc&offset=0&limit=8",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627216545,
+        "end": 1774627217213,
+        "durationMs": 668,
+        "status": 206,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/homepage_content_blocks?select=id%2Cblock_key%2Ctitle%2Csubtitle%2Cblock_type%2Cstatus%2Cvisibility%2Cposition%2Cconfig%2Cstarts_at%2Cends_at%2Ccollection_id%2Ccollection%3Aeditor_collections%28id%2Cslug%2Cname%2Cdescription%2Ccover_image%2Cbadge_label%2Ccollection_type%2Csort_mode%2Cstatus%2Cvisibility%2Citem_limit%2Cis_featured%2Cstarts_at%2Cends_at%2Citems%3Aeditor_collection_items%28id%2Cposition%2Cnote%2Ctitle_id%2Ctitle%3Acanonical_titles%28id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Crelease_year%2Cstatus%2Cepisodes%2Cchapters%2Ccover_image%2Cavg_score%2Cpopularity_score%2Caliases%3Aaliases_cache%29%29%29&status=eq.published&visibility=eq.public&order=position.asc",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/homepage_content_blocks",
+        "method": "GET",
+        "start": 1774627216595,
+        "end": 1774627217211,
+        "durationMs": 616,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": 2
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000&id=gt.2777",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627218327,
+        "end": 1774627220351,
+        "durationMs": 2024,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000&id=gt.4205",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627220363,
+        "end": 1774627221145,
+        "durationMs": 782,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      }
+    ]
+  },
+  {
+    "path": "/discover",
+    "totalDurationMs": 9080,
+    "requestCount": 12,
+    "duplicates": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 5,
+        "maxDurationMs": 2273,
+        "statuses": [
+          200,
+          206
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles",
+        "count": 2,
+        "maxDurationMs": 1359,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      }
+    ],
+    "slowest": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 5,
+        "maxDurationMs": 2273,
+        "statuses": [
+          200,
+          206
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/social_posts",
+        "count": 1,
+        "maxDurationMs": 1361,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles",
+        "count": 2,
+        "maxDurationMs": 1359,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/5556d46f-1241-439a-a267-36b6e84b25f3/avatar-1773778164740.gif",
+        "count": 1,
+        "maxDurationMs": 1070,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 34816
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/bb79ce70-49b0-4cda-a2be-5465653b600d/avatar-1773678513018.jpg",
+        "count": 1,
+        "maxDurationMs": 396,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 46728
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/632093b8-7525-4a59-803b-062ccb6d6e81/avatar-1773713156515.jpg",
+        "count": 1,
+        "maxDurationMs": 368,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 35558
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/04cb5b02-9d0e-4751-af37-9b2b43b9d066/avatar-1774299027991.jpg",
+        "count": 1,
+        "maxDurationMs": 367,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 41694
+      }
+    ],
+    "raw": [
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627225220,
+        "end": 1774627227493,
+        "durationMs": 2273,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&is_adult=eq.false&order=popularity_score.desc.nullslast%2Cavg_score.desc.nullslast%2Cid.asc&offset=0&limit=6",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627225553,
+        "end": 1774627226221,
+        "durationMs": 668,
+        "status": 206,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/social_posts?select=id%2Cuser_id%2Ccontent%2Cimage_url%2Ctitle_id%2Ccreated_at%2Ctitle%3Acanonical_titles%28id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache%29&order=created_at.desc&limit=24",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/social_posts",
+        "method": "GET",
+        "start": 1774627225553,
+        "end": 1774627226914,
+        "durationMs": 1361,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles?select=id%2Cname%2Cusername%2Cavatar_url%2Cbio%2Cfavorite_moods%2Ccreated_at&is_profile_public=eq.true&order=created_at.desc&limit=12",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles",
+        "method": "GET",
+        "start": 1774627225553,
+        "end": 1774627226912,
+        "durationMs": 1359,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&is_adult=eq.false&order=popularity_score.desc.nullslast%2Cavg_score.desc.nullslast%2Cid.asc&offset=0&limit=6",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627225554,
+        "end": 1774627226969,
+        "durationMs": 1415,
+        "status": 206,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles?select=id%2Cname%2Cusername%2Cavatar_url&id=in.%28632093b8-7525-4a59-803b-062ccb6d6e81%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/user_profiles",
+        "method": "GET",
+        "start": 1774627226916,
+        "end": 1774627227323,
+        "durationMs": 407,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/632093b8-7525-4a59-803b-062ccb6d6e81/avatar-1773713156515.jpg?t=1773713156832",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/632093b8-7525-4a59-803b-062ccb6d6e81/avatar-1773713156515.jpg",
+        "method": "GET",
+        "start": 1774627227430,
+        "end": 1774627227798,
+        "durationMs": 368,
+        "status": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 35558
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/5556d46f-1241-439a-a267-36b6e84b25f3/avatar-1773778164740.gif?t=1773778165573",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/5556d46f-1241-439a-a267-36b6e84b25f3/avatar-1773778164740.gif",
+        "method": "GET",
+        "start": 1774627227430,
+        "end": 1774627228500,
+        "durationMs": 1070,
+        "status": 200,
+        "contentType": "image/gif",
+        "contentLength": 34816
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/04cb5b02-9d0e-4751-af37-9b2b43b9d066/avatar-1774299027991.jpg?t=1774299028743",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/04cb5b02-9d0e-4751-af37-9b2b43b9d066/avatar-1774299027991.jpg",
+        "method": "GET",
+        "start": 1774627227430,
+        "end": 1774627227797,
+        "durationMs": 367,
+        "status": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 41694
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/bb79ce70-49b0-4cda-a2be-5465653b600d/avatar-1773678513018.jpg",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/storage/v1/object/public/avatars/bb79ce70-49b0-4cda-a2be-5465653b600d/avatar-1773678513018.jpg",
+        "method": "GET",
+        "start": 1774627227430,
+        "end": 1774627227826,
+        "durationMs": 396,
+        "status": 200,
+        "contentType": "image/jpeg",
+        "contentLength": 46728
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000&id=gt.2777",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627227509,
+        "end": 1774627228779,
+        "durationMs": 1270,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Cstatus%2Crelease_year%2Cepisodes%2Cchapters%2Cvolumes%2Cduration_minutes%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Ctrailer_url%2Ctrailer_site%2Ctrailer_video_id%2Ctrailer_thumbnail_url%2Ctrailer_source%2Caliases%3Aaliases_cache%2Cgenres%3Agenres_cache%2Ctags%3Atags_cache%2Cmoods%3Amoods_cache&order=id.asc&limit=1000&id=gt.4205",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627228787,
+        "end": 1774627229168,
+        "durationMs": 381,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      }
+    ]
+  },
+  {
+    "path": "/tierlist",
+    "totalDurationMs": 9067,
+    "requestCount": 11,
+    "duplicates": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs",
+        "count": 2,
+        "maxDurationMs": 1501,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters",
+        "count": 2,
+        "maxDurationMs": 1426,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 2
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 4,
+        "maxDurationMs": 1081,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 29
+      }
+    ],
+    "slowest": [
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_rows",
+        "count": 1,
+        "maxDurationMs": 1876,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs",
+        "count": 2,
+        "maxDurationMs": 1501,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters",
+        "count": 2,
+        "maxDurationMs": 1426,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 2
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "count": 4,
+        "maxDurationMs": 1081,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": 29
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_lists",
+        "count": 1,
+        "maxDurationMs": 516,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      },
+      {
+        "key": "GET ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_templates",
+        "count": 1,
+        "maxDurationMs": 367,
+        "statuses": [
+          200
+        ],
+        "maxContentLength": null
+      }
+    ],
+    "raw": [
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_templates?select=id%2Cowner_user_id%2Ctitle%2Cdescription%2Ccategory%2Ctitle_ids%2Cdefault_rows%2Cis_public%2Cis_system%2Cplays%2Ccreated_at%2Cupdated_at&is_public=eq.true&order=plays.desc%2Cupdated_at.desc&has_adult_content=eq.false",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_templates",
+        "method": "GET",
+        "start": 1774627234598,
+        "end": 1774627234965,
+        "durationMs": 367,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_lists?select=id%2Cowner_user_id%2Ctemplate_id%2Ctitle%2Cdescription%2Cis_public%2Cplay_count%2Cowner_name%2Cowner_username%2Ccreated_at%2Cupdated_at&is_public=eq.true&order=updated_at.desc%2Cplay_count.desc&limit=16",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_lists",
+        "method": "GET",
+        "start": 1774627234969,
+        "end": 1774627235485,
+        "durationMs": 516,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_rows?select=id%2Clist_id%2Cposition%2Clabel%2Ccolor%2Ctitle_ids&list_id=in.%28tierlist-ab3c4abf-22ea-4fe6-948d-5ae25c03db21%2Ctierlist-d37712b7-004f-4c8d-ac99-23bd360b40f9%2Ctierlist-7bb7c17a-084f-4b97-a359-b99957653fa3%2Ctierlist-a4edcfc6-222d-42a2-8777-51305cd27db2%2Ctierlist-29959764-dd67-49d7-bd8f-ba3557940afe%2Ctierlist-1d8b10df-d80f-4236-9daf-4acbb2010949%2Ctierlist-93df6736-e2cf-480d-b2f8-f733a2192911%2Ctierlist-ddbeab31-6f9a-4318-82f2-e95cb1ee1122%2Ctierlist-4c01bc39-8316-4f96-a3a3-c0ca7f753c56%2Ctierlist-0a87452f-4eae-4c59-a3b8-fae6b70dc5af%2Ctierlist-ece14e86-b094-428c-b93b-d0eca473ca8e%2Ctierlist-55e62b81-ab65-453f-b764-b677473fadf6%2Ctierlist-5d08b751-815d-4a5d-90f2-174ee93e0c26%2Ctierlist-a8af717b-2ec7-44cc-a930-a41d3cd93e1e%2Ctierlist-6103bca7-58f1-492f-8d3a-5d4e5804e73b%2Ctierlist-1ef64e99-9b30-4fd5-a513-d045f0634ac6%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/tierlist_list_rows",
+        "method": "GET",
+        "start": 1774627235486,
+        "end": 1774627237362,
+        "durationMs": 1876,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Crelease_year%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Caliases%3Aaliases_cache&id=in.%2855%2C56%2C57%2C58%2C59%2C63%2C65%2C68%2C1956%2C1957%2C1959%2C1960%2C1963%2C1964%2C1968%2C1971%2C1958%2C1961%2C1966%2C1965%2C52%2C54%2C2167%2C2166%2C2229%2C72%2C2265%2C2274%2C2278%2C2227%2C2314%2C2406%2C73%2C2276%2C81%2C2175%29&is_adult=eq.false",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627237371,
+        "end": 1774627238452,
+        "durationMs": 1081,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters?select=canonical_title_id%2Canilist_id%2Cname_full%2Cname_native%2Cimage_url%2Crole%2Cvoice_actor_name%2Cvoice_actor_image%2Csort_order%2Ccanonical_titles%21inner%28id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Crelease_year%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Caliases%3Aaliases_cache%29&anilist_id=in.%284140010%2C4140009%2C4140008%2C4140007%2C4140002%2C4140003%2C4140005%2C4140004%29&canonical_titles.is_adult=eq.false",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters",
+        "method": "GET",
+        "start": 1774627237372,
+        "end": 1774627238798,
+        "durationMs": 1426,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": 2
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cis_adult&id=in.%2855%2C56%2C57%2C58%2C59%2C63%2C65%2C68%2C1956%2C1957%2C1959%2C1960%2C1963%2C1964%2C1968%2C1971%2C1958%2C1961%2C1966%2C1965%2C52%2C54%2C2167%2C2166%2C2229%2C72%2C2265%2C2274%2C2278%2C2227%2C2314%2C2406%2C73%2C2276%2C81%2C2175%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627237373,
+        "end": 1774627238292,
+        "durationMs": 919,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs?select=id%2Ccanonical_titles%21inner%28is_adult%29&id=in.%2855%2C56%2C57%2C58%2C59%2C63%2C65%2C68%2C1013%2C1014%2C1015%2C1016%2C1017%2C1018%2C1019%2C1020%2C18%2C19%2C7%2C8%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs",
+        "method": "GET",
+        "start": 1774627237373,
+        "end": 1774627238874,
+        "durationMs": 1501,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters?select=anilist_id%2Ccanonical_titles%21inner%28is_adult%29&anilist_id=in.%284140010%2C4140009%2C4140008%2C4140007%2C4140002%2C4140003%2C4140005%2C4140004%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_characters",
+        "method": "GET",
+        "start": 1774627237373,
+        "end": 1774627238563,
+        "durationMs": 1190,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": 2
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Crelease_year%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Caliases%3Aaliases_cache&id=in.%284140%29&is_adult=eq.false",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627238801,
+        "end": 1774627239288,
+        "durationMs": 487,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": 2
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles?select=id%2Cis_adult&id=in.%284140%29",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/canonical_titles",
+        "method": "GET",
+        "start": 1774627238876,
+        "end": 1774627239297,
+        "durationMs": 421,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": 29
+      },
+      {
+        "url": "https://ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs?select=id%2Ctheme_type%2Ctheme_sequence%2Csong_title%2Cartist_name%2Cepisodes_text%2Cvideo_url%2Cis_creditless%2Cis_spoiler%2Cis_nsfw%2Ccanonical_title_id%2Ccanonical_titles%21inner%28id%2Cslug%2Ccanonical_title%2Ctype%2Csubtype%2Crelease_year%2Cis_adult%2Ccover_image%2Cbanner_image%2Cavg_score%2Cpopularity_score%2Caliases%3Aaliases_cache%29&id=in.%2855%2C56%2C57%2C58%2C59%2C63%2C65%2C68%2C1013%2C1014%2C1015%2C1016%2C1017%2C1018%2C1019%2C1020%2C18%2C19%2C7%2C8%29&canonical_titles.is_adult=eq.false",
+        "simpleUrl": "ntwgbtaxsovsnafpvbkj.supabase.co/rest/v1/title_theme_songs",
+        "method": "GET",
+        "start": 1774627239298,
+        "end": 1774627239764,
+        "durationMs": 466,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "contentLength": null
+      }
+    ]
+  }
+]
