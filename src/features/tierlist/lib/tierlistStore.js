@@ -845,12 +845,17 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
     return [];
   }
 
+  const includePublic = options?.includePublic !== false;
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
   const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const includeOwned = options?.includeOwned !== false && Boolean(userId);
-  const requestKey = `${userId || 'anon'}::${includeOwned ? 'owned' : 'public'}::${publicLimit ?? 'all'}::${showAdult ?? 'any'}`;
+  if (!includePublic && !includeOwned) {
+    return [];
+  }
+
+  const requestKey = `${userId || 'anon'}::${includePublic ? 'public' : 'owned-only'}::${includeOwned ? 'owned' : 'no-owned'}::${publicLimit ?? 'all'}::${showAdult ?? 'any'}`;
   const cachedResult = readTimedCache(remoteTemplatesResultCache, requestKey);
   if (cachedResult) {
     return cachedResult;
@@ -862,22 +867,26 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
 
   const cacheVersion = tierlistRemoteCacheVersion;
   const request = (async () => {
-    let publicTemplatesQuery = supabase
-      .from('tierlist_templates')
-      .select(REMOTE_TEMPLATE_SELECT)
-      .eq('is_public', true)
-      .order('plays', { ascending: false })
-      .order('updated_at', { ascending: false });
+    const requests = [];
 
-    if (showAdult !== null) {
-      publicTemplatesQuery = publicTemplatesQuery.eq('has_adult_content', showAdult);
+    if (includePublic) {
+      let publicTemplatesQuery = supabase
+        .from('tierlist_templates')
+        .select(REMOTE_TEMPLATE_SELECT)
+        .eq('is_public', true)
+        .order('plays', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (showAdult !== null) {
+        publicTemplatesQuery = publicTemplatesQuery.eq('has_adult_content', showAdult);
+      }
+
+      if (publicLimit !== null) {
+        publicTemplatesQuery = publicTemplatesQuery.limit(publicLimit);
+      }
+
+      requests.push(publicTemplatesQuery);
     }
-
-    if (publicLimit !== null) {
-      publicTemplatesQuery = publicTemplatesQuery.limit(publicLimit);
-    }
-
-    const requests = [publicTemplatesQuery];
 
     if (includeOwned) {
       let ownedTemplatesQuery = supabase
@@ -923,13 +932,18 @@ async function fetchRemoteLists(userId = null, options = {}) {
     return [];
   }
 
+  const includePublic = options?.includePublic !== false;
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
   const skipPoolItems = options?.skipPoolItems !== false;
   const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const includeOwned = options?.includeOwned !== false && Boolean(userId);
-  const requestKey = `${userId || 'anon'}::${includeOwned ? 'owned' : 'public'}::${publicLimit ?? 'all'}::${skipPoolItems ? 'npool' : 'pool'}::${showAdult ?? 'any'}`;
+  if (!includePublic && !includeOwned) {
+    return [];
+  }
+
+  const requestKey = `${userId || 'anon'}::${includePublic ? 'public' : 'owned-only'}::${includeOwned ? 'owned' : 'no-owned'}::${publicLimit ?? 'all'}::${skipPoolItems ? 'npool' : 'pool'}::${showAdult ?? 'any'}`;
   const cachedResult = readTimedCache(remoteListsResultCache, requestKey);
   if (cachedResult) {
     return cachedResult;
@@ -941,22 +955,26 @@ async function fetchRemoteLists(userId = null, options = {}) {
 
   const cacheVersion = tierlistRemoteCacheVersion;
   const request = (async () => {
-    let publicListsQuery = supabase
-      .from('tierlist_lists')
-      .select(REMOTE_LIST_SELECT)
-      .eq('is_public', true)
-      .order('updated_at', { ascending: false })
-      .order('play_count', { ascending: false });
+    const requests = [];
 
-    if (showAdult !== null) {
-      publicListsQuery = publicListsQuery.eq('has_adult_content', showAdult);
+    if (includePublic) {
+      let publicListsQuery = supabase
+        .from('tierlist_lists')
+        .select(REMOTE_LIST_SELECT)
+        .eq('is_public', true)
+        .order('updated_at', { ascending: false })
+        .order('play_count', { ascending: false });
+
+      if (showAdult !== null) {
+        publicListsQuery = publicListsQuery.eq('has_adult_content', showAdult);
+      }
+
+      if (publicLimit !== null) {
+        publicListsQuery = publicListsQuery.limit(publicLimit);
+      }
+
+      requests.push(publicListsQuery);
     }
-
-    if (publicLimit !== null) {
-      publicListsQuery = publicListsQuery.limit(publicLimit);
-    }
-
-    const requests = [publicListsQuery];
 
     if (includeOwned) {
       let ownedListsQuery = supabase
@@ -1656,6 +1674,7 @@ async function syncLocalLibraryToSupabase(localLibrary, userId) {
 
 export async function loadTierLibrary(catalog = [], options = {}) {
   const userId = options?.userId || null;
+  const includePublic = options?.includePublic !== false;
   const includeOwned = options?.includeOwned !== false;
   const shouldFetchTemplates = options?.fetchTemplates !== false;
   const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
@@ -1670,12 +1689,14 @@ export async function loadTierLibrary(catalog = [], options = {}) {
     const [remoteTemplates, remoteLists] = await Promise.all([
       shouldFetchTemplates
         ? fetchRemoteTemplates(userId, {
+          includePublic,
           includeOwned,
           publicLimit: options?.publicTemplateLimit,
           showAdult: options?.showAdult,
         })
         : Promise.resolve([]),
       fetchRemoteLists(userId, {
+        includePublic,
         includeOwned,
         publicLimit: options?.publicListLimit,
         skipPoolItems: true,
@@ -1707,6 +1728,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
 
 export async function loadTierTemplates(catalog = [], options = {}) {
   const userId = options?.userId || null;
+  const includePublic = options?.includePublic !== false;
   const includeOwned = options?.includeOwned !== false;
   const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const localLibrary = withSystemTemplates(loadLibraryRaw(), catalog);
@@ -1718,6 +1740,7 @@ export async function loadTierTemplates(catalog = [], options = {}) {
 
   try {
     const remoteTemplates = await fetchRemoteTemplates(userId, {
+      includePublic,
       includeOwned,
       publicLimit: options?.publicTemplateLimit,
       showAdult: options?.showAdult,
@@ -1755,8 +1778,8 @@ export async function saveTierLibrary(library, options = {}) {
   try {
     await syncLocalLibraryToSupabase(normalized, userId);
     const [remoteTemplates, remoteLists] = await Promise.all([
-      fetchRemoteTemplates(userId),
-      fetchRemoteLists(userId),
+      fetchRemoteTemplates(userId, { includePublic: false }),
+      fetchRemoteLists(userId, { includePublic: false }),
     ]);
     const merged = mergeLibraries(
       { templates: normalized.templates.filter((template) => template.isSystem), lists: [] },

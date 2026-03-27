@@ -2090,11 +2090,14 @@
   gap: 0.5rem;
   padding: 0.7rem 1.35rem;
   border-radius: 999px;
+  border: none;
   background: rgba(255, 255, 255, 0.94);
   color: #102033;
   font-weight: 800;
   font-size: 0.9rem;
   text-decoration: none;
+  cursor: pointer;
+  appearance: none;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -2102,6 +2105,24 @@
 .battle-card-media-open-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+}
+
+.battle-card-media-nonembed--song .battle-card-media-nonembed-overlay {
+  background: linear-gradient(180deg, rgba(10, 10, 20, 0.18), rgba(10, 10, 20, 0.62));
+}
+
+.battle-card-media-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0.6rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 .battle-card-info {

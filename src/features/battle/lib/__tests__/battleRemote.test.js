@@ -3,6 +3,7 @@ import { THEME_SONG_ENTITY_TYPE } from '../../../../shared/lib/catalogEntities.j
 
 const mockState = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   operations: [],
   deleteErrors: new Map(),
   upsertErrors: new Map(),
@@ -81,6 +82,7 @@ function createSelectBuilder(table) {
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: {
     from: mockState.from,
+    rpc: mockState.rpc,
   },
 }));
 
@@ -92,6 +94,7 @@ describe('battleRemote persistence hardening', () => {
     mockState.deleteErrors = new Map();
     mockState.upsertErrors = new Map();
     mockState.selectResponses = new Map();
+    mockState.rpc.mockResolvedValue({ data: null, error: null });
     mockState.from.mockImplementation((table) => ({
       select: vi.fn(() => createSelectBuilder(table)),
       upsert: vi.fn(async (payload, options) => {
@@ -105,6 +108,43 @@ describe('battleRemote persistence hardening', () => {
       }),
       delete: vi.fn(() => createFilterBuilder(table, 'delete')),
     }));
+  });
+
+  it('refreshes the community rollup after persisting a completed session', async () => {
+    const session = {
+      id: '00000000-0000-4000-8000-000000000099',
+      deckKey: 'completed-deck',
+      deckFingerprint: '11:22:33',
+      deckLabel: 'Completed deck',
+      filters: { entityType: 'title', size: 8 },
+      titles: [
+        { id: 11, entityType: 'title', title_en: 'A', title_th: 'A' },
+        { id: 22, entityType: 'title', title_en: 'B', title_th: 'B' },
+      ],
+      titleIds: [11, 22],
+      targetRounds: 8,
+      history: [],
+      ratings: {},
+      ranking: [
+        { id: 11, entityType: 'title', title_en: 'A', title_th: 'A' },
+        { id: 22, entityType: 'title', title_en: 'B', title_th: 'B' },
+      ],
+      tiers: [],
+      winnerId: 11,
+      snapshot: {},
+      fastState: null,
+      status: 'completed',
+      currentPair: null,
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T00:01:00.000Z',
+      completedAt: '2026-03-24T00:01:00.000Z',
+    };
+
+    await persistRemoteBattleSession('user-1', session);
+
+    expect(mockState.rpc).toHaveBeenCalledWith('refresh_battle_deck_rollup', {
+      p_deck_fingerprint: '11:22:33',
+    });
   });
 
   it('skips canonical-title-only vote syncing for theme song battles and clears winner FK', async () => {

@@ -764,7 +764,8 @@ function BattlePresetCardSkeleton() {
 
 function BattlePresetRow({ preset, deck, disabled, onApply }) {
   const { t } = useLanguage();
-  const canStart = (deck?.titles?.length || 0) >= 8;
+  const requestedSize = Number(preset?.filters?.size || 0);
+  const canStart = deck ? (deck?.titles?.length || 0) >= 8 : requestedSize >= 8;
   const artTile = deck?.titles?.[0];
 
   return (
@@ -1043,6 +1044,7 @@ export function BattleHub() {
   const { showAdult } = useAgeGate();
   const [titles, setTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPresetsLoading, setIsPresetsLoading] = useState(true);
   const [error, setError] = useState('');
   const [recentSessions, setRecentSessions] = useState([]);
   const [savedDecks, setSavedDecks] = useState([]);
@@ -1055,17 +1057,17 @@ export function BattleHub() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadTitles() {
+    async function loadHub() {
       setIsLoading(true);
+      setIsPresetsLoading(true);
       setError('');
       try {
-        const [allTitles, remoteSessions, remotePublicDecks] = await Promise.all([
-          getAllTitles({ maxRows: Number.POSITIVE_INFINITY }),
+        // Phase 1 — fast: sessions + public decks only (hub usable immediately)
+        const [remoteSessions, remotePublicDecks] = await Promise.all([
           user?.id ? fetchRemoteBattleSessions(user.id).catch(() => []) : Promise.resolve([]),
           fetchPublicBattleDecks({ limit: PUBLIC_DECK_PAGE_SIZE + 1, offset: 0 }).catch(() => []),
         ]);
         if (!cancelled) {
-          setTitles(allTitles);
           const localSessions = getStoredBattleSessions();
           const mergedSessions = mergeSessionsByRecency(localSessions, remoteSessions);
           mergedSessions.forEach((session) => {
@@ -1077,6 +1079,14 @@ export function BattleHub() {
           setPublicDecks(hasNext ? remotePublicDecks.slice(0, PUBLIC_DECK_PAGE_SIZE) : remotePublicDecks);
           setHasNextPublicPage(hasNext);
           setPublicDecksPage(0);
+          setIsLoading(false);
+        }
+
+        // Phase 2 — background: full catalog for preset deck building
+        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+        if (!cancelled) {
+          setTitles(allTitles);
+          setIsPresetsLoading(false);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -1085,15 +1095,13 @@ export function BattleHub() {
           setSavedDecks(getStoredBattleDecks());
           setPublicDecks([]);
           setHasNextPublicPage(false);
-        }
-      } finally {
-        if (!cancelled) {
           setIsLoading(false);
+          setIsPresetsLoading(false);
         }
       }
     }
 
-    loadTitles();
+    loadHub();
     return () => {
       cancelled = true;
     };
@@ -1243,9 +1251,11 @@ export function BattleHub() {
         </div>
         {!isLoading && (
           <div className="battle-hub-stats">
-            <span><Layers size={12} /> {readyPresetDecks.length + publicSavedDecks.length} {t('battle.readyDecks')}</span>
+            <span><Layers size={12} /> {publicSavedDecks.length + (isPresetsLoading ? 0 : readyPresetDecks.length)} {t('battle.readyDecks')}</span>
             <span><Swords size={12} /> {recentSessions.length} {t('battle.savedRuns')}</span>
-            <span><Play size={12} /> {visibleCatalogTitles.length} {t('battle.visibleCatalogTitles')}</span>
+            {!isPresetsLoading && (
+              <span><Play size={12} /> {visibleCatalogTitles.length} {t('battle.visibleCatalogTitles')}</span>
+            )}
           </div>
         )}
       </div>
@@ -1266,7 +1276,7 @@ export function BattleHub() {
       {/* ── Quick Presets ── */}
       <div className="container battle-hub-section">
         <h2 className="battle-hub-section-title">{t('battle.quickPresets')}</h2>
-        {isLoading || isComputingPresets ? (
+        {isPresetsLoading || isComputingPresets ? (
           <div className="battle-preset-list">
             {[0, 1, 2, 3].map((i) => <div key={i} className="battle-preset-row-skeleton battle-skeleton-block" />)}
           </div>
@@ -1279,7 +1289,7 @@ export function BattleHub() {
                 key={preset.id}
                 preset={preset}
                 deck={deck}
-                disabled={isLoading}
+                disabled={isPresetsLoading}
                 onApply={(_, readyDeck) => handleApplyPreset(readyDeck)}
               />
             ))}

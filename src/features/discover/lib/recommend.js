@@ -523,11 +523,6 @@ export async function getAllTitles({
 // Called from main.jsx during idle time to warm the catalog cache so the
 // first search is instant.  Silently swallows errors — the cache will be
 // populated on the next real request instead.
-export function prefetchCatalog() {
-  if (isCatalogCacheWarm()) return;
-  void getAllTitles().catch(() => {});
-}
-
 export function clearTitlesCache() {
   cachedTitles = null;
   cachedTitlesPromise = null;
@@ -554,6 +549,10 @@ export function isCatalogCacheWarm() {
     cachedTitles.length > 0 &&
     Date.now() - cacheTimestamp < CACHE_TTL_MS
   );
+}
+
+export function getCachedTitlesSnapshot() {
+  return [...(cachedTitles || cachedDetailedTitles || [])];
 }
 
 // Fast DB-side search for autocomplete when the catalog cache is cold.
@@ -816,13 +815,9 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
   }
 
   // Fast path: when the catalog cache is cold and we only have a text query
-  // (no tag filter), use DB-side search to avoid blocking on a full catalog
-  // download.  This makes the first search near-instant instead of waiting
-  // for 1000+ row fetches.  Once the cache warms up (prefetch or first full
-  // load), subsequent searches use the richer client-side path below.
+  // (no tag filter), keep the search DB-side. Do not kick off a background
+  // full-catalog download from a simple query.
   if (!isCatalogCacheWarm() && !tag.trim() && normalizedQuery.length >= 2) {
-    // Kick off a background cache warm so the next search can use client-side
-    void getAllTitles().catch(() => {});
     return fetchSearchResultsFromDB({ query: normalizedQuery, type, page, pageSize, showAdult });
   }
 

@@ -63,6 +63,36 @@ function warnBattleRemote(message, error) {
   }
 }
 
+async function refreshRemoteBattleDeckRollup(deckFingerprint) {
+  const normalizedFingerprint = String(deckFingerprint || '').trim();
+  if (!supabase || !normalizedFingerprint) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('refresh_battle_deck_rollup', {
+      p_deck_fingerprint: normalizedFingerprint,
+    });
+
+    if (!error) {
+      return;
+    }
+
+    const message = String(error?.message || '');
+    if (
+      Number(error?.status || 0) === 404
+      || message.includes('refresh_battle_deck_rollup')
+      || message.includes('schema cache')
+    ) {
+      return;
+    }
+
+    warnBattleRemote('Failed to refresh battle deck rollup manually', error);
+  } catch (error) {
+    warnBattleRemote('Failed to refresh battle deck rollup manually', error);
+  }
+}
+
 function isConflictError(error) {
   return Number(error?.status || 0) === 409;
 }
@@ -282,11 +312,20 @@ function mapRowToPublicDeck(row) {
   };
 }
 
+function getOwnerUsername(user) {
+  return String(
+    user?.profile?.username
+    || user?.user_metadata?.username
+    || ''
+  ).trim().toLowerCase();
+}
+
 function buildPublicDeckPayload(user, deck) {
   return {
     id: deck.id,
     owner_user_id: user.id,
     owner_display_name: getOwnerDisplayName(user),
+    owner_username: getOwnerUsername(user),
     deck_key: deck.key,
     deck_fingerprint: deck.fingerprint || buildDeckFingerprintFallback({ titles_snapshot: deck.titles }),
     deck_label: deck.label,
@@ -307,7 +346,7 @@ export async function fetchRemoteBattleSessions(userId, { limit = 20 } = {}) {
 
   const { data, error } = await supabase
     .from('battle_sessions')
-    .select('*')
+    .select('id, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, target_rounds, status, current_pair, ratings, history, ranking, tiers, winner_title_id, snapshot, comparison_count, created_at, updated_at, completed_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
     .limit(limit);
@@ -433,6 +472,9 @@ export async function persistRemoteBattleSession(userId, session) {
 
   await deleteDuplicateRemoteSessions(userId, currentSession);
   await syncRemoteBattleVotes(userId, currentSession);
+  if (currentSession.status === 'completed') {
+    await refreshRemoteBattleDeckRollup(currentSession.deckFingerprint);
+  }
 
   return currentSession;
 }
@@ -481,7 +523,7 @@ export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
 
   const { data, error } = await supabase
     .from('battle_public_decks')
-    .select('*')
+    .select('id, owner_user_id, owner_display_name, owner_username, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, title_count, source_count, created_at, updated_at')
     .order('updated_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -489,38 +531,20 @@ export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
     if (isMissingRelation(error, 'battle_public_decks')) {
       return [];
     }
+    // owner_username column may not exist yet — fall back to select without it
+    if (getMissingColumn(error, 'battle_public_decks') === 'owner_username') {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('battle_public_decks')
+        .select('id, owner_user_id, owner_display_name, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, title_count, source_count, created_at, updated_at')
+        .order('updated_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (fallbackError) throw fallbackError;
+      return (fallbackData || []).map(mapRowToPublicDeck).filter(Boolean);
+    }
     throw error;
   }
 
-  const rows = data || [];
-  const ownerIds = [...new Set(rows.map((row) => row?.owner_user_id).filter(Boolean))];
-  let usernameByOwnerId = new Map();
-
-  if (ownerIds.length > 0) {
-    const { data: ownerProfiles } = await supabase
-      .from('user_profiles')
-      .select('id, username, is_profile_public')
-      .in('id', ownerIds);
-
-    usernameByOwnerId = new Map(
-      (ownerProfiles || [])
-        .filter((profile) => profile?.is_profile_public && profile?.username)
-        .map((profile) => [profile.id, String(profile.username).trim().toLowerCase()])
-    );
-  }
-
-  return rows
-    .map((row) => {
-      const deck = mapRowToPublicDeck(row);
-      if (!deck) return null;
-      const ownerUsername = usernameByOwnerId.get(deck.ownerUserId) || '';
-      return {
-        ...deck,
-        ownerUsername,
-        ownerDisplayName: ownerUsername || deck.ownerDisplayName,
-      };
-    })
-    .filter(Boolean);
+  return (data || []).map(mapRowToPublicDeck).filter(Boolean);
 }
 
 export async function persistRemotePublicBattleDeck(user, deck) {

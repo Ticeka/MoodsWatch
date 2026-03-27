@@ -24,7 +24,7 @@ import {
   Users,
   X as XIcon,
 } from 'lucide-react';
-import { buildTitleSearchCandidates, listTitles, getAllTitles, getCacheInfo, clearTitlesCache } from '@/features/discover/lib/recommend';
+import { buildTitleSearchCandidates, listTitles, getCacheInfo, clearTitlesCache, getCachedTitlesSnapshot, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
 import { clearEntitySearchCache, searchPosts, searchProfiles, searchTierlists } from '@/features/discover/lib/entitySearch';
 import { DiscoverPostCard } from '@/features/discover/components/DiscoverPostCard';
@@ -828,6 +828,15 @@ export function Discover() {
     if (!noResultsEverywhere || normalizedQuery.length < 3) {
       recoveryRequestRef.current += 1;
       setRecoverySuggestions([]);
+      setIsRecoveryLoading(false);
+      return undefined;
+    }
+
+    // Misspelling recovery should never trigger a full catalog download.
+    if (!isCatalogCacheWarm()) {
+      recoveryRequestRef.current += 1;
+      setRecoverySuggestions([]);
+      setIsRecoveryLoading(false);
       return undefined;
     }
 
@@ -841,9 +850,9 @@ export function Discover() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
-        let titles = filterTitlesForAgeGate(await getAllTitles(), showAdult);
+        const cachedTitles = filterTitlesForAgeGate(getCachedTitlesSnapshot(), showAdult);
         const intent = getSearchIntent(normalizedQuery);
-        const scoredMatches = titles
+        const scoredMatches = cachedTitles
           .map((title) => {
             const label = getDisplayTitle(title);
             return {

@@ -543,7 +543,7 @@ describe('tierlistStore entity type normalization', () => {
 });
 
 describe('tierlistStore load performance guards', () => {
-  const originalWindow = global.window;
+  const originalWindow = globalThis.window;
   const storage = new Map();
 
   beforeEach(() => {
@@ -569,7 +569,7 @@ describe('tierlistStore load performance guards', () => {
     mockState.poolDeletes = [];
     mockState.from.mockImplementation((table) => createTableClient(table));
     storage.clear();
-    global.window = {
+    globalThis.window = {
       localStorage: {
         getItem: (key) => (storage.has(key) ? storage.get(key) : null),
         setItem: (key, value) => {
@@ -583,7 +583,7 @@ describe('tierlistStore load performance guards', () => {
   });
 
   afterAll(() => {
-    global.window = originalWindow;
+    globalThis.window = originalWindow;
   });
 
   it('does not sync local tierlist data to Supabase during read-only library loads', async () => {
@@ -723,6 +723,56 @@ describe('tierlistStore load performance guards', () => {
     expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
       filter.type === 'eq' && filter.column === 'owner_user_id'
     ))).toBe(false);
+  });
+
+  it('skips public tierlist queries when a flow only needs owned data', async () => {
+    mockState.listSelectResponses.push({
+      data: [
+        {
+          id: 'tierlist-owned-only',
+          template_id: null,
+          title: 'Owned Only',
+          description: '',
+          is_public: false,
+          play_count: 0,
+          owner_name: 'You',
+          owner_username: 'user-1',
+          has_adult_content: false,
+          owner_user_id: 'user-1',
+          created_at: '2026-03-06T00:00:00.000Z',
+          updated_at: '2026-03-06T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    mockState.rowSelectResponses.push({
+      data: [
+        {
+          id: 'row-owned-only',
+          list_id: 'tierlist-owned-only',
+          label: 'S',
+          color: '',
+          position: 0,
+          title_ids: [7],
+        },
+      ],
+      error: null,
+    });
+
+    await loadTierLibrary([], {
+      userId: 'user-1',
+      includePublic: false,
+      fetchTemplates: false,
+      showAdult: false,
+    });
+
+    expect(mockState.listSelectCalls).toHaveLength(1);
+    expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'is_public' && filter.value === true
+    ))).toBe(false);
+    expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
+      filter.type === 'eq' && filter.column === 'owner_user_id' && filter.value === 'user-1'
+    ))).toBe(true);
   });
 
   it('keeps owned template fetches separated by age mode', async () => {

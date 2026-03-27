@@ -3354,7 +3354,12 @@ export function TierListCreatePage() {
   // Initialise library in background (no catalog needed)
   useEffect(() => {
     if (isAuthLoading) return;
-    loadTierLibrary([], { userId: user?.id || null, showAdult }).catch(() => { });
+    loadTierLibrary([], {
+      userId: user?.id || null,
+      includePublic: false,
+      fetchTemplates: false,
+      showAdult,
+    }).catch(() => { });
   }, [showAdult, user?.id, isAuthLoading]);
 
   // Debounce search query and reset to page 1
@@ -3538,7 +3543,11 @@ export function TierListCreatePage() {
         ownerUserId: user?.id || null,
       });
 
-      const currentLibrary = await loadTierLibrary([], { userId: user?.id || null, showAdult });
+      const currentLibrary = await loadTierLibrary([], {
+        userId: user?.id || null,
+        includePublic: false,
+        showAdult,
+      });
       const libraryAfterTemplate = await saveTierTemplate(template, currentLibrary, { userId: user?.id || null });
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const normalizedSavedTemplate = isSongMode
@@ -4679,7 +4688,12 @@ export function SongTierListPage() {
         }
 
         // Load library to find an existing song tierlist for this title
-        const library = await loadTierLibrary([], { userId: user?.id || null, showAdult });
+        const library = await loadTierLibrary([], {
+          userId: user?.id || null,
+          includePublic: false,
+          fetchTemplates: false,
+          showAdult,
+        });
         if (cancelled) return;
 
         const songSourceKey = `song-source:${title.id}`;

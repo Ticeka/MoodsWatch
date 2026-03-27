@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ExternalLink, X } from 'lucide-react';
 import { normalizeTrailer } from '@/shared/lib/trailers';
@@ -17,11 +17,70 @@ function isDirectVideoUrl(url) {
   );
 }
 
+function getEmbedUrlWithPlaysInline(url) {
+  if (!url) return null;
+  try {
+    const nextUrl = new URL(url);
+    nextUrl.searchParams.set('playsinline', '1');
+    return nextUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function InlineThemeSongVideo({ rawUrl, posterUrl, watchUrl }) {
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [hasPlaybackError, setHasPlaybackError] = useState(false);
+
+  if (hasPlaybackError) {
+    return (
+      <div className="trailer-modal-no-embed">
+        <p>Preview failed to load here.</p>
+        <a href={watchUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+          <ExternalLink size={14} /> Open Preview
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <video
+        className={`theme-song-modal-video${isBuffering ? ' is-buffering' : ''}`}
+        src={rawUrl}
+        controls
+        autoPlay
+        playsInline
+        preload="auto"
+        poster={posterUrl || undefined}
+        onLoadedData={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
+        onPlaying={() => setIsBuffering(false)}
+        onWaiting={() => setIsBuffering(true)}
+        onStalled={() => setIsBuffering(true)}
+        onSeeking={() => setIsBuffering(true)}
+        onSeeked={() => setIsBuffering(false)}
+        onError={() => {
+          setHasPlaybackError(true);
+          setIsBuffering(false);
+        }}
+      />
+      {isBuffering ? (
+        <div className="theme-song-modal-loading" aria-live="polite">
+          <span className="theme-song-modal-loading-pill">Buffering preview...</span>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function ThemeSongModal({ song, onClose }) {
   const rawUrl = String(song?.video_url || '').trim();
   const trailer = normalizeTrailer({ trailer_url: rawUrl });
   const modalTitle = song?.sourceTitleName || song?.song_title || 'Theme song';
   const canPlayInlineVideo = Boolean(rawUrl) && !trailer?.embedUrl && isDirectVideoUrl(rawUrl);
+  const posterUrl = song?.trailer_thumbnail_url || song?.cover || '';
+  const embedUrl = getEmbedUrlWithPlaysInline(trailer?.embedUrl);
 
   useEffect(() => {
     const handleKey = (event) => {
@@ -72,21 +131,20 @@ export function ThemeSongModal({ song, onClose }) {
         </div>
 
         <div className="trailer-modal-frame-wrap">
-          {trailer?.embedUrl ? (
+          {embedUrl ? (
             <iframe
               className="trailer-modal-frame"
-              src={trailer.embedUrl}
+              src={embedUrl}
               title={`Trailer: ${modalTitle}`}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
             />
           ) : canPlayInlineVideo ? (
-            <video
-              className="theme-song-modal-video"
-              src={rawUrl}
-              controls
-              autoPlay
-              playsInline
+            <InlineThemeSongVideo
+              key={rawUrl}
+              rawUrl={rawUrl}
+              posterUrl={posterUrl}
+              watchUrl={trailer?.watchUrl || rawUrl}
             />
           ) : (trailer?.watchUrl || rawUrl) ? (
             <div className="trailer-modal-no-embed">
@@ -100,6 +158,11 @@ export function ThemeSongModal({ song, onClose }) {
               <p>No preview link available.</p>
             </div>
           )}
+        </div>
+        <div className="theme-song-modal-meta">
+          <span className="theme-song-modal-primary">{song?.song_title || modalTitle}</span>
+          {song?.artist_name ? <span className="theme-song-modal-secondary">{song.artist_name}</span> : null}
+          {song?.episodes_text ? <span className="theme-song-modal-secondary">{song.episodes_text}</span> : null}
         </div>
       </div>
     </div>,
