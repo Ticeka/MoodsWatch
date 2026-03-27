@@ -780,6 +780,117 @@ describe('tierlistStore load performance guards', () => {
     ))).toBe(true);
   });
 
+  it('drops stale public local templates that do not match the requested age mode', async () => {
+    storage.set('moodtoon-tierlist-v3', JSON.stringify({
+      templates: [
+        makeTemplate({
+          id: 'template-stale-adult',
+          title: 'Stale Adult Template',
+          isPublic: true,
+          ownerUserId: null,
+          hasAdultContent: true,
+          updatedAt: '2026-03-09T00:00:00.000Z',
+        }),
+      ],
+      lists: [],
+    }));
+    mockState.templateSelectResponses.push({
+      data: [],
+      error: null,
+    });
+
+    const templates = await loadTierTemplates([], {
+      userId: 'stale-public-user',
+      includeOwned: false,
+      showAdult: false,
+    });
+
+    expect(templates.some((template) => template.id === 'template-stale-adult')).toBe(false);
+  });
+
+  it('does not persist public remote snapshots in local storage after loading templates', async () => {
+    mockState.templateSelectResponses.push({
+      data: [
+        {
+          id: 'template-public-remote-only',
+          title: 'Remote Only Template',
+          description: '',
+          category: 'theme_song::songs',
+          title_ids: [1013, 1014],
+          default_rows: ['S', 'A'],
+          is_public: true,
+          is_system: false,
+          plays: 2,
+          has_adult_content: false,
+          owner_user_id: null,
+          created_at: '2026-03-11T00:00:00.000Z',
+          updated_at: '2026-03-11T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+
+    const templates = await loadTierTemplates([], {
+      userId: 'remote-storage-user',
+      includeOwned: false,
+      showAdult: false,
+    });
+    const stored = JSON.parse(storage.get('moodtoon-tierlist-v3') || '{"templates":[],"lists":[]}');
+
+    expect(templates.some((template) => template.id === 'template-public-remote-only')).toBe(true);
+    expect((stored.templates || []).some((template) => template.id === 'template-public-remote-only')).toBe(false);
+  });
+
+  it('prefers remote public templates over stale local public snapshots so entity previews stay correct', async () => {
+    storage.set('moodtoon-tierlist-v3', JSON.stringify({
+      templates: [
+        makeTemplate({
+          id: 'template-public-song',
+          title: 'Broken Local Song Template',
+          category: 'general',
+          entityType: 'title',
+          titleIds: [1013, 1014],
+          isPublic: true,
+          ownerUserId: null,
+          hasAdultContent: false,
+          updatedAt: '2026-03-10T00:00:00.000Z',
+        }),
+      ],
+      lists: [],
+    }));
+    mockState.templateSelectResponses.push({
+      data: [
+        {
+          id: 'template-public-song',
+          title: 'Remote Song Template',
+          description: '',
+          category: 'theme_song::songs',
+          title_ids: [1013, 1014],
+          default_rows: ['S', 'A'],
+          is_public: true,
+          is_system: false,
+          plays: 5,
+          has_adult_content: false,
+          owner_user_id: null,
+          created_at: '2026-03-01T00:00:00.000Z',
+          updated_at: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+
+    const templates = await loadTierTemplates([], {
+      userId: 'remote-template-user',
+      includeOwned: false,
+      showAdult: false,
+    });
+    const resolved = templates.find((template) => template.id === 'template-public-song');
+
+    expect(resolved?.title).toBe('Remote Song Template');
+    expect(resolved?.entityType).toBe('theme_song');
+    expect(resolved?.hasAdultContent).toBe(false);
+  });
+
   it('keeps owned list fetches separated by age mode', async () => {
     mockState.listSelectResponses.push(
       {
@@ -948,5 +1059,80 @@ describe('tierlistStore load performance guards', () => {
     expect(mockState.listSelectCalls[1]?.filters.some((filter) => (
       filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === true
     ))).toBe(true);
+  });
+});
+
+describe('tierlistStore adult content serialization regression', () => {
+  beforeEach(() => {
+    mockState.templateUpdateResponses = [];
+    mockState.templateInsertResponses = [];
+    mockState.templateUpdatePayloads = [];
+    mockState.templateInsertPayloads = [];
+    mockState.templateSelectResponses = [];
+    mockState.templateSelectCalls = [];
+    mockState.listUpdateResponses = [];
+    mockState.listInsertResponses = [];
+    mockState.listUpdatePayloads = [];
+    mockState.listInsertPayloads = [];
+    mockState.listSelectResponses = [];
+    mockState.listSelectCalls = [];
+    mockState.rowSelectResponses = [];
+    mockState.rowSelectCalls = [];
+    mockState.poolSelectResponses = [];
+    mockState.poolSelectCalls = [];
+    mockState.rowUpserts = [];
+    mockState.poolUpserts = [];
+    mockState.rowDeletes = [];
+    mockState.poolDeletes = [];
+    mockState.from.mockImplementation((table) => createTableClient(table));
+  });
+
+  it('includes has_adult_content in template insert payload', async () => {
+    await saveTierTemplate(
+      makeTemplate({ id: null, hasAdultContent: true }),
+      null,
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.templateInsertPayloads).toHaveLength(1);
+    expect(mockState.templateInsertPayloads[0]).toHaveProperty('has_adult_content', true);
+  });
+
+  it('includes has_adult_content in template update payload', async () => {
+    mockState.templateUpdateResponses.push({ data: [{ id: 'template-existing' }], error: null });
+
+    await saveTierTemplate(
+      makeTemplate({ id: 'template-existing', ownerUserId: 'user-1', hasAdultContent: false }),
+      null,
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.templateUpdatePayloads).toHaveLength(1);
+    expect(mockState.templateUpdatePayloads[0]).toHaveProperty('has_adult_content', false);
+  });
+
+  it('includes has_adult_content in list insert payload', async () => {
+    await saveTierList(
+      makeList({ id: null, hasAdultContent: true }),
+      { templates: [], lists: [] },
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.listInsertPayloads).toHaveLength(1);
+    expect(mockState.listInsertPayloads[0]).toHaveProperty('has_adult_content', true);
+  });
+
+  it('includes has_adult_content in list update payload', async () => {
+    mockState.listUpdateResponses.push({ data: [{ id: 'tierlist-local-1' }], error: null });
+
+    const existing = makeList({ hasAdultContent: false });
+    await saveTierList(
+      { ...existing, title: 'Updated' },
+      { templates: [], lists: [existing] },
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.listUpdatePayloads).toHaveLength(1);
+    expect(mockState.listUpdatePayloads[0]).toHaveProperty('has_adult_content', false);
   });
 });

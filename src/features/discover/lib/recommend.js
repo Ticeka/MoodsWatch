@@ -275,6 +275,18 @@ function mapRecords(records) {
   return (records || []).map((title) => normalizeTitleType(mapCanonicalTitle(title)));
 }
 
+function mergeCachedTitleRecord(current = {}, incoming = {}) {
+  const merged = { ...current };
+
+  Object.entries(incoming).forEach(([key, value]) => {
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  });
+
+  return merged;
+}
+
 function getTitleSignalBag(title = {}) {
   const tags = [...(title.genres || []), ...(title.tags || [])]
     .map((value) => String(value || '').trim().toLowerCase())
@@ -335,13 +347,13 @@ function storeTitlesInCaches(titles) {
   }
 
   titles.forEach((title) => {
-    titleByIdCache.set(title.id, title);
+    titleByIdCache.set(title.id, mergeCachedTitleRecord(titleByIdCache.get(title.id), title));
   });
 
   if (cachedTitles?.length) {
     const nextTitlesById = new Map(cachedTitles.map((title) => [title.id, title]));
     titles.forEach((title) => {
-      nextTitlesById.set(title.id, title);
+      nextTitlesById.set(title.id, mergeCachedTitleRecord(nextTitlesById.get(title.id), title));
     });
     cachedTitles = Array.from(nextTitlesById.values());
   }
@@ -1346,22 +1358,16 @@ export async function getTitlesByIds(ids, options = {}) {
   }
 
   const missingIds = normalizedIds.filter((id) => !titleByIdCache.has(id));
-  const requestKey = `${showAdult === null ? 'any' : String(showAdult)}::${missingIds.slice().sort((a, b) => a - b).join(',')}`;
+  const requestKey = missingIds.slice().sort((a, b) => a - b).join(',');
 
   ensureSupabaseConnected();
 
   if (!titleByIdsRequestCache.has(requestKey)) {
     const request = (async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('canonical_titles')
         .select(CANONICAL_TITLE_BROWSE_SELECT)
         .in('id', missingIds);
-
-      if (showAdult !== null) {
-        query = query.eq('is_adult', showAdult);
-      }
-
-      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -1390,21 +1396,47 @@ export async function getTitlePreviewByIds(ids, options = {}) {
     return [];
   }
 
-  ensureSupabaseConnected();
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const applyAgeGateFilter = (titles = []) => (
+    showAdult === null ? titles : filterTitlesForAgeGate(titles, showAdult)
+  );
+  const cachedMatches = normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
 
-  let query = supabase
-    .from('canonical_titles')
-    .select(CANONICAL_TITLE_PREVIEW_SELECT)
-    .in('id', normalizedIds);
-
-  if (typeof options?.showAdult === 'boolean') {
-    query = query.eq('is_adult', options.showAdult);
+  if (cachedMatches.length === normalizedIds.length) {
+    const idMap = new Map(cachedMatches.map((title) => [title.id, title]));
+    return applyAgeGateFilter(normalizedIds.map((id) => idMap.get(id)).filter(Boolean));
   }
 
-  const { data, error } = await query;
-  if (error) throw error;
+  const missingIds = normalizedIds.filter((id) => !titleByIdCache.has(id));
+  if (missingIds.length === 0) {
+    return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
+  }
 
-  const mapped = mapRecords(data);
-  const previewById = new Map(mapped.map((title) => [Number(title.id), title]));
-  return normalizedIds.map((id) => previewById.get(id)).filter(Boolean);
+  const requestKey = `preview::${missingIds.slice().sort((a, b) => a - b).join(',')}`;
+
+  ensureSupabaseConnected();
+
+  if (!titleByIdsRequestCache.has(requestKey)) {
+    const request = (async () => {
+      const { data, error } = await supabase
+        .from('canonical_titles')
+        .select(CANONICAL_TITLE_PREVIEW_SELECT)
+        .in('id', missingIds);
+      if (error) throw error;
+
+      const mapped = mapRecords(data);
+      storeTitlesInCaches(mapped);
+      return mapped;
+    })();
+
+    titleByIdsRequestCache.set(requestKey, request);
+  }
+
+  try {
+    await titleByIdsRequestCache.get(requestKey);
+  } finally {
+    titleByIdsRequestCache.delete(requestKey);
+  }
+
+  return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
 }

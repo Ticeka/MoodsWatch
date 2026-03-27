@@ -17,7 +17,7 @@ const remoteTemplatesResultCache = new Map();
 const remoteListsResultCache = new Map();
 const tierTemplateDetailRequestCache = new Map();
 const tierListDetailRequestCache = new Map();
-const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, created_at, updated_at';
+const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, preview_artwork_url, created_at, updated_at';
 const REMOTE_LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, has_adult_content, created_at, updated_at';
 const REMOTE_LIST_ROWS_SELECT = 'id, list_id, position, label, color, title_ids';
 const REMOTE_LIST_POOL_SELECT = 'list_id, title_id, position';
@@ -89,6 +89,22 @@ function dedupeNumberIds(ids = []) {
     });
 }
 
+function getTemplatePreviewArtworkUrl(entries = []) {
+  return (entries || [])
+    .map((entry) => (
+      entry?.cover
+      || entry?.cover_image
+      || entry?.image_url
+      || entry?.poster
+      || entry?.avatar_url
+      || entry?.banner
+      || entry?.banner_image
+      || entry?.trailer_thumbnail_url
+      || ''
+    ))
+    .find((value) => typeof value === 'string' && value.trim().length > 0) || '';
+}
+
 function dedupeRows(rows = []) {
   const seenTitleIds = new Set();
   return rows.map((row, index) => {
@@ -134,6 +150,7 @@ function normalizeTemplate(raw, index = 0) {
   const decodedCategory = decodeTemplateCategory(raw?.category);
   const entityType = normalizeCatalogEntityType(raw?.entityType || decodedCategory.entityType);
   const hasAdultContent = raw?.hasAdultContent ?? raw?.has_adult_content;
+  const previewArtworkUrl = String(raw?.previewArtworkUrl ?? raw?.preview_artwork_url ?? '').trim();
 
   return {
     id: String(raw?.id || makeId(`template-${index}`)),
@@ -149,6 +166,7 @@ function normalizeTemplate(raw, index = 0) {
     isSystem: Boolean(raw?.isSystem),
     plays: Number(raw?.plays || 0),
     hasAdultContent: typeof hasAdultContent === 'boolean' ? hasAdultContent : null,
+    previewArtworkUrl: previewArtworkUrl || '',
     ownerUserId: raw?.ownerUserId ? String(raw.ownerUserId) : null,
     createdAt: raw?.createdAt || new Date().toISOString(),
     updatedAt: raw?.updatedAt || new Date().toISOString(),
@@ -322,6 +340,7 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
     isSystem: Boolean(options.isSystem),
     plays: 0,
     hasAdultContent: titles.some((title) => Boolean(title?.is_adult)),
+    previewArtworkUrl: getTemplatePreviewArtworkUrl(titles),
     ownerUserId: options.ownerUserId || null,
   });
 }
@@ -395,6 +414,42 @@ function uniqueById(items = []) {
   });
 }
 
+function shouldPersistLocalTemplate(template) {
+  if (!template) {
+    return false;
+  }
+
+  if (template.isSystem) {
+    return true;
+  }
+
+  if (template.ownerUserId) {
+    return true;
+  }
+
+  return !template.isPublic;
+}
+
+function shouldPersistLocalList(list) {
+  if (!list) {
+    return false;
+  }
+
+  if (list.ownerUserId) {
+    return true;
+  }
+
+  return !list.isPublic;
+}
+
+function prunePersistedLocalLibrary(library) {
+  const normalized = normalizeLibrary(library);
+  return {
+    templates: normalized.templates.filter((template) => shouldPersistLocalTemplate(template)),
+    lists: normalized.lists.filter((list) => shouldPersistLocalList(list)),
+  };
+}
+
 function loadLibraryRaw() {
   const storage = getStorage();
   if (!storage) {
@@ -403,7 +458,7 @@ function loadLibraryRaw() {
 
   try {
     const parsed = JSON.parse(storage.getItem(TIERLIST_STORAGE_KEY) || 'null');
-    return parsed ? normalizeLibrary(parsed) : { ...DEFAULT_LIBRARY };
+    return parsed ? prunePersistedLocalLibrary(parsed) : { ...DEFAULT_LIBRARY };
   } catch {
     return { ...DEFAULT_LIBRARY };
   }
@@ -411,7 +466,7 @@ function loadLibraryRaw() {
 
 function saveLibraryRaw(library) {
   const storage = getStorage();
-  const normalized = normalizeLibrary(library);
+  const normalized = prunePersistedLocalLibrary(library);
   if (!storage) {
     return normalized;
   }
@@ -662,6 +717,44 @@ function mergeLibraries(...libraries) {
   return normalized;
 }
 
+function matchesRequestedAdultMode(entry, showAdult = null) {
+  if (showAdult === null) {
+    return true;
+  }
+
+  return typeof entry?.hasAdultContent === 'boolean' && entry.hasAdultContent === showAdult;
+}
+
+function filterLocalTemplatesForRemoteMerge(templates = [], userId = null, showAdult = null) {
+  return (templates || []).filter((template) => {
+    if (!template || template.isSystem) {
+      return false;
+    }
+
+    if (!matchesRequestedAdultMode(template, showAdult)) {
+      return false;
+    }
+
+    const isOwnedByCurrentUser = userId && template.ownerUserId && String(template.ownerUserId) === String(userId);
+    return Boolean(isOwnedByCurrentUser || !template.isPublic);
+  });
+}
+
+function filterLocalListsForRemoteMerge(lists = [], userId = null, showAdult = null) {
+  return (lists || []).filter((list) => {
+    if (!list) {
+      return false;
+    }
+
+    if (!matchesRequestedAdultMode(list, showAdult)) {
+      return false;
+    }
+
+    const isOwnedByCurrentUser = userId && list.ownerUserId && String(list.ownerUserId) === String(userId);
+    return Boolean(isOwnedByCurrentUser || !list.isPublic);
+  });
+}
+
 function toRemoteTemplate(template, userId = null) {
   const normalized = normalizeTemplate(template);
   return {
@@ -675,6 +768,8 @@ function toRemoteTemplate(template, userId = null) {
     is_public: normalized.isPublic,
     is_system: normalized.isSystem,
     plays: normalized.plays,
+    has_adult_content: normalized.hasAdultContent,
+    preview_artwork_url: normalized.previewArtworkUrl || null,
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
@@ -692,6 +787,7 @@ function fromRemoteTemplate(row) {
     isSystem: row?.is_system,
     plays: row?.plays,
     hasAdultContent: typeof row?.has_adult_content === 'boolean' ? row.has_adult_content : null,
+    previewArtworkUrl: row?.preview_artwork_url || '',
     ownerUserId: row?.owner_user_id,
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
@@ -710,6 +806,7 @@ function toRemoteList(list, userId = null) {
     play_count: normalized.playCount,
     owner_name: normalized.ownerName,
     owner_username: normalized.ownerUsername || '',
+    has_adult_content: normalized.hasAdultContent,
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
@@ -1561,6 +1658,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
   const userId = options?.userId || null;
   const includeOwned = options?.includeOwned !== false;
   const shouldFetchTemplates = options?.fetchTemplates !== false;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const localLibrary = withSystemTemplates(loadLibraryRaw(), catalog);
   saveLibraryRaw(localLibrary);
 
@@ -1590,7 +1688,10 @@ export async function loadTierLibrary(catalog = [], options = {}) {
       { templates: remoteTemplates, lists: remoteLists },
       // Always include local non-system data so unsaved local changes survive
       // (sort-by-updatedAt in normalizeLibrary ensures the newest version wins)
-      { templates: localLibrary.templates.filter((template) => !template.isSystem), lists: localLibrary.lists }
+      {
+        templates: filterLocalTemplatesForRemoteMerge(localLibrary.templates, userId, showAdult),
+        lists: filterLocalListsForRemoteMerge(localLibrary.lists, userId, showAdult),
+      }
     );
 
     saveLibraryRaw(merged);
@@ -1607,6 +1708,7 @@ export async function loadTierLibrary(catalog = [], options = {}) {
 export async function loadTierTemplates(catalog = [], options = {}) {
   const userId = options?.userId || null;
   const includeOwned = options?.includeOwned !== false;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const localLibrary = withSystemTemplates(loadLibraryRaw(), catalog);
   saveLibraryRaw(localLibrary);
 
@@ -1623,7 +1725,7 @@ export async function loadTierTemplates(catalog = [], options = {}) {
     const merged = mergeLibraries(
       { templates: localLibrary.templates.filter((template) => template.isSystem), lists: [] },
       { templates: remoteTemplates, lists: [] },
-      { templates: localLibrary.templates.filter((template) => !template.isSystem), lists: [] }
+      { templates: filterLocalTemplatesForRemoteMerge(localLibrary.templates, userId, showAdult), lists: [] }
     );
 
     saveLibraryRaw({
