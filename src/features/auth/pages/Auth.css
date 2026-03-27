@@ -35,31 +35,27 @@
   inset: 0;
   z-index: 6;
   pointer-events: none;
-  background: linear-gradient(
-    to right,
-    transparent             0%,
-    transparent             28%,
-    rgba(216,180,210, 0.15) 36%,
-    rgba(236, 72,153, 0.20) 46%,
-    rgba(252,231,243, 0.55) 54%,
-    rgba(253,248,250, 0.80) 65%,
-    rgba(253,250,246, 0.95) 76%,
-    #fdfaf6                 100%
-  );
+  background: linear-gradient(to right,
+      transparent 0%,
+      transparent 28%,
+      rgba(216, 180, 210, 0.15) 36%,
+      rgba(236, 72, 153, 0.20) 46%,
+      rgba(252, 231, 243, 0.55) 54%,
+      rgba(253, 248, 250, 0.80) 65%,
+      rgba(253, 250, 246, 0.95) 76%,
+      #fdfaf6 100%);
 }
 
 [data-theme="dark"] .auth-blur-overlay {
-  background: linear-gradient(
-    to right,
-    transparent             0%,
-    transparent             28%,
-    rgba(80, 40, 65,  0.18) 36%,
-    rgba(244,114,182, 0.15) 46%,
-    rgba(42, 21, 34,  0.60) 54%,
-    rgba(22, 12, 16,  0.82) 65%,
-    rgba(18, 14, 13,  0.96) 76%,
-    #120e0d                 100%
-  );
+  background: linear-gradient(to right,
+      transparent 0%,
+      transparent 28%,
+      rgba(80, 40, 65, 0.18) 36%,
+      rgba(244, 114, 182, 0.15) 46%,
+      rgba(42, 21, 34, 0.60) 54%,
+      rgba(22, 12, 16, 0.82) 65%,
+      rgba(18, 14, 13, 0.96) 76%,
+      #120e0d 100%);
 }
 
 /* ============================================================
@@ -91,8 +87,13 @@
   will-change: opacity;
 }
 
-.auth-blur-bg.is-active { opacity: 1; }
-.auth-blur-bg.is-hidden { opacity: 0; }
+.auth-blur-bg.is-active {
+  opacity: 1;
+}
+
+.auth-blur-bg.is-hidden {
+  opacity: 0;
+}
 
 /* Left panel sharp image */
 .auth-panel-bg {
@@ -200,12 +201,10 @@
   justify-content: center;
   padding: clamp(2rem, 5vw, 3.5rem);
   /* transparent left edge → overlay (z:6) shows through → solid bg-primary right */
-  background: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(253,250,246,0.4) 25%,
-    var(--bg-primary) 55%
-  );
+  background: linear-gradient(to right,
+      transparent 0%,
+      rgba(253, 250, 246, 0.4) 25%,
+      var(--bg-primary) 55%);
 }
 
 /* Back button */
@@ -462,12 +461,10 @@
    ============================================================ */
 
 [data-theme="dark"] .auth-panel-right {
-  background: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(18,14,13,0.4) 25%,
-    var(--bg-primary) 55%
-  );
+  background: linear-gradient(to right,
+      transparent 0%,
+      rgba(18, 14, 13, 0.4) 25%,
+      var(--bg-primary) 55%);
 }
 
 /* Left panel — dark image overlay */

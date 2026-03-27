@@ -1385,7 +1385,7 @@ export function AdminFetch() {
           release_year,
           type,
           subtype,
-          aliases:title_aliases(alias, alias_type, is_primary),
+          aliases:aliases_cache,
           source_refs:title_source_refs(provider, external_id),
           themes:title_theme_songs(id)
         `)
