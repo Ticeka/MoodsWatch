@@ -90,6 +90,31 @@ async function fetchBattleCommunityRollupWithRetry(deckFingerprint, { isCancelle
   return null;
 }
 
+function buildLocalBattleCommunityRollup(session) {
+  if (session?.status !== 'completed') {
+    return null;
+  }
+
+  const ranking = Array.isArray(session?.ranking) && session.ranking.length > 0
+    ? session.ranking
+    : getLiveBattleRanking(session);
+
+  if (!Array.isArray(ranking) || ranking.length === 0) {
+    return null;
+  }
+
+  return {
+    deck_fingerprint: session?.deckFingerprint || '',
+    completed_session_count: 1,
+    community_ranking: ranking.map((title, index) => ({
+      ...title,
+      avg_rank: index + 1,
+      avg_score: Number(title?.score || 0),
+      first_place_count: index === 0 ? 1 : 0,
+    })),
+  };
+}
+
 function escapeSvgText(value) {
   return String(value || '')
     .replaceAll('&', '&amp;')
@@ -354,6 +379,7 @@ export function BattleSessionPage() {
   const [isCommunityLoading, setIsCommunityLoading] = useState(false);
   const [isExportingCard, setIsExportingCard] = useState(false);
   const [communityRankView, setCommunityRankView] = useState('top5');
+  const [communityRefreshTick, setCommunityRefreshTick] = useState(0);
   const [trailerModal, setTrailerModal] = useState(null);
   const [songModal, setSongModal] = useState(null);
 
@@ -412,7 +438,7 @@ export function BattleSessionPage() {
 
     loadCommunityRollup();
     return () => { cancelled = true; };
-  }, [session?.deckFingerprint, session?.status]);
+  }, [communityRefreshTick, session?.deckFingerprint, session?.status]);
 
   const titleMap = useMemo(
     () => new Map((session?.titles || []).map((title) => [title.id, title])),
@@ -426,9 +452,16 @@ export function BattleSessionPage() {
   const ranking = session?.ranking || getLiveBattleRanking(session);
   const winner = ranking[0] || null;
   const runnerUps = ranking.slice(1, 3);
-  const communityRanking = communityRollup?.community_ranking || [];
+  const fallbackCommunityRollup = useMemo(
+    () => buildLocalBattleCommunityRollup(session),
+    [session]
+  );
+  const hasRemoteCommunityRollup = Boolean(communityRollup?.community_ranking?.length);
+  const isUsingFallbackCommunityRollup = !hasRemoteCommunityRollup && Boolean(fallbackCommunityRollup);
+  const effectiveCommunityRollup = hasRemoteCommunityRollup ? communityRollup : fallbackCommunityRollup;
+  const communityRanking = effectiveCommunityRollup?.community_ranking || [];
   const communityWinner = communityRanking[0] || null;
-  const communitySampleCount = Number(communityRollup?.completed_session_count || 0);
+  const communitySampleCount = Number(effectiveCommunityRollup?.completed_session_count || 0);
   const visibleCommunityRanking = useMemo(
     () => (communityRankView === 'all' ? communityRanking : communityRanking.slice(0, 5)),
     [communityRankView, communityRanking]
@@ -480,6 +513,13 @@ export function BattleSessionPage() {
   const updateSession = async (nextSession) => {
     let persisted = saveBattleSession(nextSession);
     setSession(persisted);
+    if (persisted?.status === 'completed') {
+      setCommunityRollup((current) => (
+        current?.community_ranking?.length
+          ? current
+          : buildLocalBattleCommunityRollup(persisted)
+      ));
+    }
     if (user?.id) {
       try {
         const remotePersisted = await persistRemoteBattleSessionRemote(user.id, persisted);
@@ -492,6 +532,9 @@ export function BattleSessionPage() {
         console.warn('Failed to persist remote battle update', saveError);
         toast.error(t('battle.updateSyncFailed'));
       }
+    }
+    if (persisted?.status === 'completed' && persisted?.deckFingerprint) {
+      setCommunityRefreshTick((current) => current + 1);
     }
   };
 
@@ -623,7 +666,13 @@ export function BattleSessionPage() {
                 {isExportingCard ? t('battle.exportingCard') : t('battle.downloadCard')}
               </Button>
               <Button variant="ghost" icon={<BarChart3 size={16} />} disabled={isCommunityLoading || !communityWinner}>
-                {isCommunityLoading ? t('battle.loadingCommunity') : communityWinner ? t('battle.communitySynced') : t('battle.communityPending')}
+                {isCommunityLoading
+                  ? t('battle.loadingCommunity')
+                  : hasRemoteCommunityRollup
+                    ? t('battle.communitySynced')
+                    : isUsingFallbackCommunityRollup
+                      ? t('battle.communityStarting')
+                      : t('battle.communityPending')}
               </Button>
               <div className="battle-result-actions-right">
                 <Link className="btn btn-ghost btn-md" to="/battle">{t('battle.hub')}</Link>
@@ -635,7 +684,13 @@ export function BattleSessionPage() {
           <section className="container battle-section">
             <div className="battle-section-head">
               <h2>{t('battle.communityCompare')}</h2>
-              <p>{communityWinner ? t('battle.communityCompareSummary', { count: communitySampleCount }) : t('battle.communityComparePending')}</p>
+              <p>
+                {hasRemoteCommunityRollup
+                  ? t('battle.communityCompareSummary', { count: communitySampleCount })
+                  : isUsingFallbackCommunityRollup
+                    ? t('battle.communityStartingSummary')
+                    : t('battle.communityComparePending')}
+              </p>
             </div>
             {communityWinner ? (
               <div className="battle-community-grid">
