@@ -68,6 +68,24 @@ function buildAniListTrailerPatch(media) {
   };
 }
 
+function buildResolvedTrailerPatch(trailerInput) {
+  const trailer = normalizeTrailer({
+    trailer_url: trailerInput?.url || trailerInput?.watchUrl || null,
+    trailer_site: trailerInput?.site || trailerInput?.provider || null,
+    trailer_video_id: trailerInput?.videoId || null,
+    trailer_thumbnail_url: trailerInput?.thumbnailUrl || null,
+    trailer_source: trailerInput?.source || null,
+  });
+
+  return {
+    trailer_url: trailer?.url || null,
+    trailer_site: trailer?.site || null,
+    trailer_video_id: trailer?.videoId || null,
+    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
+    trailer_source: trailer?.source || trailerInput?.source || null,
+  };
+}
+
 function getMediaDisplayTitle(media) {
   return media?.title?.english || media?.title?.romaji || media?.title?.native || `AniList #${media?.id ?? ''}`;
 }
@@ -121,6 +139,7 @@ function normalizeMedia(media) {
 const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
 const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank} trailer{id site thumbnail}}}}`;
 const ANILIST_TRAILER_GQL = `query($id:Int!){Media(id:$id){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}`;
+const ANILIST_TRAILER_SEARCH_GQL = `query($search:String!$type:MediaType){Page(page:1,perPage:5){media(search:$search,type:$type,isAdult:false){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}}`;
 
 async function fetchAniListGraphQL(query, variables, signal) {
   const res = await fetch(ANILIST_URL, {
@@ -168,6 +187,42 @@ async function fetchAniListCharStaff(anilistId, signal) {
 async function fetchAniListTrailerById(anilistId, signal) {
   const data = await fetchAniListGraphQL(ANILIST_TRAILER_GQL, { id: anilistId }, signal);
   return data?.Media || null;
+}
+
+async function searchAniListTrailerByName(search, type, signal) {
+  const data = await fetchAniListGraphQL(ANILIST_TRAILER_SEARCH_GQL, { search, type }, signal);
+  return data?.Page?.media || [];
+}
+
+async function resolveTrailerFromFallbackSources(titleRecord, preferredSearchName = '') {
+  if (!supabase) return null;
+
+  try {
+    const searchNames = buildPreferredTitleSearchNames(
+      titleRecord,
+      preferredSearchName ? [preferredSearchName] : []
+    );
+
+    const { data, error } = await supabase.functions.invoke('trailer-source-proxy', {
+      body: {
+        title: titleRecord?.canonical_title || '',
+        type: titleRecord?.type || '',
+        subtype: titleRecord?.subtype || '',
+        releaseYear: titleRecord?.release_year || null,
+        searchNames,
+        aliases: getOrderedAliasValues(titleRecord),
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data?.trailer || null;
+  } catch (error) {
+    console.warn('[AdminFetch] trailer fallback lookup failed:', error);
+    return null;
+  }
 }
 
 // ─── Jikan (MyAnimeList) ──────────────────────────────────────────────────────
@@ -388,9 +443,8 @@ function getSourceRefId(sourceRefs, provider) {
   return ref?.external_id ? String(ref.external_id) : '';
 }
 
-function buildThemeSearchNames(titleRecord) {
-  const seen = new Set();
-  const aliases = [...(titleRecord?.aliases || [])]
+function getOrderedAliasValues(titleRecord) {
+  return [...(titleRecord?.aliases || [])]
     .sort((a, b) => {
       const rankA = ALIAS_TYPE_PRIORITY[a.alias_type] ?? 99;
       const rankB = ALIAS_TYPE_PRIORITY[b.alias_type] ?? 99;
@@ -399,16 +453,100 @@ function buildThemeSearchNames(titleRecord) {
       return String(a.alias || '').length - String(b.alias || '').length;
     })
     .map((entry) => entry.alias);
+}
 
-  return [titleRecord?.canonical_title, ...aliases]
+function collectUniqueTitleValues(values = []) {
+  const seen = new Set();
+  return values
     .filter((value) => String(value || '').trim())
     .filter((value) => {
       const key = normalizeLooseText(value);
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    })
-    .slice(0, 5);
+    });
+}
+
+function buildTitleLookupValues(titleRecord, extraValues = []) {
+  return collectUniqueTitleValues([
+    ...extraValues,
+    titleRecord?.canonical_title,
+    titleRecord?.slug,
+    ...getOrderedAliasValues(titleRecord),
+  ]);
+}
+
+function buildPreferredTitleSearchNames(titleRecord, extraNames = []) {
+  return collectUniqueTitleValues([
+    ...extraNames,
+    titleRecord?.canonical_title,
+    ...getOrderedAliasValues(titleRecord),
+  ]).slice(0, 5);
+}
+
+function matchesTrailerTitleQuery(titleRecord, query) {
+  const normalizedQuery = normalizeLooseText(query);
+  if (!normalizedQuery) return true;
+
+  return buildTitleLookupValues(titleRecord).some((value) => (
+    normalizeLooseText(value).includes(normalizedQuery)
+  ));
+}
+
+function mapTitleRecordToAniListMediaType(titleRecord) {
+  return String(titleRecord?.type || '').toLowerCase() === 'anime' ? 'ANIME' : 'MANGA';
+}
+
+function buildAniListMediaCandidateNames(media) {
+  return collectUniqueTitleValues([
+    getMediaDisplayTitle(media),
+    media?.title?.english,
+    media?.title?.romaji,
+    media?.title?.native,
+  ]);
+}
+
+function selectAniListTrailerCandidate(mediaList, searchNames = []) {
+  const normalizedCandidates = new Set(
+    (searchNames || []).map((value) => normalizeLooseText(value)).filter(Boolean)
+  );
+  const isExactMatch = (media) => buildAniListMediaCandidateNames(media)
+    .some((value) => normalizedCandidates.has(normalizeLooseText(value)));
+
+  return mediaList.find((media) => media?.trailer?.id && isExactMatch(media))
+    || mediaList.find((media) => media?.trailer?.id)
+    || mediaList.find((media) => isExactMatch(media))
+    || mediaList[0]
+    || null;
+}
+
+async function resolveAniListTrailerBySearch(titleRecord, signal, preferredSearchName = '') {
+  const searchNames = buildPreferredTitleSearchNames(
+    titleRecord,
+    preferredSearchName ? [preferredSearchName] : []
+  );
+
+  if (!searchNames.length) {
+    return { media: null, searchName: null };
+  }
+
+  const mediaType = mapTitleRecordToAniListMediaType(titleRecord);
+  let fallback = null;
+
+  for (const searchName of searchNames) {
+    const mediaList = await searchAniListTrailerByName(searchName, mediaType, signal);
+    const media = selectAniListTrailerCandidate(mediaList, searchNames);
+
+    if (media?.trailer?.id) {
+      return { media, searchName };
+    }
+
+    if (!fallback && media) {
+      fallback = { media, searchName };
+    }
+  }
+
+  return fallback || { media: null, searchName: null };
 }
 
 function getThemeType(rawType) {
@@ -446,7 +584,7 @@ function selectAnimeThemesMatch(candidates, titleRecord, queryName) {
   const anilistId = getSourceRefId(titleRecord?.source_refs, 'anilist');
   const malId = getSourceRefId(titleRecord?.source_refs, 'jikan');
   const queryNorm = normalizeLooseText(queryName);
-  const searchNames = new Set(buildThemeSearchNames(titleRecord).map(normalizeLooseText));
+  const searchNames = new Set(buildPreferredTitleSearchNames(titleRecord).map(normalizeLooseText));
 
   let best = null;
 
@@ -496,7 +634,7 @@ function selectAnimeThemesMatch(candidates, titleRecord, queryName) {
 }
 
 async function resolveAnimeThemesMatch(titleRecord, signal) {
-  const searchNames = buildThemeSearchNames(titleRecord);
+  const searchNames = buildPreferredTitleSearchNames(titleRecord);
   let best = null;
 
   for (const name of searchNames) {
@@ -1035,7 +1173,14 @@ export function AdminFetch() {
     limit: 50,
     delayMs: 800,
   });
-  const [trailerConfig, setTrailerConfig] = useState({ onlyMissing: true, category: 'all', limit: 100, delayMs: 1200 });
+  const [trailerConfig, setTrailerConfig] = useState({
+    mode: 'batch',
+    onlyMissing: true,
+    category: 'all',
+    limit: 100,
+    delayMs: 1200,
+    titleQuery: '',
+  });
   const [themeConfig, setThemeConfig] = useState({ onlyMissing: true, limit: 100, delayMs: 1200 });
   const abortRef = useRef(null);
   const logContainerRef = useRef(null);
@@ -1217,6 +1362,12 @@ export function AdminFetch() {
       return;
     }
 
+    const explicitTitleQuery = String(trailerConfig.titleQuery || '').trim();
+    if (trailerConfig.mode === 'search' && !explicitTitleQuery) {
+      toast.error(t('admin.fetch.trailers.titleQueryRequired'));
+      return;
+    }
+
     abortRef.current = new AbortController();
     setRunning(true);
     setLogs([]);
@@ -1226,43 +1377,95 @@ export function AdminFetch() {
       addLog(
         'info',
         t('admin.fetch.trailers.logStart', {
-          mode: trailerConfig.onlyMissing
-            ? t('admin.fetch.trailers.modeMissing')
-            : t('admin.fetch.trailers.modeRefresh'),
+          mode: trailerConfig.mode === 'search'
+            ? t('admin.fetch.trailers.modeSearch')
+            : trailerConfig.onlyMissing
+              ? t('admin.fetch.trailers.modeMissing')
+              : t('admin.fetch.trailers.modeRefresh'),
           delayMs: trailerConfig.delayMs,
         })
       );
 
-      let query = supabase
-        .from('title_source_refs')
-        .select('canonical_title_id, external_id, canonical_titles!inner(id, canonical_title, slug, type, subtype, trailer_url, trailer_video_id)')
-        .eq('provider', 'anilist')
-        .order('canonical_title_id', { ascending: true });
-
-      if (trailerConfig.onlyMissing) {
-        query = query.is('canonical_titles.trailer_url', null).is('canonical_titles.trailer_video_id', null);
+      if (trailerConfig.mode === 'search') {
+        addLog('info', t('admin.fetch.trailers.logSearchQuery', { query: explicitTitleQuery }));
       }
 
-      const { data: refRows, error: refError } = await query;
-      if (refError) throw refError;
+      let targets = [];
 
-      let targets = (refRows || []).filter((target) => {
-        const titleRecord = Array.isArray(target.canonical_titles)
-          ? target.canonical_titles[0]
-          : target.canonical_titles;
+      if (trailerConfig.mode === 'search') {
+        const { data: titleRows, error: titleError } = await supabase
+          .from('canonical_titles')
+          .select(`
+            id,
+            canonical_title,
+            slug,
+            release_year,
+            type,
+            subtype,
+            trailer_url,
+            trailer_video_id,
+            aliases:aliases_cache,
+            source_refs:title_source_refs(provider, external_id)
+          `)
+          .order('id', { ascending: true });
+        if (titleError) throw titleError;
 
-        return matchesTrailerCategory(titleRecord, trailerConfig.category);
-      });
+        targets = (titleRows || [])
+          .filter((titleRecord) => matchesTrailerCategory(titleRecord, trailerConfig.category))
+          .filter((titleRecord) => matchesTrailerTitleQuery(titleRecord, explicitTitleQuery))
+          .map((titleRecord) => ({
+            canonical_title_id: titleRecord.id,
+            external_id: getSourceRefId(titleRecord.source_refs, 'anilist') || null,
+            canonical_titles: titleRecord,
+          }));
+      } else {
+        let query = supabase
+          .from('canonical_titles')
+          .select(`
+            id,
+            canonical_title,
+            slug,
+            release_year,
+            type,
+            subtype,
+            trailer_url,
+            trailer_video_id,
+            aliases:aliases_cache,
+            source_refs:title_source_refs(provider, external_id)
+          `)
+          .order('id', { ascending: true });
+
+        if (trailerConfig.onlyMissing) {
+          query = query.is('trailer_url', null).is('trailer_video_id', null);
+        }
+
+        const { data: titleRows, error: titleError } = await query;
+        if (titleError) throw titleError;
+
+        targets = (titleRows || [])
+          .filter((titleRecord) => matchesTrailerCategory(titleRecord, trailerConfig.category))
+          .map((titleRecord) => ({
+            canonical_title_id: titleRecord.id,
+            external_id: getSourceRefId(titleRecord.source_refs, 'anilist') || null,
+            canonical_titles: titleRecord,
+          }));
+      }
+
       if (trailerConfig.limit > 0) {
         targets = targets.slice(0, trailerConfig.limit);
       }
 
       addLog('info', t('admin.fetch.trailers.logTargets', { count: targets.length }));
-      setProgress({ total: targets.length, done: 0, updated: 0, noTrailer: 0, errors: 0 });
+      setProgress({ total: targets.length, done: 0, updated: 0, noTrailer: 0, noMatch: 0, errors: 0 });
 
       if (targets.length === 0) {
-        addLog('success', t('admin.fetch.trailers.logNothingToDo'));
-        toast.success(t('admin.fetch.trailers.nothingToDo'));
+        if (trailerConfig.mode === 'search') {
+          addLog('success', t('admin.fetch.trailers.logNoLocalMatch', { query: explicitTitleQuery }));
+          toast.success(t('admin.fetch.trailers.noLocalMatch'));
+        } else {
+          addLog('success', t('admin.fetch.trailers.logNothingToDo'));
+          toast.success(t('admin.fetch.trailers.nothingToDo'));
+        }
         return;
       }
 
@@ -1275,24 +1478,54 @@ export function AdminFetch() {
         const fallbackTitle = titleRecord?.canonical_title || `#${target.canonical_title_id}`;
 
         try {
-          const media = await fetchAniListTrailerById(Number(target.external_id), abortRef.current.signal);
+          let media = null;
+          let resolvedTrailer = null;
 
-          const { error: sourceRefError } = await supabase.from('title_source_refs').upsert(
-            {
-              canonical_title_id: target.canonical_title_id,
-              provider: 'anilist',
-              external_id: String(target.external_id),
-              external_url: media?.siteUrl || null,
-              source_priority: titleRecord?.type === 'anime' ? 10 : 20,
-              raw_payload: media,
-              last_synced_at: new Date().toISOString(),
-              fetched_at: new Date().toISOString(),
-            },
-            { onConflict: 'provider,external_id' },
-          );
-          if (sourceRefError && sourceRefError.code !== 'PGRST205') throw sourceRefError;
+          if (target.external_id) {
+            media = await fetchAniListTrailerById(Number(target.external_id), abortRef.current.signal);
+          } else {
+            const searchResult = await resolveAniListTrailerBySearch(
+              titleRecord,
+              abortRef.current.signal,
+              trailerConfig.mode === 'search' ? explicitTitleQuery : ''
+            );
+            media = searchResult.media;
+          }
+
+          if (abortRef.current.signal.aborted) break;
+
+          if (media?.id) {
+            const { error: sourceRefError } = await supabase.from('title_source_refs').upsert(
+              {
+                canonical_title_id: target.canonical_title_id,
+                provider: 'anilist',
+                external_id: String(media.id),
+                external_url: media?.siteUrl || null,
+                source_priority: titleRecord?.type === 'anime' ? 10 : 20,
+                raw_payload: media,
+                last_synced_at: new Date().toISOString(),
+                fetched_at: new Date().toISOString(),
+              },
+              { onConflict: 'provider,external_id' },
+            );
+            if (sourceRefError && sourceRefError.code !== 'PGRST205') throw sourceRefError;
+          }
 
           if (!media?.trailer?.id) {
+            resolvedTrailer = await resolveTrailerFromFallbackSources(
+              titleRecord,
+              trailerConfig.mode === 'search' ? explicitTitleQuery : ''
+            );
+          }
+
+          if (!media && !resolvedTrailer) {
+            setProgress((current) => ({
+              ...current,
+              done: current.done + 1,
+              noMatch: current.noMatch + 1,
+            }));
+            addLog('skipped', t('admin.fetch.trailers.logNoMatch', { title: fallbackTitle }));
+          } else if (!media?.trailer?.id && !resolvedTrailer) {
             setProgress((current) => ({
               ...current,
               done: current.done + 1,
@@ -1300,7 +1533,12 @@ export function AdminFetch() {
             }));
             addLog('skipped', t('admin.fetch.trailers.logNoTrailer', { title: getMediaDisplayTitle(media) || fallbackTitle }));
           } else {
-            const patch = buildAniListTrailerPatch(media);
+            const patch = media?.trailer?.id
+              ? buildAniListTrailerPatch(media)
+              : buildResolvedTrailerPatch(resolvedTrailer);
+            const updateLabel = media?.trailer?.id
+              ? getMediaDisplayTitle(media) || fallbackTitle
+              : fallbackTitle;
             const { error: updateError } = await supabase
               .from('canonical_titles')
               .update({
@@ -1318,8 +1556,8 @@ export function AdminFetch() {
             addLog(
               'updated',
               t('admin.fetch.trailers.logUpdated', {
-                title: getMediaDisplayTitle(media) || fallbackTitle,
-                site: patch.trailer_site || 'external',
+                title: updateLabel,
+                site: patch.trailer_source || patch.trailer_site || 'external',
               })
             );
           }
@@ -1397,7 +1635,7 @@ export function AdminFetch() {
         if (themeConfig.onlyMissing && Array.isArray(titleRecord.themes) && titleRecord.themes.length > 0) {
           return false;
         }
-        return buildThemeSearchNames(titleRecord).length > 0;
+        return buildPreferredTitleSearchNames(titleRecord).length > 0;
       });
 
       if (themeConfig.limit > 0) {
@@ -1661,7 +1899,7 @@ export function AdminFetch() {
               updated: result === 'updated' ? p.updated + 1 : p.updated,
               skipped: result === 'skipped' ? p.skipped + 1 : p.skipped,
             }));
-            const label = result === 'imported' ? 'นำเข้า' : result === 'updated' ? 'อัปവ' : 'ข้าม';
+            const label = result === 'imported' ? 'นำเข้า' : result === 'updated' ? 'อัปเดต' : 'ข้าม';
             addLog(result, `[${label}] ${norm.displayTitle}`);
           } catch (err) {
             setProgress((p) => ({ ...p, fetched: p.fetched + 1, errors: p.errors + 1 }));
@@ -1765,8 +2003,8 @@ export function AdminFetch() {
               <Section title={t('admin.fetch.typeLabel')}>
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                   {[
-                    { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '๐' },
-                    { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '๐“' },
+                    { value: 'ANIME', label: t('admin.fetch.typeAnime'), emoji: '🎌' },
+                    { value: 'MANGA', label: t('admin.fetch.typeManga'), emoji: '📚' },
                   ].map((tp) => (
                     <button
                       key={tp.value}
@@ -1957,35 +2195,35 @@ export function AdminFetch() {
             </>
           ) : activeTab === 'trailers' ? (
             <>
-              <Section title={t('admin.fetch.trailers.modeLabel')}>
+              <Section title={t('admin.fetch.trailers.targetLabel')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {[
                     {
-                      key: true,
-                      label: t('admin.fetch.trailers.modeMissing'),
-                      hint: t('admin.fetch.trailers.modeMissingHint'),
+                      key: 'batch',
+                      label: t('admin.fetch.trailers.targetBatch'),
+                      hint: t('admin.fetch.trailers.targetBatchHint'),
                     },
                     {
-                      key: false,
-                      label: t('admin.fetch.trailers.modeRefresh'),
-                      hint: t('admin.fetch.trailers.modeRefreshHint'),
+                      key: 'search',
+                      label: t('admin.fetch.trailers.targetSearch'),
+                      hint: t('admin.fetch.trailers.targetSearchHint'),
                     },
                   ].map(({ key, label, hint }) => (
                     <button
-                      key={String(key)}
+                      key={key}
                       type="button"
                       disabled={running}
-                      onClick={() => setTrailerConfig((current) => ({ ...current, onlyMissing: key }))}
+                      onClick={() => setTrailerConfig((current) => ({ ...current, mode: key }))}
                       style={{
                         padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
-                        border: `2px solid ${trailerConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
-                        background: trailerConfig.onlyMissing === key
+                        border: `2px solid ${trailerConfig.mode === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                        background: trailerConfig.mode === key
                           ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
                           : 'var(--bg-primary)',
                         textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
                       }}
                     >
-                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: trailerConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: trailerConfig.mode === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
                         {label}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
@@ -1993,6 +2231,61 @@ export function AdminFetch() {
                   ))}
                 </div>
               </Section>
+
+              {trailerConfig.mode === 'batch' ? (
+                <Section title={t('admin.fetch.trailers.modeLabel')}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {[
+                      {
+                        key: true,
+                        label: t('admin.fetch.trailers.modeMissing'),
+                        hint: t('admin.fetch.trailers.modeMissingHint'),
+                      },
+                      {
+                        key: false,
+                        label: t('admin.fetch.trailers.modeRefresh'),
+                        hint: t('admin.fetch.trailers.modeRefreshHint'),
+                      },
+                    ].map(({ key, label, hint }) => (
+                      <button
+                        key={String(key)}
+                        type="button"
+                        disabled={running}
+                        onClick={() => setTrailerConfig((current) => ({ ...current, onlyMissing: key }))}
+                        style={{
+                          padding: 'var(--space-4)', borderRadius: 18, cursor: running ? 'default' : 'pointer',
+                          border: `2px solid ${trailerConfig.onlyMissing === key ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                          background: trailerConfig.onlyMissing === key
+                            ? 'color-mix(in srgb, var(--primary-500) 10%, transparent)'
+                            : 'var(--bg-primary)',
+                          textAlign: 'left', transition: 'all 0.15s', opacity: running ? 0.5 : 1,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '0.92rem', color: trailerConfig.onlyMissing === key ? 'var(--primary-700)' : 'var(--text-primary)', marginBottom: 4 }}>
+                          {label}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+              ) : (
+                <Section title={t('admin.fetch.trailers.titleQueryLabel')}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={trailerConfig.titleQuery}
+                      onChange={(event) => setTrailerConfig((current) => ({ ...current, titleQuery: event.target.value }))}
+                      placeholder={t('admin.fetch.trailers.titleQueryPlaceholder')}
+                      disabled={running}
+                    />
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                      {t('admin.fetch.trailers.titleQueryHint')}
+                    </p>
+                  </div>
+                </Section>
+              )}
 
               <Section title={t('admin.fetch.trailers.categoryLabel')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -2240,7 +2533,7 @@ export function AdminFetch() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>Jikan API v4 (MyAnimeList)</div>
                     <div style={{ fontSize: '0.77rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      Manhwa ยท Erotica (genre 49) ยท ไม่มี BL/Yaoi (genre 28, 26) ยท เรียงตาม Score
+                      Manhwa - Erotica (genre 49) - ไม่มี BL/Yaoi (genre 28, 26) - เรียงตาม Score
                     </div>
                   </div>
                 </div>
@@ -2427,7 +2720,9 @@ export function AdminFetch() {
                     : activeTab === 'themes'
                       ? t('admin.fetch.themes.startBtn')
                       : activeTab === 'trailers'
-                        ? t('admin.fetch.trailers.startBtn')
+                        ? trailerConfig.mode === 'search'
+                          ? t('admin.fetch.trailers.startSearchBtn')
+                          : t('admin.fetch.trailers.startBtn')
                         : activeTab === 'pornhwa'
                           ? 'Fetch PornhwaDB'
                           : activeTab === 'pornhwa-chars'
@@ -2546,6 +2841,7 @@ export function AdminFetch() {
                           { label: t('admin.fetch.trailers.statDone'), value: progress.done, color: '#2563eb' },
                           { label: t('admin.fetch.trailers.statUpdated'), value: progress.updated, color: '#16a34a' },
                           { label: t('admin.fetch.trailers.statNoTrailer'), value: progress.noTrailer, color: 'var(--text-tertiary)' },
+                          { label: t('admin.fetch.trailers.statNoMatch'), value: progress.noMatch, color: '#a16207' },
                           { label: t('admin.fetch.trailers.statErrors'), value: progress.errors, color: '#dc2626' },
                         ]
                         : [

@@ -103,6 +103,78 @@ const CREATE_CATEGORY_OPTIONS = [
 ];
 const CREATE_STATUS_OPTIONS = ['all', 'ongoing', 'completed', 'upcoming', 'hiatus', 'cancelled'];
 
+function humanizeTierToken(value = '') {
+  return String(value || '')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function getMediaTypeLabel(type, pick) {
+  const normalized = String(type || '').toLowerCase();
+  const labels = {
+    all: pick('ทุกประเภท', 'All Types'),
+    anime: pick('อนิเมะ', 'Anime'),
+    manga: pick('มังงะ', 'Manga'),
+    manhwa: pick('มันฮวา', 'Manhwa'),
+  };
+
+  return labels[normalized] || humanizeTierToken(type);
+}
+
+function getEntityTypeLabel(entityType, pick) {
+  const normalized = normalizeCatalogEntityType(entityType);
+  const labels = {
+    [TITLE_ENTITY_TYPE]: pick('เรื่อง', 'Titles'),
+    [CHARACTER_ENTITY_TYPE]: pick('ตัวละคร', 'Characters'),
+    [THEME_SONG_ENTITY_TYPE]: pick('เพลงประกอบ', 'Theme Songs'),
+  };
+
+  return labels[normalized] || pick('เรื่อง', 'Titles');
+}
+
+function getCreateSortLabel(sortValue, pick) {
+  const labels = {
+    popularity: pick('ยอดนิยม', 'Popular'),
+    score: pick('คะแนน', 'Score'),
+    year: pick('ใหม่สุด', 'Newest'),
+    title: pick('ก-ฮ', 'A-Z'),
+  };
+
+  return labels[sortValue] || humanizeTierToken(sortValue);
+}
+
+function getTierCategoryLabel(category, pick) {
+  const normalized = String(category || '').toLowerCase();
+  const labels = {
+    anime: pick('อนิเมะ', 'Anime'),
+    manga: pick('มังงะ', 'Manga'),
+    manhwa: pick('มันฮวา', 'Manhwa'),
+    romance: pick('โรแมนซ์', 'Romance'),
+    action: pick('แอ็กชัน', 'Action'),
+    comedy: pick('คอเมดี้', 'Comedy'),
+    fantasy: pick('แฟนตาซี', 'Fantasy'),
+    drama: pick('ดราม่า', 'Drama'),
+    characters: pick('ตัวละคร', 'Characters'),
+    songs: pick('เพลง', 'Songs'),
+  };
+
+  return labels[normalized] || humanizeTierToken(category);
+}
+
+function getTierRowFallbackLabel(index, pick) {
+  return pick(`ชั้น ${index + 1}`, `Tier ${index + 1}`);
+}
+
+function getOwnerDisplayName(ownerName, ownerUsername, pick) {
+  if (!ownerUsername && ownerName === 'You') {
+    return pick('คุณ', 'You');
+  }
+
+  return ownerName || ownerUsername || pick('ผู้ใช้', 'User');
+}
+
 function getDisplayName(title) {
   return getCatalogEntityName(title);
 }
@@ -922,18 +994,18 @@ function getCatalogTypeChipLabel(entity, pick) {
   }
 
   if (entity?.subtype === 'manhwa' || entity?.type === 'manhwa') {
-    return 'Manhwa';
+    return getMediaTypeLabel('manhwa', pick);
   }
 
   if (entity?.type === 'manga') {
-    return 'Manga';
+    return getMediaTypeLabel('manga', pick);
   }
 
   if (isCharacterEntity(entity)) {
     return pick('ตัวละคร', 'Character');
   }
 
-  return 'Anime';
+  return getMediaTypeLabel('anime', pick);
 }
 
 function getStatusLabel(status, pick) {
@@ -1193,7 +1265,7 @@ function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo,
   const previewRows = list.rows
     .map((row, index) => ({
       id: row.id,
-      label: row.label || `Tier ${index + 1}`,
+      label: row.label || getTierRowFallbackLabel(index, pick),
       color: row.color || TIER_COLORS[index % TIER_COLORS.length],
       titles: row.titleIds
         .map((id) => titleById.get(Number(id)))
@@ -1237,7 +1309,7 @@ function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo,
           {pick('โดย', 'by')}{' '}
           {(() => {
             const slug = list.ownerUsername || list.ownerName;
-            const label = list.ownerName || list.ownerUsername || pick('ผู้ใช้', 'User');
+            const label = getOwnerDisplayName(list.ownerName, list.ownerUsername, pick);
             return slug && slug !== 'You' ? (
               <Link to={`/u/${slug}`} className="tierlist-owner-link" onClick={(e) => e.stopPropagation()}>
                 {label}
@@ -1690,7 +1762,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       context.fillText(tierList.title || 'Tier List', boardPadding + 14, boardPadding + 32);
       context.fillStyle = 'rgba(255,255,255,0.72)';
       context.font = '14px Arial';
-      context.fillText(pick(`Ranked with ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`), boardPadding + 14, boardPadding + 47);
+      context.fillText(pick(`จัดอันดับด้วย ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`), boardPadding + 14, boardPadding + 47);
 
       const imageEntries = await Promise.all(
         tierList.rows.flatMap((row) => row.titleIds).map(async (titleId) => {
@@ -1715,7 +1787,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
         context.font = '700 30px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillText(row.label || `Tier ${rowIndex + 1}`, boardPadding + labelWidth / 2, top + tileSize / 2);
+        context.fillText(row.label || getTierRowFallbackLabel(rowIndex, pick), boardPadding + labelWidth / 2, top + tileSize / 2);
 
         context.fillStyle = '#222222';
         context.fillRect(boardPadding + labelWidth, top, width - boardPadding * 2 - labelWidth, tileSize);
@@ -2784,16 +2856,18 @@ export function TierListBrowsePage() {
   }
 
   const tabItems = [
-    { value: 'all', label: pick('Tier Lists', 'Tier Lists'), icon: <Layers size={14} /> },
-    ...ENTITY_TYPE_OPTIONS.map((option) => ({ value: option.value, label: option.label, icon: null })),
-    ...categoryOptions.filter((cat) => cat !== 'all').map((cat) => ({ value: `cat:${cat}`, label: cat, icon: null })),
+    { value: 'all', label: pick('ทั้งหมด', 'All'), icon: <Layers size={14} /> },
+    ...ENTITY_TYPE_OPTIONS.map((option) => ({ value: option.value, label: getEntityTypeLabel(option.value, pick), icon: null })),
+    ...categoryOptions
+      .filter((cat) => cat !== 'all')
+      .map((cat) => ({ value: `cat:${cat}`, label: getTierCategoryLabel(cat, pick), icon: null })),
   ];
 
   return (
     <div className="tierlist-page">
       <div className="container tierlist-browse-title-row">
         <div className="tierlist-browse-title-row-left">
-          <h1>{pick('Tier List Explorer', 'Tier List Explorer')}</h1>
+          <h1>{pick('ศูนย์รวม Tier List', 'Tier List Explorer')}</h1>
         </div>
         <Link className="tierlist-browse-create-btn" to="/tierlist/create">
           <Plus size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}
@@ -2970,7 +3044,7 @@ export function TierListBrowsePage() {
                 <p>{pick('เลือกเรื่องที่มีข้อมูลเพลง แล้วจัดอันดับ OP/ED ในแบบของคุณเอง', 'Pick a title with song data and build your own OP/ED tier list.')}</p>
               </div>
               <span className="btn btn-primary btn-sm">
-                {pick('ดู Song Tier Lists', 'Explore Song Tier Lists')} <ArrowRight size={13} />
+                {pick('ดูลิสต์จัดอันดับเพลง', 'Explore Song Tier Lists')} <ArrowRight size={13} />
               </span>
             </Link>
           </section>
@@ -3648,7 +3722,7 @@ export function TierListCreatePage() {
               }}
               aria-pressed={active}
             >
-              <strong>{option.label}</strong>
+              <strong>{getEntityTypeLabel(option.value, pick)}</strong>
               <span>
                 {option.value === TITLE_ENTITY_TYPE
                   ? pick('คัดชื่อเรื่องตรง ๆ พร้อมตัวกรองเพิ่ม', 'Curate titles directly with richer filtering')
@@ -3717,14 +3791,14 @@ export function TierListCreatePage() {
               {CREATE_CATEGORY_OPTIONS
                 .filter((option) => !isCharacterMode || option.value !== 'anime')
                 .map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>{getTierCategoryLabel(option.value, pick)}</option>
                 ))}
             </select>
           </label>
         )}
 
         <label className="tierlist-field">
-          <span>Catalog</span>
+          <span>{pick('แคตตาล็อก', 'Catalog')}</span>
           <select
             value={entityType}
             onChange={(event) => {
@@ -3740,7 +3814,7 @@ export function TierListCreatePage() {
             }}
           >
             {ENTITY_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>{getEntityTypeLabel(option.value, pick)}</option>
             ))}
           </select>
         </label>
@@ -3904,7 +3978,7 @@ export function TierListCreatePage() {
                         onClick={() => setTypeFilter(type)}
                         aria-pressed={typeFilter === type}
                       >
-                        {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+                        {getMediaTypeLabel(type, pick)}
                       </button>
                     ))}
                   </div>
@@ -3918,7 +3992,7 @@ export function TierListCreatePage() {
                     className="results-sorter"
                   >
                     {CREATE_SORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>{getCreateSortLabel(option.value, pick)}</option>
                     ))}
                   </SortSelect>
                   <div className="tierlist-picker-search-wrap">
@@ -4071,7 +4145,7 @@ export function TierListCreatePage() {
                     onClick={() => { setTypeFilter(type); setCatalogPage(1); }}
                     aria-pressed={typeFilter === type}
                   >
-                    {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+                    {getMediaTypeLabel(type, pick)}
                   </button>
                 ))}
               </div>
@@ -4085,7 +4159,7 @@ export function TierListCreatePage() {
                 className="results-sorter"
               >
                 {CREATE_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>{getCreateSortLabel(option.value, pick)}</option>
                 ))}
               </SortSelect>
               <SortSelect
@@ -4516,7 +4590,7 @@ export function TierListPlayPage() {
           </Link>
           {!canEdit && (() => {
             const slug = tierList.ownerUsername || tierList.ownerName;
-            const label = tierList.ownerName || tierList.ownerUsername || pick('ผู้ใช้', 'User');
+            const label = getOwnerDisplayName(tierList.ownerName, tierList.ownerUsername, pick);
             return slug && slug !== 'You' ? (
               <span className="tierlist-by-line">
                 {pick('โดย', 'by')}{' '}
@@ -4776,7 +4850,7 @@ export function SongTierListPage() {
       <div className="container tierlist-play-topbar">
         <div className="tierlist-play-topbar-left">
           <Link className="btn btn-ghost btn-sm" to="/tierlist/songs">
-            <ChevronLeft size={14} /> {pick('Song Tier Lists', 'Song Tier Lists')}
+            <ChevronLeft size={14} /> {pick('ลิสต์จัดอันดับเพลง', 'Song Tier Lists')}
           </Link>
           <span className="tierlist-by-line">
             <Music size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
@@ -4870,13 +4944,13 @@ export function SongTierListBrowsePage() {
     <div className="tierlist-page">
       <div className="container tierlist-browse-header">
         <div className="tierlist-browse-header-left">
-          <h1><Music size={17} /> {pick('Song Tier Lists', 'Song Tier Lists')}</h1>
+          <h1><Music size={17} /> {pick('ลิสต์จัดอันดับเพลง', 'Song Tier Lists')}</h1>
           {!isLoading && (
             <span className="tierlist-count">{filteredTitles.length} {pick('เรื่อง', 'titles')}</span>
           )}
         </div>
         <Link className="btn btn-ghost btn-sm" to="/tierlist">
-          <ChevronLeft size={13} /> {pick('Tier Lists ทั้งหมด', 'All Tier Lists')}
+          <ChevronLeft size={13} /> {pick('ลิสต์จัดอันดับทั้งหมด', 'All Tier Lists')}
         </Link>
       </div>
 
@@ -4890,7 +4964,7 @@ export function SongTierListBrowsePage() {
               onClick={() => setTypeFilter(type)}
               aria-pressed={typeFilter === type}
             >
-              {type === 'all' ? pick('ทุกประเภท', 'All Types') : type.charAt(0).toUpperCase() + type.slice(1)}
+              {getMediaTypeLabel(type, pick)}
             </button>
           ))}
         </div>
@@ -4940,7 +5014,7 @@ export function SongTierListBrowsePage() {
                   <ArtworkImage entity={title} alt="" loading="lazy" />
                 </div>
                 <div className="tierlist-browse-card-body">
-                  <small className="tierlist-chip">{title.type || 'anime'}</small>
+                  <small className="tierlist-chip">{getMediaTypeLabel(title.type || 'anime', pick)}</small>
                   <h3>{getCatalogEntityName(title)}</h3>
                   <small className="tierlist-meta">
                     <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
