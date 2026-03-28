@@ -147,6 +147,45 @@ describe('battleRemote persistence hardening', () => {
     });
   });
 
+  it('keeps earlier same-deck sessions instead of deleting them after a successful save', async () => {
+    const session = {
+      id: '00000000-0000-4000-8000-000000000199',
+      deckKey: 'repeatable-deck',
+      deckFingerprint: '44:55:66',
+      deckLabel: 'Repeatable deck',
+      filters: { entityType: 'title', size: 8 },
+      titles: [
+        { id: 44, entityType: 'title', title_en: 'A', title_th: 'A' },
+        { id: 55, entityType: 'title', title_en: 'B', title_th: 'B' },
+      ],
+      titleIds: [44, 55],
+      targetRounds: 8,
+      history: [],
+      ratings: {},
+      ranking: [
+        { id: 44, entityType: 'title', title_en: 'A', title_th: 'A' },
+        { id: 55, entityType: 'title', title_en: 'B', title_th: 'B' },
+      ],
+      tiers: [],
+      winnerId: 44,
+      snapshot: {},
+      fastState: null,
+      status: 'completed',
+      currentPair: null,
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T00:01:00.000Z',
+      completedAt: '2026-03-24T00:01:00.000Z',
+    };
+
+    await persistRemoteBattleSession('user-1', session);
+
+    const sessionDeletes = mockState.operations.filter(
+      (entry) => entry.table === 'battle_sessions' && entry.action === 'delete'
+    );
+
+    expect(sessionDeletes).toHaveLength(0);
+  });
+
   it('skips canonical-title-only vote syncing for theme song battles and clears winner FK', async () => {
     const session = {
       id: '00000000-0000-4000-8000-000000000001',
@@ -260,7 +299,7 @@ describe('battleRemote persistence hardening', () => {
     expect(voteUpsert).toBeUndefined();
   });
 
-  it('retries session upsert after removing a conflicting duplicate deck row', async () => {
+  it('retries session upsert with a fresh remote session id when a conflict occurs', async () => {
     mockState.upsertErrors.set('battle_sessions', { status: 409, message: 'duplicate key value violates unique constraint' });
     let battleSessionUpsertCalls = 0;
 
@@ -310,68 +349,19 @@ describe('battleRemote persistence hardening', () => {
       completedAt: null,
     };
 
-    await expect(persistRemoteBattleSession('user-1', session)).resolves.toEqual(session);
+    const persisted = await persistRemoteBattleSession('user-1', session);
 
     const sessionUpserts = mockState.operations.filter((entry) => entry.table === 'battle_sessions' && entry.action === 'upsert');
-    const duplicateDeletes = mockState.operations.filter((entry) => entry.table === 'battle_sessions' && entry.action === 'delete');
 
     expect(sessionUpserts).toHaveLength(2);
-    expect(duplicateDeletes[0]?.filters).toEqual(expect.arrayContaining([
-      { type: 'eq', column: 'user_id', value: 'user-1' },
-      { type: 'eq', column: 'deck_key', value: 'conflict-deck' },
-      { type: 'neq', column: 'id', value: session.id },
-    ]));
+    expect(sessionUpserts[0]?.payload?.deck_key).toBe(`${session.deckKey}::${session.id}`);
+    expect(sessionUpserts[1]?.payload?.id).not.toBe(session.id);
+    expect(sessionUpserts[1]?.payload?.deck_key).toMatch(/^conflict-deck::/);
+    expect(sessionUpserts[1]?.payload?.deck_key).not.toBe(sessionUpserts[0]?.payload?.deck_key);
+    expect(persisted.id).toBe(sessionUpserts[1]?.payload?.id);
   });
 
-  it('adopts the existing remote session id when the same deck already exists in cloud', async () => {
-    let battleSessionUpsertCalls = 0;
-    mockState.selectResponses.set('battle_sessions', [
-      {
-        id: '00000000-0000-4000-8000-000000000099',
-        deck_key: 'existing-deck',
-        deck_fingerprint: '1:2',
-        deck_label: 'Existing deck',
-        filters: { entityType: 'title', size: 8 },
-        title_ids: [1, 2],
-        titles_snapshot: [
-          { id: 1, entityType: 'title', title_en: 'A', title_th: 'A' },
-          { id: 2, entityType: 'title', title_en: 'B', title_th: 'B' },
-        ],
-        target_rounds: 8,
-        history: [],
-        ratings: {},
-        ranking: null,
-        tiers: null,
-        winner_title_id: null,
-        snapshot: {},
-        status: 'active',
-        current_pair: { leftId: 1, rightId: 2 },
-        created_at: '2026-03-20T00:00:00.000Z',
-        updated_at: '2026-03-24T00:00:00.000Z',
-        completed_at: null,
-      },
-    ]);
-
-    mockState.from.mockImplementation((table) => ({
-      select: vi.fn(() => createSelectBuilder(table)),
-      upsert: vi.fn(async (payload, options) => {
-        mockState.operations.push({
-          table,
-          action: 'upsert',
-          payload,
-          options,
-        });
-
-        if (table === 'battle_sessions') {
-          battleSessionUpsertCalls += 1;
-          return { error: battleSessionUpsertCalls === 1 ? { status: 409, message: 'duplicate key value violates unique constraint' } : null };
-        }
-
-        return { error: null };
-      }),
-      delete: vi.fn(() => createFilterBuilder(table, 'delete')),
-    }));
-
+  it('stores a stable base deck key in snapshot while persisting a unique remote session deck key', async () => {
     const session = {
       id: '00000000-0000-4000-8000-000000000004',
       deckKey: 'existing-deck',
@@ -399,15 +389,10 @@ describe('battleRemote persistence hardening', () => {
     };
 
     const persisted = await persistRemoteBattleSession('user-1', session);
-    const sessionUpserts = mockState.operations.filter((entry) => entry.table === 'battle_sessions' && entry.action === 'upsert');
-    const selectLookup = mockState.operations.find((entry) => entry.table === 'battle_sessions' && entry.action === 'select');
+    const sessionUpsert = mockState.operations.find((entry) => entry.table === 'battle_sessions' && entry.action === 'upsert');
 
-    expect(selectLookup?.filters).toEqual(expect.arrayContaining([
-      { type: 'eq', column: 'user_id', value: 'user-1' },
-      { type: 'eq', column: 'deck_key', value: 'existing-deck' },
-    ]));
-    expect(sessionUpserts).toHaveLength(2);
-    expect(sessionUpserts[1]?.payload?.id).toBe('00000000-0000-4000-8000-000000000099');
-    expect(persisted.id).toBe('00000000-0000-4000-8000-000000000099');
+    expect(sessionUpsert?.payload?.deck_key).toBe(`${session.deckKey}::${session.id}`);
+    expect(sessionUpsert?.payload?.snapshot?.baseDeckKey).toBe(session.deckKey);
+    expect(persisted.id).toBe(session.id);
   });
 });

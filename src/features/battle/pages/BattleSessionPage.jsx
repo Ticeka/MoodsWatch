@@ -115,6 +115,13 @@ function buildLocalBattleCommunityRollup(session) {
   };
 }
 
+function hasCommunityRollupSamples(rollup) {
+  return Boolean(
+    Number(rollup?.completed_session_count || 0) > 0
+    || (Array.isArray(rollup?.community_ranking) && rollup.community_ranking.length > 0)
+  );
+}
+
 function escapeSvgText(value) {
   return String(value || '')
     .replaceAll('&', '&amp;')
@@ -418,10 +425,30 @@ export function BattleSessionPage() {
     let cancelled = false;
 
     async function loadCommunityRollup() {
-      if (session?.status !== 'completed' || !session?.deckFingerprint) {
-        if (!cancelled) { setCommunityRollup(null); setIsCommunityLoading(false); }
+      if (!session?.deckFingerprint) {
+        if (!cancelled) {
+          setCommunityRollup(null);
+          setIsCommunityLoading(false);
+        }
         return;
       }
+
+      if (session?.status !== 'completed') {
+        setIsCommunityLoading(false);
+        try {
+          const rollup = await fetchBattleCommunityRollup(session.deckFingerprint);
+          if (!cancelled) {
+            setCommunityRollup(rollup);
+          }
+        } catch (loadError) {
+          console.warn('Failed to prefetch battle community rollup', loadError);
+          if (!cancelled) {
+            setCommunityRollup(null);
+          }
+        }
+        return;
+      }
+
       setIsCommunityLoading(true);
       try {
         const rollup = await fetchBattleCommunityRollupWithRetry(session.deckFingerprint, {
@@ -456,10 +483,13 @@ export function BattleSessionPage() {
     () => buildLocalBattleCommunityRollup(session),
     [session]
   );
-  const hasRemoteCommunityRollup = Boolean(communityRollup?.community_ranking?.length);
+  const hasRemoteCommunityRollup = hasCommunityRollupSamples(communityRollup);
   const isUsingFallbackCommunityRollup = !hasRemoteCommunityRollup && Boolean(fallbackCommunityRollup);
   const effectiveCommunityRollup = hasRemoteCommunityRollup ? communityRollup : fallbackCommunityRollup;
-  const communityRanking = effectiveCommunityRollup?.community_ranking || [];
+  const communityRanking = useMemo(
+    () => effectiveCommunityRollup?.community_ranking || [],
+    [effectiveCommunityRollup]
+  );
   const communityWinner = communityRanking[0] || null;
   const communitySampleCount = Number(effectiveCommunityRollup?.completed_session_count || 0);
   const visibleCommunityRanking = useMemo(
@@ -484,7 +514,7 @@ export function BattleSessionPage() {
   }, [communityRankMap, ranking]);
   const recentBattleHistory = useMemo(
     () => getStoredBattleSessions().filter((entry) => entry.id !== session?.id).slice(0, 4),
-    [session?.id, session?.updatedAt]
+    [session?.id]
   );
   const decisionCount = getBattleDecisionCount(session);
   const battlePhase = session?.fastState?.phase === 'playoff' ? t('battle.playoffPhase') : t('battle.knockoutPhase');
@@ -515,7 +545,7 @@ export function BattleSessionPage() {
     setSession(persisted);
     if (persisted?.status === 'completed') {
       setCommunityRollup((current) => (
-        current?.community_ranking?.length
+        hasCommunityRollupSamples(current)
           ? current
           : buildLocalBattleCommunityRollup(persisted)
       ));

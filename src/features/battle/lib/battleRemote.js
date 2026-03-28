@@ -97,14 +97,38 @@ function isConflictError(error) {
   return Number(error?.status || 0) === 409;
 }
 
+function getBaseDeckKey(sessionOrSnapshot) {
+  return String(
+    sessionOrSnapshot?.deckKey
+    || sessionOrSnapshot?.baseDeckKey
+    || sessionOrSnapshot?.snapshot?.baseDeckKey
+    || ''
+  ).trim();
+}
+
+function buildRemoteBattleSessionDeckKey(session) {
+  const baseDeckKey = getBaseDeckKey(session);
+  const sessionId = String(session?.id || '').trim();
+  if (!sessionId) {
+    return baseDeckKey || '';
+  }
+
+  return baseDeckKey
+    ? `${baseDeckKey}::${sessionId}`
+    : sessionId;
+}
+
 function mapRowToSession(row) {
   if (!row) {
     return null;
   }
 
+  const snapshot = row.snapshot || {};
+
   return {
     id: row.id,
-    deckKey: row.deck_key,
+    deckKey: getBaseDeckKey(snapshot) || row.deck_key,
+    remoteDeckKey: row.deck_key,
     deckFingerprint: row.deck_fingerprint || buildDeckFingerprintFallback(row),
     deckLabel: row.deck_label,
     filters: row.filters || {},
@@ -116,8 +140,8 @@ function mapRowToSession(row) {
     ranking: Array.isArray(row.ranking) ? row.ranking : null,
     tiers: Array.isArray(row.tiers) ? row.tiers : null,
     winnerId: row.winner_title_id || null,
-    snapshot: row.snapshot || {},
-    fastState: row.snapshot?.battleState || null,
+    snapshot,
+    fastState: snapshot?.battleState || null,
     status: row.status || 'active',
     currentPair: row.current_pair || null,
     createdAt: row.created_at || null,
@@ -141,15 +165,18 @@ function getPersistableBattleTitleId(session, entityId) {
 }
 
 function buildSessionPayload(userId, session) {
+  const baseDeckKey = getBaseDeckKey(session);
   const snapshot = {
     ...(session.snapshot || {}),
     battleState: session.fastState || null,
+    baseDeckKey: baseDeckKey || null,
   };
+  const remoteDeckKey = String(session?.remoteDeckKey || buildRemoteBattleSessionDeckKey(session)).trim();
 
   return {
     id: session.id,
     user_id: userId,
-    deck_key: session.deckKey,
+    deck_key: remoteDeckKey,
     deck_fingerprint: session.deckFingerprint || '',
     deck_label: session.deckLabel,
     filters: session.filters || {},
@@ -187,32 +214,6 @@ function buildVoteRows(userId, session) {
     created_at: vote.createdAt || new Date().toISOString(),
     metadata: {},
   })).filter((row) => row.left_title_id && row.right_title_id);
-}
-
-async function deleteDuplicateRemoteSessions(userId, session) {
-  const normalizedDeckKey = String(session?.deckKey || '').trim();
-  if (!normalizedDeckKey) {
-    return false;
-  }
-
-  try {
-    const { error } = await supabase
-      .from('battle_sessions')
-      .delete()
-      .eq('user_id', userId)
-      .eq('deck_key', normalizedDeckKey)
-      .neq('id', session.id);
-
-    if (error) {
-      warnBattleRemote('Failed to delete duplicate remote battle sessions', error);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    warnBattleRemote('Failed to delete duplicate remote battle sessions', error);
-    return false;
-  }
 }
 
 async function syncRemoteBattleVotes(userId, session) {
@@ -377,33 +378,6 @@ export async function fetchRemoteBattleSession(userId, sessionId) {
   return mapRowToSession(data);
 }
 
-async function findRemoteBattleSessionByDeckKey(userId, deckKey) {
-  const normalizedDeckKey = String(deckKey || '').trim();
-  if (!hasRemote(userId) || !normalizedDeckKey) {
-    return null;
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from('battle_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('deck_key', normalizedDeckKey)
-      .order('updated_at', { ascending: false })
-      .limit(1);
-
-    if (error) {
-      warnBattleRemote('Failed to look up remote battle session by deck key', error);
-      return null;
-    }
-
-    return mapRowToSession(Array.isArray(data) ? data[0] : null);
-  } catch (error) {
-    warnBattleRemote('Failed to look up remote battle session by deck key', error);
-    return null;
-  }
-}
-
 export async function persistRemoteBattleSession(userId, session) {
   if (!hasRemote(userId) || !session) {
     return session;
@@ -412,8 +386,6 @@ export async function persistRemoteBattleSession(userId, session) {
   let currentSession = session;
   let payload = buildSessionPayload(userId, currentSession);
   let sessionError = null;
-  let duplicateCleanupRetried = false;
-  let deckKeyRecoveryRetried = false;
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const { error } = await supabase
@@ -434,32 +406,19 @@ export async function persistRemoteBattleSession(userId, session) {
       continue;
     }
 
-    if (!duplicateCleanupRetried && isConflictError(error)) {
-      if (!deckKeyRecoveryRetried) {
-        deckKeyRecoveryRetried = true;
-        const remoteSession = await findRemoteBattleSessionByDeckKey(userId, currentSession.deckKey);
-        if (remoteSession?.id && remoteSession.id !== currentSession.id) {
-          currentSession = {
-            ...currentSession,
-            id: remoteSession.id,
-            createdAt: remoteSession.createdAt || currentSession.createdAt,
-          };
-          payload = {
-            ...payload,
-            id: currentSession.id,
-            created_at: currentSession.createdAt || payload.created_at,
-          };
-          sessionError = error;
-          continue;
-        }
-      }
-
-      duplicateCleanupRetried = true;
-      const cleanedUp = await deleteDuplicateRemoteSessions(userId, currentSession);
-      if (cleanedUp) {
-        sessionError = error;
-        continue;
-      }
+    if (isConflictError(error)) {
+      const nextId = createUuid();
+      currentSession = {
+        ...currentSession,
+        id: nextId,
+        remoteDeckKey: buildRemoteBattleSessionDeckKey({
+          ...currentSession,
+          id: nextId,
+        }),
+      };
+      payload = buildSessionPayload(userId, currentSession);
+      sessionError = error;
+      continue;
     }
 
     sessionError = error;
@@ -470,7 +429,6 @@ export async function persistRemoteBattleSession(userId, session) {
     throw sessionError;
   }
 
-  await deleteDuplicateRemoteSessions(userId, currentSession);
   await syncRemoteBattleVotes(userId, currentSession);
   if (currentSession.status === 'completed') {
     await refreshRemoteBattleDeckRollup(currentSession.deckFingerprint);

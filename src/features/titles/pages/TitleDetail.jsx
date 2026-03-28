@@ -152,7 +152,7 @@ export function TitleDetail() {
 
     loadSimilarTitles();
     return () => { cancelled = true; };
-  }, [title?.id, watchlist, prefs, hiddenFromRecommendationIds, showAdult]);
+  }, [title, watchlist, prefs, hiddenFromRecommendationIds, showAdult]);
 
   useEffect(() => {
     if (castTab !== 'stats' || !title?.id) return undefined;
@@ -211,6 +211,26 @@ export function TitleDetail() {
 
     fetchThemeSongs();
     return () => { cancelled = true; };
+  }, [title?.id]);
+
+  useEffect(() => {
+    if (!title?.id) return;
+
+    if (title.characters?.length > 0) {
+      setCastTab('characters');
+      return;
+    }
+
+    if (title.staff?.length > 0) {
+      setCastTab('staff');
+      return;
+    }
+
+    setCastTab('stats');
+  }, [title?.id, title?.characters?.length, title?.staff?.length]);
+
+  useEffect(() => {
+    setTitleStats(null);
   }, [title?.id]);
 
   useEffect(() => {
@@ -916,8 +936,7 @@ export function TitleDetail() {
           </aside>
         </div>
 
-        {(title.characters?.length > 0 || title.staff?.length > 0) && (
-          <section className="detail-cast-section">
+        <section className="detail-cast-section">
             <div className="cast-section-title-row">
               <h3 className="cast-section-main-title">Cast & Staff</h3>
             </div>
@@ -1143,7 +1162,6 @@ export function TitleDetail() {
               );
             })()}
           </section>
-        )}
 
         {title?.id && (
           <TitleReviews titleId={title.id} />
