@@ -1167,8 +1167,8 @@
 
 /* ── Cast & Staff Tabbed Section ── */
 .detail-cast-section {
-  margin-top: var(--space-14);
-  padding-top: var(--space-7);
+  margin-top: var(--space-14, var(--space-16));
+  padding-top: var(--space-7, var(--space-8));
   border-top: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
 }
 
