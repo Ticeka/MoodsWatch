@@ -753,6 +753,8 @@ export function Discover() {
     && !errorState.tierlists;
   const visibleRecoverySuggestions = noResultsEverywhere && normalizedQuery.length >= 3 ? recoverySuggestions : [];
   const isVisibleRecoveryLoading = noResultsEverywhere && normalizedQuery.length >= 3 ? isRecoveryLoading : false;
+  const hasDiscoverFilters = hasCommittedQuery || hasActiveTag || activeScope !== 'all' || activeTitleType !== 'all';
+  const showScopeCounts = hasAnyQuery || hasActiveTag || activeScope !== 'all' || activeTitleType !== 'all' || hasAnyLoading;
 
   // Cross-lane fallback: titles found nothing, but other lanes have results.
   const crossLaneFallback = useMemo(() => {
@@ -1260,6 +1262,9 @@ export function Discover() {
   const clearActiveFilters = useCallback(() => {
     updateQuery('');
     setActiveTag('');
+    setActiveScope('all');
+    setActiveTitleType('all');
+    setCurrentPage(1);
     setSearchAutocompleteOpen(false);
     window.requestAnimationFrame(() => {
       searchInputRef.current?.focus();
@@ -1352,25 +1357,28 @@ export function Discover() {
     people: profiles.length,
     tierlists: tierlists.length,
   };
+  const laneSummaries = CURATED_LANES.map((lane) => ({
+    ...lane,
+    count: curatedLaneCounts[lane.id] || 0,
+  }));
 
   return (
     <div className="discover-page animate-fade-in">
       <section className="section discover-header">
         <div className="container">
-          <div className="discover-hero-badge animate-fade-in-up">
-            <Compass size={14} aria-hidden="true" /> {t('discover.badge')}
-          </div>
-          <div className="discover-hero-copy">
-            <h1 className="discover-title animate-fade-in-up">
-              {t('discover.title').replace(t('discover.accent'), '')}
-              <span className="text-gradient">{t('discover.accent')}</span>
-            </h1>
-            <p className="discover-subtitle animate-fade-in-up" style={{ animationDelay: '0.08s' }}>
-              {t('discover.subtitle')}
-            </p>
-          </div>
+          <div className="discover-hero-shell">
+            <div className="discover-hero-copy">
+              <p className="discover-eyebrow animate-fade-in-up">{t('discover.badge')}</p>
+              <h1 className="discover-title animate-fade-in-up">
+                {t('discover.title').replace(t('discover.accent'), '')}
+                <span className="text-gradient">{t('discover.accent')}</span>
+              </h1>
+              <p className="discover-subtitle animate-fade-in-up" style={{ animationDelay: '0.08s' }}>
+                {t('discover.subtitle')}
+              </p>
+            </div>
 
-          <div className="discover-search-shell glass animate-fade-in-up" style={{ animationDelay: '0.14s' }}>
+            <div className="discover-search-shell animate-fade-in-up" style={{ animationDelay: '0.14s' }}>
             <form ref={searchFormRef} className="discover-search-form" onSubmit={handleSearchSubmit}>
               <label className="discover-field">
                 <span className="visually-hidden">{t('discover.searchInputLabel')}</span>
@@ -1444,7 +1452,7 @@ export function Discover() {
               />
             </form>
 
-            <div className="discover-search-foot">
+            <div className="discover-search-meta">
               <p id="discover-search-hint" className="discover-search-hint" role="status" aria-live="polite">
                 {hasAnyLoading ? (
                   <span className="discover-live-status"><Loader2 size={14} className="discover-spinner" /> {t('discover.searchingEverywhere')}</span>
@@ -1468,19 +1476,97 @@ export function Discover() {
                     {isCurrentSearchSaved ? t('discover.searchSaved') : t('discover.saveSearch')}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className={`discover-workbench-toggle ${isSearchWorkbenchOpen ? 'is-open' : ''}`}
-                  onClick={() => setShowSearchWorkbench((current) => !current)}
-                  aria-expanded={isSearchWorkbenchOpen}
-                  aria-controls="discover-search-workbench"
-                >
-                  <SlidersHorizontal size={15} aria-hidden="true" />
-                  <span>{isSearchWorkbenchOpen ? t('discover.hideRefineSearch') : t('discover.refineSearch')}</span>
-                  <ChevronDown size={15} className="discover-workbench-chevron" aria-hidden="true" />
-                </button>
+                {(savedSearches.length > 0 || isSearchWorkbenchOpen) ? (
+                  <button
+                    type="button"
+                    className={`discover-workbench-toggle ${isSearchWorkbenchOpen ? 'is-open' : ''}`}
+                    onClick={() => setShowSearchWorkbench((current) => !current)}
+                    aria-expanded={isSearchWorkbenchOpen}
+                    aria-controls="discover-search-workbench"
+                  >
+                    <Bookmark size={15} aria-hidden="true" />
+                    <span>{isSearchWorkbenchOpen ? t('common.close') : t('discover.savedSearchesLabel')}</span>
+                    <ChevronDown size={15} className="discover-workbench-chevron" aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
             </div>
+
+            <div
+              className="discover-scope-tabs discover-scope-tabs-main"
+              role="toolbar"
+              aria-label={t('discover.scopeTabsAria')}
+            >
+              {SEARCH_SCOPE_TABS.map((scope) => {
+                const Icon = scope.icon;
+                const scopeCount = scope.id === 'all'
+                  ? allScopeCount
+                  : scope.id === 'titles'
+                    ? titleScopeCount
+                    : scope.id === 'posts'
+                      ? posts.length
+                      : scope.id === 'people'
+                        ? profiles.length
+                        : tierlists.length;
+
+                return (
+                  <button
+                    key={scope.id}
+                    type="button"
+                    aria-pressed={activeScope === scope.id}
+                    className={`discover-scope-tab ${activeScope === scope.id ? 'active' : ''}`}
+                    onClick={() => handleScopeChange(scope.id)}
+                  >
+                    <span className="discover-scope-main">
+                      <Icon size={16} aria-hidden="true" />
+                      {t(scope.labelKey)}
+                    </span>
+                    {showScopeCounts ? <span className="discover-scope-count">{scopeCount}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(activeScope === 'all' || activeScope === 'titles') ? (
+              <div className="discover-inline-filter-row">
+                <span className="discover-filter-label">{t('discover.titleTypeLabel')}</span>
+                <div className="type-tabs" role="toolbar" aria-label={t('discover.typeTabsAria')}>
+                  {TITLE_TYPE_TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        aria-pressed={activeTitleType === tab.id}
+                        className={`type-tab ${activeTitleType === tab.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setActiveTitleType(tab.id);
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <Icon size={16} aria-hidden="true" />
+                        {t(tab.labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="quick-search-tags">
+                  {QUICK_TAGS.map((tag) => (
+                    <button
+                      key={tag}
+                      className={`quick-tag ${activeTag === tag ? 'active' : ''}`}
+                      onClick={() => {
+                        setActiveTag((currentTag) => (currentTag === tag ? '' : tag));
+                        setCurrentPage(1);
+                      }}
+                      type="button"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="discover-search-quickbar">
               <div className="discover-helper-head">
@@ -1521,103 +1607,11 @@ export function Discover() {
                     {t(preset.labelKey)}
                   </button>
                 ))}
-                {!isSearchWorkbenchOpen && savedSearches.length > 0 ? (
-                  <button
-                    type="button"
-                    className="discover-helper-chip is-secondary"
-                    onClick={() => setShowSearchWorkbench(true)}
-                  >
-                    <Bookmark size={13} aria-hidden="true" />
-                    {t('discover.savedSearchCount', { count: savedSearches.length })}
-                  </button>
-                ) : null}
+                </div>
               </div>
-            </div>
 
             {isSearchWorkbenchOpen ? (
               <div id="discover-search-workbench" className="discover-search-workbench">
-                <div
-                  className="discover-scope-tabs"
-                  role="toolbar"
-                  aria-label={t('discover.scopeTabsAria')}
-                >
-                  {SEARCH_SCOPE_TABS.map((scope) => {
-                    const Icon = scope.icon;
-                    const scopeCount = scope.id === 'all'
-                      ? allScopeCount
-                      : scope.id === 'titles'
-                        ? titleScopeCount
-                        : scope.id === 'posts'
-                          ? posts.length
-                          : scope.id === 'people'
-                            ? profiles.length
-                            : tierlists.length;
-
-                    return (
-                      <button
-                        key={scope.id}
-                        type="button"
-                        aria-pressed={activeScope === scope.id}
-                        className={`discover-scope-tab ${activeScope === scope.id ? 'active' : ''}`}
-                        onClick={() => handleScopeChange(scope.id)}
-                      >
-                        <span className="discover-scope-main">
-                          <Icon size={16} aria-hidden="true" />
-                          {t(scope.labelKey)}
-                        </span>
-                        <span className="discover-scope-count">{scopeCount}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {(activeScope === 'all' || activeScope === 'titles') && (
-                  <div className="discover-refine-panel">
-                    <div className="discover-filter-row">
-                      <span className="discover-filter-label">{t('discover.titleTypeLabel')}</span>
-                      <div className="type-tabs" role="toolbar" aria-label={t('discover.typeTabsAria')}>
-                        {TITLE_TYPE_TABS.map((tab) => {
-                          const Icon = tab.icon;
-                          return (
-                            <button
-                              key={tab.id}
-                              type="button"
-                              aria-pressed={activeTitleType === tab.id}
-                              className={`type-tab ${activeTitleType === tab.id ? 'active' : ''}`}
-                              onClick={() => {
-                                setActiveTitleType(tab.id);
-                                setCurrentPage(1);
-                              }}
-                            >
-                              <Icon size={16} aria-hidden="true" />
-                              {t(tab.labelKey)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="discover-filter-row">
-                      <span className="discover-filter-label">{t('discover.quickTagsLabel')}</span>
-                      <div className="quick-search-tags">
-                        {QUICK_TAGS.map((tag) => (
-                          <button
-                            key={tag}
-                            className={`quick-tag ${activeTag === tag ? 'active' : ''}`}
-                            onClick={() => {
-                              setActiveTag((currentTag) => (currentTag === tag ? '' : tag));
-                              setCurrentPage(1);
-                            }}
-                            type="button"
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {renderedSavedSearches.length > 0 ? (
                   <div className="discover-search-helper-grid">
                     <div className="discover-helper-row">
@@ -1717,42 +1711,48 @@ export function Discover() {
                   <p className="discover-helper-note" role="status">{savedSearchesError}</p>
                 ) : null}
 
-                {isIdleDiscover ? (
-                  <div className="discover-lane-panel">
-                    <div className="discover-helper-head">
-                      <span className="discover-helper-label"><Compass size={13} aria-hidden="true" /> {t('discover.idleExploreLabel')}</span>
-                      <p className="discover-lane-subtitle">{t('discover.idleExploreSubtitle')}</p>
-                    </div>
-                    <div className="discover-lane-grid">
-                      {CURATED_LANES.map((lane) => {
-                        const Icon = lane.icon;
-                        return (
-                          <button
-                            key={lane.id}
-                            type="button"
-                            className="discover-lane-card"
-                            onClick={() => applySearchPreset(lane.preset, 'lane')}
-                          >
-                            <span className="discover-lane-icon">
-                              <Icon size={18} aria-hidden="true" />
-                            </span>
-                            <span className="discover-lane-copy">
-                              <strong>{t(lane.titleKey)}</strong>
-                              <span>{t(lane.descriptionKey)}</span>
-                            </span>
-                            <span className="discover-lane-meta">
-                              {t(lane.countLabelKey, { count: curatedLaneCounts[lane.id] || 0 })}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+          {isIdleDiscover ? (
+              <div className="discover-starter-panel animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
+                <div className="discover-starter-head">
+                  <div>
+                    <span className="discover-helper-label"><Compass size={13} aria-hidden="true" /> {t('discover.idleExploreLabel')}</span>
+                    <h2>{t('discover.allResultsTitle')}</h2>
                   </div>
-                ) : null}
+                  <p>{t('discover.idleExploreSubtitle')}</p>
+                </div>
+                <div className="discover-lane-grid discover-starter-grid">
+                  {laneSummaries.map((lane) => {
+                    const Icon = lane.icon;
+                    return (
+                      <button
+                        key={lane.id}
+                        type="button"
+                        className="discover-lane-card discover-starter-card"
+                        onClick={() => applySearchPreset(lane.preset, 'lane')}
+                      >
+                        <span className="discover-lane-icon">
+                          <Icon size={18} aria-hidden="true" />
+                        </span>
+                        <span className="discover-lane-copy">
+                          <strong>{t(lane.titleKey)}</strong>
+                          <span>{t(lane.descriptionKey)}</span>
+                        </span>
+                        <span className="discover-lane-meta">
+                          {t(lane.countLabelKey, { count: lane.count })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
 
-            {(hasCommittedQuery || hasActiveTag || activeScope !== 'all' || activeTitleType !== 'all') && (
+          {hasDiscoverFilters && (
               <div className="discover-active-filters">
                 {hasCommittedQuery && <span className="discover-filter-pill">{t('discover.searchLabel')}: {query}</span>}
                 {hasActiveTag && (
@@ -1779,8 +1779,7 @@ export function Discover() {
                 )}
                 {hasCommittedQuery && searchIntent.isBroad ? <span className="discover-filter-pill discover-filter-pill-soft">{t('discover.broadQueryChip')}</span> : null}
               </div>
-            )}
-          </div>
+          )}
         </div>
       </section>
 
@@ -1822,6 +1821,31 @@ export function Discover() {
                 </div>
               )}
             </div>
+
+            {activeScope === 'all' && !noResultsEverywhere && !isIdleDiscover ? (
+              <div className="discover-results-overview" role="toolbar" aria-label={t('discover.scopeTabsAria')}>
+                {laneSummaries.map((lane) => {
+                  const Icon = lane.icon;
+                  return (
+                    <button
+                      key={lane.id}
+                      type="button"
+                      className="discover-overview-card"
+                      onClick={() => handleScopeChange(lane.id)}
+                    >
+                      <span className="discover-overview-top">
+                        <span className="discover-overview-icon">
+                          <Icon size={15} aria-hidden="true" />
+                        </span>
+                        {t(lane.titleKey)}
+                      </span>
+                      <strong>{t(lane.countLabelKey, { count: lane.count })}</strong>
+                      <span>{t(lane.descriptionKey)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 
             {activeScope === 'all' && noResultsEverywhere ? (
               <EmptyState

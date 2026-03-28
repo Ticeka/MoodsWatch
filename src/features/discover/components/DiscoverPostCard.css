@@ -162,3 +162,56 @@
 [data-theme="dark"] .discover-inline-tag-neutral {
   background: rgba(255, 255, 255, 0.06);
 }
+
+/* Minimal Discover post refresh */
+.discover-post-card {
+  gap: 0.85rem;
+}
+
+.discover-post-head,
+.discover-post-foot {
+  gap: 0.7rem;
+}
+
+.discover-post-author {
+  gap: 0.65rem;
+}
+
+.discover-post-author-copy strong {
+  font-size: 0.94rem;
+}
+
+.discover-post-author-copy span,
+.discover-post-date,
+.discover-post-link {
+  font-size: 0.8rem;
+}
+
+.discover-post-content {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.discover-post-title-link {
+  padding: 0.7rem 0;
+  gap: 0.7rem;
+}
+
+.discover-post-title-cover {
+  width: 2.65rem;
+  height: 3.75rem;
+  border-radius: 0.75rem;
+}
+
+.discover-post-title-copy strong {
+  font-size: 0.9rem;
+}
+
+.discover-post-title-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+
+.discover-post-actions {
+  gap: 0.55rem;
+}

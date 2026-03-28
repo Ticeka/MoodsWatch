@@ -188,3 +188,105 @@
 [data-theme="dark"] .discover-title-tag {
   background: rgba(255, 226, 206, 0.06);
 }
+
+/* Minimal Discover card refresh */
+.discover-title-card {
+  gap: 0.75rem;
+}
+
+.discover-title-card:hover {
+  transform: none;
+}
+
+.discover-title-poster-wrap {
+  border-radius: 1rem;
+  box-shadow: none;
+  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+}
+
+.discover-title-poster-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(22, 14, 12, 0.02) 0%,
+    rgba(22, 14, 12, 0.08) 46%,
+    rgba(22, 14, 12, 0.46) 100%
+  );
+}
+
+.discover-title-card:hover .discover-title-poster {
+  transform: none;
+}
+
+.discover-title-poster-top,
+.discover-title-poster-bottom {
+  padding-inline: 0.7rem;
+}
+
+.discover-title-poster-top {
+  top: 0.7rem;
+}
+
+.discover-title-poster-bottom {
+  bottom: 0.7rem;
+}
+
+.discover-title-chip,
+.discover-title-open,
+.discover-title-tag,
+.discover-title-stat {
+  min-height: 1.65rem;
+  padding: 0 0.56rem;
+  font-size: 0.72rem;
+}
+
+.discover-title-chip {
+  backdrop-filter: none;
+}
+
+.discover-title-open {
+  display: none;
+}
+
+.discover-title-body {
+  gap: 0.65rem;
+  padding-inline: 0;
+}
+
+.discover-title-head {
+  gap: 0.55rem;
+}
+
+.discover-title-copy h3 {
+  font-size: 1rem;
+}
+
+.discover-title-supporting {
+  font-size: 0.8rem;
+}
+
+.discover-title-stats {
+  gap: 0.3rem;
+}
+
+.discover-title-stat {
+  background: color-mix(in srgb, var(--paper-tint) 84%, white);
+}
+
+.discover-title-synopsis {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.discover-title-tags {
+  gap: 0.35rem;
+}
+
+.discover-title-tag {
+  background: color-mix(in srgb, var(--paper-tint) 88%, white);
+}
+
+[data-theme="dark"] .discover-title-poster-wrap {
+  box-shadow: none;
+}

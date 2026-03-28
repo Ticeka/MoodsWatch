@@ -78,11 +78,12 @@
 .leaderboard-table {
   display: grid;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .leaderboard-table-head {
   display: grid;
-  grid-template-columns: 3rem 1fr 6rem 6rem 6rem;
+  grid-template-columns: 3rem minmax(0, 1fr) 6rem 6rem 6rem;
   padding: 0.5rem 1rem;
   font-size: 0.75rem;
   font-weight: 800;
@@ -94,7 +95,7 @@
 
 .leaderboard-row {
   display: grid;
-  grid-template-columns: 3rem 1fr 6rem 6rem 6rem;
+  grid-template-columns: 3rem minmax(0, 1fr) 6rem 6rem 6rem;
   align-items: center;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-lg);
@@ -119,7 +120,7 @@
   border-color: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
-.lb-col { display: flex; align-items: center; }
+.lb-col { display: flex; align-items: center; min-width: 0; }
 .lb-rank { justify-content: center; }
 .lb-stat { justify-content: center; gap: 0.3rem; flex-direction: column; text-align: center; }
 
@@ -179,7 +180,7 @@
 @media (max-width: 600px) {
   .leaderboard-table-head,
   .leaderboard-row {
-    grid-template-columns: 2.5rem 1fr 5rem 5rem;
+    grid-template-columns: 2.5rem minmax(0, 1fr) 5rem 5rem;
   }
   .lb-elo { display: none; }
 }
@@ -205,9 +206,15 @@
 
   .leaderboard-table-head,
   .leaderboard-row {
-    grid-template-columns: 2rem 1fr 4.5rem;
+    grid-template-columns: 2rem minmax(0, 1fr) 4.5rem;
     padding-inline: 0.75rem;
     font-size: 0.825rem;
+  }
+
+  .lb-cover {
+    width: 28px;
+    height: 40px;
+    margin-right: 0.5rem;
   }
 
   .lb-wins { display: none; }

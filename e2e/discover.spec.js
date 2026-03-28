@@ -6,11 +6,11 @@ test.describe('Discover — search', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/discover');
     // Wait for the search input to be interactive
-    await page.waitForSelector('input[type="search"]', { state: 'visible' });
+    await page.waitForSelector('.search-input', { state: 'visible' });
   });
 
   test('typing a query updates the visible filter pill', async ({ page }) => {
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.fill('one piece');
 
     // Active filter pill shows the search term
@@ -20,7 +20,7 @@ test.describe('Discover — search', () => {
   });
 
   test('clear button removes the query and pill', async ({ page }) => {
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.fill('naruto');
 
     const clearBtn = page.locator('.search-clear');
@@ -32,7 +32,7 @@ test.describe('Discover — search', () => {
   });
 
   test('query shorter than 2 chars shows no filter pill', async ({ page }) => {
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.fill('a');
     await expect(page.locator('.discover-filter-pill')).toHaveCount(0);
   });
@@ -134,7 +134,7 @@ test('Discover titles scope loads toolbar and keeps prev disabled when paginatio
 
 test('Discover search input has accessible label', async ({ page }) => {
   await page.goto('/discover');
-  const input = page.locator('input[type="search"]');
+  const input = page.locator('.search-input');
   await expect(input).toHaveAttribute('aria-label');
   const label = await input.getAttribute('aria-label');
   expect(label?.length).toBeGreaterThan(0);
@@ -142,7 +142,7 @@ test('Discover search input has accessible label', async ({ page }) => {
 
 test('Discover keyboard flow moves from search input to helper chips and back', async ({ page }) => {
   await page.goto('/discover');
-  const searchInput = page.locator('input[type="search"]');
+  const searchInput = page.locator('.search-input');
   const firstHelperItem = page.locator('.discover-saved-search-open, .discover-helper-chip').first();
   await searchInput.focus();
   await page.keyboard.press('ArrowDown');
@@ -241,9 +241,9 @@ test.describe('Header search → autocomplete → result click', () => {
 test.describe('Regression — no results → recovery → re-search', () => {
   test('a nonsense query with no results shows the empty state', async ({ page }) => {
     await page.goto('/discover');
-    await page.waitForSelector('input[type="search"]', { state: 'visible' });
+    await page.waitForSelector('.search-input', { state: 'visible' });
 
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.fill('xyzxyzxyznonexistent');
 
     // Wait briefly for debounce + fetch
@@ -258,10 +258,10 @@ test.describe('Regression — no results → recovery → re-search', () => {
 
   test('recovery suggestions appear after a typo query returns nothing', async ({ page }) => {
     await page.goto('/discover');
-    await page.waitForSelector('input[type="search"]', { state: 'visible' });
+    await page.waitForSelector('.search-input', { state: 'visible' });
 
     // Focus the search input (triggers autocomplete)
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.click();
     await input.fill('Frierren'); // typo of Frieren
 
@@ -286,9 +286,9 @@ test.describe('Regression — no results → recovery → re-search', () => {
 
   test('clearing a no-result query allows a new search without crash', async ({ page }) => {
     await page.goto('/discover');
-    await page.waitForSelector('input[type="search"]', { state: 'visible' });
+    await page.waitForSelector('.search-input', { state: 'visible' });
 
-    const input = page.locator('input[type="search"]');
+    const input = page.locator('.search-input');
     await input.fill('absolutenonexistent9999');
     await page.waitForTimeout(600);
 
