@@ -129,6 +129,9 @@ button {
   --plum-500: #a855f7;
   --rose-100: #ffe4e6;
   --rose-600: #e11d48;
+  --paper-shadow: #46322c;
+  --muted: var(--text-tertiary);
+  --danger: var(--error);
 
   /* โ”€โ”€ Light Mode Backgrounds โ”€โ”€ */
   --bg-primary: #fdfaf6;
@@ -279,6 +282,9 @@ button {
   --shadow-glass: 0 16px 40px rgba(0, 0, 0, 0.38);
   --shadow-glow: 0 20px 44px rgba(244, 114, 182, 0.28);
   --shadow: var(--shadow-sm);
+  --paper-shadow: #000000;
+  --muted: var(--text-tertiary);
+  --danger: var(--error);
 }
 
 ::-webkit-scrollbar {

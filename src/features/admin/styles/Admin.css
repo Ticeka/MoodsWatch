@@ -505,7 +505,7 @@
 /* ============================================
    Forms
    ============================================ */
-.form-label {
+.admin-page-content .form-label {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
@@ -514,8 +514,8 @@
   letter-spacing: 0.01em;
 }
 
-.form-input,
-.form-select {
+.admin-page-content .form-input,
+.admin-page-content .form-select {
   width: 100%;
   padding: 0.7rem 0.9rem;
   border: 1.5px solid var(--border-default);
@@ -528,31 +528,31 @@
   outline: none;
 }
 
-.form-input:focus,
-.form-select:focus {
+.admin-page-content .form-input:focus,
+.admin-page-content .form-select:focus {
   border-color: var(--primary-500);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
-.form-input::placeholder {
+.admin-page-content .form-input::placeholder {
   color: var(--text-tertiary);
 }
 
-.form-input:disabled,
-.form-select:disabled {
+.admin-page-content .form-input:disabled,
+.admin-page-content .form-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   background: var(--bg-tertiary);
 }
 
-textarea.form-input {
+.admin-page-content textarea.form-input {
   resize: vertical;
   min-height: 100px;
   font-family: inherit;
   line-height: 1.6;
 }
 
-.form-select {
+.admin-page-content .form-select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -560,13 +560,13 @@ textarea.form-input {
   padding-right: 2.5rem;
 }
 
-.results-sorter {
+.admin-page-content .results-sorter {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
 }
 
-.results-sorter > span {
+.admin-page-content .results-sorter > span {
   display: block;
   color: var(--text-secondary);
   font-size: 0.8rem;
@@ -574,7 +574,7 @@ textarea.form-input {
   letter-spacing: 0.01em;
 }
 
-.results-sorter select {
+.admin-page-content .results-sorter select {
   width: 100%;
   min-height: 44px;
   padding: 0.7rem 2.5rem 0.7rem 0.9rem;
@@ -592,11 +592,11 @@ textarea.form-input {
   background-position: right 0.75rem center;
 }
 
-.results-sorter select:hover {
+.admin-page-content .results-sorter select:hover {
   background-color: color-mix(in srgb, var(--accent-500) 3%, var(--bg-primary));
 }
 
-.results-sorter select:focus {
+.admin-page-content .results-sorter select:focus {
   border-color: var(--primary-500);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
@@ -611,7 +611,7 @@ textarea.form-input {
 /* ============================================
    Glass Panel (Form Section Cards)
    ============================================ */
-.glass-panel {
+.admin-page-content .glass-panel {
   background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
   border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
   border-radius: 30px;
@@ -622,7 +622,7 @@ textarea.form-input {
   overflow: hidden;
 }
 
-.glass-panel::before {
+.admin-page-content .glass-panel::before {
   content: '';
   position: absolute;
   top: 0;
@@ -635,7 +635,7 @@ textarea.form-input {
   transition: opacity 0.4s ease, background-position 3s ease infinite;
 }
 
-.glass-panel:hover::before {
+.admin-page-content .glass-panel:hover::before {
   opacity: 1;
   animation: shimmer 3s infinite linear;
 }
@@ -645,41 +645,41 @@ textarea.form-input {
   100% { background-position: -100% 0; }
 }
 
-.glass-panel:hover {
+.admin-page-content .glass-panel:hover {
   transform: translateY(-4px);
   box-shadow: 0 28px 52px rgba(26, 43, 60, 0.12);
   border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
 }
 
-.glass-panel h2,
-.glass-panel h3 {
+.admin-page-content .glass-panel h2,
+.admin-page-content .glass-panel h3 {
   color: var(--text-primary);
 }
 
-.glass-panel svg {
+.admin-page-content .glass-panel svg {
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.glass-panel:hover svg {
+.admin-page-content .glass-panel:hover svg {
   transform: scale(1.15) translateY(-2px);
 }
 
 /* ============================================
    Dark Mode Overrides
    ============================================ */
-[data-theme="dark"] .form-input,
-[data-theme="dark"] .form-select {
+[data-theme="dark"] .admin-page-content .form-input,
+[data-theme="dark"] .admin-page-content .form-select {
   background: var(--bg-tertiary);
   border-color: var(--border-default);
 }
 
-[data-theme="dark"] .form-input:focus,
-[data-theme="dark"] .form-select:focus {
+[data-theme="dark"] .admin-page-content .form-input:focus,
+[data-theme="dark"] .admin-page-content .form-select:focus {
   border-color: var(--primary-400);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
-[data-theme="dark"] .glass-panel {
+[data-theme="dark"] .admin-page-content .glass-panel {
   background: var(--bg-elevated);
   border-color: var(--border-default);
 }

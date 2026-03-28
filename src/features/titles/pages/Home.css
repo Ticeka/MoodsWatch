@@ -146,7 +146,7 @@ body.home-scroll-snap {
   scroll-margin-top: var(--header-height, 80px);
 }
 
-.glass-panel {
+.home-page .glass-panel {
   background: var(--bg-elevated);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -600,7 +600,7 @@ body.home-scroll-snap {
   font-weight: 700;
 }
 
-.results-sorter {
+.home-page .results-sorter {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
@@ -614,7 +614,7 @@ body.home-scroll-snap {
   font-weight: 700;
 }
 
-.results-sorter select {
+.home-page .results-sorter select {
   min-width: 8.5rem;
   border: none;
   background-color: transparent;
@@ -623,7 +623,7 @@ body.home-scroll-snap {
   outline: none;
 }
 
-.results-sorter select option {
+.home-page .results-sorter select option {
   background-color: var(--bg-elevated);
   color: var(--text-primary);
 }
@@ -866,7 +866,7 @@ body.home-scroll-snap {
     justify-content: center;
   }
 
-  .glass-panel {
+  .home-page .glass-panel {
     padding: 1.25rem;
     border-radius: var(--radius-lg);
   }
@@ -950,7 +950,7 @@ body.home-scroll-snap {
 
   .results-toolbar-actions > *,
   .results-page-btn,
-  .results-sorter {
+  .home-page .results-sorter {
     width: 100%;
   }
 
@@ -1007,7 +1007,7 @@ body.home-scroll-snap {
     gap: 0.4rem;
   }
 
-  .glass-panel {
+  .home-page .glass-panel {
     padding: 1rem;
   }
 
