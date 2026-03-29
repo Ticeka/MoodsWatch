@@ -158,6 +158,8 @@ export function createPartySettings(input = {}) {
   const categoryId = PARTY_CATEGORY_OPTIONS.some((item) => item.id === input.categoryId)
     ? input.categoryId
     : 'all';
+  const songPresetId = String(input.songPresetId || '').trim();
+  const songPresetName = String(input.songPresetName || '').trim();
 
   return {
     presetId: preset.id,
@@ -165,6 +167,8 @@ export function createPartySettings(input = {}) {
     timePerRoundSec,
     revealSec,
     categoryId,
+    songPresetId,
+    songPresetName,
     keyword: String(input.keyword || '').trim(),
     showLiveScores: Boolean(input.showLiveScores ?? true),
     randomOrder: Boolean(input.randomOrder ?? true),

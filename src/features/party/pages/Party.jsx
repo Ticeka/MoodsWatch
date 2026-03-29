@@ -44,6 +44,7 @@ import {
   closePartyRoom,
   createPartyRoom,
   fetchPartyRoomBundle,
+  fetchPublishedPartySongPresets,
   getPartyBackendHint,
   getPartyGuestToken,
   joinPartyRoom,
@@ -308,7 +309,7 @@ function PartyQuestionPlayer({ match, round, graceRemainingMs, onPlaybackComplet
     }
 
     let stopTimer = null;
-    let progressTimer = null;
+    let frameId = null;
     let cancelled = false;
     let playbackCompleted = false;
     let playbackStartedAtMs = null;
@@ -354,13 +355,27 @@ function PartyQuestionPlayer({ match, round, graceRemainingMs, onPlaybackComplet
 
     void play();
 
-    progressTimer = window.setInterval(() => {
-      const elapsedFromMedia = Math.max(0, (Number(media.currentTime || 0) - Number(round.previewStartSec || 0)) * 1000);
-      setPlaybackElapsedMs(Math.min(previewDurationMs, elapsedFromMedia));
-      if (elapsedFromMedia >= previewDurationMs - 80) {
-        markPlaybackComplete();
+    const syncProgress = () => {
+      if (cancelled) {
+        return;
       }
-    }, 100);
+
+      const elapsedFromClock = playbackStartedAtMs
+        ? Math.max(0, Date.now() - playbackStartedAtMs)
+        : 0;
+      const elapsedFromMedia = Math.max(0, (Number(media.currentTime || 0) - Number(round.previewStartSec || 0)) * 1000);
+      const elapsedMs = Math.max(elapsedFromClock, elapsedFromMedia);
+
+      setPlaybackElapsedMs(Math.min(previewDurationMs, elapsedMs));
+      if (elapsedMs >= previewDurationMs - 80) {
+        markPlaybackComplete();
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(syncProgress);
+    };
+
+    frameId = window.requestAnimationFrame(syncProgress);
 
     stopTimer = window.setInterval(() => {
       if (playbackStartedAtMs && Date.now() >= playbackStartedAtMs + previewDurationMs) {
@@ -385,8 +400,8 @@ function PartyQuestionPlayer({ match, round, graceRemainingMs, onPlaybackComplet
       if (stopTimer) {
         window.clearInterval(stopTimer);
       }
-      if (progressTimer) {
-        window.clearInterval(progressTimer);
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
       }
       media.removeEventListener('playing', handlePlaying);
       media.removeEventListener('ended', handleEnded);
@@ -451,7 +466,7 @@ function PartyQuestionPlayer({ match, round, graceRemainingMs, onPlaybackComplet
             </small>
           </div>
         </div>
-        <audio ref={mediaRef} src={round?.mediaUrl || ''} preload="auto" className="party-hidden-media" />
+          <video ref={mediaRef} src={round?.mediaUrl || ''} playsInline preload="auto" className="party-hidden-media" />
       </div>
       {isGracePeriod ? (
         <div className="party-final-warning" role="status" aria-live="assertive">
@@ -645,13 +660,45 @@ function PartyAnswerPanel({
   );
 }
 
-function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick }) {
+function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick, onPlaybackStarted }) {
+  const revealVideoRef = useRef(null);
   const currentAnswer = answers.find((entry) => String(entry.member_token || '') === String(memberToken || ''));
   const revealState = !currentAnswer
     ? pick('ไม่ได้ตอบ', 'No answer')
     : currentAnswer.title_correct || currentAnswer.song_correct
       ? pick('ถูก', 'Correct')
       : pick('ผิด', 'Incorrect');
+
+  useEffect(() => {
+    const video = revealVideoRef.current;
+    if (!video || !round?.mediaUrl) {
+      return;
+    }
+
+    video.preload = 'auto';
+    video.load();
+    const attemptPlay = () => {
+      void video.play().catch(() => {});
+    };
+    const handlePlaying = () => {
+      onPlaybackStarted?.(Date.now());
+    };
+
+    video.addEventListener('playing', handlePlaying);
+
+    if (video.readyState >= 2) {
+      attemptPlay();
+      return () => {
+        video.removeEventListener('playing', handlePlaying);
+      };
+    }
+
+    video.addEventListener('canplay', attemptPlay, { once: true });
+    return () => {
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('canplay', attemptPlay);
+    };
+  }, [onPlaybackStarted, round?.id, round?.mediaUrl]);
 
   return (
     <div className="party-game-grid">
@@ -669,13 +716,14 @@ function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick }) {
           {round?.mediaUrl ? (
             <div className="party-reveal-video-wrap">
               <video
+                ref={revealVideoRef}
                 key={round.id || round.mediaUrl}
                 src={round.mediaUrl}
                 className="party-reveal-video"
                 controls
                 autoPlay
                 playsInline
-                preload="metadata"
+                preload="auto"
               />
             </div>
           ) : null}
@@ -705,6 +753,7 @@ export function PartyHubPage() {
   const { pick } = useLanguage();
   const { user } = useAuth();
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
+  const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [settings, setSettings] = useState(createPartySettings({
     presetId: PARTY_PRESETS[0].id,
     roundCount: 10,
@@ -718,7 +767,31 @@ export function PartyHubPage() {
   const [joinCode, setJoinCode] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const selectedPreset = getPartyPresetById(settings.presetId);
-  const selectedCategory = PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId) || PARTY_CATEGORY_OPTIONS[0];
+  const selectedPoolLabel = settings.songPresetName
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.label
+    || PARTY_CATEGORY_OPTIONS[0].label;
+  const selectedPoolLabelTh = settings.songPresetName
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.labelTh
+    || PARTY_CATEGORY_OPTIONS[0].labelTh;
+  const songPoolSelectValue = settings.songPresetId ? `preset:${settings.songPresetId}` : settings.categoryId;
+
+  useEffect(() => {
+    let ignore = false;
+
+    fetchPublishedPartySongPresets()
+      .then((presets) => {
+        if (!ignore) {
+          setSongPresetOptions(presets);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load published party song presets', error);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -797,17 +870,44 @@ export function PartyHubPage() {
             </div>
 
             <div className="party-inline-fields">
-              <label className="party-field">
-                <span>{pick('หมวดเพลง', 'Song pool')}</span>
-                <select
-                  value={settings.categoryId}
-                  onChange={(event) => setSettings((current) => ({ ...current, categoryId: event.target.value }))}
-                >
-                  {PARTY_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
-                  ))}
-                </select>
-              </label>
+	              <label className="party-field">
+	                <span>{pick('หมวดเพลง', 'Song pool')}</span>
+	                <select
+	                  value={songPoolSelectValue}
+	                  onChange={(event) => {
+	                    const nextValue = event.target.value;
+	                    if (nextValue.startsWith('preset:')) {
+	                      const presetId = Number(nextValue.replace('preset:', '')) || 0;
+	                      const preset = songPresetOptions.find((entry) => entry.id === presetId);
+	                      setSettings((current) => ({
+	                        ...current,
+	                        categoryId: 'all',
+	                        songPresetId: preset ? String(preset.id) : '',
+	                        songPresetName: preset?.name || '',
+	                      }));
+	                      return;
+	                    }
+
+	                    setSettings((current) => ({
+	                      ...current,
+	                      categoryId: nextValue,
+	                      songPresetId: '',
+	                      songPresetName: '',
+	                    }));
+	                  }}
+	                >
+	                  {PARTY_CATEGORY_OPTIONS.map((option) => (
+	                    <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
+	                  ))}
+	                  {songPresetOptions.length > 0 ? (
+	                    <optgroup label={pick('Preset เพลง', 'Song presets')}>
+	                      {songPresetOptions.map((option) => (
+	                        <option key={option.id} value={`preset:${option.id}`}>{option.name}</option>
+	                      ))}
+	                    </optgroup>
+	                  ) : null}
+	                </select>
+	              </label>
               <label className="party-field">
                 <span>{pick('จำนวนรอบ', 'Rounds')}</span>
                 <select
@@ -872,10 +972,10 @@ export function PartyHubPage() {
                 <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
                 <span>{pick('preset', 'preset')}</span>
               </article>
-              <article className="party-stat-pill">
-                <strong>{pick(selectedCategory.labelTh, selectedCategory.label)}</strong>
-                <span>{pick('pool', 'pool')}</span>
-              </article>
+	              <article className="party-stat-pill">
+	                <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
+	                <span>{pick('pool', 'pool')}</span>
+	              </article>
               <article className="party-stat-pill">
                 <strong>{settings.roundCount}</strong>
                 <span>{pick('รอบ', 'rounds')}</span>
@@ -913,23 +1013,68 @@ export function PartyRoomPage() {
   const [busyAction, setBusyAction] = useState('');
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [playbackEndedAtMs, setPlaybackEndedAtMs] = useState(null);
+  const [revealPlaybackStartedAtMs, setRevealPlaybackStartedAtMs] = useState(null);
   const advancingRef = useRef(false);
+  const loadPromiseRef = useRef(null);
+  const pendingRefreshRef = useRef(false);
+  const refreshTimerRef = useRef(null);
+  const activeRoomCodeRef = useRef(roomCode);
 
-  const loadBundle = async ({ silent = false } = {}) => {
+  useEffect(() => {
+    activeRoomCodeRef.current = roomCode;
+  }, [roomCode]);
+
+  const loadBundle = async ({ silent = false, force = false } = {}) => {
+    if (loadPromiseRef.current && !force) {
+      pendingRefreshRef.current = true;
+      return loadPromiseRef.current;
+    }
+
     try {
       if (!silent) {
         setLoading(true);
       }
-      const nextBundle = await fetchPartyRoomBundle(roomCode);
-      setBundle(nextBundle);
-      setErrorMessage('');
+
+      const task = fetchPartyRoomBundle(roomCode);
+      loadPromiseRef.current = task;
+      const nextBundle = await task;
+
+      if (activeRoomCodeRef.current === roomCode) {
+        setBundle(nextBundle);
+        setErrorMessage('');
+      }
     } catch (error) {
-      setErrorMessage(getPartyBackendHint(error, pick));
+      if (activeRoomCodeRef.current === roomCode) {
+        setErrorMessage(getPartyBackendHint(error, pick));
+      }
     } finally {
+      loadPromiseRef.current = null;
       if (!silent) {
         setLoading(false);
       }
+
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        await loadBundle({ silent: true, force: true });
+      }
     }
+  };
+
+  const scheduleBundleRefresh = () => {
+    pendingRefreshRef.current = true;
+    if (refreshTimerRef.current) {
+      return;
+    }
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      if (!pendingRefreshRef.current) {
+        return;
+      }
+
+      pendingRefreshRef.current = false;
+      void loadBundle({ silent: true });
+    }, 120);
   };
 
   useEffect(() => {
@@ -941,12 +1086,16 @@ export function PartyRoomPage() {
       return undefined;
     }
 
-    const unsubscribe = subscribeToPartyRoom(bundle.room.id, () => {
-      void loadBundle({ silent: true });
-    });
+    const unsubscribe = subscribeToPartyRoom(bundle.room.id, scheduleBundleRefresh);
 
     return unsubscribe;
   }, [bundle?.room?.id, roomCode]);
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -976,9 +1125,18 @@ export function PartyRoomPage() {
   const currentMatch = room?.current_match || null;
   const currentRound = getPartyCurrentRound(currentMatch);
   const currentPreset = getPartyPresetById(currentMatch?.presetId || room?.settings?.presetId);
-  const currentRoundAnswers = answers.filter((entry) => String(entry.round_id || '') === String(currentRound?.id || ''));
+  const currentRoundAnswers = useMemo(
+    () => answers.filter((entry) => String(entry.round_id || '') === String(currentRound?.id || '')),
+    [answers, currentRound?.id]
+  );
   const currentAnswer = currentRoundAnswers.find((entry) => String(entry.member_token || '') === String(guestToken || '')) || null;
   const leaderboard = useMemo(() => buildPartyLeaderboard(members, answers), [members, answers]);
+  const selectedPoolName = room?.settings?.songPresetName
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.label
+    || PARTY_CATEGORY_OPTIONS[0].label;
+  const selectedPoolNameTh = room?.settings?.songPresetName
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.labelTh
+    || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const phaseEndsAtMs = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
   const timeLeftMs = phaseEndsAtMs ? Math.max(0, phaseEndsAtMs - clockNow) : 0;
   const answerGraceMs = Number(currentMatch?.answerGraceSec || 0) * 1000;
@@ -987,6 +1145,7 @@ export function PartyRoomPage() {
 
   useEffect(() => {
     setPlaybackEndedAtMs(null);
+    setRevealPlaybackStartedAtMs(null);
   }, [currentMatch?.id, currentMatch?.phase, currentRound?.id]);
 
   useEffect(() => {
@@ -994,9 +1153,15 @@ export function PartyRoomPage() {
       return;
     }
 
+    const phaseEndsAtMs = new Date(currentMatch.phaseEndsAt).getTime();
+    const revealAdvanceAtMs = revealPlaybackStartedAtMs
+      ? revealPlaybackStartedAtMs + (Number(currentMatch?.revealSec || room?.settings?.revealSec || 12) * 1000)
+      : phaseEndsAtMs;
     const advanceAtMs = currentMatch.phase === 'question' && playbackEndedAtMs
       ? playbackEndedAtMs + answerGraceMs
-      : new Date(currentMatch.phaseEndsAt).getTime();
+      : currentMatch.phase === 'reveal'
+        ? Math.max(phaseEndsAtMs, revealAdvanceAtMs)
+        : phaseEndsAtMs;
 
     if (!advanceAtMs || clockNow < advanceAtMs || advancingRef.current) {
       return;
@@ -1012,7 +1177,7 @@ export function PartyRoomPage() {
           advancingRef.current = false;
         }, 400);
       });
-  }, [answerGraceMs, clockNow, currentMatch?.phase, currentMatch?.phaseEndsAt, isHost, pick, playbackEndedAtMs, room]);
+  }, [answerGraceMs, clockNow, currentMatch?.phase, currentMatch?.phaseEndsAt, currentMatch?.revealSec, isHost, pick, playbackEndedAtMs, revealPlaybackStartedAtMs, room]);
 
   const handleInlineJoin = async (event) => {
     event.preventDefault();
@@ -1174,14 +1339,22 @@ export function PartyRoomPage() {
   return (
     <div className="party-page is-modern">
       <section className="party-room-shell container">
-        <div className="party-room-top card-modern header-only">
-          <div className="party-room-title">
-            <h1>{pick('ห้อง', 'Room')} {room.room_code}</h1>
-            <p>{pick(currentPreset.labelTh, currentPreset.label)} • {pick('หมวด', 'Category')} {pick(
-              PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.labelTh || 'รวมทุกเพลง',
-              PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.label || 'All Songs'
-            )}</p>
-          </div>
+        {currentRound?.mediaUrl ? (
+          <video
+            key={`preload-${currentRound.id || currentRound.mediaUrl}`}
+            src={currentRound.mediaUrl}
+            preload="auto"
+            muted
+            playsInline
+            className="party-hidden-media"
+            aria-hidden="true"
+          />
+        ) : null}
+	        <div className="party-room-top card-modern header-only">
+	          <div className="party-room-title">
+	            <h1>{pick('ห้อง', 'Room')} {room.room_code}</h1>
+	            <p>{pick(currentPreset.labelTh, currentPreset.label)} • {pick('หมวด', 'Category')} {pick(selectedPoolNameTh, selectedPoolName)}</p>
+	          </div>
           <div className="party-room-actions">
             <button type="button" className="party-code-btn" onClick={handleCopyCode}>
               <Copy size={15} />
@@ -1225,11 +1398,12 @@ export function PartyRoomPage() {
                 <strong>{pick('การตั้งค่าห้อง', 'Room settings')}</strong>
                 <span>{pick('สรุปกติกาที่จะใช้ในแมตช์นี้', 'The rule snapshot for this match')}</span>
               </div>
-              <div className="party-settings-summary">
-                <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('preset', 'preset')}</span></article>
-                <article className="party-stat-pill"><strong>{room.settings?.roundCount || 10}</strong><span>{pick('รอบ', 'rounds')}</span></article>
-                <article className="party-stat-pill"><strong>{room.settings?.timePerRoundSec || 12}</strong><span>{pick('วิเล่นเพลง', 'clip sec')}</span></article>
-                <article className="party-stat-pill"><strong>{room.settings?.revealSec || 12}</strong><span>{pick('วิเฉลย', 'reveal sec')}</span></article>
+	              <div className="party-settings-summary">
+	                <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('preset', 'preset')}</span></article>
+	                <article className="party-stat-pill"><strong>{pick(selectedPoolNameTh, selectedPoolName)}</strong><span>{pick('pool', 'pool')}</span></article>
+	                <article className="party-stat-pill"><strong>{room.settings?.roundCount || 10}</strong><span>{pick('รอบ', 'rounds')}</span></article>
+	                <article className="party-stat-pill"><strong>{room.settings?.timePerRoundSec || 12}</strong><span>{pick('วิเล่นเพลง', 'clip sec')}</span></article>
+	                <article className="party-stat-pill"><strong>{room.settings?.revealSec || 12}</strong><span>{pick('วิเฉลย', 'reveal sec')}</span></article>
                 <article className="party-stat-pill"><strong>{readyCount}/{members.length}</strong><span>{pick('พร้อม', 'ready')}</span></article>
               </div>
               <div className="party-lobby-actions">
@@ -1306,6 +1480,7 @@ export function PartyRoomPage() {
                 leaderboard={leaderboard}
                 memberToken={guestToken}
                 pick={pick}
+                onPlaybackStarted={setRevealPlaybackStartedAtMs}
               />
             ) : currentMatch.phase === 'countdown' ? (
               <section className="party-countdown-card card-modern">

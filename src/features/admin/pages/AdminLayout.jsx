@@ -22,6 +22,7 @@ import {
   BookOpen,
   CalendarDays,
   ListOrdered,
+  Music4,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -87,6 +88,9 @@ export function AdminLayout() {
             </NavLink>
             <NavLink to="/admin/tierlists" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <ListOrdered className="sidebar-link-icon" size={18} /> {t('layout.tierlist')}
+            </NavLink>
+            <NavLink to="/admin/party-presets" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
+              <Music4 className="sidebar-link-icon" size={18} /> Music Party
             </NavLink>
           </div>
 

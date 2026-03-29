@@ -157,8 +157,285 @@ function mapPartySongRow(row) {
     sourceTitleName,
     sourceTitleAliases,
     coverUrl: row?.source_cover_image || row?.source_banner_image || '',
+    sourceAvgScore: Number(row?.source_avg_score || 0) || 0,
+    sourcePopularityScore: Number(row?.source_popularity_score || 0) || 0,
     previewStartSec: 0,
   };
+}
+
+function mapPartyPresetSongItem(row) {
+  return {
+    id: Number(row?.song_id || 0),
+    themeType: row?.theme_type || 'OP',
+    songTitle: row?.song_title || '',
+    songAliases: buildUniquePartyAliases([row?.song_title]),
+    artistName: row?.artist_name || '',
+    isCreditless: false,
+    mediaUrl: row?.media_url || '',
+    sourceTitleId: Number(row?.source_title_id || 0),
+    sourceTitleName: row?.source_title_name || '',
+    sourceTitleAliases: buildUniquePartyAliases([row?.source_title_name]),
+    coverUrl: row?.cover_url || '',
+    previewStartSec: 0,
+  };
+}
+
+function mapPartySongPreset(record) {
+  const items = Array.isArray(record?.party_song_preset_items) ? record.party_song_preset_items : [];
+
+  return {
+    id: Number(record?.id || 0),
+    slug: record?.slug || '',
+    name: record?.name || '',
+    description: record?.description || '',
+    status: record?.status || 'draft',
+    visibility: record?.visibility || 'public',
+    itemCount: items.length,
+    updatedAt: record?.updated_at || '',
+  };
+}
+
+function matchesPartySongSearch(song, normalizedQuery) {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const haystacks = [
+    song?.songTitle,
+    song?.artistName,
+    song?.sourceTitleName,
+    ...(Array.isArray(song?.songAliases) ? song.songAliases : []),
+    ...(Array.isArray(song?.sourceTitleAliases) ? song.sourceTitleAliases : []),
+  ];
+
+  return haystacks.some((value) => normalizePartyText(value).includes(normalizedQuery));
+}
+
+function getPartySongSearchRank(song, normalizedQuery) {
+  const songTitle = normalizePartyText(song?.songTitle);
+  const sourceTitle = normalizePartyText(song?.sourceTitleName);
+  const artistName = normalizePartyText(song?.artistName);
+  const aliases = [
+    ...(Array.isArray(song?.songAliases) ? song.songAliases : []),
+    ...(Array.isArray(song?.sourceTitleAliases) ? song.sourceTitleAliases : []),
+  ].map((value) => normalizePartyText(value));
+
+  if (songTitle === normalizedQuery || sourceTitle === normalizedQuery) {
+    return 0;
+  }
+
+  if (aliases.includes(normalizedQuery)) {
+    return 1;
+  }
+
+  if (songTitle.startsWith(normalizedQuery) || sourceTitle.startsWith(normalizedQuery)) {
+    return 2;
+  }
+
+  if (artistName.startsWith(normalizedQuery)) {
+    return 3;
+  }
+
+  if (songTitle.includes(normalizedQuery) || sourceTitle.includes(normalizedQuery)) {
+    return 4;
+  }
+
+  if (artistName.includes(normalizedQuery) || aliases.some((value) => value.includes(normalizedQuery))) {
+    return 5;
+  }
+
+  return 9;
+}
+
+function getPartySongDedupKey(song) {
+  const songTitle = normalizePartyText(song?.songTitle);
+  const sourceTitle = normalizePartyText(song?.sourceTitleName);
+  const themeType = String(song?.themeType || '').trim().toUpperCase();
+
+  if (songTitle || sourceTitle) {
+    return [sourceTitle, songTitle, themeType].join('::');
+  }
+
+  return String(song?.id || '');
+}
+
+function dedupePartySongs(results = []) {
+  const bySignature = new Map();
+
+  results.forEach((song) => {
+    const key = getPartySongDedupKey(song);
+    const existing = bySignature.get(key);
+
+    if (!existing) {
+      bySignature.set(key, song);
+      return;
+    }
+
+    const existingPopularity = Number(existing?.sourcePopularityScore || 0);
+    const nextPopularity = Number(song?.sourcePopularityScore || 0);
+    if (nextPopularity > existingPopularity) {
+      bySignature.set(key, song);
+      return;
+    }
+
+    const existingScore = Number(existing?.sourceAvgScore || 0);
+    const nextScore = Number(song?.sourceAvgScore || 0);
+    if (nextPopularity === existingPopularity && nextScore > existingScore) {
+      bySignature.set(key, song);
+    }
+  });
+
+  return [...bySignature.values()];
+}
+
+function mixPartySongsBySource(results = []) {
+  const buckets = new Map();
+
+  results.forEach((song) => {
+    const key = normalizePartyText(song?.sourceTitleName) || String(song?.sourceTitleId || song?.id || '');
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(song);
+  });
+
+  const queue = [...buckets.values()]
+    .filter((bucket) => bucket.length > 0)
+    .sort((left, right) => {
+      const leftPopularity = Number(left[0]?.sourcePopularityScore || 0);
+      const rightPopularity = Number(right[0]?.sourcePopularityScore || 0);
+      if (rightPopularity !== leftPopularity) {
+        return rightPopularity - leftPopularity;
+      }
+
+      return String(left[0]?.sourceTitleName || '').localeCompare(String(right[0]?.sourceTitleName || ''));
+    });
+
+  const mixed = [];
+  while (queue.length > 0) {
+    const nextQueue = [];
+
+    queue.forEach((bucket) => {
+      const item = bucket.shift();
+      if (item) {
+        mixed.push(item);
+      }
+      if (bucket.length > 0) {
+        nextQueue.push(bucket);
+      }
+    });
+
+    queue.length = 0;
+    queue.push(...nextQueue);
+  }
+
+  return mixed;
+}
+
+function shufflePartySongResults(results = []) {
+  const items = [...results];
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+  }
+  return items;
+}
+
+function buildRandomPartyPageSet({
+  seedPage = 0,
+  count = 12,
+  maxPage = 30,
+} = {}) {
+  const pages = new Set([Math.max(0, Number(seedPage || 0))]);
+
+  while (pages.size < count) {
+    pages.add(Math.floor(Math.random() * Math.max(1, maxPage + 1)));
+  }
+
+  return [...pages];
+}
+
+function sortPartySongSearchResults(results = [], normalizedQuery = '', sortBy = 'relevance') {
+  const items = [...results];
+
+  items.sort((left, right) => {
+    if (sortBy === 'random') {
+      return 0;
+    }
+
+    if (sortBy === 'mixed') {
+      const popularityDiff = Number(right.sourcePopularityScore || 0) - Number(left.sourcePopularityScore || 0);
+      if (popularityDiff !== 0) {
+        return popularityDiff;
+      }
+
+      const scoreDiff = Number(right.sourceAvgScore || 0) - Number(left.sourceAvgScore || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return String(left.sourceTitleName || '').localeCompare(String(right.sourceTitleName || ''));
+    }
+
+    if (sortBy === 'title') {
+      const titleCompare = String(left.sourceTitleName || '').localeCompare(String(right.sourceTitleName || ''));
+      if (titleCompare !== 0) {
+        return titleCompare;
+      }
+
+      return String(left.songTitle || '').localeCompare(String(right.songTitle || ''));
+    }
+
+    if (sortBy === 'popularity') {
+      const popularityDiff = Number(right.sourcePopularityScore || 0) - Number(left.sourcePopularityScore || 0);
+      if (popularityDiff !== 0) {
+        return popularityDiff;
+      }
+
+      const scoreDiff = Number(right.sourceAvgScore || 0) - Number(left.sourceAvgScore || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      return String(left.sourceTitleName || '').localeCompare(String(right.sourceTitleName || ''));
+    }
+
+    if (sortBy === 'score') {
+      const scoreDiff = Number(right.sourceAvgScore || 0) - Number(left.sourceAvgScore || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const popularityDiff = Number(right.sourcePopularityScore || 0) - Number(left.sourcePopularityScore || 0);
+      if (popularityDiff !== 0) {
+        return popularityDiff;
+      }
+
+      return String(left.sourceTitleName || '').localeCompare(String(right.sourceTitleName || ''));
+    }
+
+    const rankDiff = getPartySongSearchRank(left, normalizedQuery) - getPartySongSearchRank(right, normalizedQuery);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+
+    const popularityDiff = Number(right.sourcePopularityScore || 0) - Number(left.sourcePopularityScore || 0);
+    if (popularityDiff !== 0) {
+      return popularityDiff;
+    }
+
+    return String(left.sourceTitleName || '').localeCompare(String(right.sourceTitleName || ''));
+  });
+
+  if (sortBy === 'mixed') {
+    return mixPartySongsBySource(items);
+  }
+
+  if (sortBy === 'random') {
+    return shufflePartySongResults(items);
+  }
+
+  return items;
 }
 
 function filterSongsByCategory(songs = [], categoryId = 'all') {
@@ -177,12 +454,170 @@ function filterSongsByCategory(songs = [], categoryId = 'all') {
   return songs;
 }
 
+async function fetchPartyPresetSongPool(presetId) {
+  if (!supabase || !presetId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('party_song_preset_items')
+    .select('*')
+    .eq('preset_id', presetId)
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || [])
+    .map(mapPartyPresetSongItem)
+    .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+}
+
+export async function fetchPublishedPartySongPresets() {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('party_song_presets')
+    .select('id, slug, name, description, status, visibility, updated_at, party_song_preset_items(id)')
+    .eq('status', 'published')
+    .eq('visibility', 'public')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).map(mapPartySongPreset);
+}
+
+export async function searchPartyThemeSongs(query = '', { page = 0, pageSize = 24, sortBy = 'relevance' } = {}) {
+  if (!supabase) {
+    return {
+      items: [],
+      total: 0,
+      page: 0,
+      pageSize: Math.max(1, Number(pageSize || 24)),
+      totalPages: 1,
+    };
+  }
+
+  const rawQuery = String(query || '').trim();
+  const normalizedQuery = normalizePartyText(rawQuery);
+  const safePage = Math.max(0, Number(page || 0));
+  const safePageSize = Math.max(1, Number(pageSize || 24));
+  const primaryPages = sortBy === 'random'
+    ? buildRandomPartyPageSet({
+      seedPage: safePage,
+      count: normalizedQuery ? 10 : 14,
+      maxPage: normalizedQuery ? 20 : 36,
+    })
+    : normalizedQuery
+      ? [safePage, safePage + 1, safePage + 2]
+      : [safePage];
+
+  const primaryResults = await Promise.all(
+    primaryPages.map((targetPage) => supabase.rpc('search_battle_theme_songs', {
+      p_query: rawQuery,
+      p_show_adult: false,
+      p_hidden_title_ids: [],
+      p_page: targetPage,
+      p_page_size: sortBy === 'random' ? Math.max(safePageSize, 48) : safePageSize,
+    }))
+  );
+
+  const directRows = [];
+  let rawTotal = 0;
+  primaryResults.forEach(({ data, error }) => {
+    if (error) {
+      throw error;
+    }
+
+    directRows.push(...(data || []));
+    if (!rawTotal && Array.isArray(data) && data.length > 0) {
+      rawTotal = Number(data[0]?.total_count || 0);
+    }
+  });
+
+  const directResults = dedupePartySongs(Array.from(new Map(
+    directRows
+      .map(mapPartySongRow)
+      .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl))
+      .map((song) => [song.id, song])
+  ).values()));
+
+  if (sortBy === 'random') {
+    const shuffledItems = shufflePartySongResults(directResults).slice(0, safePageSize);
+    return {
+      items: shuffledItems,
+      total: Math.max(directResults.length, rawTotal),
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(Math.max(directResults.length, rawTotal) / safePageSize)),
+    };
+  }
+
+  if (!normalizedQuery || directResults.length >= safePageSize) {
+    const items = sortPartySongSearchResults(directResults, normalizedQuery, sortBy).slice(0, safePageSize);
+    return {
+      items,
+      total: Math.max(items.length, rawTotal),
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(Math.max(items.length, rawTotal) / safePageSize)),
+    };
+  }
+
+  const fallbackResults = await Promise.all(
+    [0, 1, 2].map((fallbackPage) => supabase.rpc('search_battle_theme_songs', {
+      p_query: '',
+      p_show_adult: false,
+      p_hidden_title_ids: [],
+      p_page: fallbackPage,
+      p_page_size: 100,
+    }))
+  );
+
+  const merged = new Map(directResults.map((song) => [song.id, song]));
+  fallbackResults.forEach(({ data: fallbackData, error: fallbackError }) => {
+    if (fallbackError) {
+      throw fallbackError;
+    }
+
+    (fallbackData || [])
+      .map(mapPartySongRow)
+      .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl))
+      .filter((song) => matchesPartySongSearch(song, normalizedQuery))
+      .forEach((song) => {
+        if (!merged.has(song.id)) {
+          merged.set(song.id, song);
+        }
+      });
+  });
+
+  const items = sortPartySongSearchResults(dedupePartySongs([...merged.values()]), normalizedQuery, sortBy).slice(0, safePageSize);
+  return {
+    items,
+    total: Math.max(items.length, rawTotal),
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(Math.max(items.length, rawTotal) / safePageSize)),
+  };
+}
+
 export async function fetchPartySongPool(settings = {}) {
   if (!supabase) {
     return [];
   }
 
   const normalizedSettings = createPartySettings(settings);
+  if (normalizedSettings.songPresetId) {
+    return fetchPartyPresetSongPool(normalizedSettings.songPresetId);
+  }
+
   const pages = [0, 1, 2];
   const pageSize = 60;
 

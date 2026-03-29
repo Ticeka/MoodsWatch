@@ -1088,6 +1088,54 @@
   min-width: 0;
 }
 
+.admin-party-search-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-party-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.admin-party-results-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.admin-party-song-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+}
+
+.admin-party-song-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.admin-party-song-copy strong {
+  color: var(--text-primary);
+}
+
+.admin-party-song-copy span,
+.admin-party-song-copy small {
+  color: var(--text-secondary);
+}
+
 .admin-empty-state {
   padding: var(--space-8);
   border: 1px dashed var(--border-default);
@@ -1549,6 +1597,10 @@
 @media (max-width: 720px) {
   .admin-form-grid,
   .admin-inline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-party-search-form {
     grid-template-columns: 1fr;
   }
 

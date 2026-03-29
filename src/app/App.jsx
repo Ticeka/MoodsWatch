@@ -50,6 +50,7 @@ const AdminGuide = lazy(() => import('@/features/admin/pages/AdminGuide').then((
 const AdminLinks = lazy(() => import('@/features/admin/pages/AdminLinks').then((module) => ({ default: module.AdminLinks })));
 const AdminDailyChallenge = lazy(() => import('@/features/admin/pages/AdminDailyChallenge').then((module) => ({ default: module.AdminDailyChallenge })));
 const AdminTierlists = lazy(() => import('@/features/admin/pages/AdminTierlists').then((module) => ({ default: module.AdminTierlists })));
+const AdminPartyPresets = lazy(() => import('@/features/admin/pages/AdminPartyPresets').then((module) => ({ default: module.AdminPartyPresets })));
 
 function PageLoader() {
   const { t } = useLanguage();
@@ -157,6 +158,7 @@ function App() {
                       <Route path="links" element={<AdminLinks />} />
                       <Route path="daily" element={<AdminDailyChallenge />} />
                       <Route path="tierlists" element={<AdminTierlists />} />
+                      <Route path="party-presets" element={<AdminPartyPresets />} />
                       <Route path="guide" element={<AdminGuide />} />
                       <Route path="*" element={<AdminFallback />} />
                     </Route>
