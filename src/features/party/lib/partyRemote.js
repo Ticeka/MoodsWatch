@@ -1255,6 +1255,51 @@ export async function submitPartyAnswer({
   return data;
 }
 
+function mapPartyRoomRealtimePayload(payload) {
+  const row = payload?.new || payload?.old || null;
+  if (!row) {
+    return null;
+  }
+
+  return {
+    type: row.status === 'closed' ? 'ROOM_CLOSED' : 'ROOM_UPDATED',
+    sentAt: payload?.commit_timestamp || new Date().toISOString(),
+    payload: {
+      room: row,
+    },
+  };
+}
+
+function mapPartyMemberRealtimePayload(payload) {
+  const member = payload?.new || null;
+  if (!member) {
+    return null;
+  }
+
+  return {
+    type: 'MEMBER_UPSERTED',
+    sentAt: payload?.commit_timestamp || new Date().toISOString(),
+    payload: {
+      member,
+    },
+  };
+}
+
+function mapPartyAnswerRealtimePayload(payload) {
+  const answer = payload?.new || null;
+  if (!answer) {
+    return null;
+  }
+
+  return {
+    type: 'ANSWER_SUBMITTED',
+    sentAt: payload?.commit_timestamp || new Date().toISOString(),
+    payload: {
+      answer,
+    },
+  };
+}
+
 export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   if (!supabase || !roomId) {
     return () => {};
@@ -1266,6 +1311,39 @@ export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
       event: PARTY_ROOM_EVENT,
     }, (payload) => {
       onEvent?.(payload?.payload || null);
+    })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'party_rooms',
+      filter: `id=eq.${roomId}`,
+    }, (payload) => {
+      const event = mapPartyRoomRealtimePayload(payload);
+      if (event) {
+        onEvent?.(event);
+      }
+    })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'party_room_members',
+      filter: `room_id=eq.${roomId}`,
+    }, (payload) => {
+      const event = mapPartyMemberRealtimePayload(payload);
+      if (event) {
+        onEvent?.(event);
+      }
+    })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'party_room_answers',
+      filter: `room_id=eq.${roomId}`,
+    }, (payload) => {
+      const event = mapPartyAnswerRealtimePayload(payload);
+      if (event) {
+        onEvent?.(event);
+      }
     })
     .subscribe((status) => {
       onStatusChange?.(status);
