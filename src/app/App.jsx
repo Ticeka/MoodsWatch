@@ -17,6 +17,8 @@ const BattleDeckLibraryPage = lazy(() => import('@/features/battle/pages/Battle'
 const BattleSessionPage = lazy(() => import('@/features/battle/pages/BattleSessionPage').then((module) => ({ default: module.BattleSessionPage })));
 const BattleLeaderboard = lazy(() => import('@/features/battle/pages/BattleLeaderboard').then((module) => ({ default: module.BattleLeaderboard })));
 const DailyChallenge = lazy(() => import('@/features/battle/pages/DailyChallenge').then((module) => ({ default: module.DailyChallenge })));
+const PartyHubPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyHubPage })));
+const PartyRoomPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyRoomPage })));
 const TierListBrowsePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListBrowsePage })));
 const TierListCreatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListCreatePage })));
 const TierListPlayPage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListPlayPage })));
@@ -102,6 +104,8 @@ function App() {
                     <Route path="battle/leaderboard" element={<BattleLeaderboard />} />
                     <Route path="battle/daily" element={<DailyChallenge />} />
                     <Route path="battle/:sessionId" element={<BattleSessionPage />} />
+                    <Route path="party" element={<PartyHubPage />} />
+                    <Route path="party/room/:roomCode" element={<PartyRoomPage />} />
                     <Route path="tierlist" element={<TierListBrowsePage />} />
                     <Route path="tierlist/create" element={<TierListCreatePage />} />
                     <Route path="tierlist/template/:templateId" element={<TierListTemplatePage />} />
