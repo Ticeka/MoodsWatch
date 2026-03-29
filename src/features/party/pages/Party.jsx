@@ -52,6 +52,7 @@ import {
 import {
   buildPartyProfile,
   getCountdownSeconds,
+  getPartyPrefetchRound,
   playPartyCountdownAlert,
   readPartyAudioVolume,
 } from './partyRoomUtils';
@@ -330,6 +331,7 @@ export function PartyRoomPage() {
   const [busyAction, setBusyAction] = useState('');
   const [playbackEndedAtMs, setPlaybackEndedAtMs] = useState(null);
   const [revealPlaybackStartedAtMs, setRevealPlaybackStartedAtMs] = useState(null);
+  const [revealPrefetchReady, setRevealPrefetchReady] = useState(false);
   const countdownAlertedSecondRef = useRef(null);
   const answerAlertedSecondRef = useRef(null);
   const loadPromiseRef = useRef(null);
@@ -499,6 +501,10 @@ export function PartyRoomPage() {
   const currentMatch = room?.current_match || null;
   const currentRound = getPartyCurrentRound(currentMatch);
   const currentPreset = getPartyPresetById(currentMatch?.presetId || room?.settings?.presetId);
+  const prefetchedRound = useMemo(
+    () => getPartyPrefetchRound(currentMatch, { revealPrefetchReady }),
+    [currentMatch, revealPrefetchReady]
+  );
   const selectedPoolName = room?.settings?.songPresetName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.label
     || PARTY_CATEGORY_OPTIONS[0].label;
@@ -547,6 +553,31 @@ export function PartyRoomPage() {
     setPlaybackEndedAtMs(null);
     setRevealPlaybackStartedAtMs(null);
   }, [currentMatch?.id, currentMatch?.phase, currentRound?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    if (currentMatch?.phase !== 'reveal') {
+      setRevealPrefetchReady(false);
+      return undefined;
+    }
+
+    if (revealPlaybackStartedAtMs) {
+      setRevealPrefetchReady(true);
+      return undefined;
+    }
+
+    setRevealPrefetchReady(false);
+    const timeoutId = window.setTimeout(() => {
+      setRevealPrefetchReady(true);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentMatch?.id, currentMatch?.phase, currentRound?.id, revealPlaybackStartedAtMs]);
 
   useEffect(() => {
     if (currentMatch?.phase !== 'countdown') {
@@ -864,10 +895,10 @@ export function PartyRoomPage() {
             toast.error(getPartyBackendHint(error, pick));
           }}
         />
-        {currentRound?.mediaUrl ? (
+        {prefetchedRound?.mediaUrl ? (
           <video
-            key={`preload-${currentRound.id || currentRound.mediaUrl}`}
-            src={currentRound.mediaUrl}
+            key={`preload-${prefetchedRound.id || prefetchedRound.mediaUrl}`}
+            src={prefetchedRound.mediaUrl}
             preload="auto"
             muted
             playsInline

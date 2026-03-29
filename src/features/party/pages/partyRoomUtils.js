@@ -70,6 +70,46 @@ export function getPartyBufferedPreviewMs(
   return 0;
 }
 
+export function getPartyPlaybackLeadBufferMs(previewDurationMs = 0) {
+  if (!Number.isFinite(previewDurationMs) || previewDurationMs <= 0) {
+    return 0;
+  }
+
+  return Math.max(400, Math.min(1400, Math.round(previewDurationMs * 0.12)));
+}
+
+export function isPartyPlaybackReady({
+  bufferedPreviewMs = 0,
+  previewDurationMs = 0,
+  readyState = 0,
+} = {}) {
+  if (Number(readyState || 0) >= 2) {
+    return true;
+  }
+
+  return Number(bufferedPreviewMs || 0) >= getPartyPlaybackLeadBufferMs(previewDurationMs);
+}
+
+export function getPartyPrefetchRound(match, { revealPrefetchReady = false } = {}) {
+  if (!match || !Array.isArray(match.rounds)) {
+    return null;
+  }
+
+  const currentRoundIndex = Math.max(0, Number(match.roundIndex || 0));
+  const currentRound = match.rounds[currentRoundIndex] || null;
+  const nextRound = match.rounds[currentRoundIndex + 1] || null;
+
+  if (match.phase === 'countdown') {
+    return currentRound;
+  }
+
+  if (match.phase === 'reveal' && revealPrefetchReady) {
+    return nextRound;
+  }
+
+  return null;
+}
+
 export function playPartyCountdownAlert(audioContext, volume = 85, step = 3) {
   if (!audioContext) {
     return;

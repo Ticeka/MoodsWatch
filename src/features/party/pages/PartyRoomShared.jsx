@@ -30,6 +30,7 @@ import {
   getCountdownSeconds,
   getPartyAvatarTone,
   getPartyBufferedPreviewMs,
+  isPartyPlaybackReady,
   readPartyAudioVolume,
 } from './partyRoomUtils';
 
@@ -313,7 +314,6 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, onPlaybackComp
     let lastRenderedElapsedMs = -1;
     const previewDurationMs = Number(round.previewDurationSec || match.timePerRoundSec || 12) * 1000;
     const previewStartSec = Number(round.previewStartSec || 0);
-    const requiredBufferedMs = Math.max(1000, previewDurationMs - 150);
 
     media.currentTime = previewStartSec;
     media.preload = 'auto';
@@ -345,7 +345,11 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, onPlaybackComp
       const nextPercent = previewDurationMs > 0
         ? Math.min(100, Math.round((bufferedPreviewMs / previewDurationMs) * 100))
         : 100;
-      const nextReady = bufferedPreviewMs >= requiredBufferedMs || media.readyState >= 4;
+      const nextReady = isPartyPlaybackReady({
+        bufferedPreviewMs,
+        previewDurationMs,
+        readyState: media.readyState,
+      });
 
       if (!cancelled) {
         setBufferPercent(nextPercent);
