@@ -1,0 +1,41 @@
+import React, { useMemo } from 'react';
+import { useCurrentPartyRoundAnswers, usePartyLeaderboard } from '@/features/party/lib/usePartyRoomSelectors';
+import { PartyAnswerPanel } from './PartyRoomShared';
+
+export const PartyQuestionView = React.memo(function PartyQuestionView({
+  room,
+  guestToken,
+  partyProfile,
+  currentMember,
+  busyAction,
+  phaseEndsAtMs,
+  answerGraceEndsAtMs,
+  onPlaybackComplete,
+  onSubmit,
+  pick,
+}) {
+  const leaderboard = usePartyLeaderboard(guestToken, partyProfile);
+  const { currentRound, currentRoundAnswers, answerCount } = useCurrentPartyRoundAnswers(room?.current_match);
+  const currentAnswer = useMemo(
+    () => currentRoundAnswers.find((entry) => String(entry.member_token || '') === String(guestToken || '')) || null,
+    [currentRoundAnswers, guestToken]
+  );
+
+  return (
+    <PartyAnswerPanel
+      key={currentRound?.id || room?.current_match?.id || 'answer-panel'}
+      room={room}
+      member={currentMember}
+      round={currentRound}
+      answer={currentAnswer}
+      answerCount={answerCount}
+      leaderboard={room?.settings?.showLiveScores ? leaderboard : []}
+      phaseEndsAtMs={phaseEndsAtMs}
+      answerGraceEndsAtMs={answerGraceEndsAtMs}
+      onPlaybackComplete={onPlaybackComplete}
+      onSubmit={onSubmit}
+      submitting={busyAction === 'answer'}
+      pick={pick}
+    />
+  );
+});

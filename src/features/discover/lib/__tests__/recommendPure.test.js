@@ -63,9 +63,9 @@ function resolveWeights(hasMoods, hasLikedTitles) {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('scoreQuality', () => {
-  it('returns 0.25 for title with no score', () => {
+  it('returns 0.15 for title with no score', () => {
     const result = scoreQuality({ score: 0, popularity: 0 });
-    expect(result).toBeCloseTo(0.25);
+    expect(result).toBeCloseTo(0.15);
   });
 
   it('score 95 (near max) produces high quality component', () => {

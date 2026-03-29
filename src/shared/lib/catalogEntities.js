@@ -1,4 +1,4 @@
-import { buildTrailerThumbnailUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
+import { buildTrailerThumbnailUrl, normalizeTrailer, parseTrailerUrl } from './trailers.js';
 
 export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';

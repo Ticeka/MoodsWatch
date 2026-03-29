@@ -10,6 +10,7 @@ function normalizeSearchText(value) {
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[×✕✖]/g, ' x ')
     .replace(/&/g, ' and ')
+    .replace(/['’`´]/g, ' ')
     .replace(/['’`´]/g, '')
     .replace(/[_./\\|:+;!?()[\]{}-]+/g, ' ')
     .replace(/\s+/g, ' ')

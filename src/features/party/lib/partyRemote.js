@@ -15,6 +15,36 @@ import {
 
 const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
 const PARTY_PROFILE_KEY = 'moodtoon-party-profile';
+const PARTY_ROOM_EVENT = 'party-room-event';
+
+function getPartyRoomChannelName(roomId) {
+  return `party-room-${roomId}`;
+}
+
+async function broadcastPartyRoomEvent(roomId, event) {
+  if (!supabase || !roomId || !event?.type) {
+    return;
+  }
+
+  const channel = supabase.channel(getPartyRoomChannelName(roomId));
+  await channel.subscribe(async (status) => {
+    if (status !== 'SUBSCRIBED') {
+      await supabase.removeChannel(channel);
+      return;
+    }
+
+    await channel.send({
+      type: 'broadcast',
+      event: PARTY_ROOM_EVENT,
+      payload: {
+        ...event,
+        sentAt: new Date().toISOString(),
+      },
+    });
+
+    await supabase.removeChannel(channel);
+  });
+}
 
 function makeId(prefix = 'party') {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -747,7 +777,7 @@ export async function createPartyRoom({ profile = {}, settings = {} } = {}) {
       .insert(memberPayload);
 
     if (memberError && hasMissingColumn(memberError, 'avatar_url')) {
-      const { avatar_url, ...legacyPayload } = memberPayload;
+      const { avatar_url: _avatar_url, ...legacyPayload } = memberPayload;
       ({ error: memberError } = await supabase
         .from('party_room_members')
         .insert(legacyPayload));
@@ -798,38 +828,60 @@ export async function joinPartyRoom(roomCode, profile = {}) {
     is_ready: Boolean(existingMember?.is_ready),
   };
 
-  let { error } = await supabase
+  let { data: memberData, error } = await supabase
     .from('party_room_members')
-    .upsert(payload, { onConflict: 'room_id,member_token' });
+    .upsert(payload, { onConflict: 'room_id,member_token' })
+    .select('*')
+    .single();
 
   if (error && hasMissingColumn(error, 'avatar_url')) {
-    const { avatar_url, ...legacyPayload } = payload;
-    ({ error } = await supabase
+    const { avatar_url: _avatar_url, ...legacyPayload } = payload;
+    ({ data: memberData, error } = await supabase
       .from('party_room_members')
-      .upsert(legacyPayload, { onConflict: 'room_id,member_token' }));
+      .upsert(legacyPayload, { onConflict: 'room_id,member_token' })
+      .select('*')
+      .single());
   }
 
   if (error) {
     throw error;
   }
+
+  await broadcastPartyRoomEvent(bundle.room.id, {
+    type: 'MEMBER_UPSERTED',
+    payload: {
+      member: memberData,
+    },
+  });
 
   return bundle.room;
 }
 
 export async function togglePartyMemberReady(roomId, memberToken, isReady) {
   if (!supabase || !roomId || !memberToken) {
-    return;
+    return null;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('party_room_members')
     .update({ is_ready: Boolean(isReady) })
     .eq('room_id', roomId)
-    .eq('member_token', memberToken);
+    .eq('member_token', memberToken)
+    .select('*')
+    .single();
 
   if (error) {
     throw error;
   }
+
+  await broadcastPartyRoomEvent(roomId, {
+    type: 'MEMBER_UPSERTED',
+    payload: {
+      member: data,
+    },
+  });
+
+  return data;
 }
 
 export async function startPartyMatch(room, members = []) {
@@ -874,6 +926,23 @@ export async function startPartyMatch(room, members = []) {
     }
   }
 
+  await broadcastPartyRoomEvent(room.id, {
+    type: 'ROOM_UPDATED',
+    payload: {
+      room: data,
+    },
+  });
+
+  if (nonHostTokens.length > 0) {
+    await broadcastPartyRoomEvent(room.id, {
+      type: 'MEMBERS_PATCHED',
+      payload: {
+        memberTokens: nonHostTokens,
+        patch: { is_ready: false },
+      },
+    });
+  }
+
   return data;
 }
 
@@ -900,6 +969,13 @@ export async function advancePartyRoom(room) {
     throw error;
   }
 
+  await broadcastPartyRoomEvent(room.id, {
+    type: 'MATCH_ADVANCED',
+    payload: {
+      room: data,
+    },
+  });
+
   return data;
 }
 
@@ -908,12 +984,14 @@ export async function resetPartyRoom(room) {
     return room;
   }
 
-  const [{ error: roomError }, { error: answersError }, { error: readyError }] = await Promise.all([
+  const [{ data: roomData, error: roomError }, { error: answersError }, { error: readyError }] = await Promise.all([
     supabase
       .from('party_rooms')
       .update({ status: 'lobby', current_match: null })
       .eq('id', room.id)
-      .eq('host_member_token', room.host_member_token),
+      .eq('host_member_token', room.host_member_token)
+      .select('*')
+      .single(),
     supabase
       .from('party_room_answers')
       .delete()
@@ -935,22 +1013,42 @@ export async function resetPartyRoom(room) {
   if (readyError) {
     throw readyError;
   }
+
+  await broadcastPartyRoomEvent(room.id, {
+    type: 'ROOM_RESET',
+    payload: {
+      room: roomData,
+    },
+  });
+
+  return roomData;
 }
 
 export async function closePartyRoom(room) {
   if (!supabase || !room?.id) {
-    return;
+    return null;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('party_rooms')
     .update({ status: 'closed' })
     .eq('id', room.id)
-    .eq('host_member_token', room.host_member_token);
+    .eq('host_member_token', room.host_member_token)
+    .select('*')
+    .single();
 
   if (error) {
     throw error;
   }
+
+  await broadcastPartyRoomEvent(room.id, {
+    type: 'ROOM_CLOSED',
+    payload: {
+      room: data,
+    },
+  });
+
+  return data;
 }
 
 export async function submitPartyAnswer({ room, member, payload = {} } = {}) {
@@ -1006,35 +1104,31 @@ export async function submitPartyAnswer({ room, member, payload = {} } = {}) {
     throw error;
   }
 
+  await broadcastPartyRoomEvent(room.id, {
+    type: 'ANSWER_SUBMITTED',
+    payload: {
+      answer: data,
+    },
+  });
+
   return data;
 }
 
-export function subscribeToPartyRoom(roomId, onRefresh) {
+export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   if (!supabase || !roomId) {
     return () => {};
   }
 
   const channel = supabase
-    .channel(`party-room-${roomId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'party_rooms',
-      filter: `id=eq.${roomId}`,
-    }, onRefresh)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'party_room_members',
-      filter: `room_id=eq.${roomId}`,
-    }, onRefresh)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'party_room_answers',
-      filter: `room_id=eq.${roomId}`,
-    }, onRefresh)
-    .subscribe();
+    .channel(getPartyRoomChannelName(roomId))
+    .on('broadcast', {
+      event: PARTY_ROOM_EVENT,
+    }, (payload) => {
+      onEvent?.(payload?.payload || null);
+    })
+    .subscribe((status) => {
+      onStatusChange?.(status);
+    });
 
   return () => {
     void supabase.removeChannel(channel);

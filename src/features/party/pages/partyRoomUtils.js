@@ -1,0 +1,152 @@
+import { PARTY_AVATAR_OPTIONS } from '../lib/partyEngine.js';
+
+const PARTY_AUDIO_VOLUME_KEY = 'moodtoon-party-audio-volume';
+
+export function readPartyAudioVolume() {
+  if (typeof window === 'undefined') {
+    return 85;
+  }
+
+  const raw = Number(window.localStorage.getItem(PARTY_AUDIO_VOLUME_KEY));
+  if (!Number.isFinite(raw)) {
+    return 85;
+  }
+
+  return Math.min(100, Math.max(0, raw));
+}
+
+export function getCountdownSeconds(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return 0;
+  }
+
+  return Math.ceil(ms / 1000);
+}
+
+export function formatCountdown(ms, pick) {
+  const seconds = getCountdownSeconds(ms);
+  return pick(`${seconds} วินาที`, `${seconds}s`);
+}
+
+export function formatFastest(ms, pick) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return pick('ยังไม่มี', '—');
+  }
+
+  return pick(`${(ms / 1000).toFixed(2)} วิ`, `${(ms / 1000).toFixed(2)}s`);
+}
+
+export function formatClipSeconds(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return '0.0s';
+  }
+
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function getPartyBufferedPreviewMs(
+  ranges = [],
+  currentSec = 0,
+  startSec = 0,
+  previewDurationMs = 0
+) {
+  if (!Array.isArray(ranges) || previewDurationMs <= 0) {
+    return 0;
+  }
+
+  const previewEndSec = startSec + (previewDurationMs / 1000);
+  const targetSec = Math.max(startSec, Number(currentSec || 0));
+
+  for (const range of ranges) {
+    const rangeStart = Number(range?.[0] || 0);
+    const rangeEnd = Number(range?.[1] || 0);
+    if (rangeStart > targetSec || rangeEnd < targetSec) {
+      continue;
+    }
+
+    return Math.max(0, (Math.min(previewEndSec, rangeEnd) - targetSec) * 1000);
+  }
+
+  return 0;
+}
+
+export function playPartyCountdownAlert(audioContext, volume = 85, step = 3) {
+  if (!audioContext) {
+    return;
+  }
+
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+  const accent = Math.max(0, Math.min(1, normalizedVolume * 1.215));
+  const targetStep = Math.max(1, Number(step) || 1);
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(targetStep === 1 ? 1120 : targetStep === 2 ? 980 : 860, now);
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.exponentialRampToValueAtTime(Math.max(0.001, accent), now + 0.02);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.2);
+}
+
+function getAvatarTone(avatarKey) {
+  return PARTY_AVATAR_OPTIONS.find((avatar) => avatar.id === avatarKey)?.tone || PARTY_AVATAR_OPTIONS[0].tone;
+}
+
+function hashPartySeed(value = '') {
+  return Array.from(String(value || '')).reduce((total, char) => total + char.charCodeAt(0), 0);
+}
+
+function getPartyProfileName(user, savedProfile) {
+  return String(
+    user?.profile?.name
+    || user?.profile?.username
+    || user?.email?.split('@')[0]
+    || savedProfile?.displayName
+    || 'Guest'
+  ).trim();
+}
+
+function getPartyProfileAvatarKey(user, savedProfile) {
+  if (user?.id || user?.profile?.username || user?.profile?.name || user?.email) {
+    const seed = user?.id || user?.profile?.username || user?.profile?.name || user?.email || '';
+    return PARTY_AVATAR_OPTIONS[hashPartySeed(seed) % PARTY_AVATAR_OPTIONS.length]?.id || PARTY_AVATAR_OPTIONS[0].id;
+  }
+
+  if (PARTY_AVATAR_OPTIONS.some((avatar) => avatar.id === savedProfile?.avatarKey)) {
+    return savedProfile.avatarKey;
+  }
+
+  return PARTY_AVATAR_OPTIONS[0].id;
+}
+
+export function buildPartyProfile(user, savedProfile) {
+  return {
+    displayName: getPartyProfileName(user, savedProfile),
+    avatarKey: getPartyProfileAvatarKey(user, savedProfile),
+    avatarUrl: String(user?.profile?.avatar_url || '').trim(),
+  };
+}
+
+export function buildHydratedPartyMembers(members = [], guestToken = '', partyProfile = {}) {
+  return members.map((member) => {
+    if (String(member.member_token || '') !== String(guestToken || '')) {
+      return member;
+    }
+
+    return {
+      ...member,
+      avatar_url: member.avatar_url || partyProfile.avatarUrl || '',
+      display_name: member.display_name || partyProfile.displayName || member.display_name,
+    };
+  });
+}
+
+export function getPartyAvatarTone(avatarKey) {
+  return getAvatarTone(avatarKey);
+}
