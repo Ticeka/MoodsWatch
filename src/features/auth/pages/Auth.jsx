@@ -4,8 +4,8 @@ import { Mail, Lock, UserRound, Sparkles, ArrowLeft } from 'lucide-react';
 import { BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import lightThemeBg from '@/assets/ligh-theme.jpeg';
-import darkThemeBg from '@/assets/dark-theme.jpg';
+import lightThemeBg from '@/assets/light-theme.webp';
+import darkThemeBg from '@/assets/dark-theme.webp';
 import { useTheme } from '@/shared/contexts/ThemeContext';
 import './Auth.css';
 

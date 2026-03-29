@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
+import { getPartyRequiredReadyCount } from '@/features/party/lib/partyEngine';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyPlayerList } from './PartyRoomShared';
 
@@ -23,6 +24,10 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const readyCount = useMemo(
     () => members.filter((member) => member.is_ready).length,
     [members]
+  );
+  const requiredReadyCount = useMemo(
+    () => getPartyRequiredReadyCount(members.length),
+    [members.length]
   );
 
   return (
@@ -54,7 +59,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
               Ready
             </Button>
           ) : (
-            <Button variant="primary" onClick={onStartMatch} disabled={busyAction === 'start' || readyCount < Math.min(2, members.length)}>
+            <Button variant="primary" onClick={onStartMatch} disabled={busyAction === 'start' || readyCount < requiredReadyCount}>
               {busyAction === 'start' ? pick('กำลังเตรียมแมตช์...', 'Building the match...') : pick('Start Game', 'Start Game')}
             </Button>
           )}

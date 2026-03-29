@@ -21,8 +21,8 @@ export const PartyRevealView = React.memo(function PartyRevealView({
       answers={currentRoundAnswers}
       leaderboard={leaderboard}
       memberToken={guestToken}
-      pick={pick}
       onPlaybackStarted={onPlaybackStarted}
+      pick={pick}
     />
   );
 });

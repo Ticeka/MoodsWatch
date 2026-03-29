@@ -33,7 +33,7 @@ describe('partyRoomStore', () => {
     expect(state.room?.room_code).toBe('ABC123');
   });
 
-  it('ignores stale realtime events that arrive out of order', () => {
+  it('applies realtime updates even when the sender clock is behind this client', () => {
     usePartyRoomStore.getState().setBundle({
       room: { id: 'room-1', room_code: 'ABC123', status: 'lobby' },
       members: [],
@@ -49,15 +49,17 @@ describe('partyRoomStore', () => {
     });
 
     usePartyRoomStore.getState().applyEvent({
-      type: 'ROOM_UPDATED',
+      type: 'MEMBER_UPSERTED',
       sentAt: '2026-03-29T10:00:01.000Z',
       payload: {
-        room: { status: 'closed' },
+        member: { member_token: 'guest-1', display_name: 'Guest', is_ready: true },
       },
     });
 
     const state = usePartyRoomStore.getState();
     expect(state.room?.status).toBe('live');
+    expect(state.members).toHaveLength(1);
+    expect(state.members[0].is_ready).toBe(true);
     expect(state.lastEventAt).toBe(new Date('2026-03-29T10:00:05.000Z').getTime());
   });
 
@@ -95,5 +97,34 @@ describe('partyRoomStore', () => {
     const state = usePartyRoomStore.getState();
     expect(state.answers).toHaveLength(1);
     expect(state.answers[0].typed_song).toBe('Blue Bird (edited)');
+  });
+
+  it('hydrates members from a room reset payload when provided', () => {
+    usePartyRoomStore.getState().setBundle({
+      room: { id: 'room-1', room_code: 'ABC123', status: 'finished' },
+      members: [
+        { member_token: 'host-1', display_name: 'Host', is_ready: false },
+        { member_token: 'guest-1', display_name: 'Guest', is_ready: true },
+      ],
+      answers: [{ round_id: 'round-1', member_token: 'guest-1' }],
+    });
+
+    usePartyRoomStore.getState().applyEvent({
+      type: 'ROOM_RESET',
+      sentAt: '2026-03-29T10:00:04.000Z',
+      payload: {
+        room: { status: 'lobby', current_match: null },
+        members: [
+          { member_token: 'host-1', display_name: 'Host', is_ready: true },
+          { member_token: 'guest-1', display_name: 'Guest', is_ready: false },
+        ],
+      },
+    });
+
+    const state = usePartyRoomStore.getState();
+    expect(state.room?.status).toBe('lobby');
+    expect(state.answers).toHaveLength(0);
+    expect(state.members.find((member) => member.member_token === 'host-1')?.is_ready).toBe(true);
+    expect(state.members.find((member) => member.member_token === 'guest-1')?.is_ready).toBe(false);
   });
 });

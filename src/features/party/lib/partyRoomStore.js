@@ -123,14 +123,11 @@ export const usePartyRoomStore = create((set) => ({
     const payload = event?.payload || {};
     const nextEventAt = parseEventTimestamp(event?.sentAt);
 
-    if (nextEventAt && state.lastEventAt && nextEventAt < state.lastEventAt) {
-      return state;
-    }
-
     const realtimeMeta = {
       syncState: 'live',
       syncError: '',
-      lastEventAt: nextEventAt || Date.now(),
+      // Do not reject events by comparing sender clocks across devices.
+      lastEventAt: Math.max(state.lastEventAt || 0, nextEventAt || 0, Date.now()),
     };
 
     switch (event?.type) {
@@ -168,7 +165,9 @@ export const usePartyRoomStore = create((set) => ({
       case 'ROOM_RESET':
         return {
           room: payload.room ? { ...(state.room || {}), ...payload.room } : state.room,
-          members: state.members.map((member) => ({ ...member, is_ready: false })),
+          members: Array.isArray(payload.members)
+            ? payload.members
+            : state.members.map((member) => ({ ...member, is_ready: false })),
           answers: [],
           ...realtimeMeta,
         };

@@ -5,9 +5,13 @@ import {
   buildUniquePartyAliases,
   createPartySettings,
   generatePartyRoomCode,
+  getPartyPhaseEndsAtMs,
+  getPartyRequiredReadyCount,
   getPartyCurrentRound,
   getPartyPresetById,
+  isPartyAnswerWindowOpen,
   isDirectPartyMediaUrl,
+  isPartyPhaseExpired,
   normalizePartyText,
   scorePartyAnswer,
   advancePartyMatch,
@@ -62,6 +66,45 @@ function getMissingRelation(error, relationName) {
 function hasMissingColumn(error, columnName) {
   const message = String(error?.message || '').toLowerCase();
   return message.includes(`column "${String(columnName || '').toLowerCase()}"`) || message.includes(`'${String(columnName || '').toLowerCase()}'`);
+}
+
+function takeFirstRecord(records) {
+  return Array.isArray(records) ? records[0] || null : records || null;
+}
+
+async function fetchPartyRoomRecordById(roomId) {
+  if (!supabase || !roomId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('party_rooms')
+    .select('*')
+    .eq('id', roomId);
+
+  if (error) {
+    throw error;
+  }
+
+  return takeFirstRecord(data);
+}
+
+async function fetchPartyRoomMembers(roomId) {
+  if (!supabase || !roomId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('party_room_members')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('joined_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return Array.isArray(data) ? data : [];
 }
 
 export function getPartyBackendHint(error, pick) {
@@ -884,12 +927,28 @@ export async function togglePartyMemberReady(roomId, memberToken, isReady) {
   return data;
 }
 
-export async function startPartyMatch(room, members = []) {
+export async function startPartyMatch(room) {
   if (!supabase || !room?.id) {
     return null;
   }
 
-  const settings = createPartySettings(room.settings || {});
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom) {
+    throw new Error('Room not found.');
+  }
+
+  if (freshRoom.status !== 'lobby') {
+    return freshRoom;
+  }
+
+  const freshMembers = await fetchPartyRoomMembers(freshRoom.id);
+  const requiredReadyCount = getPartyRequiredReadyCount(freshMembers.length);
+  const readyCount = freshMembers.filter((member) => member.is_ready).length;
+  if (requiredReadyCount > 0 && readyCount < requiredReadyCount) {
+    throw new Error('Not enough ready players to start the match yet.');
+  }
+
+  const settings = createPartySettings(freshRoom.settings || {});
   const pool = await fetchPartySongPool(settings);
   const playablePool = pool.filter((song) => normalizePartyText(song.sourceTitleName) && normalizePartyText(song.songTitle));
   const snapshot = buildPartyMatchSnapshot(playablePool, settings);
@@ -900,17 +959,27 @@ export async function startPartyMatch(room, members = []) {
       status: 'live',
       current_match: snapshot,
     })
-    .eq('id', room.id)
-    .eq('host_member_token', room.host_member_token)
-    .select('*')
-    .single();
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('status', 'lobby')
+    .eq('updated_at', freshRoom.updated_at)
+    .select('*');
 
   if (error) {
     throw error;
   }
 
-  const nonHostTokens = (members || [])
-    .filter((member) => String(member.member_token || '') !== String(room.host_member_token || ''))
+  const nextRoom = takeFirstRecord(data);
+  if (!nextRoom) {
+    const latestRoom = await fetchPartyRoomRecordById(room.id);
+    if (latestRoom?.status === 'live' && latestRoom?.current_match) {
+      return latestRoom;
+    }
+    throw new Error('The room changed while starting the match. Please try again.');
+  }
+
+  const nonHostTokens = freshMembers
+    .filter((member) => String(member.member_token || '') !== String(freshRoom.host_member_token || ''))
     .map((member) => String(member.member_token || ''))
     .filter(Boolean);
 
@@ -918,7 +987,7 @@ export async function startPartyMatch(room, members = []) {
     const { error: readyResetError } = await supabase
       .from('party_room_members')
       .update({ is_ready: false })
-      .eq('room_id', room.id)
+      .eq('room_id', freshRoom.id)
       .in('member_token', nonHostTokens);
 
     if (readyResetError) {
@@ -926,15 +995,15 @@ export async function startPartyMatch(room, members = []) {
     }
   }
 
-  await broadcastPartyRoomEvent(room.id, {
+  await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_UPDATED',
     payload: {
-      room: data,
+      room: nextRoom,
     },
   });
 
   if (nonHostTokens.length > 0) {
-    await broadcastPartyRoomEvent(room.id, {
+    await broadcastPartyRoomEvent(freshRoom.id, {
       type: 'MEMBERS_PATCHED',
       payload: {
         memberTokens: nonHostTokens,
@@ -943,7 +1012,7 @@ export async function startPartyMatch(room, members = []) {
     });
   }
 
-  return data;
+  return nextRoom;
 }
 
 export async function advancePartyRoom(room) {
@@ -951,7 +1020,16 @@ export async function advancePartyRoom(room) {
     return room;
   }
 
-  const nextMatch = advancePartyMatch(room.current_match);
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match) {
+    return freshRoom || room;
+  }
+
+  if (!getPartyPhaseEndsAtMs(freshRoom.current_match) || !isPartyPhaseExpired(freshRoom.current_match)) {
+    return freshRoom;
+  }
+
+  const nextMatch = advancePartyMatch(freshRoom.current_match);
   const nextStatus = nextMatch?.phase === 'final' ? 'finished' : 'live';
 
   const { data, error } = await supabase
@@ -960,51 +1038,73 @@ export async function advancePartyRoom(room) {
       status: nextStatus,
       current_match: nextMatch,
     })
-    .eq('id', room.id)
-    .eq('host_member_token', room.host_member_token)
-    .select('*')
-    .single();
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('status', freshRoom.status)
+    .eq('updated_at', freshRoom.updated_at)
+    .select('*');
 
   if (error) {
     throw error;
   }
 
-  await broadcastPartyRoomEvent(room.id, {
+  const nextRoom = takeFirstRecord(data);
+  if (!nextRoom) {
+    return (await fetchPartyRoomRecordById(room.id)) || freshRoom;
+  }
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'MATCH_ADVANCED',
     payload: {
-      room: data,
+      room: nextRoom,
     },
   });
 
-  return data;
+  return nextRoom;
 }
 
 export async function resetPartyRoom(room) {
   if (!supabase || !room?.id) {
-    return room;
+    return { room, members: [] };
   }
 
-  const [{ data: roomData, error: roomError }, { error: answersError }, { error: readyError }] = await Promise.all([
-    supabase
-      .from('party_rooms')
-      .update({ status: 'lobby', current_match: null })
-      .eq('id', room.id)
-      .eq('host_member_token', room.host_member_token)
-      .select('*')
-      .single(),
-    supabase
-      .from('party_room_answers')
-      .delete()
-      .eq('room_id', room.id),
-    supabase
-      .from('party_room_members')
-      .update({ is_ready: false })
-      .eq('room_id', room.id),
-  ]);
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom) {
+    return { room: null, members: [] };
+  }
+
+  const { data, error: roomError } = await supabase
+    .from('party_rooms')
+    .update({ status: 'lobby', current_match: null })
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('updated_at', freshRoom.updated_at)
+    .select('*');
 
   if (roomError) {
     throw roomError;
   }
+
+  const roomData = takeFirstRecord(data);
+  if (!roomData) {
+    const latestRoom = await fetchPartyRoomRecordById(room.id);
+    const latestMembers = await fetchPartyRoomMembers(room.id);
+    if (latestRoom?.status === 'lobby' && !latestRoom?.current_match) {
+      return { room: latestRoom, members: latestMembers };
+    }
+    throw new Error('The room changed while resetting. Please try again.');
+  }
+
+  const [{ error: answersError }, { error: readyError }] = await Promise.all([
+    supabase
+      .from('party_room_answers')
+      .delete()
+      .eq('room_id', freshRoom.id),
+    supabase
+      .from('party_room_members')
+      .update({ is_ready: false })
+      .eq('room_id', freshRoom.id),
+  ]);
 
   if (answersError) {
     throw answersError;
@@ -1014,14 +1114,32 @@ export async function resetPartyRoom(room) {
     throw readyError;
   }
 
-  await broadcastPartyRoomEvent(room.id, {
+  if (freshRoom.host_member_token) {
+    const { error: hostReadyError } = await supabase
+      .from('party_room_members')
+      .update({ is_ready: true })
+      .eq('room_id', freshRoom.id)
+      .eq('member_token', freshRoom.host_member_token);
+
+    if (hostReadyError) {
+      throw hostReadyError;
+    }
+  }
+
+  const members = await fetchPartyRoomMembers(freshRoom.id);
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_RESET',
     payload: {
       room: roomData,
+      members,
     },
   });
 
-  return roomData;
+  return {
+    room: roomData,
+    members,
+  };
 }
 
 export async function closePartyRoom(room) {
@@ -1051,23 +1169,46 @@ export async function closePartyRoom(room) {
   return data;
 }
 
-export async function submitPartyAnswer({ room, member, payload = {} } = {}) {
+export async function submitPartyAnswer({
+  room,
+  member,
+  payload = {},
+  expectedMatchId = '',
+  expectedRoundId = '',
+} = {}) {
   if (!supabase || !room?.id || !member?.member_token || !room?.current_match) {
     return null;
   }
 
-  const preset = getPartyPresetById(room.current_match.presetId);
-  const round = getPartyCurrentRound(room.current_match);
-  if (!round || room.current_match.phase !== 'question') {
-    return null;
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match) {
+    throw new Error('This room is no longer active.');
+  }
+
+  const preset = getPartyPresetById(freshRoom.current_match.presetId);
+  const round = getPartyCurrentRound(freshRoom.current_match);
+  if (!round) {
+    throw new Error('This round is unavailable.');
+  }
+
+  if (expectedMatchId && String(freshRoom.current_match.id || '') !== String(expectedMatchId || '')) {
+    throw new Error('This round has already advanced.');
+  }
+
+  if (expectedRoundId && String(round.id || '') !== String(expectedRoundId || '')) {
+    throw new Error('This round has already advanced.');
+  }
+
+  if (!isPartyAnswerWindowOpen(freshRoom.current_match)) {
+    throw new Error('This round is already closed.');
   }
 
   const now = Date.now();
-  const phaseStartedAt = new Date(room.current_match.phaseStartedAt || now).getTime();
+  const phaseStartedAt = new Date(freshRoom.current_match.phaseStartedAt || now).getTime();
   const elapsedMs = Math.max(0, now - phaseStartedAt);
   const timeLimitMs = (
-    Number(room.current_match.timePerRoundSec || 12)
-    + Number(room.current_match.answerGraceSec || 0)
+    Number(freshRoom.current_match.timePerRoundSec || 12)
+    + Number(freshRoom.current_match.answerGraceSec || 0)
   ) * 1000;
   const score = scorePartyAnswer({
     presetId: preset.id,
@@ -1082,8 +1223,8 @@ export async function submitPartyAnswer({ room, member, payload = {} } = {}) {
   const { data, error } = await supabase
     .from('party_room_answers')
     .upsert({
-      room_id: room.id,
-      match_id: room.current_match.id,
+      room_id: freshRoom.id,
+      match_id: freshRoom.current_match.id,
       round_id: round.id,
       member_token: member.member_token,
       member_name: member.display_name,
@@ -1104,7 +1245,7 @@ export async function submitPartyAnswer({ room, member, payload = {} } = {}) {
     throw error;
   }
 
-  await broadcastPartyRoomEvent(room.id, {
+  await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ANSWER_SUBMITTED',
     payload: {
       answer: data,

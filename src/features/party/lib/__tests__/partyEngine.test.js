@@ -3,6 +3,8 @@ import {
   advancePartyMatch,
   buildPartyMatchSnapshot,
   buildUniquePartyAliases,
+  getPartyRequiredReadyCount,
+  isPartyAnswerWindowOpen,
   normalizePartyText,
   scorePartyAnswer,
 } from '../partyEngine.js';
@@ -138,5 +140,22 @@ describe('partyEngine', () => {
 
     expect(question.phase).toBe('question');
     expect(reveal.phase).toBe('reveal');
+  });
+
+  it('closes the answer window once the question phase end passes', () => {
+    const questionMatch = {
+      phase: 'question',
+      phaseEndsAt: '2026-03-29T10:00:12.000Z',
+    };
+
+    expect(isPartyAnswerWindowOpen(questionMatch, new Date('2026-03-29T10:00:11.999Z').getTime())).toBe(true);
+    expect(isPartyAnswerWindowOpen(questionMatch, new Date('2026-03-29T10:00:12.000Z').getTime())).toBe(false);
+  });
+
+  it('uses a consistent ready threshold for lobby start checks', () => {
+    expect(getPartyRequiredReadyCount(0)).toBe(0);
+    expect(getPartyRequiredReadyCount(1)).toBe(1);
+    expect(getPartyRequiredReadyCount(2)).toBe(2);
+    expect(getPartyRequiredReadyCount(6)).toBe(2);
   });
 });

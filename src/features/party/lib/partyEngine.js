@@ -291,6 +291,25 @@ export function getPartyCurrentRound(match) {
   return match.rounds[Number(match.roundIndex || 0)] || null;
 }
 
+export function getPartyPhaseEndsAtMs(match) {
+  const timestamp = new Date(match?.phaseEndsAt || 0).getTime();
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+}
+
+export function isPartyPhaseExpired(match, now = Date.now()) {
+  const phaseEndsAtMs = getPartyPhaseEndsAtMs(match);
+  return Boolean(phaseEndsAtMs) && now >= phaseEndsAtMs;
+}
+
+export function isPartyAnswerWindowOpen(match, now = Date.now()) {
+  return match?.phase === 'question' && !isPartyPhaseExpired(match, now);
+}
+
+export function getPartyRequiredReadyCount(memberCount = 0) {
+  const normalizedCount = Math.max(0, Number(memberCount || 0));
+  return normalizedCount > 0 ? Math.min(2, normalizedCount) : 0;
+}
+
 export function advancePartyMatch(match) {
   if (!match) {
     return null;

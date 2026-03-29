@@ -1,20 +1,19 @@
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart2, Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { useSearchAutocomplete } from '@/features/discover/hooks/useSearchAutocomplete';
-import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
-import { trackDiscoverEvent } from '@/features/discover/lib/discoverAnalytics';
-import { readRecentSearches, removeRecentSearch, writeRecentSearches } from '@/features/discover/lib/discoverSearchState';
-import { SearchAutocomplete } from '@/shared/components/ui/SearchAutocomplete';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { supabase } from '@/shared/lib/supabase';
 import './Layout.css';
+
+const HeaderSearchExperience = lazy(() => import('@/shared/components/layout/HeaderSearchExperience').then((module) => ({
+  default: module.HeaderSearchExperience,
+})));
 
 function scheduleWhenIdle(callback, timeout = 1500) {
   if (typeof window === 'undefined') {
@@ -243,6 +242,94 @@ function NotificationBell({ userId }) {
   );
 }
 
+function HeaderSearchFallback({
+  surface = 'header',
+  query,
+  setQuery,
+  isDiscoverActive = false,
+  onActivate,
+  onSubmit,
+  onClear,
+  t,
+}) {
+  if (surface === 'drawer') {
+    return (
+      <div className="drawer-search-wrap">
+        <form className="drawer-search" onSubmit={onSubmit} role="search" aria-label={t('discover.searchInputLabel')}>
+          <Search size={16} className="drawer-search-icon" aria-hidden="true" />
+          <label htmlFor="drawer-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
+          <input
+            id="drawer-global-search"
+            type="search"
+            className="drawer-search-input"
+            value={query}
+            onChange={(event) => {
+              onActivate();
+              setQuery(event.target.value);
+            }}
+            onFocus={onActivate}
+            placeholder={t('discover.searchPlaceholder')}
+            autoComplete="off"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="drawer-search-clear"
+              onClick={onClear}
+              aria-label={t('discover.clearSearch')}
+              title={t('discover.clearSearch')}
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          ) : null}
+          <button type="submit" className="drawer-search-submit">
+            {t('discover.searchLabel')}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className={`header-search ${isDiscoverActive ? 'is-active' : ''}`}
+      onSubmit={onSubmit}
+      role="search"
+      aria-label={t('discover.searchInputLabel')}
+    >
+      <label htmlFor="header-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
+      <input
+        id="header-global-search"
+        type="search"
+        value={query}
+        onChange={(event) => {
+          onActivate();
+          setQuery(event.target.value);
+        }}
+        onFocus={onActivate}
+        className="header-search-input"
+        placeholder={t('discover.searchPlaceholder')}
+        autoComplete="off"
+      />
+      <Search size={16} className="header-search-icon" aria-hidden="true" />
+      {query ? (
+        <button
+          type="button"
+          className="header-search-clear"
+          onClick={onClear}
+          aria-label={t('discover.clearSearch')}
+          title={t('discover.clearSearch')}
+        >
+          <X size={15} aria-hidden="true" />
+        </button>
+      ) : null}
+      <button type="submit" className="header-search-submit" aria-label={t('discover.searchLabel')} title={t('discover.searchLabel')}>
+        <Search size={17} aria-hidden="true" />
+      </button>
+    </form>
+  );
+}
+
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { showAdult, toggleAdult } = useAgeGate();
@@ -259,17 +346,16 @@ export function Header() {
       ? new URLSearchParams(location.search).get('q') || ''
       : ''
   ));
-  const [recentSearches, setRecentSearches] = useState(() => readRecentSearches());
+  const [searchEnhancementsEnabled, setSearchEnhancementsEnabled] = useState(() => (
+    location.pathname === '/discover'
+      || Boolean((location.pathname === '/discover' ? new URLSearchParams(location.search).get('q') : '')?.trim())
+  ));
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef(null);
   const chipRef = useRef(null);
   const portalRef = useRef(null);
   const drawerCloseRef = useRef(null);
   const menuBtnRef = useRef(null);
-  const headerSearchRef = useRef(null);
-  const drawerSearchRef = useRef(null);
-  const [activeSearchSurface, setActiveSearchSurface] = useState(null);
-  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
 
   const isActive = (path) => location.pathname === path;
   const isDiscoverActive = location.pathname === '/discover';
@@ -278,69 +364,14 @@ export function Header() {
   const userRole = user?.profile?.role;
   const canAccessAdmin = userRole === 'admin' || userRole === 'editor';
   const closeMobileMenu = () => setMobileMenuOpen(false);
-  const refreshRecentSearches = useCallback(() => {
-    setRecentSearches(readRecentSearches());
+  const enableSearchEnhancements = useCallback(() => {
+    setSearchEnhancementsEnabled(true);
   }, []);
-  const rememberRecentSearch = useCallback((term) => {
-    const normalizedTerm = String(term || '').trim();
-    if (normalizedTerm.length < 2) {
-      return;
-    }
-
-    setRecentSearches((current) => writeRecentSearches([
-      normalizedTerm,
-      ...current.filter((entry) => entry.toLowerCase() !== normalizedTerm.toLowerCase()),
-    ]));
-  }, []);
-  const handleRemoveRecentSearch = useCallback((term) => {
-    setRecentSearches(removeRecentSearch(term));
-  }, []);
-  const {
-    groups: autocompleteGroups,
-    flatItems: autocompleteItems,
-    isLoading: isAutocompleteLoading,
-    hasQuery: hasAutocompleteQuery,
-    crossLaneNote: autocompleteCrossLaneNote,
-  } = useSearchAutocomplete(globalSearch, {
-    enabled: activeSearchSurface !== null,
-    userId: user?.id || null,
-    recentSearches,
-    surface: 'header',
-    showAdult,
-  });
-
-  // reason: 'select' | 'submit' | 'dismiss'
-  const closeAutocomplete = useCallback((reason = 'dismiss') => {
-    if (reason === 'dismiss' && globalSearch.trim().length >= 2) {
-      void trackDiscoverEvent({
-        eventType: 'search_abandon',
-        userId: user?.id || null,
-        query: globalSearch,
-        metadata: {
-          surface: activeSearchSurface || 'header',
-          query_length: globalSearch.trim().length,
-        },
-      });
-    }
-    setActiveSearchSurface(null);
-    setHighlightedSuggestionIndex(-1);
-  }, [activeSearchSurface, globalSearch, user?.id]);
-
-  const performGlobalSearch = useCallback((nextQuery = globalSearch.trim()) => {
+  const performFallbackSearch = useCallback((nextQuery = globalSearch.trim()) => {
     const normalizedQuery = String(nextQuery || '').trim();
     const nextParams = new URLSearchParams();
     if (normalizedQuery) {
       nextParams.set('q', normalizedQuery);
-      rememberRecentSearch(normalizedQuery);
-      void trackDiscoverEvent({
-        eventType: 'search_submit',
-        userId: user?.id || null,
-        query: normalizedQuery,
-        metadata: {
-          surface: activeSearchSurface || 'header',
-          query_length: normalizedQuery.length,
-        },
-      });
     }
 
     navigate(
@@ -357,132 +388,23 @@ export function Header() {
         },
       }
     );
-    closeAutocomplete('submit');
     setDropdownOpen(false);
     setMobileMenuOpen(false);
-  }, [activeSearchSurface, closeAutocomplete, globalSearch, navigate, rememberRecentSearch, user?.id]);
+  }, [globalSearch, navigate]);
 
-  const submitGlobalSearch = useCallback((event) => {
+  const submitFallbackSearch = useCallback((event) => {
     event.preventDefault();
-    performGlobalSearch();
-  }, [performGlobalSearch]);
+    performFallbackSearch();
+  }, [performFallbackSearch]);
 
-  const clearGlobalSearch = useCallback(() => {
+  const clearFallbackSearch = useCallback(() => {
     setGlobalSearch('');
-    closeAutocomplete('submit');
 
     if (isDiscoverActive) {
-      performGlobalSearch('');
+      performFallbackSearch('');
       setDropdownOpen(false);
     }
-  }, [closeAutocomplete, isDiscoverActive, performGlobalSearch]);
-
-  const handleSuggestionSelect = useCallback((item = null, surface = activeSearchSurface || 'header') => {
-    const nextRecentTerm = item?.searchTerm || globalSearch.trim();
-    if (nextRecentTerm) {
-      rememberRecentSearch(nextRecentTerm);
-    }
-    if (item?.id) {
-      recordAutocompleteSelection({ query: globalSearch, itemId: item.id });
-      void trackDiscoverEvent({
-        eventType: 'autocomplete_select',
-        userId: user?.id || null,
-        query: globalSearch,
-        scope: 'all',
-        resultType: item.groupId || item.kind || 'unknown',
-        resultId: item.entityId || item.id,
-        metadata: {
-          surface,
-          href: item.href || null,
-          isRecent: item.groupId === 'recent',
-          selected_group: item.groupId || item.kind || null,
-          query_length: globalSearch.trim().length,
-        },
-      });
-    }
-    closeAutocomplete('select');
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-  }, [activeSearchSurface, closeAutocomplete, globalSearch, rememberRecentSearch, user?.id]);
-
-  const handleGlobalSearchKeyDown = useCallback((event, surface) => {
-    const hasSuggestions = autocompleteItems.length > 0;
-
-    if (event.key === 'Escape') {
-      closeAutocomplete();
-      return;
-    }
-
-    if (event.key === 'Tab' && hasSuggestions) {
-      // Cycle through items with Tab/Shift+Tab instead of leaving the input
-      event.preventDefault();
-      setActiveSearchSurface(surface);
-      if (event.shiftKey) {
-        setHighlightedSuggestionIndex((current) => (current <= 0 ? autocompleteItems.length - 1 : current - 1));
-      } else {
-        setHighlightedSuggestionIndex((current) => (current + 1) % autocompleteItems.length);
-      }
-      return;
-    }
-
-    if (!hasSuggestions) {
-      return;
-    }
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setActiveSearchSurface(surface);
-      setHighlightedSuggestionIndex((current) => (current + 1) % autocompleteItems.length);
-      return;
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActiveSearchSurface(surface);
-      setHighlightedSuggestionIndex((current) => (current <= 0 ? autocompleteItems.length - 1 : current - 1));
-      return;
-    }
-
-    if (event.key === 'Home') {
-      event.preventDefault();
-      setActiveSearchSurface(surface);
-      setHighlightedSuggestionIndex(0);
-      return;
-    }
-
-    if (event.key === 'End') {
-      event.preventDefault();
-      setActiveSearchSurface(surface);
-      setHighlightedSuggestionIndex(autocompleteItems.length - 1);
-      return;
-    }
-
-    if (event.key === 'Enter' && highlightedSuggestionIndex >= 0) {
-      event.preventDefault();
-      const selectedItem = autocompleteItems[highlightedSuggestionIndex];
-      if (selectedItem?.href) {
-        navigate(
-          selectedItem.href,
-          selectedItem.navigateState ? { state: selectedItem.navigateState } : undefined,
-        );
-        handleSuggestionSelect(selectedItem, surface);
-      }
-    }
-  }, [autocompleteItems, closeAutocomplete, handleSuggestionSelect, highlightedSuggestionIndex, navigate]);
-
-  useEffect(() => {
-    const handleRecentSearchSync = () => {
-      refreshRecentSearches();
-    };
-
-    window.addEventListener('focus', handleRecentSearchSync);
-    window.addEventListener('storage', handleRecentSearchSync);
-
-    return () => {
-      window.removeEventListener('focus', handleRecentSearchSync);
-      window.removeEventListener('storage', handleRecentSearchSync);
-    };
-  }, [refreshRecentSearches]);
+  }, [isDiscoverActive, performFallbackSearch]);
 
   useEffect(() => {
     let frameId = null;
@@ -510,13 +432,6 @@ export function Header() {
       ) {
         setDropdownOpen(false);
       }
-
-      if (
-        headerSearchRef.current && !headerSearchRef.current.contains(event.target) &&
-        drawerSearchRef.current && !drawerSearchRef.current.contains(event.target)
-      ) {
-        closeAutocomplete();
-      }
     };
 
     updateScrolled();
@@ -530,7 +445,7 @@ export function Header() {
       window.removeEventListener('scroll', handleScroll);
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [closeAutocomplete]);
+  }, []);
 
   useEffect(() => {
     if (dropdownOpen && chipRef.current) {
@@ -552,15 +467,25 @@ export function Header() {
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    setHighlightedSuggestionIndex(-1);
-  }, [globalSearch, activeSearchSurface]);
-
-  useEffect(() => {
     const nextSearch = location.pathname === '/discover'
       ? new URLSearchParams(location.search).get('q') || ''
       : '';
     setGlobalSearch(nextSearch);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (searchEnhancementsEnabled) {
+      return undefined;
+    }
+
+    const cancelIdleWork = scheduleWhenIdle(() => {
+      setSearchEnhancementsEnabled(true);
+    }, 1600);
+
+    return () => {
+      cancelIdleWork?.();
+    };
+  }, [searchEnhancementsEnabled]);
 
   return (
     <>
@@ -573,71 +498,44 @@ export function Header() {
             <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
           </Link>
 
-          <form
-            ref={headerSearchRef}
-            className={`header-search ${isDiscoverActive ? 'is-active' : ''}`}
-            onSubmit={submitGlobalSearch}
-            role="search"
-            aria-label={t('discover.searchInputLabel')}
-          >
-            <label htmlFor="header-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
-            <input
-              id="header-global-search"
-              type="search"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-controls="header-search-listbox"
-              aria-expanded={activeSearchSurface === 'header' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading) ? true : false}
-              aria-activedescendant={
-                activeSearchSurface === 'header' && highlightedSuggestionIndex >= 0
-                  ? (autocompleteItems[highlightedSuggestionIndex]?.id || undefined)
-                  : undefined
-              }
-              value={globalSearch}
-              onChange={(event) => {
-                setGlobalSearch(event.target.value);
-                setActiveSearchSurface('header');
-              }}
-              onFocus={() => {
-                refreshRecentSearches();
-                setActiveSearchSurface('header');
-              }}
-              onKeyDown={(event) => handleGlobalSearchKeyDown(event, 'header')}
-              className="header-search-input"
-              placeholder={t('discover.searchPlaceholder')}
-              autoComplete="off"
-            />
-            <Search size={16} className="header-search-icon" aria-hidden="true" />
-            {globalSearch ? (
-              <button
-                type="button"
-                className="header-search-clear"
-                onClick={clearGlobalSearch}
-                aria-label={t('discover.clearSearch')}
-                title={t('discover.clearSearch')}
-              >
-                <X size={15} aria-hidden="true" />
-              </button>
-            ) : null}
-            <button type="submit" className="header-search-submit" aria-label={t('discover.searchLabel')} title={t('discover.searchLabel')}>
-              <Search size={17} aria-hidden="true" />
-            </button>
-            <SearchAutocomplete
-              groups={autocompleteGroups}
-              flatItems={autocompleteItems}
-              isLoading={isAutocompleteLoading}
-              isOpen={activeSearchSurface === 'header' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading)}
-              highlightedIndex={highlightedSuggestionIndex}
+          {searchEnhancementsEnabled ? (
+            <Suspense fallback={(
+              <HeaderSearchFallback
+                surface="header"
+                query={globalSearch}
+                setQuery={setGlobalSearch}
+                isDiscoverActive={isDiscoverActive}
+                onActivate={enableSearchEnhancements}
+                onSubmit={submitFallbackSearch}
+                onClear={clearFallbackSearch}
+                t={t}
+              />
+            )}
+            >
+              <HeaderSearchExperience
+                surface="header"
+                query={globalSearch}
+                setQuery={setGlobalSearch}
+                enabled={!mobileMenuOpen}
+                onEnable={enableSearchEnhancements}
+                isDiscoverActive={isDiscoverActive}
+                onCloseMobileMenu={closeMobileMenu}
+                userId={user?.id || null}
+                showAdult={showAdult}
+              />
+            </Suspense>
+          ) : (
+            <HeaderSearchFallback
+              surface="header"
               query={globalSearch}
-              variant="header"
-              listboxId="header-search-listbox"
+              setQuery={setGlobalSearch}
+              isDiscoverActive={isDiscoverActive}
+              onActivate={enableSearchEnhancements}
+              onSubmit={submitFallbackSearch}
+              onClear={clearFallbackSearch}
               t={t}
-              crossLaneNote={autocompleteCrossLaneNote}
-              onSelect={handleSuggestionSelect}
-              onSearchAll={() => performGlobalSearch()}
-              onRemoveRecent={handleRemoveRecentSearch}
             />
-          </form>
+          )}
 
           <nav className="desktop-nav" aria-label={t('layout.mainNav')}>
             <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -751,67 +649,41 @@ export function Header() {
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        <div ref={drawerSearchRef} className="drawer-search-wrap">
-          <form className="drawer-search" onSubmit={submitGlobalSearch} role="search" aria-label={t('discover.searchInputLabel')}>
-            <Search size={16} className="drawer-search-icon" aria-hidden="true" />
-            <label htmlFor="drawer-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
-            <input
-              id="drawer-global-search"
-              type="search"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-controls="drawer-search-listbox"
-              aria-expanded={activeSearchSurface === 'drawer' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading) ? true : false}
-              aria-activedescendant={
-                activeSearchSurface === 'drawer' && highlightedSuggestionIndex >= 0
-                  ? (autocompleteItems[highlightedSuggestionIndex]?.id || undefined)
-                  : undefined
-              }
-              className="drawer-search-input"
-              value={globalSearch}
-              onChange={(event) => {
-                setGlobalSearch(event.target.value);
-                setActiveSearchSurface('drawer');
-              }}
-              onFocus={() => {
-                refreshRecentSearches();
-                setActiveSearchSurface('drawer');
-              }}
-              onKeyDown={(event) => handleGlobalSearchKeyDown(event, 'drawer')}
-              placeholder={t('discover.searchPlaceholder')}
-              autoComplete="off"
+        {searchEnhancementsEnabled ? (
+          <Suspense fallback={(
+            <HeaderSearchFallback
+              surface="drawer"
+              query={globalSearch}
+              setQuery={setGlobalSearch}
+              onActivate={enableSearchEnhancements}
+              onSubmit={submitFallbackSearch}
+              onClear={clearFallbackSearch}
+              t={t}
             />
-            {globalSearch ? (
-              <button
-                type="button"
-                className="drawer-search-clear"
-                onClick={clearGlobalSearch}
-                aria-label={t('discover.clearSearch')}
-                title={t('discover.clearSearch')}
-              >
-                <X size={15} aria-hidden="true" />
-              </button>
-            ) : null}
-            <button type="submit" className="drawer-search-submit">
-              {t('discover.searchLabel')}
-            </button>
-          </form>
-          <SearchAutocomplete
-            groups={autocompleteGroups}
-            flatItems={autocompleteItems}
-            isLoading={isAutocompleteLoading}
-            isOpen={activeSearchSurface === 'drawer' && (autocompleteItems.length > 0 || hasAutocompleteQuery || isAutocompleteLoading)}
-            highlightedIndex={highlightedSuggestionIndex}
+          )}
+          >
+            <HeaderSearchExperience
+              surface="drawer"
+              query={globalSearch}
+              setQuery={setGlobalSearch}
+              enabled={mobileMenuOpen}
+              onEnable={enableSearchEnhancements}
+              onCloseMobileMenu={closeMobileMenu}
+              userId={user?.id || null}
+              showAdult={showAdult}
+            />
+          </Suspense>
+        ) : (
+          <HeaderSearchFallback
+            surface="drawer"
             query={globalSearch}
-            variant="drawer"
-            listboxId="drawer-search-listbox"
+            setQuery={setGlobalSearch}
+            onActivate={enableSearchEnhancements}
+            onSubmit={submitFallbackSearch}
+            onClear={clearFallbackSearch}
             t={t}
-            crossLaneNote={autocompleteCrossLaneNote}
-            onSelect={handleSuggestionSelect}
-            onSearchAll={() => performGlobalSearch()}
-            onRemoveRecent={handleRemoveRecentSearch}
           />
-        </div>
+        )}
         <div className="drawer-links">
           <Link to="/" className={`drawer-link ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <Home size={18} /> {t('layout.home')}

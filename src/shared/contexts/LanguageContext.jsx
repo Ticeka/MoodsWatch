@@ -1,13 +1,30 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { translations as thaiTranslations } from '@/shared/i18n/th';
 
 const LANGUAGE_STORAGE_KEY = 'moodtoon-language';
 const LanguageContext = createContext(null);
 const translationLoaders = {
-  th: () => import('@/shared/i18n/th').then((module) => module.translations),
+  th: async () => thaiTranslations,
   en: () => import('@/shared/i18n/en').then((module) => module.translations),
 };
 const loadedTranslations = new Map();
 const translationRequests = new Map();
+
+loadedTranslations.set('th', thaiTranslations);
+
+function scheduleWhenIdle(callback, timeout = 2000) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout });
+    return () => window.cancelIdleCallback(handle);
+  }
+
+  const handle = window.setTimeout(callback, Math.min(timeout, 500));
+  return () => window.clearTimeout(handle);
+}
 
 function normalizeLanguage(language) {
   return language === 'en' ? 'en' : 'th';
@@ -78,9 +95,11 @@ export function LanguageProvider({ children }) {
     const initialLanguage = getInitialLanguagePreference();
     const initialTranslations = getLoadedTranslationMap(initialLanguage);
 
-    return initialTranslations
-      ? { [initialLanguage]: initialTranslations }
-      : {};
+    if (initialTranslations) {
+      return { th: thaiTranslations, [initialLanguage]: initialTranslations };
+    }
+
+    return { th: thaiTranslations };
   });
 
   useEffect(() => {
@@ -118,28 +137,30 @@ export function LanguageProvider({ children }) {
   }, [language]);
 
   useEffect(() => {
+    if (language === 'en' || translationMaps.en) {
+      return undefined;
+    }
+
     let ignore = false;
+    const cancelIdleWork = scheduleWhenIdle(() => {
+      void loadTranslationMap('en').then((englishTranslations) => {
+        if (ignore) {
+          return;
+        }
 
-    const warmEnglishFallback = async () => {
-      const englishTranslations = await loadTranslationMap('en');
-
-      if (ignore) {
-        return;
-      }
-
-      setTranslationMaps((current) => (
-        current.en === englishTranslations
-          ? current
-          : { ...current, en: englishTranslations }
-      ));
-    };
-
-    void warmEnglishFallback();
+        setTranslationMaps((current) => (
+          current.en === englishTranslations
+            ? current
+            : { ...current, en: englishTranslations }
+        ));
+      });
+    });
 
     return () => {
       ignore = true;
+      cancelIdleWork?.();
     };
-  }, []);
+  }, [language, translationMaps.en]);
 
   const value = useMemo(() => ({
     language,
