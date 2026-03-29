@@ -97,6 +97,30 @@ function formatClipSeconds(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function playPartyCountdownAlert(audioContext, volume = 85, step = 3) {
+  if (!audioContext) {
+    return;
+  }
+
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+  const accent = Math.max(0, Math.min(1, normalizedVolume * 0.54));
+  const targetStep = Math.max(1, Number(step) || 1);
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(targetStep === 1 ? 1120 : targetStep === 2 ? 980 : 860, now);
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.exponentialRampToValueAtTime(Math.max(0.001, accent), now + 0.02);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.2);
+}
+
 function getAvatarTone(avatarKey) {
   return PARTY_AVATAR_OPTIONS.find((avatar) => avatar.id === avatarKey)?.tone || PARTY_AVATAR_OPTIONS[0].tone;
 }
@@ -360,11 +384,8 @@ function PartyQuestionPlayer({ match, round, graceRemainingMs, onPlaybackComplet
         return;
       }
 
-      const elapsedFromClock = playbackStartedAtMs
-        ? Math.max(0, Date.now() - playbackStartedAtMs)
-        : 0;
       const elapsedFromMedia = Math.max(0, (Number(media.currentTime || 0) - Number(round.previewStartSec || 0)) * 1000);
-      const elapsedMs = Math.max(elapsedFromClock, elapsedFromMedia);
+      const elapsedMs = elapsedFromMedia;
 
       setPlaybackElapsedMs(Math.min(previewDurationMs, elapsedMs));
       if (elapsedMs >= previewDurationMs - 80) {
@@ -675,6 +696,10 @@ function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick, onPl
       return;
     }
 
+    const savedVolume = readPartyAudioVolume();
+    video.volume = Math.min(1, Math.max(0, savedVolume / 100));
+    video.muted = savedVolume <= 0;
+
     video.preload = 'auto';
     video.load();
     const attemptPlay = () => {
@@ -683,13 +708,23 @@ function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick, onPl
     const handlePlaying = () => {
       onPlaybackStarted?.(Date.now());
     };
+    const handleVolumeChange = () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      const nextVolume = video.muted ? 0 : Math.round(Math.min(1, Math.max(0, Number(video.volume) || 0)) * 100);
+      window.localStorage.setItem(PARTY_AUDIO_VOLUME_KEY, String(nextVolume));
+    };
 
     video.addEventListener('playing', handlePlaying);
+    video.addEventListener('volumechange', handleVolumeChange);
 
     if (video.readyState >= 2) {
       attemptPlay();
       return () => {
         video.removeEventListener('playing', handlePlaying);
+        video.removeEventListener('volumechange', handleVolumeChange);
       };
     }
 
@@ -697,6 +732,7 @@ function PartyRevealPanel({ round, answers, leaderboard, memberToken, pick, onPl
     return () => {
       video.removeEventListener('playing', handlePlaying);
       video.removeEventListener('canplay', attemptPlay);
+      video.removeEventListener('volumechange', handleVolumeChange);
     };
   }, [onPlaybackStarted, round?.id, round?.mediaUrl]);
 
@@ -1015,6 +1051,9 @@ export function PartyRoomPage() {
   const [playbackEndedAtMs, setPlaybackEndedAtMs] = useState(null);
   const [revealPlaybackStartedAtMs, setRevealPlaybackStartedAtMs] = useState(null);
   const advancingRef = useRef(false);
+  const countdownAlertedSecondRef = useRef(null);
+  const answerAlertedSecondRef = useRef(null);
+  const countdownAudioContextRef = useRef(null);
   const loadPromiseRef = useRef(null);
   const pendingRefreshRef = useRef(false);
   const refreshTimerRef = useRef(null);
@@ -1147,6 +1186,107 @@ export function PartyRoomPage() {
     setPlaybackEndedAtMs(null);
     setRevealPlaybackStartedAtMs(null);
   }, [currentMatch?.id, currentMatch?.phase, currentRound?.id]);
+
+  useEffect(() => {
+    if (currentMatch?.phase !== 'countdown') {
+      countdownAlertedSecondRef.current = null;
+      return undefined;
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      return undefined;
+    }
+
+    if (!countdownAudioContextRef.current) {
+      countdownAudioContextRef.current = new AudioContextCtor();
+    }
+
+    const audioContext = countdownAudioContextRef.current;
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().catch(() => {});
+    }
+
+    const phaseEndsAt = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
+    if (!phaseEndsAt) {
+      return undefined;
+    }
+
+    countdownAlertedSecondRef.current = null;
+    const timeouts = [3, 2, 1].map((second) => {
+      const delay = Math.max(0, phaseEndsAt - Date.now() - (second * 1000));
+      return window.setTimeout(() => {
+        if (currentMatch?.phase !== 'countdown') {
+          return;
+        }
+
+        if (countdownAlertedSecondRef.current === second) {
+          return;
+        }
+
+        countdownAlertedSecondRef.current = second;
+        playPartyCountdownAlert(audioContext, readPartyAudioVolume(), second);
+      }, delay);
+    });
+
+    return () => {
+      timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [currentMatch?.phase, currentMatch?.phaseEndsAt]);
+
+  useEffect(() => {
+    if (currentMatch?.phase !== 'question') {
+      answerAlertedSecondRef.current = null;
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      return undefined;
+    }
+
+    if (!countdownAudioContextRef.current) {
+      countdownAudioContextRef.current = new AudioContextCtor();
+    }
+
+    const audioContext = countdownAudioContextRef.current;
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().catch(() => {});
+    }
+    const phaseEndsAt = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
+    if (!phaseEndsAt) {
+      return undefined;
+    }
+
+    answerAlertedSecondRef.current = null;
+    const timeouts = [3, 2, 1].map((second) => {
+      const delay = Math.max(0, phaseEndsAt - Date.now() - (second * 1000));
+      return window.setTimeout(() => {
+        if (currentMatch?.phase !== 'question') {
+          return;
+        }
+
+        if (answerAlertedSecondRef.current === second) {
+          return;
+        }
+
+        answerAlertedSecondRef.current = second;
+        playPartyCountdownAlert(audioContext, readPartyAudioVolume(), second);
+      }, delay);
+    });
+
+    return () => {
+      timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [currentMatch?.phase, currentMatch?.phaseEndsAt]);
 
   useEffect(() => {
     if (!isHost || !room || !currentMatch?.phaseEndsAt || currentMatch.phase === 'final') {
