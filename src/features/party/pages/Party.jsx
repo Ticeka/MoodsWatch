@@ -1132,10 +1132,10 @@ export function PartyRoomPage() {
   const currentAnswer = currentRoundAnswers.find((entry) => String(entry.member_token || '') === String(guestToken || '')) || null;
   const leaderboard = useMemo(() => buildPartyLeaderboard(members, answers), [members, answers]);
   const selectedPoolName = room?.settings?.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.label
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.label
     || PARTY_CATEGORY_OPTIONS[0].label;
   const selectedPoolNameTh = room?.settings?.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room.settings?.categoryId)?.labelTh
+    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.labelTh
     || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const phaseEndsAtMs = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
   const timeLeftMs = phaseEndsAtMs ? Math.max(0, phaseEndsAtMs - clockNow) : 0;
