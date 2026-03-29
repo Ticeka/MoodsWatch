@@ -132,15 +132,15 @@ export function PartyHubPage() {
   };
 
   return (
-    <div className="party-page is-modern">
-      <section className="party-hero container party-hub-shell">
-        <header className="party-hero-copy party-hero-copy--refresh party-hub-header">
+    <div className="party-page is-hub">
+      <section className="container party-hub-shell">
+        <header className="party-hub-header">
           <span className="party-kicker"><Radio size={16} />Music Guess Party</span>
           <h1>{pick('Music Guess Party', 'Music Guess Party')}</h1>
           <p>{pick('สร้างห้องแล้วเริ่มเดาเพลงได้ทันที', 'Create a room and start guessing instantly.')}</p>
         </header>
 
-        <form className="party-join-strip card-modern" onSubmit={handleJoin}>
+        <form className="party-join-strip" onSubmit={handleJoin}>
           <div className="party-join-strip-copy">
             <strong>{pick('เข้าร่วมห้อง', 'Join Room')}</strong>
           </div>
@@ -160,8 +160,8 @@ export function PartyHubPage() {
           </div>
         </form>
 
-        <div className="party-builder-layout party-builder-layout--refresh">
-          <form className="party-builder-panel card-modern party-builder-panel--refresh" onSubmit={handleCreate}>
+        <div className="party-builder-layout--refresh">
+          <form className="party-builder-panel--refresh" onSubmit={handleCreate}>
             <h2 className="party-builder-title">{pick('สร้างห้องใหม่', 'Create New Room')}</h2>
 
             <div className="party-field">
@@ -527,6 +527,14 @@ export function PartyRoomPage() {
     }).format(lastSyncedAt);
   }, [lastSyncedAt]);
 
+  // Scroll to top on every phase/status transition
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentMatch?.phase, room?.status]);
+
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
@@ -820,62 +828,75 @@ export function PartyRoomPage() {
 
   if (loading) {
     return (
-      <div className="party-page is-modern">
-        <section className="party-room-shell container">
-          <div className="party-loading-card card-modern">
+      <div className="party-page">
+        <div className="party-game-canvas">
+          <div className="party-loading-card">
             <Loader2 size={28} className="party-spin" />
             <strong>{pick('กำลังโหลดห้องเพลง...', 'Loading the party room...')}</strong>
           </div>
-        </section>
+        </div>
       </div>
     );
   }
 
   if (errorMessage) {
     return (
-      <div className="party-page is-modern">
-        <section className="party-room-shell container">
-          <ErrorState message={errorMessage} onRetry={() => void loadBundle()} className="party-error-card card-modern" />
-        </section>
+      <div className="party-page">
+        <div className="party-game-canvas">
+          <ErrorState message={errorMessage} onRetry={() => void loadBundle()} className="party-error-card" />
+        </div>
       </div>
     );
   }
 
   if (!room) {
     return (
-      <div className="party-page is-modern">
-        <section className="party-room-shell container">
+      <div className="party-page">
+        <div className="party-game-canvas">
           <EmptyState
             icon={<XCircle size={24} />}
             title={pick('ไม่พบห้องนี้', 'Room not found')}
             message={pick('เช็ก code ให้ตรงอีกครั้ง หรือกลับไปสร้างห้องใหม่', 'Check the room code again or create a new room.')}
             action={<Link to="/party" className="party-text-link">{pick('กลับไปหน้า Party', 'Back to Party')}</Link>}
-            className="party-empty-card card-modern"
+            className="party-empty-card"
           />
-        </section>
+        </div>
       </div>
     );
   }
 
   if (!currentMember && room.status !== 'lobby') {
     return (
-      <div className="party-page is-modern">
-        <section className="party-room-shell container">
+      <div className="party-page">
+        <div className="party-game-canvas">
           <EmptyState
             icon={<Radio size={24} />}
             title={pick('แมตช์นี้กำลังเล่นอยู่', 'This match is already in progress')}
             message={pick('ตอนนี้ยังไม่มี spectator mode ให้รอ rematch ก่อนแล้วค่อยเข้าห้องอีกครั้ง', 'Spectator mode is not wired yet in this slice. Wait for the rematch to join the room.')}
             action={<Link to="/party" className="party-text-link">{pick('กลับไปหน้า Party', 'Back to Party')}</Link>}
-            className="party-empty-card card-modern"
+            className="party-empty-card"
           />
-        </section>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="party-page is-modern">
-      <section className="party-room-shell container">
+    <div className="party-page">
+      <div className="party-room-hud">
+        <div className="party-room-hud-title">
+          <h1>{pick('ห้อง', 'Room')} {room.room_code}</h1>
+          <p>{pick(currentPreset.labelTh, currentPreset.label)} · {pick(selectedPoolNameTh, selectedPoolName)}</p>
+        </div>
+        <div className="party-room-hud-actions">
+          <button type="button" className="party-code-btn" onClick={handleCopyCode}>
+            <Copy size={14} />
+            {pick('คัดลอกโค้ด', 'Copy code')}
+          </button>
+          <Link to="/party" className="party-code-btn subtle">{pick('กลับ', 'Back')}</Link>
+        </div>
+      </div>
+      <section className="party-room-shell">
         <PartyAutoAdvance
           isHost={isHost}
           room={room}
@@ -886,9 +907,7 @@ export function PartyRoomPage() {
           onAdvanced={(nextRoom) => {
             applyEvent({
               type: 'ROOM_UPDATED',
-              payload: {
-                room: nextRoom,
-              },
+              payload: { room: nextRoom },
             });
           }}
           onAdvanceError={(error) => {
@@ -899,59 +918,33 @@ export function PartyRoomPage() {
           <video
             key={`preload-${prefetchedRound.id || prefetchedRound.mediaUrl}`}
             src={prefetchedRound.mediaUrl}
-            preload="auto"
-            muted
-            playsInline
-            className="party-hidden-media"
-            aria-hidden="true"
+            preload="auto" muted playsInline
+            className="party-hidden-media" aria-hidden="true"
           />
         ) : null}
-        <div className="party-room-top card-modern header-only">
-          <div className="party-room-title">
-            <h1>{pick('ห้อง', 'Room')} {room.room_code}</h1>
-            <p>{pick(currentPreset.labelTh, currentPreset.label)} • {pick('หมวด', 'Category')} {pick(selectedPoolNameTh, selectedPoolName)}</p>
-          </div>
-          <div className="party-room-actions">
-            <button type="button" className="party-code-btn" onClick={handleCopyCode}>
-              <Copy size={15} />
-              {pick('คัดลอกโค้ด', 'Copy code')}
-            </button>
-            <Link to="/party" className="party-code-btn subtle">{pick('กลับหน้า Party', 'Back to Party')}</Link>
-          </div>
-        </div>
 
         {showSyncBanner ? (
-          <div className={`party-sync-banner card-modern ${syncState === 'stale' || syncState === 'error' ? 'is-stale' : ''}`}>
+          <div className={`party-sync-banner ${syncState === 'stale' || syncState === 'error' ? 'is-stale' : ''}`}>
+            <div className="party-sync-banner-icon" aria-hidden="true">
+              {syncState === 'syncing' ? <Loader2 size={16} className="party-spin" /> : <Radio size={16} />}
+            </div>
             <div className="party-sync-banner-copy">
               <strong>
-                {syncState === 'syncing'
-                  ? pick('กำลังซิงก์ห้องล่าสุด', 'Syncing latest room state')
-                  : syncState === 'reconnecting'
-                    ? pick('Realtime หลุด กำลังเชื่อมต่อใหม่', 'Realtime connection dropped. Reconnecting')
-                    : syncState === 'stale'
-                      ? pick('สถานะห้องอาจไม่ล่าสุด', 'Room state may be stale')
-                      : pick('ซิงก์ห้องมีปัญหา', 'Room sync hit an issue')}
+                {syncState === 'syncing' ? pick('กำลังซิงก์...', 'Syncing...') : syncState === 'reconnecting' ? pick('Realtime หลุด กำลังเชื่อมต่อใหม่', 'Reconnecting...') : pick('สถานะห้องอาจไม่ล่าสุด', 'Room state may be stale')}
               </strong>
-              <span>
-                {syncError
-                  || (lastSyncedLabel
-                    ? pick(`ซิงก์ล่าสุด ${lastSyncedLabel}`, `Last synced at ${lastSyncedLabel}`)
-                    : pick('ระบบจะดึงข้อมูลเต็มอีกครั้งเมื่อเชื่อมต่อกลับมา', 'The app will perform a full re-sync when the connection returns.'))}
-              </span>
-            </div>
-            <div className="party-sync-banner-icon" aria-hidden="true">
-              {syncState === 'syncing' ? <Loader2 size={18} className="party-spin" /> : <Radio size={18} />}
+              <span>{syncError || (lastSyncedLabel ? pick(`ซิงก์ล่าสุด ${lastSyncedLabel}`, `Last synced at ${lastSyncedLabel}`) : '')}</span>
             </div>
           </div>
         ) : null}
 
+        <div className="party-game-canvas">
         {!currentMember ? (
-          <div className="party-inline-join card-modern party-inline-join--refresh">
+          <div className="party-inline-join">
             <div className="party-panel-head">
               <strong>{pick('เข้าห้องนี้', 'Join this room')}</strong>
               <span>{pick('ใช้โปรไฟล์ปัจจุบันของคุณแล้วเข้าล็อบบี้ได้ทันที', 'Use your current profile and jump straight into the lobby.')}</span>
             </div>
-            <div className="party-profile-preview party-profile-preview--inline">
+            <div className="party-profile-preview">
               <PartyIdentityAvatar profile={partyProfile} />
               <div className="party-profile-copy">
                 <strong>{partyProfile.displayName}</strong>
@@ -993,21 +986,21 @@ export function PartyRoomPage() {
           />
         ) : (
           <>
-            <div className="party-phase-banner card-modern header-only">
+            <div className="party-phase-banner">
               <span className="party-chip">
                 <TimerReset size={14} />
                 {currentMatch.phase === 'countdown'
-                  ? pick('กำลังนับถอยหลัง', 'Countdown')
+                  ? pick('Countdown', 'Countdown')
                   : currentMatch.phase === 'question'
-                    ? pick('กำลังเปิดคำถาม', 'Question open')
-                    : pick('กำลังเฉลย', 'Reveal')}
+                    ? pick('กำลังเปิดคำถาม', 'Question')
+                    : pick('เฉลย', 'Reveal')}
               </span>
               <strong>
                 {currentMatch.phase === 'countdown'
-                  ? pick('เตรียมตัวให้พร้อม รอบถัดไปกำลังเริ่ม', 'Get ready, the next round is about to start')
+                  ? pick('เตรียมตัวให้พร้อม รอบถัดไปกำลังเริ่ม', 'Get ready, next round starting')
                   : currentMatch.phase === 'question'
-                    ? pick('เพลงเริ่มแล้ว รีบตอบก่อนหมดเวลา', 'The audio is live. Lock your answer before time runs out')
-                    : pick('ดูเฉลยและตารางคะแนนก่อนขึ้นรอบถัดไป', 'Review the answer and standings before the next round')}
+                    ? pick('เพลงเริ่มแล้ว รีบตอบก่อนหมดเวลา', 'Audio is live — lock your answer!')
+                    : pick('ดูเฉลยและตารางคะแนน', 'Check the answer and standings')}
               </strong>
             </div>
 
@@ -1021,10 +1014,10 @@ export function PartyRoomPage() {
                   pick={pick}
                 />
               ) : currentMatch.phase === 'countdown' ? (
-                <section className="party-countdown-card card-modern">
+                <section className="party-countdown-stage">
                   <span className="party-chip"><Sparkles size={14} />{pick('อีกครู่เดียว', 'Coming up')}</span>
                   <h2>{pick('เตรียมพร้อมสำหรับรอบถัดไป', 'Prepare for the next round')}</h2>
-                  <p>{pick('ระบบกำลังจัด cue และเตรียมเปิดเพลงถัดไป', 'The room is lining up the next cue and getting the next mystery audio ready.')}</p>
+                  <p>{pick('ระบบกำลังจัด cue และเตรียมเปิดเพลงถัดไป', 'Lining up the next mystery audio...')}</p>
                   <PartyCountdownDisplay targetTimeMs={phaseEndsAtMs}>
                     {({ secondsLeft }) => (
                       <div className="party-countdown-bubble">{secondsLeft || getCountdownSeconds(phaseEndsAtMs - Date.now())}</div>
@@ -1048,6 +1041,7 @@ export function PartyRoomPage() {
             </div>
           </>
         )}
+        </div>
       </section>
     </div>
   );
