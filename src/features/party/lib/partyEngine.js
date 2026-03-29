@@ -154,6 +154,7 @@ export function createPartySettings(input = {}) {
   const preset = getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 5, 20);
   const timePerRoundSec = clamp(Number(input.timePerRoundSec || 12), 8, 20);
+  const revealSec = clamp(Number(input.revealSec || 12), 6, 20);
   const categoryId = PARTY_CATEGORY_OPTIONS.some((item) => item.id === input.categoryId)
     ? input.categoryId
     : 'all';
@@ -162,6 +163,7 @@ export function createPartySettings(input = {}) {
     presetId: preset.id,
     roundCount,
     timePerRoundSec,
+    revealSec,
     categoryId,
     keyword: String(input.keyword || '').trim(),
     showLiveScores: Boolean(input.showLiveScores ?? true),
@@ -270,7 +272,7 @@ export function buildPartyMatchSnapshot(songs = [], settings = {}) {
     timePerRoundSec: normalizedSettings.timePerRoundSec,
     answerGraceSec: PARTY_ANSWER_GRACE_SEC,
     countdownSec: 3,
-    revealSec: 6,
+    revealSec: normalizedSettings.revealSec,
     phaseStartedAt: new Date(now).toISOString(),
     phaseEndsAt: new Date(now + countdownMs).toISOString(),
     rounds,
