@@ -28,8 +28,8 @@ function getPartyRoomChannelName(roomId) {
 }
 
 function createPartyRoomReadyPromise() {
-  let resolve = () => {};
-  let reject = () => {};
+  let resolve = () => { };
+  let reject = () => { };
   const promise = new Promise((nextResolve, nextReject) => {
     resolve = nextResolve;
     reject = nextReject;
@@ -1525,7 +1525,7 @@ function mapPartyAnswerRealtimePayload(payload) {
 
 export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   if (!supabase || !roomId) {
-    return () => {};
+    return () => { };
   }
 
   const channel = supabase
@@ -1572,9 +1572,9 @@ export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   registerPartyRoomRealtimeChannel(roomId, channel);
 
   channel.subscribe((status) => {
-      updatePartyRoomRealtimeChannelStatus(roomId, channel, status);
-      onStatusChange?.(status);
-    });
+    updatePartyRoomRealtimeChannelStatus(roomId, channel, status);
+    onStatusChange?.(status);
+  });
 
   return () => {
     unregisterPartyRoomRealtimeChannel(roomId, channel);

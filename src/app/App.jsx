@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import { ProtectedRoute } from '@/features/auth/components/ProtectedRoute';
 import { AuthProvider } from '@/features/auth/contexts/AuthContext';
 import { WatchlistProvider } from '@/features/watchlist/contexts/WatchlistContext';
@@ -166,6 +167,7 @@ function App() {
                   </Route>
                 </Routes>
               </Suspense>
+              <Analytics />
             </BrowserRouter>
           </WatchlistProvider>
         </AuthProvider>
