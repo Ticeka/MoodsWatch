@@ -167,7 +167,9 @@ export function createPartySettings(input = {}) {
   const preset = getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
-  const timePerRoundSec = clamp(Number(input.timePerRoundSec || 12), 8, 20);
+  const isLongPlaybackMode = modeType === 'vote';
+  const defaultTimePerRoundSec = Number(input.timePerRoundSec || 12);
+  const timePerRoundSec = clamp(defaultTimePerRoundSec, 8, isLongPlaybackMode ? 180 : 20);
   const voteSec = clamp(Number(input.voteSec || 10), 5, 20);
   const revealSec = clamp(Number(input.revealSec || 12), 6, 20);
   const categoryId = PARTY_CATEGORY_OPTIONS.some((item) => item.id === input.categoryId)
@@ -243,7 +245,7 @@ function buildRound(song, settings, titlePool) {
     mediaUrl: song.mediaUrl || '',
     coverUrl: song.coverUrl || '',
     previewStartSec: Number(song.previewStartSec || 0),
-    previewDurationSec: clamp(Number(settings.timePerRoundSec || 12), 8, 20),
+    previewDurationSec: Number(settings.timePerRoundSec || 12),
     options,
   };
 }

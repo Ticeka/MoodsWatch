@@ -177,4 +177,13 @@ describe('partyEngine', () => {
     expect(settings.timePerRoundSec).toBe(20);
     expect(settings.revealSec).toBe(8);
   });
+
+  it('allows longer clip windows for vote battle playback', () => {
+    const settings = createPartySettings({
+      modeType: 'vote',
+      timePerRoundSec: 90,
+    });
+
+    expect(settings.timePerRoundSec).toBe(90);
+  });
 });

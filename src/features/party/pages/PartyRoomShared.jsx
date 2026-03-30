@@ -720,6 +720,7 @@ export function PartyAnswerPanel({
   pick,
 }) {
   const preset = getPartyPresetById(room?.current_match?.presetId);
+  const activeCountdownTargetMs = answerGraceEndsAtMs || phaseEndsAtMs;
   const [typedTitle, setTypedTitle] = useState(() => answer?.typed_title || '');
   const [typedSong, setTypedSong] = useState(() => answer?.typed_song || '');
 
@@ -745,8 +746,8 @@ export function PartyAnswerPanel({
   return (
     <div className="party-answer-layout">
       {/* Status bar spans full width above both columns */}
-      <div className="party-status-bar">
-        <PartyCountdownDisplay targetTimeMs={phaseEndsAtMs}>
+        <div className="party-status-bar">
+        <PartyCountdownDisplay targetTimeMs={activeCountdownTargetMs}>
           {({ msLeft }) => (
             <span className="party-chip">
               <Clock3 size={14} />

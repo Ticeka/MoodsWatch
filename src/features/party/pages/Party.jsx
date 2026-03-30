@@ -81,6 +81,10 @@ export function PartyHubPage() {
   const [joinCode, setJoinCode] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const selectedPreset = getPartyPresetById(settings.presetId);
+  const supportsLongClipTime = settings.modeType === 'vote';
+  const clipTimeOptions = supportsLongClipTime
+    ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
+    : [8, 10, 12, 15, 20];
   const selectedPoolLabel = settings.songPresetName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.label
     || PARTY_CATEGORY_OPTIONS[0].label;
@@ -176,7 +180,7 @@ export function PartyHubPage() {
                     type="radio"
                     name="mainModeType"
                     checked={settings.modeType === 'quiz'}
-                    onChange={() => setSettings((current) => ({ ...current, modeType: 'quiz' }))}
+                    onChange={() => setSettings((current) => ({ ...current, modeType: 'quiz', timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)) }))}
                   />
                   <span>{pick('Music Quiz', 'Music Quiz')}</span>
                 </label>
@@ -202,7 +206,13 @@ export function PartyHubPage() {
                       preset={preset}
                       selected={settings.presetId === preset.id}
                       pick={pick}
-                      onSelect={(presetId) => setSettings((current) => ({ ...current, presetId }))}
+                      onSelect={(presetId) => {
+                        setSettings((current) => ({
+                          ...current,
+                          presetId,
+                          timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
+                        }));
+                      }}
                     />
                   ))}
                 </div>
@@ -264,12 +274,12 @@ export function PartyHubPage() {
                 </select>
               </label>
               <label className="party-field">
-                <span>{pick('เวลาเล่นเพลง', 'Clip time')}</span>
+                <span>{supportsLongClipTime ? pick('เวลาเพลงสูงสุด', 'Song max time') : pick('เวลาเล่นเพลง', 'Clip time')}</span>
                 <select
                   value={settings.timePerRoundSec}
                   onChange={(event) => setSettings((current) => ({ ...current, timePerRoundSec: Number(event.target.value) }))}
                 >
-                  {[8, 10, 12, 15, 20].map((seconds) => (
+                  {clipTimeOptions.map((seconds) => (
                     <option key={seconds} value={seconds}>{seconds} {pick('วินาที', 'sec')}</option>
                   ))}
                 </select>
@@ -339,7 +349,7 @@ export function PartyHubPage() {
               </article>
               <article className="party-stat-pill">
                 <strong>{settings.timePerRoundSec}</strong>
-                <span>{pick('วิเล่นเพลง', 'clip sec')}</span>
+                <span>{supportsLongClipTime ? pick('สูงสุด วินาที', 'max sec') : pick('วิเล่นเพลง', 'clip sec')}</span>
               </article>
               <article className="party-stat-pill">
                 <strong>{settings.revealSec}</strong>
