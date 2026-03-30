@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Play, RefreshCw, Swords, Trophy, Volume2, VolumeX, Zap } from 'lucide-react';
+import { Loader2, Play, RefreshCw, Swords, Volume2, VolumeX, Zap } from 'lucide-react';
 import {
   formatClipSeconds,
   getPartyBufferedPreviewMs,
@@ -636,15 +636,29 @@ export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost
 
   return (
     <div className="vote-phase-champion hero-aurora">
+      <div className="champion-backdrop" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
+          <span key={index} className="champion-backdrop-burst" />
+        ))}
+      </div>
+      <div className="champion-fireworks" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, index) => (
+          <span key={index} className="champion-firework" style={{ '--spark-index': index }} />
+        ))}
+      </div>
       <div className="champion-header">
-        <Trophy size={48} className="champion-icon float-anim" />
         <h1>{pick('ULTIMATE CHAMPION', 'ULTIMATE CHAMPION')}</h1>
+        <p className="champion-subtitle">{pick('เพลงสุดท้ายที่ยืนอยู่ในแบทเทิลนี้', 'The last track standing in this battle')}</p>
       </div>
       <div className="champion-card shine-effect">
         {champion?.mediaUrl ? (
-          <video ref={champVideoRef} src={champion.mediaUrl} loop playsInline controls className="champion-cover-video" />
+          <div className="champion-media-frame">
+            <video ref={champVideoRef} src={champion.mediaUrl} loop playsInline controls className="champion-cover-video" />
+          </div>
         ) : champion?.coverUrl ? (
-          <img src={champion.coverUrl} alt="Cover" className="champion-cover" />
+          <div className="champion-media-frame">
+            <img src={champion.coverUrl} alt="Cover" className="champion-cover" />
+          </div>
         ) : null}
         <h2>{champion?.songTitle || 'Undisputed Track'}</h2>
         <h3>{champion?.sourceTitleName || 'Source'}</h3>

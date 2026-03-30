@@ -16,11 +16,23 @@ function makeId(prefix = 'party') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function getVoteBracketSize(poolSize) {
-  if (poolSize >= 16) return 16;
-  if (poolSize >= 8) return 8;
-  if (poolSize >= 4) return 4;
-  return 2;
+function getVoteBracketSize(requestedCount, poolSize) {
+  let normalizedRequested = [2, 4, 8, 16].includes(Number(requestedCount))
+    ? Number(requestedCount)
+    : null;
+
+  if (!normalizedRequested) {
+    if (poolSize >= 16) normalizedRequested = 16;
+    else if (poolSize >= 8) normalizedRequested = 8;
+    else if (poolSize >= 4) normalizedRequested = 4;
+    else normalizedRequested = 2;
+  }
+
+  if (poolSize < normalizedRequested) {
+    throw new Error(`Not enough playable songs for Vote Battle mode. Need at least ${normalizedRequested} songs.`);
+  }
+
+  return normalizedRequested;
 }
 
 /** Deterministic tie-break across all clients based on battle id hash. */
@@ -30,7 +42,7 @@ function tieBreak(battleId, songA, songB) {
 }
 
 export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
-  const poolSize = getVoteBracketSize(playablePool.length);
+  const poolSize = getVoteBracketSize(settings.entrantCount, playablePool.length);
   const shuffled = shufflePartyItems(playablePool).slice(0, poolSize);
 
   if (shuffled.length < 2) {
@@ -59,6 +71,8 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
   const now = Date.now();
 
   const t = VOTE_PHASE_TIMING;
+  const voteSec = Number(settings.voteSec || t.voteSec);
+  const revealSec = Number(settings.revealSec || t.revealSec);
 
   return {
     id: makeId('vote-match'),
@@ -85,8 +99,8 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
     },
     settings: {
       previewSec: settings.timePerRoundSec || 12,
-      voteSec: t.voteSec,
-      revealSec: t.revealSec,
+      voteSec,
+      revealSec,
       freezeMs: t.freezeMs,
     },
     phaseStartedAt: new Date(now).toISOString(),

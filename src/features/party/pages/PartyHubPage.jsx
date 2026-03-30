@@ -29,9 +29,12 @@ export function PartyHubPage() {
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [settings, setSettings] = useState(createPartySettings({
+    modeType: 'quiz',
     presetId: PARTY_PRESETS[0].id,
     roundCount: 10,
+    entrantCount: 8,
     timePerRoundSec: 12,
+    voteSec: 10,
     revealSec: 12,
     categoryId: 'all',
     keyword: '',
@@ -188,7 +191,7 @@ export function PartyHubPage() {
                   value={settings.roundCount}
                   onChange={(event) => setSettings((current) => ({ ...current, roundCount: Number(event.target.value) }))}
                 >
-                  {[5, 10, 15, 20].map((count) => (
+                  {[2, 5, 10, 15, 20].map((count) => (
                     <option key={count} value={count}>{count} {pick('รอบ', 'rounds')}</option>
                   ))}
                 </select>
@@ -275,3 +278,6 @@ export function PartyHubPage() {
 }
 
 export default PartyHubPage;
+
+
+

@@ -63,6 +63,20 @@ describe('buildPartyVoteSnapshot', () => {
     expect(snap.settings.previewSec).toBe(20);
   });
 
+  test('respects custom vote and reveal settings', () => {
+    const snap = buildPartyVoteSnapshot(FOUR_SONGS, {
+      entrantCount: 4,
+      timePerRoundSec: 15,
+      voteSec: 12,
+      revealSec: 8,
+    });
+
+    expect(snap.entrantCount).toBe(4);
+    expect(snap.settings.previewSec).toBe(15);
+    expect(snap.settings.voteSec).toBe(12);
+    expect(snap.settings.revealSec).toBe(8);
+  });
+
   test('includes timing constants from VOTE_PHASE_TIMING', () => {
     const snap = buildPartyVoteSnapshot(TWO_SONGS, {});
     expect(snap.settings.voteSec).toBe(VOTE_PHASE_TIMING.voteSec);

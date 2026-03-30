@@ -56,10 +56,10 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
           <div className="party-settings-summary">
             <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('preset', 'preset')}</span></article>
             <article className="party-stat-pill"><strong>{pick(selectedPoolNameTh, selectedPoolName)}</strong><span>{pick('pool', 'pool')}</span></article>
-            <article className="party-stat-pill"><strong>{room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('seed', 'seed') : pick('รอบ', 'rounds')}</span></article>
+            <article className="party-stat-pill"><strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('songs', 'songs') : pick('rounds', 'rounds')}</span></article>
             <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('clip sec', 'clip sec')}</span></article>
             {isVoteMode ? (
-              <article className="party-stat-pill"><strong>{room?.current_match?.settings?.voteSec || 10}</strong><span>{pick('vote sec', 'vote sec')}</span></article>
+              <article className="party-stat-pill"><strong>{room?.current_match?.settings?.voteSec || room?.settings?.voteSec || 10}</strong><span>{pick('vote sec', 'vote sec')}</span></article>
             ) : null}
             <article className="party-stat-pill"><strong>{room?.settings?.revealSec || 12}</strong><span>{pick('reveal sec', 'reveal sec')}</span></article>
             <article className="party-stat-pill"><strong>{readyCount}/{members.length}</strong><span>{pick('พร้อม', 'ready')}</span></article>
@@ -91,3 +91,6 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
     </div>
   );
 });
+
+
+

@@ -124,6 +124,18 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeVoteEntrantCount(value) {
+  const requested = Number(value || 8);
+  const allowed = [2, 4, 8, 16];
+  if (allowed.includes(requested)) {
+    return requested;
+  }
+
+  return allowed.reduce((closest, current) => (
+    Math.abs(current - requested) < Math.abs(closest - requested) ? current : closest
+  ), allowed[0]);
+}
+
 function getNormalizedAliasSet(values = []) {
   return new Set(
     buildUniquePartyAliases(values)
@@ -153,8 +165,10 @@ function computeSpeedBonus(elapsedMs, limitMs, maxBonus) {
 export function createPartySettings(input = {}) {
   const modeType = input.modeType === 'vote' ? 'vote' : 'quiz';
   const preset = getPartyPresetById(input.presetId);
-  const roundCount = clamp(Number(input.roundCount || 10), 5, 20);
+  const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
+  const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
   const timePerRoundSec = clamp(Number(input.timePerRoundSec || 12), 8, 20);
+  const voteSec = clamp(Number(input.voteSec || 10), 5, 20);
   const revealSec = clamp(Number(input.revealSec || 12), 6, 20);
   const categoryId = PARTY_CATEGORY_OPTIONS.some((item) => item.id === input.categoryId)
     ? input.categoryId
@@ -166,7 +180,9 @@ export function createPartySettings(input = {}) {
     modeType,
     presetId: preset.id,
     roundCount,
+    entrantCount,
     timePerRoundSec,
+    voteSec,
     revealSec,
     categoryId,
     songPresetId,

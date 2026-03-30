@@ -69,7 +69,9 @@ export function PartyHubPage() {
     modeType: 'quiz',
     presetId: PARTY_PRESETS[0].id,
     roundCount: 10,
+    entrantCount: 8,
     timePerRoundSec: 12,
+    voteSec: 10,
     revealSec: 12,
     categoryId: 'all',
     keyword: '',
@@ -247,13 +249,17 @@ export function PartyHubPage() {
                 </select>
               </label>
               <label className="party-field">
-                <span>{pick('จำนวนรอบ', 'Rounds')}</span>
+                <span>{settings.modeType === 'vote' ? pick('Starting songs', 'Starting songs') : pick('Rounds', 'Rounds')}</span>
                 <select
-                  value={settings.roundCount}
-                  onChange={(event) => setSettings((current) => ({ ...current, roundCount: Number(event.target.value) }))}
+                  value={settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}
+                  onChange={(event) => setSettings((current) => (
+                    current.modeType === 'vote'
+                      ? { ...current, entrantCount: Number(event.target.value) }
+                      : { ...current, roundCount: Number(event.target.value) }
+                  ))}
                 >
-                  {[5, 10, 15, 20].map((count) => (
-                    <option key={count} value={count}>{count} {pick('รอบ', 'rounds')}</option>
+                  {(settings.modeType === 'vote' ? [2, 4, 8, 16] : [2, 5, 10, 15, 20]).map((count) => (
+                    <option key={count} value={count}>{count} {settings.modeType === 'vote' ? pick('songs', 'songs') : pick('rounds', 'rounds')}</option>
                   ))}
                 </select>
               </label>
@@ -279,6 +285,19 @@ export function PartyHubPage() {
                   ))}
                 </select>
               </label>
+              {settings.modeType === 'vote' ? (
+                <label className="party-field">
+                  <span>{pick('เวลาโหวต', 'Vote time')}</span>
+                  <select
+                    value={settings.voteSec}
+                    onChange={(event) => setSettings((current) => ({ ...current, voteSec: Number(event.target.value) }))}
+                  >
+                    {[5, 8, 10, 12, 15, 20].map((seconds) => (
+                      <option key={seconds} value={seconds}>{seconds} {pick('วินาที', 'sec')}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
 
             <div className="party-field">
@@ -315,8 +334,8 @@ export function PartyHubPage() {
                 <span>{pick('pool', 'pool')}</span>
               </article>
               <article className="party-stat-pill">
-                <strong>{settings.roundCount}</strong>
-                <span>{pick('รอบ', 'rounds')}</span>
+                <strong>{settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}</strong>
+                <span>{settings.modeType === 'vote' ? pick('Starting songs', 'Starting songs') : pick('Rounds', 'Rounds')}</span>
               </article>
               <article className="party-stat-pill">
                 <strong>{settings.timePerRoundSec}</strong>
@@ -326,6 +345,12 @@ export function PartyHubPage() {
                 <strong>{settings.revealSec}</strong>
                 <span>{pick('วิเฉลย', 'reveal sec')}</span>
               </article>
+              {settings.modeType === 'vote' ? (
+                <article className="party-stat-pill">
+                  <strong>{settings.voteSec}</strong>
+                  <span>{pick('วินาทีโหวต', 'vote sec')}</span>
+                </article>
+              ) : null}
             </div>
 
             <Button className="party-gradient-action" size="large" type="submit" disabled={busyAction === 'create'}>
@@ -1089,3 +1114,6 @@ export function PartyRoomPage() {
     </div>
   );
 }
+
+
+

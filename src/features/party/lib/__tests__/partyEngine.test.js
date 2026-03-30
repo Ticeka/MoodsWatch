@@ -3,6 +3,7 @@ import {
   advancePartyMatch,
   buildPartyMatchSnapshot,
   buildUniquePartyAliases,
+  createPartySettings,
   getPartyRequiredReadyCount,
   isPartyAnswerWindowOpen,
   normalizePartyText,
@@ -157,5 +158,23 @@ describe('partyEngine', () => {
     expect(getPartyRequiredReadyCount(1)).toBe(1);
     expect(getPartyRequiredReadyCount(2)).toBe(2);
     expect(getPartyRequiredReadyCount(6)).toBe(2);
+  });
+
+  it('allows 2 rounds minimum and preserves vote-specific settings', () => {
+    const settings = createPartySettings({
+      modeType: 'vote',
+      roundCount: 2,
+      entrantCount: 4,
+      voteSec: 15,
+      timePerRoundSec: 20,
+      revealSec: 8,
+    });
+
+    expect(settings.modeType).toBe('vote');
+    expect(settings.roundCount).toBe(2);
+    expect(settings.entrantCount).toBe(4);
+    expect(settings.voteSec).toBe(15);
+    expect(settings.timePerRoundSec).toBe(20);
+    expect(settings.revealSec).toBe(8);
   });
 });
