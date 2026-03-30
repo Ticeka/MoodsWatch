@@ -71,7 +71,15 @@ export function TrackIntroCard({ songKey, songData, pick }) {
   );
 }
 
-export function TrackPlayback({ songKey, songData, isPlaying, totalSec, onPlaybackComplete, pick }) {
+export function TrackPlayback({
+  songKey,
+  songData,
+  isPlaying,
+  totalSec,
+  onPlaybackComplete,
+  sideAction = null,
+  pick,
+}) {
   const videoRef = useRef(null);
   const progressFillRef = useRef(null);
   const [volume, setVolume] = useState(() => readPartyAudioVolume());
@@ -415,6 +423,11 @@ export function TrackPlayback({ songKey, songData, isPlaying, totalSec, onPlayba
               ) : null}
             </div>
           </div>
+          {sideAction ? (
+            <div className="track-playback-side-action">
+              {sideAction}
+            </div>
+          ) : null}
         </div>
 
         <div className="track-playback-progress">

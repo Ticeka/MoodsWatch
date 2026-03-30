@@ -314,6 +314,30 @@ async function fetchPartyRoomMembers(roomId) {
   return Array.isArray(data) ? data : [];
 }
 
+function getPartyBattleSkipState(match, phase) {
+  const skipVotes = match?.currentBattle?.skipVotes;
+  if (!skipVotes || skipVotes.phase !== phase) {
+    return {
+      phase,
+      memberTokens: [],
+      requiredVotes: 0,
+    };
+  }
+
+  return {
+    phase,
+    memberTokens: Array.isArray(skipVotes.memberTokens)
+      ? [...new Set(skipVotes.memberTokens.map((token) => String(token || '')).filter(Boolean))]
+      : [],
+    requiredVotes: Math.max(0, Number(skipVotes.requiredVotes || 0)),
+  };
+}
+
+function getPartySkipVoteThreshold(memberCount) {
+  const normalizedCount = Math.max(1, Number(memberCount || 0));
+  return Math.max(1, Math.floor(normalizedCount / 2) + 1);
+}
+
 export function getPartyBackendHint(error, pick) {
   if (
     getMissingRelation(error, 'party_rooms')
@@ -2192,6 +2216,105 @@ export async function submitPartyVote({
 
   // Optionally broadcast but we can rely on standard channel if configured, or just skip broadcasting individual votes to prevent live bias
   return data;
+}
+
+export async function submitPartySkipVote({
+  room,
+  member,
+  battleId,
+} = {}) {
+  if (!supabase || !room?.id || !member?.member_token || !room?.current_match) {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const freshRoom = await fetchPartyRoomRecordById(room.id);
+    if (!freshRoom?.current_match || freshRoom.settings?.modeType !== 'vote') {
+      throw new Error('This room is not in an active vote battle.');
+    }
+
+    const currentBattle = freshRoom.current_match.currentBattle;
+    const currentPhase = freshRoom.current_match.phase;
+    if (!currentBattle || String(currentBattle.id) !== String(battleId)) {
+      throw new Error('This battle has already advanced.');
+    }
+
+    if (currentPhase !== 'play-a' && currentPhase !== 'play-b') {
+      throw new Error('Skipping is only available while a song is playing.');
+    }
+
+    const members = await fetchPartyRoomMembers(freshRoom.id);
+    const requiredVotes = getPartySkipVoteThreshold(members.length);
+    const skipState = getPartyBattleSkipState(freshRoom.current_match, currentPhase);
+    const voterToken = String(member.member_token || '');
+
+    if (skipState.memberTokens.includes(voterToken)) {
+      return {
+        room: freshRoom,
+        votes: skipState.memberTokens.length,
+        requiredVotes: requiredVotes || skipState.requiredVotes,
+        advanced: false,
+        alreadyVoted: true,
+      };
+    }
+
+    const memberTokens = [...skipState.memberTokens, voterToken];
+    const nextBattle = {
+      ...currentBattle,
+      skipVotes: {
+        phase: currentPhase,
+        memberTokens,
+        requiredVotes,
+      },
+    };
+
+    const shouldAdvance = memberTokens.length >= requiredVotes;
+    const nextMatch = shouldAdvance
+      ? advancePartyVoteMatch({
+        ...freshRoom.current_match,
+        currentBattle: nextBattle,
+      })
+      : {
+        ...freshRoom.current_match,
+        currentBattle: nextBattle,
+      };
+    const nextStatus = shouldAdvance && nextMatch?.phase === 'final' ? 'finished' : freshRoom.status;
+
+    const { data, error } = await supabase
+      .from('party_rooms')
+      .update({
+        status: nextStatus,
+        current_match: nextMatch,
+      })
+      .eq('id', freshRoom.id)
+      .eq('status', freshRoom.status)
+      .eq('updated_at', freshRoom.updated_at)
+      .select('*');
+
+    if (error) {
+      throw error;
+    }
+
+    const nextRoom = takeFirstRecord(data);
+    if (!nextRoom) {
+      continue;
+    }
+
+    await broadcastPartyRoomEvent(freshRoom.id, {
+      type: shouldAdvance ? 'MATCH_ADVANCED' : 'ROOM_UPDATED',
+      payload: { room: nextRoom },
+    });
+
+    return {
+      room: nextRoom,
+      votes: memberTokens.length,
+      requiredVotes,
+      advanced: shouldAdvance,
+      alreadyVoted: false,
+    };
+  }
+
+  throw new Error('This battle changed while recording the skip vote. Please try again.');
 }
 
 function mapPartyRoomRealtimePayload(payload) {

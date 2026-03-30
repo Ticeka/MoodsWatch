@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import { getPartyPresetById } from '@/features/party/lib/partyEngine';
 import {
   resumePartyAudioContext,
   startPartyVoteAmbient,
   stopPartyVoteAmbient,
 } from '@/features/party/lib/partyAudio';
-import { submitPartyVote } from '@/features/party/lib/partyRemote';
+import { submitPartySkipVote, submitPartyVote } from '@/features/party/lib/partyRemote';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { usePartyVoteStore } from '@/features/party/stores/partyVoteStore';
 import { getCountdownSeconds, readPartyAudioVolume } from '../pages/partyRoomUtils';
@@ -53,9 +54,11 @@ export function PartyVoteRoomView({
     return endsAt ? getCountdownSeconds(endsAt - Date.now()) : 0;
   });
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [isSubmittingSkipVote, setIsSubmittingSkipVote] = useState(false);
 
   const { selectedSongId, hasVoted, setBattleContext, castVote, resetVoteMatch } = usePartyVoteStore();
   const answers = usePartyRoomStore((state) => state.answers);
+  const members = usePartyRoomStore((state) => state.members);
 
   const myExistingVote = useMemo(() => {
     if (!battle?.id || !guestToken) return null;
@@ -65,6 +68,31 @@ export function PartyVoteRoomView({
     ));
     return myAnswer?.selected_option_id || null;
   }, [answers, battle?.id, guestToken]);
+
+  const skipVoteState = useMemo(() => {
+    const skipVotes = battle?.skipVotes;
+    if (!skipVotes || skipVotes.phase !== phase) {
+      return {
+        memberTokens: [],
+        requiredVotes: Math.max(1, Math.floor(Math.max(1, members.length) / 2) + 1),
+      };
+    }
+
+    const memberTokens = Array.isArray(skipVotes.memberTokens)
+      ? [...new Set(skipVotes.memberTokens.map((token) => String(token || '')).filter(Boolean))]
+      : [];
+
+    return {
+      memberTokens,
+      requiredVotes: Math.max(
+        1,
+        Number(skipVotes.requiredVotes || Math.floor(Math.max(1, members.length) / 2) + 1),
+      ),
+    };
+  }, [battle?.skipVotes, members.length, phase]);
+  const hasSkipVoted = skipVoteState.memberTokens.includes(String(currentMember?.member_token || ''));
+  const skipVoteCount = skipVoteState.memberTokens.length;
+  const skipVotesRemaining = Math.max(0, members.length - skipVoteCount);
 
   useEffect(() => {
     if (battle?.id) {
@@ -134,8 +162,48 @@ export function PartyVoteRoomView({
       console.error('[PartyVoteRoomView] submitPartyVote error:', error);
     } finally {
       setIsSubmittingVote(false);
-    }
+      }
   }, [battle?.id, castVote, currentMember, isSubmittingVote, phase, room]);
+
+  const handleSkipVote = useCallback(async () => {
+    if (
+      isSubmittingSkipVote
+      || !battle?.id
+      || !currentMember
+      || (phase !== 'play-a' && phase !== 'play-b')
+      || hasSkipVoted
+    ) {
+      return;
+    }
+
+    setIsSubmittingSkipVote(true);
+    try {
+      const result = await submitPartySkipVote({
+        room,
+        member: currentMember,
+        battleId: battle.id,
+      });
+
+      if (!result) {
+        return;
+      }
+
+      if (result.advanced) {
+        toast.success(pick('โหวตครบแล้ว ข้ามไปเพลงถัดไป', 'Skip vote passed. Moving on.'));
+      } else if (result.alreadyVoted) {
+        toast(pick('คุณโหวตข้ามเพลงนี้ไปแล้ว', 'You already voted to skip this song.'));
+      } else {
+        toast.success(pick(
+          `รับโหวตข้ามเพลงแล้ว (${result.votes}/${result.requiredVotes})`,
+          `Skip vote recorded (${result.votes}/${result.requiredVotes})`,
+        ));
+      }
+    } catch (error) {
+      toast.error(error?.message || pick('โหวตข้ามเพลงไม่สำเร็จ', 'Could not submit the skip vote.'));
+    } finally {
+      setIsSubmittingSkipVote(false);
+    }
+  }, [battle?.id, currentMember, hasSkipVoted, isSubmittingSkipVote, phase, pick, room]);
 
   let content = null;
 
@@ -175,15 +243,35 @@ export function PartyVoteRoomView({
     const songKey = phase === 'play-a' ? 'A' : 'B';
     const songId = phase === 'play-a' ? battle?.songA : battle?.songB;
     content = (
-      <TrackPlayback
-        key={`${phase}-${songId || 'track'}`}
-        songKey={songKey}
-        songData={allSongs[songId]}
-        isPlaying
-        totalSec={settings.previewSec || 12}
-        onPlaybackComplete={onPlaybackComplete}
-        pick={pick}
-      />
+      <div className="vote-playback-stage">
+        <TrackPlayback
+          key={`${phase}-${songId || 'track'}`}
+          songKey={songKey}
+          songData={allSongs[songId]}
+          isPlaying
+          totalSec={settings.previewSec || 12}
+          onPlaybackComplete={onPlaybackComplete}
+          sideAction={(
+            <div className="vote-skip-stats" aria-live="polite">
+              <span>{pick(`โหวตแล้ว ${skipVoteCount} คน`, `${skipVoteCount} voted`)}</span>
+              <span>{pick(`ยังไม่โหวต ${skipVotesRemaining} คน`, `${skipVotesRemaining} not voted`)}</span>
+              <button
+                type="button"
+                className="vote-skip-button vote-skip-button--plain"
+                disabled={isSubmittingSkipVote || hasSkipVoted}
+                onClick={handleSkipVote}
+              >
+                {hasSkipVoted
+                  ? pick('โหวตข้ามแล้ว', 'Skip vote sent')
+                  : isSubmittingSkipVote
+                    ? pick('กำลังส่งโหวต...', 'Sending...')
+                    : pick('โหวตข้ามเพลงนี้', 'Vote to skip')}
+              </button>
+            </div>
+          )}
+          pick={pick}
+        />
+      </div>
     );
   } else if (phase === 'vote') {
     content = (

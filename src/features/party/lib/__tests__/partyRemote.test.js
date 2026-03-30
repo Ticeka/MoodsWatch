@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
   rpcResultsByPage: new Map(),
   channels: [],
   partyRoomMembersUpdateResponse: null,
+  partyRoomMembersSelectResponse: [],
   partyRoomsUpdateResponse: [],
   partyRoomsSelectResponse: [],
   partyRoomAnswersSelectResponse: [],
@@ -59,6 +60,28 @@ function createPartyRoomMembersUpdateBuilder(payload) {
           };
         },
       };
+    },
+  };
+}
+
+function createPartyRoomMembersSelectBuilder() {
+  const filters = [];
+
+  return {
+    eq(column, value) {
+      filters.push({ type: 'eq', column, value });
+      return this;
+    },
+    order() {
+      mockState.operations.push({
+        table: 'party_room_members',
+        action: 'select',
+        filters: [...filters],
+      });
+      return Promise.resolve({
+        data: mockState.partyRoomMembersSelectResponse,
+        error: null,
+      });
     },
   };
 }
@@ -155,6 +178,7 @@ import {
   fetchPartyTemplateDetail,
   fetchPartyTemplates,
   replacePartyTemplateItems,
+  submitPartySkipVote,
   subscribeToPartyRoom,
   togglePartyMemberReady,
   uploadPartyTemplateCover,
@@ -176,6 +200,7 @@ describe('partyRemote realtime optimizations', () => {
       display_name: 'Guest 1',
       is_ready: true,
     };
+    mockState.partyRoomMembersSelectResponse = [];
     mockState.partyRoomsUpdateResponse = [];
     mockState.partyRoomsSelectResponse = [];
     mockState.partyRoomAnswersSelectResponse = [];
@@ -201,6 +226,7 @@ describe('partyRemote realtime optimizations', () => {
       if (table === 'party_room_members') {
         return {
           update: vi.fn((payload) => createPartyRoomMembersUpdateBuilder(payload)),
+          select: vi.fn(() => createPartyRoomMembersSelectBuilder()),
         };
       }
 
@@ -651,6 +677,168 @@ describe('partyRemote realtime optimizations', () => {
       bufferCompensationMs: 2500,
       phaseEndsAt: '2026-03-29T10:00:17.500Z',
     }));
+  });
+
+  it('records a skip vote on the current vote playback phase without advancing yet', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'play-a',
+        battleIndex: 1,
+        totalBattles: 2,
+        queue: ['song-c', 'song-d'],
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+        },
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [
+      { member_token: 'host-1' },
+      { member_token: 'guest-1' },
+      { member_token: 'guest-2' },
+    ];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'play-a',
+        battleIndex: 1,
+        totalBattles: 2,
+        queue: ['song-c', 'song-d'],
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+          skipVotes: {
+            phase: 'play-a',
+            memberTokens: ['guest-1'],
+            requiredVotes: 2,
+          },
+        },
+      },
+    }];
+
+    const result = await submitPartySkipVote({
+      room: {
+        id: 'room-1',
+        current_match: { id: 'vote-match-1' },
+      },
+      member: {
+        member_token: 'guest-1',
+        display_name: 'Guest 1',
+      },
+      battleId: 'battle-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      advanced: false,
+      votes: 1,
+      requiredVotes: 2,
+    }));
+    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.currentBattle?.skipVotes).toEqual({
+      phase: 'play-a',
+      memberTokens: ['guest-1'],
+      requiredVotes: 2,
+    });
+  });
+
+  it('advances the room when skip votes reach the majority threshold', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'play-a',
+        battleIndex: 1,
+        totalBattles: 2,
+        queue: ['song-c', 'song-d'],
+        allSongs: {
+          'song-a': { id: 'song-a' },
+          'song-b': { id: 'song-b' },
+        },
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+          skipVotes: {
+            phase: 'play-a',
+            memberTokens: ['host-1'],
+            requiredVotes: 2,
+          },
+        },
+        settings: { previewSec: 20, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [
+      { member_token: 'host-1' },
+      { member_token: 'guest-1' },
+      { member_token: 'guest-2' },
+    ];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'intro-b',
+        battleIndex: 1,
+        totalBattles: 2,
+        queue: ['song-c', 'song-d'],
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+          skipVotes: {
+            phase: 'play-a',
+            memberTokens: ['host-1', 'guest-1'],
+            requiredVotes: 2,
+          },
+        },
+      },
+    }];
+
+    const result = await submitPartySkipVote({
+      room: {
+        id: 'room-1',
+        current_match: { id: 'vote-match-1' },
+      },
+      member: {
+        member_token: 'guest-1',
+        display_name: 'Guest 1',
+      },
+      battleId: 'battle-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      advanced: true,
+      votes: 2,
+      requiredVotes: 2,
+    }));
+    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.phase).toBe('intro-b');
   });
 });
 

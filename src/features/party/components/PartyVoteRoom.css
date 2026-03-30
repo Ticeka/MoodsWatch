@@ -146,6 +146,12 @@
   position: relative;
   z-index: 10;
 }
+.vote-playback-stage {
+  width: 100%;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
 .track-playback-card {
   background: rgba(10, 10, 15, 0.95);
   border-radius: 12px;
@@ -165,7 +171,7 @@
 .track-playback-body {
   display: flex;
   gap: 1rem;
-  align-items: center;
+  align-items: stretch;
   margin-bottom: 1rem;
 }
 .playback-cover {
@@ -227,6 +233,49 @@
 .vote-phase-playback.is-b .track-playback-video-wrapper {
   box-shadow: 0 0 80px rgba(255,0,102,0.4), 0 0 20px rgba(255,0,102,0.6);
   border-color: #ff0066;
+}
+.track-playback-side-action {
+  width: 180px;
+  flex: 0 0 180px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.vote-skip-stats {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: end;
+  text-align: right;
+}
+.vote-skip-stats span {
+  color: rgba(255,255,255,0.78);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.vote-skip-button {
+  border: 1px solid rgba(255,255,255,0.18);
+  background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.65rem 0.95rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+  white-space: nowrap;
+}
+.vote-skip-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.3);
+  background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
+}
+.vote-skip-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.vote-skip-button--plain {
+  justify-self: end;
 }
 .track-playback-video {
   width: 100%;
@@ -944,6 +993,20 @@
   }
   .track-playback-card {
     padding: 1rem;
+  }
+  .track-playback-body {
+    flex-direction: column;
+  }
+  .track-playback-side-action {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+  .vote-skip-stats {
+    justify-items: start;
+    text-align: left;
+  }
+  .vote-skip-button--plain {
+    justify-self: stretch;
   }
   .track-playback-body {
     align-items: flex-start;
