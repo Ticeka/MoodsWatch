@@ -25,7 +25,12 @@ const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
 const PARTY_PROFILE_KEY = 'moodtoon-party-profile';
 const PARTY_ROOM_EVENT = 'party-room-event';
 const PARTY_ROOM_CHANNEL_READY_TIMEOUT_MS = 1600;
+const PARTY_SONG_POOL_PAGE_SIZE = 60;
+const PARTY_SONG_POOL_MAX_PAGES = 3;
+const PARTY_SONG_POOL_CACHE_TTL_MS = 2 * 60 * 1000;
 const partyRoomRealtimeRegistry = new Map();
+const partySongPoolCache = new Map();
+const partyPresetSongPoolCache = new Map();
 
 function getPartyRoomChannelName(roomId) {
   return `party-room-${roomId}`;
@@ -121,6 +126,11 @@ export function __resetPartyRoomRealtimeRegistryForTests() {
     entry.rejectReady?.(new Error('Party room channel registry reset.'));
   });
   partyRoomRealtimeRegistry.clear();
+}
+
+export function __resetPartySongPoolCachesForTests() {
+  partySongPoolCache.clear();
+  partyPresetSongPoolCache.clear();
 }
 
 async function waitForRegisteredPartyRoomChannel(roomId, timeoutMs = PARTY_ROOM_CHANNEL_READY_TIMEOUT_MS) {
@@ -721,25 +731,100 @@ function filterSongsByCategory(songs = [], categoryId = 'all') {
   return songs;
 }
 
+function buildPartySongPoolCacheKey(settings = {}) {
+  const normalizedSettings = createPartySettings(settings);
+  return JSON.stringify({
+    modeType: normalizedSettings.modeType,
+    presetId: normalizedSettings.presetId,
+    roundCount: normalizedSettings.roundCount,
+    entrantCount: normalizedSettings.entrantCount,
+    categoryId: normalizedSettings.categoryId,
+    songPresetId: normalizedSettings.songPresetId,
+    keyword: normalizedSettings.keyword,
+  });
+}
+
+function getPartySongPoolCacheEntry(cache, key) {
+  const entry = cache.get(key);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.promise) {
+    return entry;
+  }
+
+  if (Number(entry.expiresAt || 0) > Date.now()) {
+    return entry;
+  }
+
+  cache.delete(key);
+  return null;
+}
+
+async function getOrCreatePartySongPoolCacheValue(cache, key, loader) {
+  const cachedEntry = getPartySongPoolCacheEntry(cache, key);
+  if (cachedEntry?.promise) {
+    return cachedEntry.promise;
+  }
+
+  if (cachedEntry?.value) {
+    return cachedEntry.value;
+  }
+
+  const task = Promise.resolve().then(loader);
+  cache.set(key, { promise: task });
+
+  try {
+    const value = await task;
+    cache.set(key, {
+      value,
+      expiresAt: Date.now() + PARTY_SONG_POOL_CACHE_TTL_MS,
+    });
+    return value;
+  } catch (error) {
+    cache.delete(key);
+    throw error;
+  }
+}
+
+function canBuildPartySnapshotFromPool(playablePool = [], settings = {}) {
+  try {
+    const normalizedSettings = createPartySettings(settings);
+    if (normalizedSettings.modeType === 'vote') {
+      buildPartyVoteSnapshot(playablePool, normalizedSettings);
+      return true;
+    }
+
+    buildPartyMatchSnapshot(playablePool, normalizedSettings);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchPartyPresetSongPool(presetId) {
   if (!supabase || !presetId) {
     return [];
   }
 
-  const { data, error } = await supabase
-    .from('party_song_preset_items')
-    .select('*')
-    .eq('preset_id', presetId)
-    .order('position', { ascending: true })
-    .order('created_at', { ascending: true });
+  const cacheKey = String(presetId || '').trim();
+  return getOrCreatePartySongPoolCacheValue(partyPresetSongPoolCache, cacheKey, async () => {
+    const { data, error } = await supabase
+      .from('party_song_preset_items')
+      .select('*')
+      .eq('preset_id', presetId)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+    if (error) {
+      throw error;
+    }
 
-  return (data || [])
-    .map(mapPartyPresetSongItem)
-    .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+    return (data || [])
+      .map(mapPartyPresetSongItem)
+      .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+  });
 }
 
 export async function fetchPublishedPartySongPresets() {
@@ -885,34 +970,43 @@ export async function fetchPartySongPool(settings = {}) {
     return fetchPartyPresetSongPool(normalizedSettings.songPresetId);
   }
 
-  const pages = [0, 1, 2];
-  const pageSize = 60;
+  const cacheKey = buildPartySongPoolCacheKey(normalizedSettings);
+  return getOrCreatePartySongPoolCacheValue(partySongPoolCache, cacheKey, async () => {
+    const songMap = new Map();
+    let playablePool = [];
 
-  const results = await Promise.all(
-    pages.map((page) => supabase.rpc('search_battle_theme_songs', {
-      p_query: normalizedSettings.keyword || '',
-      p_show_adult: false,
-      p_hidden_title_ids: [],
-      p_page: page,
-      p_page_size: pageSize,
-    }))
-  );
+    for (let page = 0; page < PARTY_SONG_POOL_MAX_PAGES; page += 1) {
+      const { data, error } = await supabase.rpc('search_battle_theme_songs', {
+        p_query: normalizedSettings.keyword || '',
+        p_show_adult: false,
+        p_hidden_title_ids: [],
+        p_page: page,
+        p_page_size: PARTY_SONG_POOL_PAGE_SIZE,
+      });
 
-  const rows = [];
-  results.forEach(({ data, error }) => {
-    if (error) {
-      throw error;
+      if (error) {
+        throw error;
+      }
+
+      (data || [])
+        .map(mapPartySongRow)
+        .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl))
+        .forEach((song) => {
+          songMap.set(song.id, song);
+        });
+
+      playablePool = filterSongsByCategory([...songMap.values()], normalizedSettings.categoryId);
+      if (canBuildPartySnapshotFromPool(playablePool, normalizedSettings)) {
+        break;
+      }
+
+      if ((data || []).length < PARTY_SONG_POOL_PAGE_SIZE) {
+        break;
+      }
     }
 
-    rows.push(...(data || []));
+    return playablePool;
   });
-
-  const mapped = rows
-    .map(mapPartySongRow)
-    .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
-
-  const deduped = Array.from(new Map(mapped.map((song) => [song.id, song])).values());
-  return filterSongsByCategory(deduped, normalizedSettings.categoryId);
 }
 
 export async function fetchPartyRoomBundle(roomCode) {
@@ -1126,7 +1220,10 @@ export async function startPartyMatch(room) {
     return null;
   }
 
-  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  const [freshRoom, freshMembers] = await Promise.all([
+    fetchPartyRoomRecordById(room.id),
+    fetchPartyRoomMembers(room.id),
+  ]);
   if (!freshRoom) {
     throw new Error('Room not found.');
   }
@@ -1135,7 +1232,6 @@ export async function startPartyMatch(room) {
     return freshRoom;
   }
 
-  const freshMembers = await fetchPartyRoomMembers(freshRoom.id);
   const requiredReadyCount = getPartyRequiredReadyCount(freshMembers.length);
   const readyCount = freshMembers.filter((member) => member.is_ready).length;
   if (requiredReadyCount > 0 && readyCount < requiredReadyCount) {
@@ -1208,6 +1304,88 @@ export async function startPartyMatch(room) {
       },
     });
   }
+
+  return nextRoom;
+}
+
+export async function extendPartyQuestionPhase({
+  room,
+  expectedMatchId = '',
+  expectedRoundId = '',
+  extraMs = 0,
+} = {}) {
+  if (!supabase || !room?.id || !room?.current_match) {
+    return room || null;
+  }
+
+  const extensionMs = Math.max(0, Math.min(8000, Math.round(Number(extraMs || 0))));
+  if (!extensionMs) {
+    return room;
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match || freshRoom.current_match.phase !== 'question') {
+    return freshRoom || room;
+  }
+
+  const currentRound = getPartyCurrentRound(freshRoom.current_match);
+  if (!currentRound) {
+    return freshRoom;
+  }
+
+  if (expectedMatchId && String(freshRoom.current_match.id || '') !== String(expectedMatchId || '')) {
+    return freshRoom;
+  }
+
+  if (expectedRoundId && String(currentRound.id || '') !== String(expectedRoundId || '')) {
+    return freshRoom;
+  }
+
+  const currentEndsAtMs = getPartyPhaseEndsAtMs(freshRoom.current_match);
+  if (!currentEndsAtMs) {
+    return freshRoom;
+  }
+
+  const currentCompensationMs = Math.max(0, Number(freshRoom.current_match.bufferCompensationMs || 0));
+  const nextCompensationMs = Math.max(currentCompensationMs, extensionMs);
+  const additionalMs = nextCompensationMs - currentCompensationMs;
+  if (!additionalMs) {
+    return freshRoom;
+  }
+
+  const nextMatch = {
+    ...freshRoom.current_match,
+    playbackStartedAt: freshRoom.current_match.playbackStartedAt || new Date().toISOString(),
+    bufferCompensationMs: nextCompensationMs,
+    phaseEndsAt: new Date(currentEndsAtMs + additionalMs).toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('party_rooms')
+    .update({
+      current_match: nextMatch,
+    })
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('status', freshRoom.status)
+    .eq('updated_at', freshRoom.updated_at)
+    .select('*');
+
+  if (error) {
+    throw error;
+  }
+
+  const nextRoom = takeFirstRecord(data);
+  if (!nextRoom) {
+    return (await fetchPartyRoomRecordById(room.id)) || freshRoom;
+  }
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'ROOM_UPDATED',
+    payload: {
+      room: nextRoom,
+    },
+  });
 
   return nextRoom;
 }

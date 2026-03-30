@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   channel: vi.fn(),
   removeChannel: vi.fn(async () => {}),
   operations: [],
+  rpcCalls: [],
+  rpcResultsByPage: new Map(),
   channels: [],
   partyRoomMembersUpdateResponse: null,
   partyRoomsUpdateResponse: [],
@@ -128,6 +131,7 @@ function createPartyRoomAnswersSelectBuilder() {
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: {
     from: mockState.from,
+    rpc: mockState.rpc,
     channel: mockState.channel,
     removeChannel: mockState.removeChannel,
   },
@@ -135,7 +139,10 @@ vi.mock('@/shared/lib/supabase', () => ({
 
 import {
   __resetPartyRoomRealtimeRegistryForTests,
+  __resetPartySongPoolCachesForTests,
   advancePartyRoom,
+  extendPartyQuestionPhase,
+  fetchPartySongPool,
   subscribeToPartyRoom,
   togglePartyMemberReady,
 } from '../partyRemote.js';
@@ -146,6 +153,8 @@ describe('partyRemote realtime optimizations', () => {
     vi.setSystemTime(new Date('2026-03-29T10:00:00.000Z'));
 
     mockState.operations = [];
+    mockState.rpcCalls = [];
+    mockState.rpcResultsByPage = new Map();
     mockState.channels = [];
     mockState.partyRoomMembersUpdateResponse = {
       id: 'member-1',
@@ -160,6 +169,13 @@ describe('partyRemote realtime optimizations', () => {
     mockState.partyRoomAnswersSelectError = null;
     mockState.channel.mockClear();
     mockState.channel.mockImplementation((topic) => createMockChannel(topic));
+    mockState.rpc.mockClear();
+    mockState.rpc.mockImplementation((fn, params = {}) => {
+      mockState.rpcCalls.push({ fn, params });
+      const page = Number(params?.p_page || 0);
+      const result = mockState.rpcResultsByPage.get(page) || { data: [], error: null };
+      return Promise.resolve(result);
+    });
     mockState.removeChannel.mockClear();
     mockState.from.mockClear();
     mockState.from.mockImplementation((table) => {
@@ -186,6 +202,7 @@ describe('partyRemote realtime optimizations', () => {
     });
 
     __resetPartyRoomRealtimeRegistryForTests();
+    __resetPartySongPoolCachesForTests();
   });
 
   it('reuses the subscribed room channel for member broadcasts', async () => {
@@ -496,6 +513,124 @@ describe('partyRemote realtime optimizations', () => {
       songA_votes: 2,
       songB_votes: 1,
       winning_song_id: '101',
+    }));
+  });
+
+  it('stops fetching extra song pages once the pool is already playable', async () => {
+    mockState.rpcResultsByPage.set(0, {
+      data: Array.from({ length: 12 }, (_, index) => ({
+        id: index + 1,
+        theme_type: 'OP',
+        song_title: `Song ${index + 1}`,
+        artist_name: `Artist ${index + 1}`,
+        is_creditless: false,
+        video_url: `https://cdn.example.com/song-${index + 1}.mp4`,
+        source_id: index + 1,
+        source_canonical_title: `Title ${index + 1}`,
+        source_aliases: [],
+      })),
+      error: null,
+    });
+
+    const songs = await fetchPartySongPool({
+      modeType: 'quiz',
+      presetId: 'party-classic',
+      roundCount: 5,
+      categoryId: 'all',
+    });
+
+    expect(songs).toHaveLength(12);
+    expect(mockState.rpcCalls).toHaveLength(1);
+    expect(mockState.rpcCalls[0]?.params?.p_page).toBe(0);
+  });
+
+  it('reuses the cached song pool for the same settings without hitting rpc again', async () => {
+    mockState.rpcResultsByPage.set(0, {
+      data: Array.from({ length: 8 }, (_, index) => ({
+        id: index + 1,
+        theme_type: 'OP',
+        song_title: `Song ${index + 1}`,
+        artist_name: `Artist ${index + 1}`,
+        is_creditless: false,
+        video_url: `https://cdn.example.com/song-${index + 1}.mp4`,
+        source_id: index + 1,
+        source_canonical_title: `Title ${index + 1}`,
+        source_aliases: [],
+      })),
+      error: null,
+    });
+
+    const settings = {
+      modeType: 'vote',
+      entrantCount: 4,
+      categoryId: 'all',
+    };
+
+    const firstSongs = await fetchPartySongPool(settings);
+    const secondSongs = await fetchPartySongPool(settings);
+
+    expect(firstSongs).toEqual(secondSongs);
+    expect(mockState.rpcCalls).toHaveLength(1);
+  });
+
+  it('extends the question phase so startup buffering does not eat answer time', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      current_match: {
+        id: 'match-1',
+        phase: 'question',
+        roundIndex: 0,
+        totalRounds: 1,
+        timePerRoundSec: 12,
+        answerGraceSec: 3,
+        phaseStartedAt: '2026-03-29T10:00:00.000Z',
+        phaseEndsAt: '2026-03-29T10:00:15.000Z',
+        rounds: [{ id: 'round-1' }],
+      },
+    }];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      current_match: {
+        id: 'match-1',
+        phase: 'question',
+        roundIndex: 0,
+        totalRounds: 1,
+        timePerRoundSec: 12,
+        answerGraceSec: 3,
+        phaseStartedAt: '2026-03-29T10:00:00.000Z',
+        playbackStartedAt: '2026-03-29T10:00:00.000Z',
+        bufferCompensationMs: 2500,
+        phaseEndsAt: '2026-03-29T10:00:17.500Z',
+        rounds: [{ id: 'round-1' }],
+      },
+    }];
+
+    const nextRoom = await extendPartyQuestionPhase({
+      room: {
+        id: 'room-1',
+        host_member_token: 'host-1',
+        status: 'live',
+        current_match: {
+          id: 'match-1',
+          phase: 'question',
+        },
+      },
+      expectedMatchId: 'match-1',
+      expectedRoundId: 'round-1',
+      extraMs: 2500,
+    });
+
+    expect(nextRoom?.current_match?.bufferCompensationMs).toBe(2500);
+    expect(nextRoom?.current_match?.phaseEndsAt).toBe('2026-03-29T10:00:17.500Z');
+    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match).toEqual(expect.objectContaining({
+      bufferCompensationMs: 2500,
+      phaseEndsAt: '2026-03-29T10:00:17.500Z',
     }));
   });
 });

@@ -25,6 +25,7 @@ import { resumePartyAudioContext } from '@/features/party/lib/partyAudio';
 import {
   closePartyRoom,
   createPartyRoom,
+  extendPartyQuestionPhase,
   fetchPartyRoomBundle,
   fetchPublishedPartySongPresets,
   getPartyBackendHint,
@@ -53,6 +54,7 @@ import {
 import {
   buildPartyProfile,
   getCountdownSeconds,
+  getPartyPrefetchPreloadValue,
   getPartyPrefetchRound,
   playPartyCountdownAlert,
   readPartyAudioVolume,
@@ -397,6 +399,7 @@ export function PartyRoomPage() {
   const [revealPrefetchReady, setRevealPrefetchReady] = useState(false);
   const countdownAlertedSecondRef = useRef(null);
   const answerAlertedSecondRef = useRef(null);
+  const questionPlaybackAdjustedRef = useRef(false);
   const loadPromiseRef = useRef(null);
   const activeRoomCodeRef = useRef(roomCode);
   const activePhaseRef = useRef(null);
@@ -623,7 +626,52 @@ export function PartyRoomPage() {
   useEffect(() => {
     setPlaybackEndedAtMs(null);
     setRevealPlaybackStartedAtMs(null);
+    questionPlaybackAdjustedRef.current = false;
   }, [currentMatch?.id, currentMatch?.phase, currentRound?.id]);
+
+  const handleQuestionPlaybackStarted = React.useCallback(async (startedAtMs) => {
+    if (
+      !isHost
+      || questionPlaybackAdjustedRef.current
+      || currentMatch?.phase !== 'question'
+      || !room
+      || !currentRound?.id
+    ) {
+      return;
+    }
+
+    const phaseStartedAtMs = new Date(currentMatch.phaseStartedAt || 0).getTime();
+    if (!phaseStartedAtMs) {
+      return;
+    }
+
+    const startupDelayMs = Math.max(0, Math.round(Number(startedAtMs || 0) - phaseStartedAtMs));
+    if (startupDelayMs < 700) {
+      return;
+    }
+
+    questionPlaybackAdjustedRef.current = true;
+    try {
+      const nextRoom = await extendPartyQuestionPhase({
+        room,
+        expectedMatchId: currentMatch.id,
+        expectedRoundId: currentRound.id,
+        extraMs: startupDelayMs,
+      });
+
+      if (nextRoom) {
+        applyEvent({
+          type: 'ROOM_UPDATED',
+          payload: {
+            room: nextRoom,
+          },
+        });
+      }
+    } catch (error) {
+      questionPlaybackAdjustedRef.current = false;
+      console.error('Failed to extend party question phase for playback buffering', error);
+    }
+  }, [applyEvent, currentMatch, currentRound?.id, isHost, room]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -981,7 +1029,7 @@ export function PartyRoomPage() {
           <video
             key={`preload-${prefetchedRound.id || prefetchedRound.mediaUrl}`}
             src={prefetchedRound.mediaUrl}
-            preload="auto" muted playsInline
+            preload={getPartyPrefetchPreloadValue(currentMatch?.phase)} muted playsInline
             className="party-hidden-media" aria-hidden="true"
           />
         ) : null}
@@ -1111,6 +1159,7 @@ export function PartyRoomPage() {
                   busyAction={busyAction}
                   phaseEndsAtMs={phaseEndsAtMs}
                   answerGraceEndsAtMs={answerGraceEndsAtMs}
+                  onPlaybackStarted={handleQuestionPlaybackStarted}
                   onPlaybackComplete={setPlaybackEndedAtMs}
                   onSubmit={handleSubmitAnswer}
                   pick={pick}

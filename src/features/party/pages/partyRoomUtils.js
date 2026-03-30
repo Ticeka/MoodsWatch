@@ -110,6 +110,25 @@ export function getPartyPrefetchRound(match, { revealPrefetchReady = false } = {
   return null;
 }
 
+export function getPartyPrefetchPreloadValue(phase = '') {
+  return phase === 'countdown' || phase === 'reveal' ? 'auto' : 'metadata';
+}
+
+export function shouldPartyForceMediaLoad(currentSrc = '', targetSrc = '', readyState = 0) {
+  const normalizedCurrentSrc = String(currentSrc || '').trim();
+  const normalizedTargetSrc = String(targetSrc || '').trim();
+
+  if (!normalizedTargetSrc) {
+    return false;
+  }
+
+  if (!normalizedCurrentSrc || normalizedCurrentSrc !== normalizedTargetSrc) {
+    return true;
+  }
+
+  return Number(readyState || 0) <= 1;
+}
+
 export function playPartyCountdownAlert(audioContext, volume = 85, step = 3) {
   if (!audioContext) {
     return;

@@ -10,6 +10,7 @@ export const PartyQuestionView = React.memo(function PartyQuestionView({
   busyAction,
   phaseEndsAtMs,
   answerGraceEndsAtMs,
+  onPlaybackStarted,
   onPlaybackComplete,
   onSubmit,
   pick,
@@ -32,6 +33,7 @@ export const PartyQuestionView = React.memo(function PartyQuestionView({
       leaderboard={room?.settings?.showLiveScores ? leaderboard : []}
       phaseEndsAtMs={phaseEndsAtMs}
       answerGraceEndsAtMs={answerGraceEndsAtMs}
+      onPlaybackStarted={onPlaybackStarted}
       onPlaybackComplete={onPlaybackComplete}
       onSubmit={onSubmit}
       submitting={busyAction === 'answer'}

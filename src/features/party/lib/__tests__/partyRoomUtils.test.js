@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   getPartyBufferedPreviewMs,
+  getPartyPrefetchPreloadValue,
   getPartyPlaybackLeadBufferMs,
   getPartyPrefetchRound,
   isPartyPlaybackReady,
+  shouldPartyForceMediaLoad,
 } from '../../pages/partyRoomUtils.js';
 
 describe('partyRoomUtils', () => {
@@ -67,5 +69,18 @@ describe('partyRoomUtils', () => {
 
     expect(getPartyPrefetchRound(match, { revealPrefetchReady: false })).toBeNull();
     expect(getPartyPrefetchRound(match, { revealPrefetchReady: true })).toEqual({ id: 'round-2' });
+  });
+
+  it('uses aggressive preload only during countdown prefetch', () => {
+    expect(getPartyPrefetchPreloadValue('countdown')).toBe('auto');
+    expect(getPartyPrefetchPreloadValue('reveal')).toBe('auto');
+    expect(getPartyPrefetchPreloadValue('question')).toBe('metadata');
+  });
+
+  it('forces media load only when the source changed or media is not ready yet', () => {
+    expect(shouldPartyForceMediaLoad('', 'https://cdn.example.com/clip.mp4', 0)).toBe(true);
+    expect(shouldPartyForceMediaLoad('https://cdn.example.com/clip.mp4', 'https://cdn.example.com/clip.mp4', 4)).toBe(false);
+    expect(shouldPartyForceMediaLoad('https://cdn.example.com/clip.mp4', 'https://cdn.example.com/clip.mp4', 1)).toBe(true);
+    expect(shouldPartyForceMediaLoad('https://cdn.example.com/other.mp4', 'https://cdn.example.com/clip.mp4', 4)).toBe(true);
   });
 });

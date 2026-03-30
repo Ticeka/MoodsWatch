@@ -31,6 +31,7 @@ import {
   getPartyBufferedPreviewMs,
   isPartyPlaybackReady,
   readPartyAudioVolume,
+  shouldPartyForceMediaLoad,
 } from './partyRoomUtils';
 
 export function PartyIdentityAvatar({ profile, className = '' }) {
@@ -392,7 +393,7 @@ function getBufferedPreviewMs(media, startSec = 0, previewDurationMs = 0) {
   return getPartyBufferedPreviewMs(ranges, media.currentTime, startSec, previewDurationMs);
 }
 
-function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs, onPlaybackComplete, pick }) {
+function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs, onPlaybackStarted, onPlaybackComplete, pick }) {
   const mediaRef = useRef(null);
   const playbackFillRef = useRef(null);
   const [volume, setVolume] = useState(() => readPartyAudioVolume());
@@ -442,7 +443,9 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
 
     media.currentTime = previewStartSec;
     media.preload = 'auto';
-    media.load();
+    if (shouldPartyForceMediaLoad(media.currentSrc || media.src, round.mediaUrl, media.readyState)) {
+      media.load();
+    }
     if (playbackFill) {
       playbackFill.style.transform = 'scaleX(0)';
     }
@@ -497,6 +500,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
       try {
         await media.play();
         markPlaybackStarted();
+        onPlaybackStarted?.(Date.now());
         if (!cancelled) {
           setPlaybackBlocked(false);
           setBufferingPlayback(false);
@@ -553,6 +557,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
 
     const handlePlaying = () => {
       markPlaybackStarted();
+      onPlaybackStarted?.(Date.now());
       setPlaybackBlocked(false);
       setBufferingPlayback(false);
       setBufferReady(true);
@@ -613,7 +618,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
       media.removeEventListener('canplaythrough', handleCanPlayThrough);
       media.pause();
     };
-  }, [match?.phase, match?.timePerRoundSec, onPlaybackComplete, round?.id, round?.mediaUrl, round?.previewDurationSec, round?.previewStartSec]);
+  }, [match?.phase, match?.timePerRoundSec, onPlaybackComplete, onPlaybackStarted, round?.id, round?.mediaUrl, round?.previewDurationSec, round?.previewStartSec]);
 
   const previewDurationMs = Number(round?.previewDurationSec || match?.timePerRoundSec || 12) * 1000;
 
@@ -695,7 +700,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
           </button>
         ) : null}
 
-        <video ref={mediaRef} src={round?.mediaUrl || ''} playsInline preload="auto" className="party-hidden-media" />
+        <video ref={mediaRef} src={round?.mediaUrl || ''} playsInline preload="metadata" className="party-hidden-media" />
       </div>
 
       {/* Last-3s overlay — sits on the question card, pointer-events: none */}
@@ -714,6 +719,7 @@ export function PartyAnswerPanel({
   leaderboard,
   phaseEndsAtMs,
   answerGraceEndsAtMs,
+  onPlaybackStarted,
   onPlaybackComplete,
   onSubmit,
   submitting,
@@ -786,6 +792,7 @@ export function PartyAnswerPanel({
             round={round}
             answerGraceEndsAtMs={answerGraceEndsAtMs}
             phaseEndsAtMs={phaseEndsAtMs}
+            onPlaybackStarted={onPlaybackStarted}
             onPlaybackComplete={onPlaybackComplete}
             pick={pick}
           />
@@ -923,7 +930,9 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
     video.muted = savedVolume <= 0;
 
     video.preload = 'auto';
-    video.load();
+    if (shouldPartyForceMediaLoad(video.currentSrc || video.src, round.mediaUrl, video.readyState)) {
+      video.load();
+    }
     const attemptPlay = () => {
       void video.play().catch(() => {});
     };
@@ -1009,7 +1018,7 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
                   controls
                   autoPlay
                   playsInline
-                  preload="auto"
+                  preload="metadata"
                 />
               </div>
             ) : null}

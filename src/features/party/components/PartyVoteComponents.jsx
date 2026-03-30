@@ -8,6 +8,7 @@ import {
   playPartyCountdownAlert,
   playPartyWinAlert,
   readPartyAudioVolume,
+  shouldPartyForceMediaLoad,
 } from '../pages/partyRoomUtils';
 
 export function BattleCountdown({ battleIndex, totalBattles, currentMatch, secondsLeft, pick }) {
@@ -219,7 +220,9 @@ export function TrackPlayback({ songKey, songData, isPlaying, totalSec, onPlayba
 
     video.currentTime = previewStartSec;
     video.preload = 'auto';
-    video.load();
+    if (retryNonce > 0 || shouldPartyForceMediaLoad(video.currentSrc || video.src, songData.mediaUrl, video.readyState)) {
+      video.load();
+    }
     video.volume = Math.max(0, Math.min(1, readPartyAudioVolume() / 100));
     video.muted = readPartyAudioVolume() <= 0;
     setPlaybackBlocked(false);
@@ -362,7 +365,7 @@ export function TrackPlayback({ songKey, songData, isPlaying, totalSec, onPlayba
               src={songData.mediaUrl}
               className="track-playback-video"
               playsInline
-              preload="auto"
+              preload="metadata"
               controls={playbackBlocked || playbackFailed}
             />
             <div className="track-playback-video-overlay" aria-live="polite">
