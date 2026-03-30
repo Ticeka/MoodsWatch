@@ -16,6 +16,10 @@ import {
   scorePartyAnswer,
   advancePartyMatch,
 } from './partyEngine';
+import {
+  buildPartyVoteSnapshot,
+  advancePartyVoteMatch,
+} from './partyModeVote';
 
 const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
 const PARTY_PROFILE_KEY = 'moodtoon-party-profile';
@@ -1141,7 +1145,10 @@ export async function startPartyMatch(room) {
   const settings = createPartySettings(freshRoom.settings || {});
   const pool = await fetchPartySongPool(settings);
   const playablePool = pool.filter((song) => normalizePartyText(song.sourceTitleName) && normalizePartyText(song.songTitle));
-  const snapshot = buildPartyMatchSnapshot(playablePool, settings);
+  
+  const snapshot = settings.modeType === 'vote'
+    ? buildPartyVoteSnapshot(playablePool, settings)
+    : buildPartyMatchSnapshot(playablePool, settings);
 
   const { data, error } = await supabase
     .from('party_rooms')
@@ -1210,49 +1217,109 @@ export async function advancePartyRoom(room) {
     return room;
   }
 
-  if (!getPartyPhaseEndsAtMs(room.current_match) || !isPartyPhaseExpired(room.current_match)) {
+  const isVotePlaybackPhase = room.settings?.modeType === 'vote'
+    && (room.current_match?.phase === 'play-a' || room.current_match?.phase === 'play-b');
+
+  if (!isVotePlaybackPhase && (!getPartyPhaseEndsAtMs(room.current_match) || !isPartyPhaseExpired(room.current_match))) {
     return room;
   }
 
-  const localNextMatch = advancePartyMatch(room.current_match);
-  const localNextStatus = localNextMatch?.phase === 'final' ? 'finished' : 'live';
-  const { data: optimisticData, error: optimisticError } = await supabase
-    .from('party_rooms')
-    .update({
-      status: localNextStatus,
-      current_match: localNextMatch,
-    })
-    .eq('id', room.id)
-    .eq('host_member_token', room.host_member_token)
-    .eq('status', room.status)
-    .eq('updated_at', room.updated_at)
-    .select('*');
+  const isVoteMode = room.settings?.modeType === 'vote';
+  const needsVoteTally = isVoteMode && room.current_match?.phase === 'vote';
 
-  if (optimisticError) {
-    throw optimisticError;
+  // For vote->reveal transition we MUST read DB before writing, so skip optimistic path.
+  if (!needsVoteTally) {
+    const localNextMatch = isVoteMode
+      ? advancePartyVoteMatch(room.current_match)
+      : advancePartyMatch(room.current_match);
+    const localNextStatus = localNextMatch?.phase === 'final' ? 'finished' : 'live';
+    const { data: optimisticData, error: optimisticError } = await supabase
+      .from('party_rooms')
+      .update({
+        status: localNextStatus,
+        current_match: localNextMatch,
+      })
+      .eq('id', room.id)
+      .eq('host_member_token', room.host_member_token)
+      .eq('status', room.status)
+      .eq('updated_at', room.updated_at)
+      .select('*');
+
+    if (optimisticError) {
+      throw optimisticError;
+    }
+
+    const optimisticRoom = takeFirstRecord(optimisticData);
+    if (optimisticRoom) {
+      await broadcastPartyRoomEvent(room.id, {
+        type: 'MATCH_ADVANCED',
+        payload: { room: optimisticRoom },
+      });
+      return optimisticRoom;
+    }
   }
 
-  const optimisticRoom = takeFirstRecord(optimisticData);
-  if (optimisticRoom) {
-    await broadcastPartyRoomEvent(room.id, {
-      type: 'MATCH_ADVANCED',
-      payload: {
-        room: optimisticRoom,
-      },
-    });
-    return optimisticRoom;
-  }
-
+  // --- Fresh path (always for vote tally, fallback for quiz) ---
   const freshRoom = await fetchPartyRoomRecordById(room.id);
   if (!freshRoom?.current_match) {
     return freshRoom || room;
   }
 
-  if (!getPartyPhaseEndsAtMs(freshRoom.current_match) || !isPartyPhaseExpired(freshRoom.current_match)) {
+  const isFreshVotePlaybackPhase = freshRoom.settings?.modeType === 'vote'
+    && (freshRoom.current_match?.phase === 'play-a' || freshRoom.current_match?.phase === 'play-b');
+
+  if (!isFreshVotePlaybackPhase && (!getPartyPhaseEndsAtMs(freshRoom.current_match) || !isPartyPhaseExpired(freshRoom.current_match))) {
     return freshRoom;
   }
 
-  const nextMatch = advancePartyMatch(freshRoom.current_match);
+  // Authoritative vote tally from DB before advancing to reveal.
+  if (freshRoom.settings?.modeType === 'vote' && freshRoom.current_match?.phase === 'vote') {
+    const battleId = freshRoom.current_match.currentBattle.id;
+    const songA = freshRoom.current_match.currentBattle.songA;
+    const songB = freshRoom.current_match.currentBattle.songB;
+
+    const { data: voteRecords, error: voteRecordsError } = await supabase
+      .from('party_room_answers')
+      .select('selected_option_id')
+      .eq('room_id', freshRoom.id)
+      .eq('match_id', freshRoom.current_match.id)
+      .eq('round_id', battleId);
+
+    if (voteRecordsError) {
+      throw voteRecordsError;
+    }
+
+    const normalizedSongA = String(songA || '');
+    const normalizedSongB = String(songB || '');
+    const songA_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongA).length;
+    const songB_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongB).length;
+    const total_votes = (voteRecords || []).length;
+    const is_tie = songA_votes === songB_votes;
+
+    // Deterministic tie-break: hash the battle id so all clients agree.
+    let winning_song_id;
+    if (songA_votes > songB_votes) {
+      winning_song_id = normalizedSongA;
+    } else if (songB_votes > songA_votes) {
+      winning_song_id = normalizedSongB;
+    } else {
+      const tieHash = Array.from(String(battleId)).reduce((sum, c) => sum + c.charCodeAt(0), 0);
+      winning_song_id = tieHash % 2 === 0 ? normalizedSongA : normalizedSongB;
+    }
+
+    freshRoom.current_match.currentBattle.voteSummary = {
+      songA_votes,
+      songB_votes,
+      total_votes,
+      winning_song_id,
+      is_tie,
+    };
+    freshRoom.current_match.currentBattle.winnerSongId = winning_song_id;
+  }
+
+  const nextMatch = freshRoom.settings?.modeType === 'vote'
+    ? advancePartyVoteMatch(freshRoom.current_match)
+    : advancePartyMatch(freshRoom.current_match);
   const nextStatus = nextMatch?.phase === 'final' ? 'finished' : 'live';
 
   const { data, error } = await supabase
@@ -1278,9 +1345,7 @@ export async function advancePartyRoom(room) {
 
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'MATCH_ADVANCED',
-    payload: {
-      room: nextRoom,
-    },
+    payload: { room: nextRoom },
   });
 
   return nextRoom;
@@ -1475,6 +1540,63 @@ export async function submitPartyAnswer({
     },
   });
 
+  return data;
+}
+
+export async function submitPartyVote({
+  room,
+  member,
+  battleId,
+  selectedSongId,
+} = {}) {
+  if (!supabase || !room?.id || !member?.member_token || !room?.current_match) {
+    return null;
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match || freshRoom.settings?.modeType !== 'vote') {
+    throw new Error('This room is not in an active vote battle.');
+  }
+
+  const currentBattle = freshRoom.current_match.currentBattle;
+  if (!currentBattle || String(currentBattle.id) !== String(battleId)) {
+    throw new Error('This battle has already advanced.');
+  }
+
+  if (freshRoom.current_match.phase !== 'vote') {
+    throw new Error('Voting is currently closed.');
+  }
+
+  const now = Date.now();
+  const phaseStartedAt = new Date(freshRoom.current_match.phaseStartedAt || now).getTime();
+  const elapsedMs = Math.max(0, now - phaseStartedAt);
+
+  const { data, error } = await supabase
+    .from('party_room_answers')
+    .upsert({
+      room_id: freshRoom.id,
+      match_id: freshRoom.current_match.id,
+      round_id: currentBattle.id,
+      member_token: member.member_token,
+      member_name: member.display_name,
+      // Reuse the existing "choice" answer mode so vote records work with the
+      // current party_room_answers schema without requiring a live DB migration first.
+      answer_mode: 'choice',
+      selected_option_id: String(selectedSongId || ''),
+      title_correct: false,
+      song_correct: false,
+      points_awarded: 0,
+      elapsed_ms: elapsedMs,
+      submitted_at: new Date(now).toISOString(),
+    }, { onConflict: 'round_id,member_token' })
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  // Optionally broadcast but we can rely on standard channel if configured, or just skip broadcasting individual votes to prevent live bias
   return data;
 }
 

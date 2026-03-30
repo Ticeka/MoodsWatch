@@ -134,6 +134,58 @@ export function playPartyCountdownAlert(audioContext, volume = 85, step = 3) {
   oscillator.stop(now + 0.2);
 }
 
+export function playPartyClashAlert(audioContext, volume = 85) {
+  if (!audioContext) return;
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const oscillator2 = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+
+  oscillator.type = 'sawtooth';
+  oscillator.frequency.setValueAtTime(150, now);
+  oscillator.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+
+  oscillator2.type = 'square';
+  oscillator2.frequency.setValueAtTime(200, now);
+  oscillator2.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+
+  gainNode.gain.setValueAtTime(normalizedVolume, now);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+  oscillator.connect(gainNode);
+  oscillator2.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator2.start(now);
+  oscillator.stop(now + 0.3);
+  oscillator2.stop(now + 0.3);
+}
+
+export function playPartyWinAlert(audioContext, volume = 85) {
+  if (!audioContext) return;
+  const now = audioContext.currentTime;
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+  
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, now);       // A4
+  osc.frequency.setValueAtTime(554.37, now + 0.1); // C#5
+  osc.frequency.setValueAtTime(659.25, now + 0.2); // E5
+  osc.frequency.setValueAtTime(880, now + 0.3);    // A5
+  
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(normalizedVolume, now + 0.05);
+  gain.gain.setValueAtTime(normalizedVolume, now + 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+  
+  osc.connect(gain);
+  gain.connect(audioContext.destination);
+  osc.start(now);
+  osc.stop(now + 0.8);
+}
+
 function getAvatarTone(avatarKey) {
   return PARTY_AVATAR_OPTIONS.find((avatar) => avatar.id === avatarKey)?.tone || PARTY_AVATAR_OPTIONS[0].tone;
 }

@@ -9,6 +9,8 @@ const mockState = vi.hoisted(() => ({
   partyRoomMembersUpdateResponse: null,
   partyRoomsUpdateResponse: [],
   partyRoomsSelectResponse: [],
+  partyRoomAnswersSelectResponse: [],
+  partyRoomAnswersSelectError: null,
 }));
 
 function createMockChannel(topic) {
@@ -100,6 +102,29 @@ function createPartyRoomsSelectBuilder() {
   };
 }
 
+function createPartyRoomAnswersSelectBuilder() {
+  const filters = [];
+
+  return {
+    eq(column, value) {
+      filters.push({ type: 'eq', column, value });
+      return this;
+    },
+    then(resolve, reject) {
+      mockState.operations.push({
+        table: 'party_room_answers',
+        action: 'select',
+        filters: [...filters],
+      });
+
+      return Promise.resolve({
+        data: mockState.partyRoomAnswersSelectResponse,
+        error: mockState.partyRoomAnswersSelectError,
+      }).then(resolve, reject);
+    },
+  };
+}
+
 vi.mock('@/shared/lib/supabase', () => ({
   supabase: {
     from: mockState.from,
@@ -131,6 +156,8 @@ describe('partyRemote realtime optimizations', () => {
     };
     mockState.partyRoomsUpdateResponse = [];
     mockState.partyRoomsSelectResponse = [];
+    mockState.partyRoomAnswersSelectResponse = [];
+    mockState.partyRoomAnswersSelectError = null;
     mockState.channel.mockClear();
     mockState.channel.mockImplementation((topic) => createMockChannel(topic));
     mockState.removeChannel.mockClear();
@@ -146,6 +173,12 @@ describe('partyRemote realtime optimizations', () => {
         return {
           update: vi.fn((payload) => createPartyRoomsUpdateBuilder(payload)),
           select: vi.fn(() => createPartyRoomsSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_room_answers') {
+        return {
+          select: vi.fn(() => createPartyRoomAnswersSelectBuilder()),
         };
       }
 
@@ -219,5 +252,250 @@ describe('partyRemote realtime optimizations', () => {
       { type: 'eq', column: 'id', value: 'room-1' },
       { type: 'eq', column: 'updated_at', value: '2026-03-29T09:59:00.000Z' },
     ]));
+  });
+
+  it('tallies vote records from DB before advancing a vote battle to reveal', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'vote',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: [],
+        allSongs: {
+          'song-a': { id: 'song-a', songTitle: 'Song A' },
+          'song-b': { id: 'song-b', songTitle: 'Song B' },
+        },
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+          voteSummary: {
+            songA_votes: 0,
+            songB_votes: 0,
+            total_votes: 0,
+            winning_song_id: null,
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T09:59:40.000Z',
+        phaseEndsAt: '2026-03-29T09:59:59.000Z',
+      },
+    }];
+    mockState.partyRoomAnswersSelectResponse = [
+      { selected_option_id: 'song-a' },
+      { selected_option_id: 'song-a' },
+      { selected_option_id: 'song-b' },
+    ];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'reveal',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: ['song-a'],
+        championSongId: null,
+        allSongs: {
+          'song-a': { id: 'song-a', songTitle: 'Song A' },
+          'song-b': { id: 'song-b', songTitle: 'Song B' },
+        },
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: 'song-a',
+          voteSummary: {
+            songA_votes: 2,
+            songB_votes: 1,
+            total_votes: 3,
+            winning_song_id: 'song-a',
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T10:00:00.000Z',
+        phaseEndsAt: '2026-03-29T10:00:06.000Z',
+      },
+    }];
+
+    const room = {
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T09:59:00.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-1',
+        modeType: 'vote',
+        phase: 'vote',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: [],
+        allSongs: {},
+        currentBattle: {
+          id: 'battle-1',
+          songA: 'song-a',
+          songB: 'song-b',
+          winnerSongId: null,
+          voteSummary: {
+            songA_votes: 0,
+            songB_votes: 0,
+            total_votes: 0,
+            winning_song_id: null,
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T09:59:40.000Z',
+        phaseEndsAt: '2026-03-29T09:59:59.000Z',
+      },
+    };
+
+    const nextRoom = await advancePartyRoom(room);
+
+    expect(nextRoom?.current_match?.phase).toBe('reveal');
+    expect(nextRoom?.current_match?.currentBattle?.winnerSongId).toBe('song-a');
+    expect(nextRoom?.current_match?.currentBattle?.voteSummary).toEqual(expect.objectContaining({
+      songA_votes: 2,
+      songB_votes: 1,
+      total_votes: 3,
+      winning_song_id: 'song-a',
+      is_tie: false,
+    }));
+    expect(mockState.operations.find((entry) => entry.table === 'party_room_answers' && entry.action === 'select')).toBeTruthy();
+  });
+
+  it('tallies votes correctly even when DB returns text ids and battle ids are numeric-like', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-2',
+        modeType: 'vote',
+        phase: 'vote',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: [],
+        allSongs: {
+          '101': { id: '101', songTitle: 'Song A' },
+          '202': { id: '202', songTitle: 'Song B' },
+        },
+        currentBattle: {
+          id: 'battle-2',
+          songA: 101,
+          songB: 202,
+          winnerSongId: null,
+          voteSummary: {
+            songA_votes: 0,
+            songB_votes: 0,
+            total_votes: 0,
+            winning_song_id: null,
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T09:59:40.000Z',
+        phaseEndsAt: '2026-03-29T09:59:59.000Z',
+      },
+    }];
+    mockState.partyRoomAnswersSelectResponse = [
+      { selected_option_id: '101' },
+      { selected_option_id: '101' },
+      { selected_option_id: '202' },
+    ];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-2',
+        modeType: 'vote',
+        phase: 'reveal',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: ['101'],
+        championSongId: null,
+        allSongs: {
+          '101': { id: '101', songTitle: 'Song A' },
+          '202': { id: '202', songTitle: 'Song B' },
+        },
+        currentBattle: {
+          id: 'battle-2',
+          songA: '101',
+          songB: '202',
+          winnerSongId: '101',
+          voteSummary: {
+            songA_votes: 2,
+            songB_votes: 1,
+            total_votes: 3,
+            winning_song_id: '101',
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T10:00:00.000Z',
+        phaseEndsAt: '2026-03-29T10:00:06.000Z',
+      },
+    }];
+
+    const room = {
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T09:59:00.000Z',
+      settings: { modeType: 'vote' },
+      current_match: {
+        id: 'vote-match-2',
+        modeType: 'vote',
+        phase: 'vote',
+        battleIndex: 1,
+        totalBattles: 1,
+        queue: [],
+        allSongs: {},
+        currentBattle: {
+          id: 'battle-2',
+          songA: 101,
+          songB: 202,
+          winnerSongId: null,
+          voteSummary: {
+            songA_votes: 0,
+            songB_votes: 0,
+            total_votes: 0,
+            winning_song_id: null,
+            is_tie: false,
+          },
+        },
+        settings: { previewSec: 12, voteSec: 10, revealSec: 6, freezeMs: 1800 },
+        phaseStartedAt: '2026-03-29T09:59:40.000Z',
+        phaseEndsAt: '2026-03-29T09:59:59.000Z',
+      },
+    };
+
+    const nextRoom = await advancePartyRoom(room);
+
+    expect(nextRoom?.current_match?.currentBattle?.voteSummary).toEqual(expect.objectContaining({
+      songA_votes: 2,
+      songB_votes: 1,
+      winning_song_id: '101',
+    }));
   });
 });

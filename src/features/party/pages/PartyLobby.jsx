@@ -21,6 +21,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   pick,
 }) {
   const members = useHydratedPartyMembers(guestToken, partyProfile);
+  const isVoteMode = room?.settings?.modeType === 'vote';
   const readyCount = useMemo(
     () => members.filter((member) => member.is_ready).length,
     [members]
@@ -46,14 +47,21 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
         <div className="party-lobby-block">
           <div className="party-lobby-block-head">
             <strong>{pick('การตั้งค่าห้อง', 'Room settings')}</strong>
-            <span>{pick('กติกาในแมตช์นี้', 'Rules for this match')}</span>
+            <span>
+              {isVoteMode
+                ? pick('ฟังสองเพลงแล้วโหวต เพลงแพ้จะตกรอบทันที', 'Listen to both tracks, vote, and eliminate the loser.')
+                : pick('กติกาในแมตช์นี้', 'Rules for this match')}
+            </span>
           </div>
           <div className="party-settings-summary">
             <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('preset', 'preset')}</span></article>
             <article className="party-stat-pill"><strong>{pick(selectedPoolNameTh, selectedPoolName)}</strong><span>{pick('pool', 'pool')}</span></article>
-            <article className="party-stat-pill"><strong>{room?.settings?.roundCount || 10}</strong><span>{pick('รอบ', 'rounds')}</span></article>
-            <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('วิเพลง', 'clip sec')}</span></article>
-            <article className="party-stat-pill"><strong>{room?.settings?.revealSec || 12}</strong><span>{pick('วิเฉลย', 'reveal sec')}</span></article>
+            <article className="party-stat-pill"><strong>{room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('seed', 'seed') : pick('รอบ', 'rounds')}</span></article>
+            <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('clip sec', 'clip sec')}</span></article>
+            {isVoteMode ? (
+              <article className="party-stat-pill"><strong>{room?.current_match?.settings?.voteSec || 10}</strong><span>{pick('vote sec', 'vote sec')}</span></article>
+            ) : null}
+            <article className="party-stat-pill"><strong>{room?.settings?.revealSec || 12}</strong><span>{pick('reveal sec', 'reveal sec')}</span></article>
             <article className="party-stat-pill"><strong>{readyCount}/{members.length}</strong><span>{pick('พร้อม', 'ready')}</span></article>
           </div>
           <div className="party-lobby-actions">

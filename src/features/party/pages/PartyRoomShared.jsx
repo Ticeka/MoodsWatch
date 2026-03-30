@@ -321,9 +321,10 @@ export function PartyAutoAdvance({
 }) {
   const advancingRef = useRef(false);
   const [now, setNow] = useState(() => Date.now());
+  const isVotePlaybackPhase = currentMatch?.phase === 'play-a' || currentMatch?.phase === 'play-b';
 
   useEffect(() => {
-    if (!isHost || !room || !currentMatch?.phaseEndsAt || currentMatch.phase === 'final') {
+    if (!isHost || !room || currentMatch?.phase === 'final') {
       return undefined;
     }
 
@@ -340,14 +341,16 @@ export function PartyAutoAdvance({
     ? revealPlaybackStartedAtMs + (Number(currentMatch?.revealSec || room?.settings?.revealSec || 12) * 1000)
     : 0;
   const phaseEndsAtMs = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
-  const advanceAtMs = currentMatch?.phase === 'question' && playbackEndedAtMs
+  const advanceAtMs = isVotePlaybackPhase && playbackEndedAtMs
+    ? playbackEndedAtMs
+    : currentMatch?.phase === 'question' && playbackEndedAtMs
     ? playbackEndedAtMs + answerGraceMs
     : currentMatch?.phase === 'reveal'
       ? Math.max(phaseEndsAtMs, revealAdvanceAtMs)
       : phaseEndsAtMs;
 
   useEffect(() => {
-    if (!isHost || !room || !currentMatch?.phaseEndsAt || currentMatch.phase === 'final' || !advanceAtMs) {
+    if (!isHost || !room || currentMatch?.phase === 'final' || !advanceAtMs) {
       return;
     }
 

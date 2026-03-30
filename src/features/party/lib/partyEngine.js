@@ -151,6 +151,7 @@ function computeSpeedBonus(elapsedMs, limitMs, maxBonus) {
 }
 
 export function createPartySettings(input = {}) {
+  const modeType = input.modeType === 'vote' ? 'vote' : 'quiz';
   const preset = getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 5, 20);
   const timePerRoundSec = clamp(Number(input.timePerRoundSec || 12), 8, 20);
@@ -162,6 +163,7 @@ export function createPartySettings(input = {}) {
   const songPresetName = String(input.songPresetName || '').trim();
 
   return {
+    modeType,
     presetId: preset.id,
     roundCount,
     timePerRoundSec,

@@ -43,6 +43,7 @@ import { PartyFinalView } from './PartyFinal';
 import { PartyLobbyView } from './PartyLobby';
 import { PartyQuestionView } from './PartyQuestion';
 import { PartyRevealView } from './PartyReveal';
+import { PartyVoteRoomView } from '../components/PartyVoteRoomView';
 import {
   PartyAutoAdvance,
   PartyCountdownDisplay,
@@ -65,6 +66,7 @@ export function PartyHubPage() {
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [settings, setSettings] = useState(createPartySettings({
+    modeType: 'quiz',
     presetId: PARTY_PRESETS[0].id,
     roundCount: 10,
     timePerRoundSec: 12,
@@ -165,19 +167,45 @@ export function PartyHubPage() {
             <h2 className="party-builder-title">{pick('สร้างห้องใหม่', 'Create New Room')}</h2>
 
             <div className="party-field">
-              <span>{pick('โหมดเกม', 'Game mode')}</span>
-              <div className="party-preset-showcase">
-                {PARTY_PRESETS.map((preset) => (
-                  <PresetCard
-                    key={preset.id}
-                    preset={preset}
-                    selected={settings.presetId === preset.id}
-                    pick={pick}
-                    onSelect={(presetId) => setSettings((current) => ({ ...current, presetId }))}
+              <span>{pick('โหมดการแข่งขัน', 'Match Type')}</span>
+              <div className="party-toggle-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <label className="party-toggle--card">
+                  <input
+                    type="radio"
+                    name="mainModeType"
+                    checked={settings.modeType === 'quiz'}
+                    onChange={() => setSettings((current) => ({ ...current, modeType: 'quiz' }))}
                   />
-                ))}
+                  <span>{pick('Music Quiz', 'Music Quiz')}</span>
+                </label>
+                <label className="party-toggle--card">
+                  <input
+                    type="radio"
+                    name="mainModeType"
+                    checked={settings.modeType === 'vote'}
+                    onChange={() => setSettings((current) => ({ ...current, modeType: 'vote' }))}
+                  />
+                  <span>{pick('Vote Battle 🔥', 'Vote Battle 🔥')}</span>
+                </label>
               </div>
             </div>
+
+            {settings.modeType === 'quiz' && (
+              <div className="party-field">
+                <span>{pick('โหมดเกม', 'Game mode')}</span>
+                <div className="party-preset-showcase">
+                  {PARTY_PRESETS.map((preset) => (
+                    <PresetCard
+                      key={preset.id}
+                      preset={preset}
+                      selected={settings.presetId === preset.id}
+                      pick={pick}
+                      onSelect={(presetId) => setSettings((current) => ({ ...current, presetId }))}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="party-inline-fields">
               <label className="party-field">
@@ -957,7 +985,22 @@ export function PartyRoomPage() {
           </div>
         ) : null}
 
-        {room.status === 'lobby' || !currentMatch ? (
+        {room?.settings?.modeType === 'vote' ? (
+          <PartyVoteRoomView
+            room={room}
+            guestToken={guestToken}
+            partyProfile={partyProfile}
+            currentMember={currentMember}
+            isHost={isHost}
+            busyAction={busyAction}
+            pick={pick}
+            onToggleReady={handleToggleReady}
+            onCloseRoom={handleCloseRoom}
+            onRematch={handleRematch}
+            onStartMatch={handleStartMatch}
+            onPlaybackComplete={setPlaybackEndedAtMs}
+          />
+        ) : room.status === 'lobby' || !currentMatch ? (
           <PartyLobbyView
             room={room}
             guestToken={guestToken}
