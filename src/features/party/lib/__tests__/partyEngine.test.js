@@ -186,4 +186,18 @@ describe('partyEngine', () => {
 
     expect(settings.timePerRoundSec).toBe(90);
   });
+
+  it('preserves template metadata used by the room hub and lobby summary', () => {
+    const settings = createPartySettings({
+      templateId: '42',
+      templateName: 'Anime Classics',
+      templateCoverUrl: 'https://cdn.example.com/template.jpg',
+      templatePlayableCount: 6,
+    });
+
+    expect(settings.templateId).toBe('42');
+    expect(settings.templateName).toBe('Anime Classics');
+    expect(settings.templateCoverUrl).toBe('https://cdn.example.com/template.jpg');
+    expect(settings.templatePlayableCount).toBe(6);
+  });
 });

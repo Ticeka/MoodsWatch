@@ -486,6 +486,35 @@
   20% { opacity: 1; }
   to { transform: translateX(320%) rotate(18deg); opacity: 0; }
 }
+@keyframes revealTensionPulse {
+  0% { transform: translate(-50%, -50%) scale(0.72); opacity: 0; }
+  20% { opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(1.22); opacity: 0; }
+}
+@keyframes revealScanSweep {
+  0% { transform: translateY(-100%); opacity: 0; }
+  20% { opacity: 0.55; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+@keyframes revealImpactShard {
+  0% {
+    opacity: 0;
+    transform:
+      translate(-50%, -50%)
+      rotate(calc(var(--impact-index) * 45deg))
+      translateY(-2rem)
+      scaleY(0.1);
+  }
+  18% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform:
+      translate(-50%, -50%)
+      rotate(calc(var(--impact-index) * 45deg))
+      translateY(-10rem)
+      scaleY(1);
+  }
+}
 .faceoff-vs {
   font-size: 4rem;
   font-style: italic;
@@ -497,11 +526,71 @@
 
 /* Phase: Reveal */
 .vote-phase-reveal {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2rem;
   width: 100%;
+  overflow: hidden;
+}
+.vote-phase-reveal.frozen {
+  min-height: 20rem;
+  justify-content: center;
+}
+.reveal-tension-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.reveal-tension-ring {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: min(72vw, 26rem);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  transform: translate(-50%, -50%) scale(0.8);
+  opacity: 0;
+  animation: revealTensionPulse 1.7s ease-out infinite;
+}
+.reveal-tension-ring.ring-b {
+  animation-delay: 0.35s;
+  border-color: rgba(0, 204, 255, 0.18);
+}
+.reveal-tension-ring.ring-c {
+  animation-delay: 0.7s;
+  border-color: rgba(255, 0, 102, 0.18);
+}
+.reveal-tension-scan {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
+  mix-blend-mode: screen;
+  animation: revealScanSweep 1.6s linear infinite;
+}
+.reveal-impact-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.reveal-impact-shard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.45rem;
+  height: 7rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,215,106,0.75), transparent);
+  box-shadow: 0 0 18px rgba(255,255,255,0.42);
+  transform:
+    translate(-50%, -50%)
+    rotate(calc(var(--impact-index) * 45deg))
+    translateY(-7rem)
+    scaleY(0.2);
+  opacity: 0;
+  animation: revealImpactShard 0.72s ease-out both;
+  animation-delay: calc(var(--impact-index) * 0.03s);
 }
 .reveal-title {
   font-size: 3rem;

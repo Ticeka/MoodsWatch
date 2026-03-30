@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Play, RefreshCw, Swords, Volume2, VolumeX, Zap } from 'lucide-react';
+import { resumePartyAudioContext } from '@/features/party/lib/partyAudio';
 import {
   formatClipSeconds,
   getPartyBufferedPreviewMs,
   isPartyPlaybackReady,
   playPartyClashAlert,
   playPartyCountdownAlert,
+  playPartyRevealImpactAlert,
+  playPartyRevealSuspenseAlert,
   playPartyWinAlert,
   readPartyAudioVolume,
   shouldPartyForceMediaLoad,
@@ -560,6 +563,8 @@ export function RevealResult({ battle, allSongs, secondsLeft, revealSec, freezeM
   const summary = battle.voteSummary || {};
   const songAVotes = Number(summary.songA_votes ?? 0);
   const songBVotes = Number(summary.songB_votes ?? 0);
+  const suspensePlayedRef = useRef(false);
+  const impactPlayedRef = useRef(false);
 
   const totalRevealMs = (revealSec || 6) * 1000;
   const freeze = freezeMs ?? 1800;
@@ -570,9 +575,46 @@ export function RevealResult({ battle, allSongs, secondsLeft, revealSec, freezeM
   const isAWin = winnerSongId === battle.songA;
   const isBWin = winnerSongId === battle.songB;
 
+  useEffect(() => {
+    suspensePlayedRef.current = false;
+    impactPlayedRef.current = false;
+  }, [battle?.songA, battle?.songB, battle?.winnerSongId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void resumePartyAudioContext().then((audioContext) => {
+      if (cancelled || !audioContext) {
+        return;
+      }
+
+      const volume = readPartyAudioVolume();
+      if (isFrozen && !suspensePlayedRef.current) {
+        suspensePlayedRef.current = true;
+        playPartyRevealSuspenseAlert(audioContext, volume);
+        return;
+      }
+
+      if (!isFrozen && !impactPlayedRef.current) {
+        impactPlayedRef.current = true;
+        playPartyRevealImpactAlert(audioContext, volume, Boolean(summary.is_tie));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isFrozen, summary.is_tie]);
+
   if (isFrozen) {
     return (
       <div className="vote-phase-reveal frozen" role="status">
+        <div className="reveal-tension-backdrop" aria-hidden="true">
+          <span className="reveal-tension-ring ring-a" />
+          <span className="reveal-tension-ring ring-b" />
+          <span className="reveal-tension-ring ring-c" />
+          <span className="reveal-tension-scan" />
+        </div>
         <h2 className="tension-text glitch-effect">{pick('กำลังตัดสินผลโหวต...', 'CALCULATING RESULTS...')}</h2>
       </div>
     );
@@ -580,6 +622,11 @@ export function RevealResult({ battle, allSongs, secondsLeft, revealSec, freezeM
 
   return (
     <div className="vote-phase-reveal resolved">
+      <div className="reveal-impact-burst" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
+          <span key={index} className="reveal-impact-shard" style={{ '--impact-index': index }} />
+        ))}
+      </div>
       <h2 className="reveal-title effect-pop">
         {summary.is_tie
           ? pick('TIE BREAKER!', 'TIE BREAKER!')

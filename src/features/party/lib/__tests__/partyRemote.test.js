@@ -5,6 +5,8 @@ const mockState = vi.hoisted(() => ({
   rpc: vi.fn(),
   channel: vi.fn(),
   removeChannel: vi.fn(async () => {}),
+  storageUpload: vi.fn(),
+  storageGetPublicUrl: vi.fn(),
   operations: [],
   rpcCalls: [],
   rpcResultsByPage: new Map(),
@@ -134,6 +136,12 @@ vi.mock('@/shared/lib/supabase', () => ({
     rpc: mockState.rpc,
     channel: mockState.channel,
     removeChannel: mockState.removeChannel,
+    storage: {
+      from: vi.fn(() => ({
+        upload: mockState.storageUpload,
+        getPublicUrl: mockState.storageGetPublicUrl,
+      })),
+    },
   },
 }));
 
@@ -141,10 +149,15 @@ import {
   __resetPartyRoomRealtimeRegistryForTests,
   __resetPartySongPoolCachesForTests,
   advancePartyRoom,
+  createPartyTemplate,
   extendPartyQuestionPhase,
   fetchPartySongPool,
+  fetchPartyTemplateDetail,
+  fetchPartyTemplates,
+  replacePartyTemplateItems,
   subscribeToPartyRoom,
   togglePartyMemberReady,
+  uploadPartyTemplateCover,
 } from '../partyRemote.js';
 
 describe('partyRemote realtime optimizations', () => {
@@ -177,6 +190,12 @@ describe('partyRemote realtime optimizations', () => {
       return Promise.resolve(result);
     });
     mockState.removeChannel.mockClear();
+    mockState.storageUpload.mockReset();
+    mockState.storageGetPublicUrl.mockReset();
+    mockState.storageUpload.mockResolvedValue({ error: null });
+    mockState.storageGetPublicUrl.mockReturnValue({
+      data: { publicUrl: 'https://cdn.example.com/uploaded-cover.jpg' },
+    });
     mockState.from.mockClear();
     mockState.from.mockImplementation((table) => {
       if (table === 'party_room_members') {
@@ -632,5 +651,240 @@ describe('partyRemote realtime optimizations', () => {
       bufferCompensationMs: 2500,
       phaseEndsAt: '2026-03-29T10:00:17.500Z',
     }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Template CRUD
+// ---------------------------------------------------------------------------
+
+const SAMPLE_TEMPLATE_ROW = {
+  id: 42,
+  name: 'Anime Classics',
+  description: 'Best OPs ever',
+  cover_url: 'https://cdn.example.com/cover.jpg',
+  visibility: 'public',
+  mode_scope: 'all',
+  default_preset_id: 'song-typing',
+  source_type: 'catalog',
+  is_official: false,
+  owner_user_id: 'user-1',
+  creator_name: 'Tester',
+  like_count: 0,
+  view_count: 0,
+  tags: ['OP', 'anime'],
+  created_at: '2026-03-31T00:00:00Z',
+  updated_at: '2026-03-31T00:00:00Z',
+  party_song_template_items: [{ count: 3 }],
+};
+
+const SAMPLE_ITEM_ROWS = [
+  { id: 1, template_id: 42, song_id: 101, source_title_id: 55, source_title_name: 'Attack on Titan', song_title: 'Guren no Yumiya', theme_type: 'OP', artist_name: 'Linked Horizon', media_url: 'https://cdn.example.com/1.mp4', cover_url: '', position: 0 },
+  { id: 2, template_id: 42, song_id: 102, source_title_id: 56, source_title_name: 'Naruto', song_title: 'Blue Bird', theme_type: 'OP', artist_name: 'Ikimono Gakari', media_url: 'https://cdn.example.com/2.mp4', cover_url: '', position: 1 },
+  { id: 3, template_id: 42, song_id: 103, source_title_id: 57, source_title_name: 'Bleach', song_title: 'Asterisk', theme_type: 'OP', artist_name: 'Orange Range', media_url: 'https://cdn.example.com/3.mp4', cover_url: '', position: 2 },
+];
+
+// Build a reusable Supabase query-builder mock for template tables
+function makeTemplateQueryBuilder({ selectData = null, selectError = null, insertData = null, insertError = null } = {}) {
+  const filters = [];
+  const builder = {
+    _selectData: selectData,
+    _insertData: insertData,
+    select: vi.fn(function select() { return this; }),
+    insert: vi.fn(function insert(payload) {
+      mockState.operations.push({ table: this._table, action: 'insert', payload });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({ data: insertData, error: insertError })),
+        })),
+        then: (resolve) => resolve({ data: insertData, error: insertError }),
+      };
+    }),
+    eq: vi.fn(function eq(col, val) {
+      filters.push({ col, val });
+      return this;
+    }),
+    order: vi.fn(function order() { return this; }),
+    in: vi.fn(function inFn() { return this; }),
+    ilike: vi.fn(function ilike() { return this; }),
+    maybeSingle: vi.fn(async () => ({ data: selectData, error: selectError })),
+    then: (resolve) => resolve({ data: selectData, error: selectError }),
+  };
+  return builder;
+}
+
+describe('partyRemote template CRUD', () => {
+  beforeEach(() => {
+    mockState.operations = [];
+    mockState.rpcCalls = [];
+    mockState.rpc.mockClear();
+    mockState.rpc.mockImplementation((fn, params = {}) => {
+      mockState.rpcCalls.push({ fn, params });
+      return Promise.resolve({ data: null, error: null });
+    });
+    mockState.from.mockClear();
+
+    // Default: template tables return sample data
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        const b = makeTemplateQueryBuilder({ selectData: SAMPLE_TEMPLATE_ROW });
+        b._table = table;
+        // single() for createPartyTemplate
+        b.insert = vi.fn((payload) => {
+          mockState.operations.push({ table, action: 'insert', payload });
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({ data: SAMPLE_TEMPLATE_ROW, error: null })),
+            })),
+          };
+        });
+        return b;
+      }
+
+      if (table === 'party_song_template_items') {
+        const b = makeTemplateQueryBuilder({ selectData: SAMPLE_ITEM_ROWS });
+        b._table = table;
+        b.insert = vi.fn((payload) => {
+          mockState.operations.push({ table, action: 'insert', payload });
+          return { then: (resolve) => resolve({ data: payload, error: null }) };
+        });
+        b.delete = vi.fn(() => {
+          mockState.operations.push({ table, action: 'delete' });
+          return { eq: vi.fn(() => Promise.resolve({ error: null })) };
+        });
+        return b;
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+  });
+
+  it('createPartyTemplate inserts header then items and returns mapped template', async () => {
+    const result = await createPartyTemplate(
+      { ownerUserId: 'user-1', name: 'Anime Classics', description: 'Best OPs ever', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'full-recall', tags: ['OP'] },
+      SAMPLE_ITEM_ROWS,
+      'Tester',
+    );
+
+    // Header insert happened
+    const headerInsert = mockState.operations.find((op) => op.table === 'party_song_templates' && op.action === 'insert');
+    expect(headerInsert).toBeTruthy();
+    expect(headerInsert.payload).toMatchObject({ name: 'Anime Classics', owner_user_id: 'user-1', default_preset_id: 'full-recall' });
+
+    // Items insert happened
+    const itemInsert = mockState.operations.find((op) => op.table === 'party_song_template_items' && op.action === 'insert');
+    expect(itemInsert).toBeTruthy();
+
+    // Returned shape is mapped (camelCase)
+    expect(result).toMatchObject({ id: '42', name: 'Anime Classics', modeScope: 'all', presetId: 'song-typing' });
+  });
+
+  it('fetchPartyTemplates throws on Supabase error instead of returning []', async () => {
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return makeTemplateQueryBuilder({ selectData: null, selectError: { message: 'relation does not exist', code: '42P01' } });
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await expect(fetchPartyTemplates()).rejects.toMatchObject({ message: 'relation does not exist' });
+  });
+
+  it('fetchPartyTemplates returns empty array when table exists but has no rows', async () => {
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return makeTemplateQueryBuilder({ selectData: [] });
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const result = await fetchPartyTemplates();
+    expect(result).toEqual([]);
+  });
+
+  it('fetchPartyTemplateDetail throws with kind=not_found when row is missing', async () => {
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return makeTemplateQueryBuilder({ selectData: null, selectError: null }); // maybeSingle returns null
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const err = await fetchPartyTemplateDetail('99').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe('not_found');
+  });
+
+  it('fetchPartyTemplateDetail throws with kind=access_denied on RLS error', async () => {
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return makeTemplateQueryBuilder({ selectData: null, selectError: { message: 'permission denied', code: '42501' } });
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const err = await fetchPartyTemplateDetail('42').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe('access_denied');
+  });
+
+  it('fetchPartyTemplateDetail returns template with items on success', async () => {
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return makeTemplateQueryBuilder({ selectData: SAMPLE_TEMPLATE_ROW });
+      }
+      if (table === 'party_song_template_items') {
+        return makeTemplateQueryBuilder({ selectData: SAMPLE_ITEM_ROWS });
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const result = await fetchPartyTemplateDetail('42');
+    expect(result).toMatchObject({ id: '42', name: 'Anime Classics', presetId: 'song-typing' });
+    expect(result.items).toHaveLength(3);
+  });
+
+  it('replacePartyTemplateItems calls replace_party_template_items RPC with correct args', async () => {
+    const items = [
+      { songId: 101, sourceTitleId: 55, sourceTitleName: 'AoT', songTitle: 'Guren', themeType: 'OP', artistName: 'LH', mediaUrl: 'https://cdn.example.com/1.mp4', coverUrl: '' },
+      { songId: 102, sourceTitleId: 56, sourceTitleName: 'Naruto', songTitle: 'Blue Bird', themeType: 'OP', artistName: 'IG', mediaUrl: 'https://cdn.example.com/2.mp4', coverUrl: '' },
+    ];
+
+    await replacePartyTemplateItems(42, items);
+
+    const rpcCall = mockState.rpcCalls.find((c) => c.fn === 'replace_party_template_items');
+    expect(rpcCall).toBeTruthy();
+    expect(rpcCall.params.p_template_id).toBe(42);
+
+    const parsed = JSON.parse(rpcCall.params.p_items);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ song_id: '101', song_title: 'Guren', position: 0 });
+    expect(parsed[1]).toMatchObject({ song_id: '102', position: 1 });
+  });
+
+  it('replacePartyTemplateItems throws when RPC returns an error', async () => {
+    mockState.rpc.mockImplementation((fn, params) => {
+      mockState.rpcCalls.push({ fn, params });
+      if (fn === 'replace_party_template_items') {
+        return Promise.resolve({ error: { message: 'transaction aborted', code: 'P0001' } });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    await expect(replacePartyTemplateItems(42, [{ songId: 1 }])).rejects.toMatchObject({
+      message: 'transaction aborted',
+    });
+  });
+
+  it('uploadPartyTemplateCover uploads into the party template cover bucket and returns a public url', async () => {
+    const file = { name: 'cover.png' };
+    const result = await uploadPartyTemplateCover('user-1', file);
+
+    expect(mockState.storageUpload).toHaveBeenCalledWith(
+      expect.stringMatching(/^user-1\/template-cover-\d+\.png$/),
+      file,
+      expect.objectContaining({ cacheControl: '31536000', upsert: false }),
+    );
+    expect(result).toMatch(/^https:\/\/cdn\.example\.com\/uploaded-cover\.jpg\?t=\d+$/);
   });
 });

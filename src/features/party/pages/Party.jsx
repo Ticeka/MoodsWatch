@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  ChevronRight,
   Copy,
+  LibrarySquare,
   Loader2,
   Radio,
   Sparkles,
   TimerReset,
+  X,
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
@@ -27,6 +30,8 @@ import {
   createPartyRoom,
   extendPartyQuestionPhase,
   fetchPartyRoomBundle,
+  fetchPartyTemplateDetail,
+  fetchPartyTemplateSongPool,
   fetchPublishedPartySongPresets,
   getPartyBackendHint,
   getPartyGuestToken,
@@ -38,6 +43,7 @@ import {
   subscribeToPartyRoom,
   togglePartyMemberReady,
 } from '@/features/party/lib/partyRemote';
+import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useCurrentPartyMember } from '@/features/party/lib/usePartyRoomSelectors';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { PartyFinalView } from './PartyFinal';
@@ -65,6 +71,7 @@ export function PartyHubPage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [settings, setSettings] = useState(createPartySettings({
@@ -88,12 +95,63 @@ export function PartyHubPage() {
     ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
     : [8, 10, 12, 15, 20];
   const selectedPoolLabel = settings.songPresetName
+    || settings.templateName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.label
     || PARTY_CATEGORY_OPTIONS[0].label;
   const selectedPoolLabelTh = settings.songPresetName
+    || settings.templateName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.labelTh
     || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const songPoolSelectValue = settings.songPresetId ? `preset:${settings.songPresetId}` : settings.categoryId;
+  const templatePlayableCount = Math.max(0, Number(settings.templatePlayableCount || 0));
+  const quizRoundOptions = useMemo(() => {
+    if (!settings.templateId || settings.modeType !== 'quiz' || templatePlayableCount <= 0) {
+      return [2, 5, 10, 15, 20];
+    }
+
+    const maxRounds = Math.max(2, templatePlayableCount);
+    const options = [2, 5, 10, 15, 20].filter((count) => count <= maxRounds);
+    if (!options.includes(maxRounds)) {
+      options.push(maxRounds);
+    }
+    return [...new Set(options)].sort((a, b) => a - b);
+  }, [settings.modeType, settings.templateId, templatePlayableCount]);
+  const voteEntrantOptions = useMemo(() => {
+    if (!settings.templateId || settings.modeType !== 'vote' || templatePlayableCount <= 0) {
+      return [2, 4, 8, 16];
+    }
+
+    const options = [2, 4, 8, 16].filter((count) => count <= templatePlayableCount);
+    return options.length > 0 ? options : [2];
+  }, [settings.modeType, settings.templateId, templatePlayableCount]);
+
+  useEffect(() => {
+    const templateId = searchParams.get('templateId');
+    const templateName = searchParams.get('templateName');
+    const modeType = searchParams.get('modeType');
+    const modeScope = searchParams.get('modeScope') || 'all';
+    const presetId = searchParams.get('presetId');
+
+    if (!templateId) {
+      return;
+    }
+
+    const resolvedMode = (modeType === 'vote' || modeType === 'quiz')
+      ? modeType
+      : modeScope === 'vote'
+        ? 'vote'
+        : 'quiz';
+
+    setSettings((current) => ({
+      ...current,
+      templateId,
+      templateName: templateName ? decodeURIComponent(templateName) : '',
+      modeType: resolvedMode,
+      modeScope,
+      presetId: presetId || current.presetId,
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -113,10 +171,110 @@ export function PartyHubPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!settings.templateId) {
+      return undefined;
+    }
+
+    let ignore = false;
+
+    Promise.all([
+      fetchPartyTemplateDetail(settings.templateId).catch(() => null),
+      fetchPartyTemplateSongPool(settings.templateId).catch(() => []),
+    ]).then(([templateDetail, playablePool]) => {
+      if (ignore) {
+        return;
+      }
+
+      const playableCount = Array.isArray(playablePool) ? playablePool.length : 0;
+      setSettings((current) => {
+        if (String(current.templateId || '') !== String(settings.templateId || '')) {
+          return current;
+        }
+
+        const next = {
+          ...current,
+          templateName: templateDetail?.name || current.templateName,
+          templateCoverUrl: templateDetail?.coverUrl || current.templateCoverUrl || '',
+          templatePlayableCount: playableCount,
+          presetId: current.modeType === 'vote'
+            ? current.presetId
+            : (templateDetail?.presetId || current.presetId),
+        };
+
+        if (next.modeType === 'quiz' && playableCount > 0) {
+          const maxRounds = Math.max(2, playableCount);
+          next.roundCount = Math.min(Number(next.roundCount || 10), maxRounds);
+        }
+
+        if (next.modeType === 'vote' && playableCount > 0) {
+          const allowedEntrants = [2, 4, 8, 16].filter((count) => count <= playableCount);
+          if (allowedEntrants.length > 0) {
+            next.entrantCount = allowedEntrants.includes(Number(next.entrantCount || 0))
+              ? Number(next.entrantCount || 0)
+              : allowedEntrants[allowedEntrants.length - 1];
+          }
+        }
+
+        return next;
+      });
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [settings.templateId]);
+
+  useEffect(() => {
+    if (!settings.templateId || templatePlayableCount <= 0) {
+      return;
+    }
+
+    setSettings((current) => {
+      if (!current.templateId) {
+        return current;
+      }
+
+      if (current.modeType === 'quiz') {
+        const maxRounds = Math.max(2, templatePlayableCount);
+        const nextRoundCount = Math.min(Number(current.roundCount || 10), maxRounds);
+        return nextRoundCount === current.roundCount ? current : { ...current, roundCount: nextRoundCount };
+      }
+
+      const allowedEntrants = [2, 4, 8, 16].filter((count) => count <= templatePlayableCount);
+      if (allowedEntrants.length === 0) {
+        return current;
+      }
+
+      const nextEntrantCount = allowedEntrants.includes(Number(current.entrantCount || 0))
+        ? Number(current.entrantCount || 0)
+        : allowedEntrants[allowedEntrants.length - 1];
+
+      return nextEntrantCount === current.entrantCount ? current : { ...current, entrantCount: nextEntrantCount };
+    });
+  }, [settings.templateId, settings.modeType, templatePlayableCount]);
+
   const handleCreate = async (event) => {
     event.preventDefault();
     try {
       setBusyAction('create');
+      if (settings.templateId) {
+        const pool = await fetchPartyTemplateSongPool(settings.templateId).catch(() => null);
+        if (pool !== null) {
+          const minCount = settings.modeType === 'vote' ? 2 : 4;
+          if (pool.length < minCount) {
+            const modeLabel = settings.modeType === 'vote'
+              ? pick('Vote Battle', 'Vote Battle')
+              : pick('Quiz', 'Quiz');
+            toast.error(pick(
+              `Template นี้มีเพลงที่เล่นได้ ${pool.length} เพลง - ${modeLabel} ต้องการอย่างน้อย ${minCount} เพลง`,
+              `This template only has ${pool.length} playable song${pool.length === 1 ? '' : 's'} - ${modeLabel} needs at least ${minCount}.`,
+            ));
+            return;
+          }
+        }
+      }
+
       const room = await createPartyRoom({ profile: partyProfile, settings });
       toast.success(pick('สร้างห้องเรียบร้อยแล้ว', 'Room created'));
       navigate(`/party/room/${room.room_code}`);
@@ -174,28 +332,114 @@ export function PartyHubPage() {
           <form className="party-builder-panel--refresh" onSubmit={handleCreate}>
             <h2 className="party-builder-title">{pick('สร้างห้องใหม่', 'Create New Room')}</h2>
 
+            {settings.templateId ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(var(--color-primary-rgb), 0.1)', border: '1px solid rgba(var(--color-primary-rgb), 0.35)', borderRadius: '10px', padding: '0.75rem 1rem', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
+                  <LibrarySquare size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                  <span style={{ color: 'var(--color-text-muted)' }}>{pick('Template:', 'Template:')}</span>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: '2rem',
+                      height: '2rem',
+                      borderRadius: '0.6rem',
+                      backgroundImage: `url(${getTemplateCoverUrl(settings.templateCoverUrl)})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      border: '1px solid rgba(var(--color-primary-rgb), 0.25)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <strong style={{ color: 'var(--color-text)' }}>{settings.templateName || settings.templateId}</strong>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
+                    onClick={() => navigate('/party/templates')}
+                  >
+                    {pick('เปลี่ยน', 'Change')}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '0.3rem' }}
+                    onClick={() => setSettings((current) => ({
+                      ...current,
+                      templateId: '',
+                      templateName: '',
+                      templateCoverUrl: '',
+                      templatePlayableCount: 0,
+                    }))}
+                    title={pick('ล้าง template', 'Clear template')}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn-secondary party-template-picker-button"
+                onClick={() => navigate('/party/templates')}
+              >
+                <span className="party-template-picker-button__icon" aria-hidden="true">
+                  <LibrarySquare size={18} />
+                </span>
+                <span className="party-template-picker-button__content">
+                  <strong>{pick('เลือก Template เพลง', 'Select a Song Template')}</strong>
+                  <small>
+                    {pick(
+                      'เปิดคลัง template เพื่อเลือกเซตเพลงที่พร้อมใช้สร้างห้องได้ทันที',
+                      'Browse ready-made song sets and use one to create this room.',
+                    )}
+                  </small>
+                </span>
+                <span className="party-template-picker-button__action">
+                  {pick('เปิดรายการ', 'Browse')}
+                  <ChevronRight size={16} />
+                </span>
+              </button>
+            )}
+
             <div className="party-field">
               <span>{pick('โหมดการแข่งขัน', 'Match Type')}</span>
               <div className="party-toggle-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                <label className="party-toggle--card">
+                <label
+                  className="party-toggle--card"
+                  style={settings.templateId && settings.modeScope === 'vote' ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
+                >
                   <input
                     type="radio"
                     name="mainModeType"
                     checked={settings.modeType === 'quiz'}
+                    disabled={Boolean(settings.templateId && settings.modeScope === 'vote')}
                     onChange={() => setSettings((current) => ({ ...current, modeType: 'quiz', timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)) }))}
                   />
                   <span>{pick('Music Quiz', 'Music Quiz')}</span>
                 </label>
-                <label className="party-toggle--card">
+                <label
+                  className="party-toggle--card"
+                  style={settings.templateId && settings.modeScope === 'quiz' ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
+                >
                   <input
                     type="radio"
                     name="mainModeType"
                     checked={settings.modeType === 'vote'}
+                    disabled={Boolean(settings.templateId && settings.modeScope === 'quiz')}
                     onChange={() => setSettings((current) => ({ ...current, modeType: 'vote' }))}
                   />
                   <span>{pick('Vote Battle 🔥', 'Vote Battle 🔥')}</span>
                 </label>
               </div>
+              {settings.templateId && settings.modeScope !== 'all' ? (
+                <small style={{ color: 'var(--color-text-muted)', marginTop: '0.4rem', display: 'block' }}>
+                  {pick(
+                    `Template นี้รองรับเฉพาะโหมด ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'} เท่านั้น`,
+                    `This template only supports ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'} mode.`,
+                  )}
+                </small>
+              ) : null}
             </div>
 
             {settings.modeType === 'quiz' && (
@@ -222,44 +466,54 @@ export function PartyHubPage() {
             )}
 
             <div className="party-inline-fields">
-              <label className="party-field">
-                <span>{pick('หมวดเพลง', 'Song pool')}</span>
-                <select
-                  value={songPoolSelectValue}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    if (nextValue.startsWith('preset:')) {
-                      const presetId = Number(nextValue.replace('preset:', '')) || 0;
-                      const preset = songPresetOptions.find((entry) => entry.id === presetId);
+              {settings.templateId ? (
+                <div className="party-field">
+                  <span>{pick('หมวดเพลง', 'Song pool')}</span>
+                  <div style={{ padding: '0.55rem 0.75rem', borderRadius: '8px', background: 'rgba(var(--color-primary-rgb), 0.08)', border: '1px solid rgba(var(--color-primary-rgb), 0.25)', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                    <LibrarySquare size={14} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle', color: 'var(--color-primary)' }} />
+                    {pick('ใช้เพลงจาก Template', 'Songs from template')}
+                  </div>
+                </div>
+              ) : (
+                <label className="party-field">
+                  <span>{pick('หมวดเพลง', 'Song pool')}</span>
+                  <select
+                    value={songPoolSelectValue}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      if (nextValue.startsWith('preset:')) {
+                        const presetId = Number(nextValue.replace('preset:', '')) || 0;
+                        const preset = songPresetOptions.find((entry) => entry.id === presetId);
+                        setSettings((current) => ({
+                          ...current,
+                          categoryId: 'all',
+                          songPresetId: preset ? String(preset.id) : '',
+                          songPresetName: preset?.name || '',
+                        }));
+                        return;
+                      }
+
                       setSettings((current) => ({
                         ...current,
-                        categoryId: 'all',
-                        songPresetId: preset ? String(preset.id) : '',
-                        songPresetName: preset?.name || '',
+                        categoryId: nextValue,
+                        songPresetId: '',
+                        songPresetName: '',
                       }));
-                      return;
-                    }
-
-                    setSettings((current) => ({
-                      ...current,
-                      categoryId: nextValue,
-                      songPresetId: '',
-                      songPresetName: '',
-                    }));
-                  }}
-                >
-                  {PARTY_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
-                  ))}
-                  {songPresetOptions.length > 0 ? (
-                    <optgroup label={pick('Preset เพลง', 'Song presets')}>
-                      {songPresetOptions.map((option) => (
-                        <option key={option.id} value={`preset:${option.id}`}>{option.name}</option>
-                      ))}
-                    </optgroup>
-                  ) : null}
-                </select>
-              </label>
+                    }}
+                  >
+                    {PARTY_CATEGORY_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
+                    ))}
+                    {songPresetOptions.length > 0 ? (
+                      <optgroup label={pick('Preset เพลง', 'Song presets')}>
+                        {songPresetOptions.map((option) => (
+                          <option key={option.id} value={`preset:${option.id}`}>{option.name}</option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </label>
+              )}
               <label className="party-field">
                 <span>{settings.modeType === 'vote' ? pick('Starting songs', 'Starting songs') : pick('Rounds', 'Rounds')}</span>
                 <select
@@ -270,10 +524,18 @@ export function PartyHubPage() {
                       : { ...current, roundCount: Number(event.target.value) }
                   ))}
                 >
-                  {(settings.modeType === 'vote' ? [2, 4, 8, 16] : [2, 5, 10, 15, 20]).map((count) => (
+                  {(settings.modeType === 'vote' ? voteEntrantOptions : quizRoundOptions).map((count) => (
                     <option key={count} value={count}>{count} {settings.modeType === 'vote' ? pick('songs', 'songs') : pick('rounds', 'rounds')}</option>
                   ))}
                 </select>
+                {settings.templateId && settings.templatePlayableCount > 0 ? (
+                  <small style={{ color: 'var(--color-text-muted)', marginTop: '0.4rem', display: 'block' }}>
+                    {pick(
+                      `เลือกได้สูงสุดตามเพลงที่เล่นได้จริง ${settings.templatePlayableCount} เพลง`,
+                      `Limited by ${settings.templatePlayableCount} playable songs in this template.`,
+                    )}
+                  </small>
+                ) : null}
               </label>
               <label className="party-field">
                 <span>{supportsLongClipTime ? pick('เวลาเพลงสูงสุด', 'Song max time') : pick('เวลาเล่นเพลง', 'Clip time')}</span>
@@ -341,10 +603,23 @@ export function PartyHubPage() {
                 <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
                 <span>{pick('preset', 'preset')}</span>
               </article>
-              <article className="party-stat-pill">
-                <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
-                <span>{pick('pool', 'pool')}</span>
-              </article>
+              {settings.templateId ? (
+                <article className="party-stat-pill" style={{ background: 'rgba(var(--color-primary-rgb), 0.15)' }}>
+                  <strong>{settings.templateName || settings.templateId}</strong>
+                  <span>{pick('template', 'template')}</span>
+                </article>
+              ) : (
+                <article className="party-stat-pill">
+                  <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
+                  <span>{pick('pool', 'pool')}</span>
+                </article>
+              )}
+              {settings.templateId && settings.templatePlayableCount > 0 ? (
+                <article className="party-stat-pill">
+                  <strong>{settings.templatePlayableCount}</strong>
+                  <span>{pick('playable songs', 'playable songs')}</span>
+                </article>
+              ) : null}
               <article className="party-stat-pill">
                 <strong>{settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}</strong>
                 <span>{settings.modeType === 'vote' ? pick('Starting songs', 'Starting songs') : pick('Rounds', 'Rounds')}</span>
@@ -571,10 +846,12 @@ export function PartyRoomPage() {
     () => getPartyPrefetchRound(currentMatch, { revealPrefetchReady }),
     [currentMatch, revealPrefetchReady]
   );
-  const selectedPoolName = room?.settings?.songPresetName
+  const selectedPoolName = room?.settings?.templateName
+    || room?.settings?.songPresetName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.label
     || PARTY_CATEGORY_OPTIONS[0].label;
-  const selectedPoolNameTh = room?.settings?.songPresetName
+  const selectedPoolNameTh = room?.settings?.templateName
+    || room?.settings?.songPresetName
     || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.labelTh
     || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const phaseEndsAtMs = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;

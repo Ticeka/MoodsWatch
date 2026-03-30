@@ -1,9 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getPartyPresetById } from '@/features/party/lib/partyEngine';
+import {
+  resumePartyAudioContext,
+  startPartyVoteAmbient,
+  stopPartyVoteAmbient,
+} from '@/features/party/lib/partyAudio';
 import { submitPartyVote } from '@/features/party/lib/partyRemote';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { usePartyVoteStore } from '@/features/party/stores/partyVoteStore';
-import { getCountdownSeconds } from '../pages/partyRoomUtils';
+import { getCountdownSeconds, readPartyAudioVolume } from '../pages/partyRoomUtils';
 import { PartyLobbyView } from '../pages/PartyLobby';
 import {
   BattleCountdown,
@@ -40,7 +45,7 @@ export function PartyVoteRoomView({
   const allSongs = match?.allSongs || {};
   const settings = match?.settings || {};
   const currentPreset = getPartyPresetById(room?.settings?.presetId);
-  const selectedPoolName = room?.settings?.songPresetName || 'All Songs';
+  const selectedPoolName = room?.settings?.templateName || room?.settings?.songPresetName || 'All Songs';
   const selectedPoolNameTh = room?.settings?.songPresetName || 'เพลงทั้งหมด';
 
   const [secondsLeft, setSecondsLeft] = useState(() => {
@@ -85,6 +90,31 @@ export function PartyVoteRoomView({
     const timer = window.setInterval(tick, 200);
     return () => window.clearInterval(timer);
   }, [match?.phaseEndsAt, phase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const shouldPlayAmbient = phase === 'vote' || phase === 'reveal';
+
+    if (!shouldPlayAmbient) {
+      stopPartyVoteAmbient();
+      return undefined;
+    }
+
+    void resumePartyAudioContext().then((audioContext) => {
+      if (cancelled || !audioContext) {
+        return;
+      }
+      startPartyVoteAmbient(readPartyAudioVolume(), phase);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [phase]);
+
+  useEffect(() => () => {
+    stopPartyVoteAmbient();
+  }, []);
 
   const handleVote = useCallback(async (_side, songId) => {
     if (isSubmittingVote || !battle?.id || !currentMember || phase !== 'vote') {

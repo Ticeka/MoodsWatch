@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { getPartyRequiredReadyCount } from '@/features/party/lib/partyEngine';
+import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyPlayerList } from './PartyRoomShared';
 
@@ -22,6 +23,9 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
 }) {
   const members = useHydratedPartyMembers(guestToken, partyProfile);
   const isVoteMode = room?.settings?.modeType === 'vote';
+  const templateName = room?.settings?.templateName || '';
+  const templateCoverUrl = room?.settings?.templateCoverUrl || '';
+  const resolvedPoolName = templateName || pick(selectedPoolNameTh, selectedPoolName);
   const readyCount = useMemo(
     () => members.filter((member) => member.is_ready).length,
     [members]
@@ -53,9 +57,42 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 : pick('กติกาในแมตช์นี้', 'Rules for this match')}
             </span>
           </div>
+          {templateName ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '1rem',
+                background: 'rgba(var(--color-primary-rgb), 0.08)',
+                border: '1px solid rgba(var(--color-primary-rgb), 0.22)',
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  width: '3rem',
+                  height: '3rem',
+                  borderRadius: '0.85rem',
+                  backgroundImage: `url(${getTemplateCoverUrl(templateCoverUrl)})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundColor: 'rgba(var(--color-primary-rgb), 0.12)',
+                  border: '1px solid rgba(var(--color-primary-rgb), 0.25)',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ display: 'block' }}>{templateName}</strong>
+                <span style={{ color: 'var(--color-text-muted)' }}>{pick('Template ที่เลือกสำหรับห้องนี้', 'Selected template for this room')}</span>
+              </div>
+            </div>
+          ) : null}
           <div className="party-settings-summary">
             <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('preset', 'preset')}</span></article>
-            <article className="party-stat-pill"><strong>{pick(selectedPoolNameTh, selectedPoolName)}</strong><span>{pick('pool', 'pool')}</span></article>
+            <article className="party-stat-pill"><strong>{resolvedPoolName}</strong><span>{templateName ? pick('template', 'template') : pick('pool', 'pool')}</span></article>
             <article className="party-stat-pill"><strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('songs', 'songs') : pick('rounds', 'rounds')}</span></article>
             <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('clip sec', 'clip sec')}</span></article>
             {isVoteMode ? (

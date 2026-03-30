@@ -20,6 +20,8 @@ import {
   buildPartyVoteSnapshot,
   advancePartyVoteMatch,
 } from './partyModeVote';
+import { PARTY_TEMPLATE_DEFAULT_PRESET_ID } from './partyTemplateSchema';
+import { resolveTemplateCoverUrl, sanitizeTemplateCoverUrl } from './partyTemplateUtils';
 
 const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
 const PARTY_PROFILE_KEY = 'moodtoon-party-profile';
@@ -31,6 +33,7 @@ const PARTY_SONG_POOL_CACHE_TTL_MS = 2 * 60 * 1000;
 const partyRoomRealtimeRegistry = new Map();
 const partySongPoolCache = new Map();
 const partyPresetSongPoolCache = new Map();
+const partyTemplateSongPoolCache = new Map();
 
 function getPartyRoomChannelName(roomId) {
   return `party-room-${roomId}`;
@@ -803,6 +806,30 @@ function canBuildPartySnapshotFromPool(playablePool = [], settings = {}) {
   }
 }
 
+export async function fetchPartyTemplateSongPool(templateId) {
+  if (!supabase || !templateId) {
+    return [];
+  }
+
+  const cacheKey = String(templateId).trim();
+  return getOrCreatePartySongPoolCacheValue(partyTemplateSongPoolCache, cacheKey, async () => {
+    const { data, error } = await supabase
+      .from('party_song_template_items')
+      .select('*')
+      .eq('template_id', templateId)
+      .order('position', { ascending: true });
+
+    if (error) {
+      // Table may not exist yet; fall through to empty pool
+      return [];
+    }
+
+    return (data || [])
+      .map(mapPartyPresetSongItem)
+      .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+  });
+}
+
 async function fetchPartyPresetSongPool(presetId) {
   if (!supabase || !presetId) {
     return [];
@@ -844,6 +871,346 @@ export async function fetchPublishedPartySongPresets() {
   }
 
   return (data || []).map(mapPartySongPreset);
+}
+
+function mapPartyTemplate(row) {
+  // party_song_template_items can be:
+  //   - [{count: N}]  when fetched with (count) syntax (browse list)
+  //   - [{id, ...}]   when fetched with (*) (detail page — handled separately)
+  //   - undefined/null
+  const itemsArr = Array.isArray(row?.party_song_template_items)
+    ? row.party_song_template_items
+    : [];
+
+  let itemCount = Number(row?.item_count ?? 0);
+  if (!itemCount && itemsArr.length > 0) {
+    const firstEntry = itemsArr[0];
+    if (firstEntry && 'count' in firstEntry) {
+      // Supabase returns [{ count: N }] for aggregate selects
+      itemCount = Number(firstEntry.count || 0);
+    } else {
+      itemCount = itemsArr.length;
+    }
+  }
+
+  return {
+    id: String(row?.id || ''),
+    name: row?.name || '',
+    description: row?.description || '',
+    coverUrl: sanitizeTemplateCoverUrl(row?.cover_url),
+    visibility: row?.visibility || 'public',
+    modeScope: row?.mode_scope || 'all',
+    presetId: row?.default_preset_id || PARTY_TEMPLATE_DEFAULT_PRESET_ID,
+    sourceType: row?.source_type || 'catalog',
+    isOfficial: Boolean(row?.is_official),
+    ownerUserId: row?.owner_user_id || null,
+    creatorName: row?.creator_name || '',
+    itemCount,
+    likes: Number(row?.like_count || 0),
+    viewCount: Number(row?.view_count || 0),
+    tags: Array.isArray(row?.tags) ? row.tags : [],
+    createdAt: row?.created_at || '',
+    updatedAt: row?.updated_at || '',
+  };
+}
+
+export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = '', userId = null } = {}) {
+  if (!supabase) {
+    return [];
+  }
+
+  // count() in nested select avoids fetching full item rows just for the count
+  let query = supabase
+    .from('party_song_templates')
+    .select('*, party_song_template_items(count)')
+    .order('updated_at', { ascending: false });
+
+  if (tab === 'official') {
+    query = query.eq('is_official', true);
+  } else if (tab === 'mine' && userId) {
+    query = query.eq('owner_user_id', userId);
+  } else {
+    // all + community: only public/unlisted
+    query = query.in('visibility', ['public', 'unlisted']);
+  }
+
+  if (mode === 'quiz') {
+    query = query.in('mode_scope', ['quiz', 'all']);
+  } else if (mode === 'vote') {
+    query = query.in('mode_scope', ['vote', 'all']);
+  }
+
+  if (search) {
+    query = query.ilike('name', `%${search}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data || []).map(mapPartyTemplate);
+}
+
+export async function fetchPartyTemplateDetail(templateId) {
+  if (!supabase || !templateId) {
+    return null;
+  }
+
+  const { data: template, error: templateError } = await supabase
+    .from('party_song_templates')
+    .select('*')
+    .eq('id', templateId)
+    .maybeSingle();
+
+  if (templateError) {
+    const err = new Error(templateError.message || 'Failed to load template');
+    err.code = templateError.code;
+    // Postgres RLS denial
+    if (templateError.code === '42501') err.kind = 'access_denied';
+    throw err;
+  }
+
+  if (!template) {
+    const err = new Error('Template not found');
+    err.kind = 'not_found';
+    throw err;
+  }
+
+  const { data: items, error: itemsError } = await supabase
+    .from('party_song_template_items')
+    .select('*')
+    .eq('template_id', templateId)
+    .order('position', { ascending: true });
+
+  if (itemsError) {
+    const err = new Error(itemsError.message || 'Failed to load template items');
+    err.code = itemsError.code;
+    throw err;
+  }
+
+  return {
+    ...mapPartyTemplate(template),
+    coverUrl: resolveTemplateCoverUrl(template?.cover_url, items || []),
+    items: items || [],
+  };
+}
+
+export async function uploadPartyTemplateCover(userId, file) {
+  if (!supabase || !userId || !file) {
+    throw new Error('Invalid cover upload request');
+  }
+
+  const ext = String(file.name || 'jpg').split('.').pop() || 'jpg';
+  const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${userId}/template-cover-${Date.now()}.${safeExt}`;
+  const { error } = await supabase.storage
+    .from('party-template-covers')
+    .upload(path, file, { cacheControl: '31536000', upsert: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data } = supabase.storage.from('party-template-covers').getPublicUrl(path);
+  if (!data?.publicUrl) {
+    throw new Error('Cover upload did not return a public URL');
+  }
+
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
+/**
+ * Create a new template + its items in one transaction-like sequence.
+ * Returns the created template record or throws.
+ */
+export async function createPartyTemplate(templateData, items = [], creatorName = '') {
+  if (!supabase) throw new Error('No database connection');
+
+  const { data: tpl, error: tplError } = await supabase
+    .from('party_song_templates')
+    .insert({
+      owner_user_id: templateData.ownerUserId,
+      creator_name: creatorName || '',
+      name: String(templateData.name || '').trim(),
+      description: String(templateData.description || '').trim(),
+      cover_url: sanitizeTemplateCoverUrl(templateData.coverUrl),
+      visibility: templateData.visibility || 'public',
+      mode_scope: templateData.modeScope || 'all',
+      default_preset_id: templateData.presetId || PARTY_TEMPLATE_DEFAULT_PRESET_ID,
+      source_type: 'catalog',
+      is_official: false,
+      tags: Array.isArray(templateData.tags) ? templateData.tags : [],
+    })
+    .select('*')
+    .single();
+
+  if (tplError) throw tplError;
+
+  if (items.length > 0) {
+    const rows = items.map((item, index) => ({
+      template_id: tpl.id,
+      song_id: item.song_id ?? item.songId,
+      source_title_id: item.source_title_id ?? item.sourceTitleId ?? null,
+      source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
+      song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
+      theme_type: item.theme_type ?? item.themeType ?? 'OP',
+      artist_name: item.artist_name ?? item.artistName ?? item.artist ?? '',
+      media_url: item.media_url ?? item.mediaUrl ?? '',
+      cover_url: item.cover_url ?? item.coverUrl ?? '',
+      position: index,
+    }));
+
+    const { error: itemsError } = await supabase
+      .from('party_song_template_items')
+      .insert(rows);
+
+    if (itemsError) throw itemsError;
+  }
+
+  return mapPartyTemplate(tpl);
+}
+
+/**
+ * Update a template's header fields (name, description, visibility, etc.).
+ * Does not touch items — use replacePartyTemplateItems for that.
+ */
+export async function updatePartyTemplate(templateId, updates) {
+  if (!supabase || !templateId) throw new Error('Invalid arguments');
+
+  const allowed = {};
+  if (updates.name !== undefined)        allowed.name = String(updates.name).trim();
+  if (updates.description !== undefined) allowed.description = String(updates.description).trim();
+  if (updates.coverUrl !== undefined)    allowed.cover_url = sanitizeTemplateCoverUrl(updates.coverUrl);
+  if (updates.visibility !== undefined)  allowed.visibility = updates.visibility;
+  if (updates.modeScope !== undefined)   allowed.mode_scope = updates.modeScope;
+  if (updates.presetId !== undefined)    allowed.default_preset_id = updates.presetId || PARTY_TEMPLATE_DEFAULT_PRESET_ID;
+  if (updates.tags !== undefined)        allowed.tags = Array.isArray(updates.tags) ? updates.tags : [];
+
+  const { data, error } = await supabase
+    .from('party_song_templates')
+    .update(allowed)
+    .eq('id', templateId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return mapPartyTemplate(data);
+}
+
+/**
+ * Atomically replaces all items of a template via a DB transaction RPC.
+ * Uses replace_party_template_items(bigint, jsonb) — delete + insert in one PG transaction.
+ * A failed insert can never leave the template with zero songs.
+ */
+export async function replacePartyTemplateItems(templateId, items = []) {
+  if (!supabase || !templateId) throw new Error('Invalid arguments');
+
+  const rows = items.map((item, index) => ({
+    song_id: String(item.song_id ?? item.songId ?? ''),
+    source_title_id: String(item.source_title_id ?? item.sourceTitleId ?? ''),
+    source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
+    song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
+    theme_type: item.theme_type ?? item.themeType ?? 'OP',
+    artist_name: item.artist_name ?? item.artistName ?? item.artist ?? '',
+    media_url: item.media_url ?? item.mediaUrl ?? '',
+    cover_url: item.cover_url ?? item.coverUrl ?? '',
+    position: index,
+  }));
+
+  const { error } = await supabase.rpc('replace_party_template_items', {
+    p_template_id: Number(templateId),
+    p_items: JSON.stringify(rows),
+  });
+
+  if (error) throw error;
+  return rows;
+}
+
+/**
+ * Clone an existing template into a new one owned by userId.
+ * nameOverride defaults to "Copy of <original name>".
+ */
+export async function clonePartyTemplate(baseTemplateId, userId, creatorName = '', nameOverride = null) {
+  if (!supabase || !baseTemplateId || !userId) throw new Error('Invalid arguments');
+
+  const base = await fetchPartyTemplateDetail(baseTemplateId);
+  if (!base) throw new Error('Base template not found or not accessible');
+
+  const newName = nameOverride || `Copy of ${base.name}`;
+
+  return createPartyTemplate(
+    {
+      ownerUserId: userId,
+      name: newName,
+      description: base.description,
+      coverUrl: base.coverUrl,
+      visibility: 'private', // cloned templates start as private
+      modeScope: base.modeScope,
+      presetId: base.presetId || PARTY_TEMPLATE_DEFAULT_PRESET_ID,
+      tags: base.tags,
+    },
+    base.items,
+    creatorName,
+  );
+}
+
+/**
+ * Toggle like on a template.
+ * Returns { liked: boolean } — true if the like was added, false if removed.
+ */
+export async function togglePartyTemplateLike(templateId, userId) {
+  if (!supabase || !templateId || !userId) throw new Error('Invalid arguments');
+
+  // Check if like already exists
+  const { data: existing } = await supabase
+    .from('party_template_likes')
+    .select('id')
+    .eq('template_id', templateId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from('party_template_likes')
+      .delete()
+      .eq('template_id', templateId)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return { liked: false };
+  }
+
+  const { error } = await supabase
+    .from('party_template_likes')
+    .insert({ template_id: templateId, user_id: userId });
+  if (error) throw error;
+  return { liked: true };
+}
+
+/**
+ * Check if the current user has liked a template.
+ */
+export async function checkPartyTemplateLiked(templateId, userId) {
+  if (!supabase || !templateId || !userId) return false;
+
+  const { data } = await supabase
+    .from('party_template_likes')
+    .select('id')
+    .eq('template_id', templateId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return Boolean(data);
+}
+
+/**
+ * Increment view count via DB function (fire-and-forget — no throw on failure).
+ */
+export async function recordPartyTemplateView(templateId) {
+  if (!supabase || !templateId) return;
+  try {
+    await supabase.rpc('increment_template_view_count', { p_template_id: Number(templateId) });
+  } catch {
+    // View count is non-critical
+  }
 }
 
 export async function searchPartyThemeSongs(query = '', { page = 0, pageSize = 24, sortBy = 'relevance' } = {}) {
@@ -960,12 +1327,61 @@ export async function searchPartyThemeSongs(query = '', { page = 0, pageSize = 2
   };
 }
 
+/**
+ * Catalog search for the Template Builder.
+ * Same RPC as searchPartyThemeSongs but does NOT filter by isDirectPartyMediaUrl,
+ * so all songs in the catalog are visible to template authors.
+ * The game engine applies the URL filter at runtime when building the song pool.
+ */
+export async function searchPartyTemplateCatalog(query = '', { page = 0, pageSize = 24 } = {}) {
+  if (!supabase) {
+    return { items: [], total: 0, page: 0, pageSize, totalPages: 1 };
+  }
+
+  const rawQuery = String(query || '').trim();
+  const safePage = Math.max(0, Number(page || 0));
+  const safePageSize = Math.max(1, Math.min(Number(pageSize || 24), 50));
+
+  const { data, error } = await supabase.rpc('search_battle_theme_songs', {
+    p_query: rawQuery,
+    p_show_adult: false,
+    p_hidden_title_ids: [],
+    p_page: safePage,
+    p_page_size: safePageSize,
+  });
+
+  if (error) throw error;
+
+  const rows = (data || []);
+  const total = Number(rows[0]?.total_count || 0);
+
+  // Map to UI-friendly shape — keep all songs, no URL filter
+  const items = rows.map((row) => {
+    const mapped = mapPartySongRow(row);
+    return {
+      ...mapped,
+      isPlayable: isDirectPartyMediaUrl(mapped.mediaUrl),
+    };
+  }).filter((s) => s.id && s.sourceTitleId);
+
+  return {
+    items,
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
 export async function fetchPartySongPool(settings = {}) {
   if (!supabase) {
     return [];
   }
 
   const normalizedSettings = createPartySettings(settings);
+  if (normalizedSettings.templateId) {
+    return fetchPartyTemplateSongPool(normalizedSettings.templateId);
+  }
   if (normalizedSettings.songPresetId) {
     return fetchPartyPresetSongPool(normalizedSettings.songPresetId);
   }

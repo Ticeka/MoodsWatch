@@ -205,6 +205,80 @@ export function playPartyWinAlert(audioContext, volume = 85) {
   osc.stop(now + 0.8);
 }
 
+export function playPartyRevealSuspenseAlert(audioContext, volume = 85) {
+  if (!audioContext) return;
+
+  const now = audioContext.currentTime;
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+  const masterGain = audioContext.createGain();
+  const oscA = audioContext.createOscillator();
+  const oscB = audioContext.createOscillator();
+  const lfo = audioContext.createOscillator();
+  const lfoGain = audioContext.createGain();
+
+  masterGain.gain.setValueAtTime(0.0001, now);
+  masterGain.gain.exponentialRampToValueAtTime(Math.max(0.001, normalizedVolume * 0.42), now + 0.22);
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+
+  oscA.type = 'triangle';
+  oscA.frequency.setValueAtTime(196, now);
+  oscA.frequency.exponentialRampToValueAtTime(277.18, now + 0.9);
+
+  oscB.type = 'sine';
+  oscB.frequency.setValueAtTime(246.94, now);
+  oscB.frequency.exponentialRampToValueAtTime(329.63, now + 0.9);
+
+  lfo.type = 'sine';
+  lfo.frequency.setValueAtTime(6.2, now);
+  lfoGain.gain.setValueAtTime(18, now);
+
+  lfo.connect(lfoGain);
+  lfoGain.connect(oscA.detune);
+
+  oscA.connect(masterGain);
+  oscB.connect(masterGain);
+  masterGain.connect(audioContext.destination);
+
+  oscA.start(now);
+  oscB.start(now);
+  lfo.start(now);
+
+  oscA.stop(now + 1.15);
+  oscB.stop(now + 1.15);
+  lfo.stop(now + 1.15);
+}
+
+export function playPartyRevealImpactAlert(audioContext, volume = 85, isTie = false) {
+  if (!audioContext) return;
+
+  const now = audioContext.currentTime;
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+  const impactGain = audioContext.createGain();
+  const lowOsc = audioContext.createOscillator();
+  const highOsc = audioContext.createOscillator();
+
+  impactGain.gain.setValueAtTime(0.0001, now);
+  impactGain.gain.exponentialRampToValueAtTime(Math.max(0.001, normalizedVolume * (isTie ? 0.38 : 0.55)), now + 0.015);
+  impactGain.gain.exponentialRampToValueAtTime(0.0001, now + (isTie ? 0.5 : 0.72));
+
+  lowOsc.type = isTie ? 'triangle' : 'sawtooth';
+  lowOsc.frequency.setValueAtTime(isTie ? 180 : 110, now);
+  lowOsc.frequency.exponentialRampToValueAtTime(isTie ? 120 : 52, now + 0.34);
+
+  highOsc.type = 'square';
+  highOsc.frequency.setValueAtTime(isTie ? 520 : 740, now);
+  highOsc.frequency.exponentialRampToValueAtTime(isTie ? 320 : 240, now + (isTie ? 0.22 : 0.3));
+
+  lowOsc.connect(impactGain);
+  highOsc.connect(impactGain);
+  impactGain.connect(audioContext.destination);
+
+  lowOsc.start(now);
+  highOsc.start(now);
+  lowOsc.stop(now + (isTie ? 0.55 : 0.75));
+  highOsc.stop(now + (isTie ? 0.35 : 0.38));
+}
+
 function getAvatarTone(avatarKey) {
   return PARTY_AVATAR_OPTIONS.find((avatar) => avatar.id === avatarKey)?.tone || PARTY_AVATAR_OPTIONS[0].tone;
 }

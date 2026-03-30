@@ -192,6 +192,11 @@ export function createPartySettings(input = {}) {
     keyword: String(input.keyword || '').trim(),
     showLiveScores: Boolean(input.showLiveScores ?? true),
     randomOrder: Boolean(input.randomOrder ?? true),
+    templateId: String(input.templateId || '').trim(),
+    templateName: String(input.templateName || '').trim(),
+    templateCoverUrl: String(input.templateCoverUrl || '').trim(),
+    templatePlayableCount: Math.max(0, Number(input.templatePlayableCount || 0)),
+    modeScope: String(input.modeScope || 'all').trim(),
   };
 }
 
