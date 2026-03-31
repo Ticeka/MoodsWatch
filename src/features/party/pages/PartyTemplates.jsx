@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Music, LibrarySquare, LayoutGrid, Loader2, AlertTriangle } from 'lucide-react';
+import { Music, LibrarySquare, LayoutGrid, Loader2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { fetchPartyTemplates } from '@/features/party/lib/partyRemote';
@@ -8,6 +8,8 @@ import { PartyTemplateCard } from '../components/PartyTemplateCard';
 import { PartyTemplateFilters } from '../components/PartyTemplateFilters';
 import '../components/PartyTemplates.css';
 import '../pages/Party.css';
+
+const PAGE_SIZE = 12;
 
 function useDebounce(value, delay = 500) {
   const [dv, setDv] = useState(value);
@@ -27,10 +29,13 @@ export function PartyTemplatesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState('all');
   const [templates, setTemplates] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const loadTemplates = useCallback(() => {
     let ignore = false;
@@ -42,14 +47,20 @@ export function PartyTemplatesPage() {
       mode: filterMode,
       search: debouncedSearch,
       userId: user?.id,
+      page,
+      pageSize: PAGE_SIZE,
     })
-      .then((data) => {
-        if (!ignore) setTemplates(data);
+      .then(({ templates: data, total: count }) => {
+        if (!ignore) {
+          setTemplates(data);
+          setTotal(count);
+        }
       })
       .catch((err) => {
         if (!ignore) {
           setFetchError(err?.message || 'Failed to load templates');
           setTemplates([]);
+          setTotal(0);
         }
       })
       .finally(() => {
@@ -57,23 +68,17 @@ export function PartyTemplatesPage() {
       });
 
     return () => { ignore = true; };
-  }, [currentTab, filterMode, debouncedSearch, user?.id]);
+  }, [currentTab, filterMode, debouncedSearch, user?.id, page]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [currentTab, filterMode, debouncedSearch]);
 
   useEffect(() => {
     const cleanup = loadTemplates();
     return cleanup;
   }, [loadTemplates]);
-
-  // Client-side filter for search (instant feel while server catches up)
-  const filteredTemplates = useMemo(() => {
-    if (!searchQuery.trim()) return templates;
-    const q = searchQuery.toLowerCase();
-    return templates.filter((tpl) =>
-      tpl.name.toLowerCase().includes(q) ||
-      (tpl.description || '').toLowerCase().includes(q) ||
-      (tpl.tags || []).some((tag) => tag.toLowerCase().includes(q)),
-    );
-  }, [templates, searchQuery]);
 
   return (
     <div className="party-page is-hub">
@@ -96,11 +101,11 @@ export function PartyTemplatesPage() {
 
         <PartyTemplateFilters
           currentTab={currentTab}
-          onTabChange={setCurrentTab}
+          onTabChange={(tab) => { setCurrentTab(tab); setPage(1); }}
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={(q) => { setSearchQuery(q); setPage(1); }}
           filterMode={filterMode}
-          onFilterModeChange={setFilterMode}
+          onFilterModeChange={(m) => { setFilterMode(m); setPage(1); }}
         />
 
         {loading ? (
@@ -116,17 +121,66 @@ export function PartyTemplatesPage() {
               {pick('ลองใหม่', 'Try again')}
             </button>
           </div>
-        ) : filteredTemplates.length > 0 ? (
-          <div className="party-template-grid">
-            {filteredTemplates.map((template) => (
-              <PartyTemplateCard
-                key={template.id}
-                template={template}
-                pick={pick}
-                onClick={() => navigate(`/party/templates/${template.id}`)}
-              />
-            ))}
-          </div>
+        ) : templates.length > 0 ? (
+          <>
+            <div className="party-template-grid">
+              {templates.map((template) => (
+                <PartyTemplateCard
+                  key={template.id}
+                  template={template}
+                  pick={pick}
+                  onClick={() => navigate(`/party/templates/${template.id}`)}
+                />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="party-templates-pagination">
+                <button
+                  className="pt-page-btn"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+                  .reduce((acc, p, idx, arr) => {
+                    if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, idx) =>
+                    p === '…' ? (
+                      <span key={`ellipsis-${idx}`} className="pt-page-ellipsis">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        className={`pt-page-btn ${p === page ? 'is-active' : ''}`}
+                        onClick={() => setPage(p)}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                <button
+                  className="pt-page-btn"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+
+                <span className="pt-page-info">
+                  {pick(`${total} เทมเพลต`, `${total} templates`)}
+                </span>
+              </div>
+            )}
+          </>
         ) : (
           <div style={{ padding: '4rem', textAlign: 'center', background: 'var(--color-surface-hover)', borderRadius: '12px' }}>
             <Music size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />

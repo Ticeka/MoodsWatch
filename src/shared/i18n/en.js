@@ -63,6 +63,7 @@ export const translations = {
     "notificationsEmpty": "No notifications yet",
     "closeMenu": "Close menu",
     "feed": "Feed",
+    "party": "Party",
     "mainNav": "Main navigation",
     "mobileNav": "Mobile navigation",
     "bottomNav": "Bottom navigation",

@@ -2,7 +2,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart2, Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
+import { BarChart2, Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Radio, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -550,14 +550,12 @@ export function Header() {
             <Link to="/tierlist" className={`nav-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
               <ListOrdered size={16} /><span className="nav-link-label">{t('layout.tierlist')}</span>
             </Link>
+            <Link to="/party" className={`nav-link ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Radio size={16} /><span className="nav-link-label">{t('layout.party')}</span>
+            </Link>
             <Link to="/watchlist" className={`nav-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <BookMarked size={16} /><span className="nav-link-label">{t('layout.watchlist')}</span>
             </Link>
-            {user && (
-              <Link to="/feed" className={`nav-link ${isActive('/feed') ? 'active' : ''}`} onClick={closeMobileMenu}>
-                <Users size={16} /><span className="nav-link-label">{t('layout.feed')}</span>
-              </Link>
-            )}
           </nav>
 
           <div className="header-actions">
@@ -697,14 +695,12 @@ export function Header() {
           <Link to="/tierlist" className={`drawer-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
             <ListOrdered size={18} /> {t('layout.tierlist')}
           </Link>
+          <Link to="/party" className={`drawer-link ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <Radio size={18} /> {t('layout.party')}
+          </Link>
           <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BookMarked size={18} /> {t('layout.watchlist')}
           </Link>
-          {user && (
-            <Link to="/feed" className={`drawer-link ${isActive('/feed') ? 'active' : ''}`} onClick={closeMobileMenu}>
-              <Users size={18} /> {t('layout.feed')}
-            </Link>
-          )}
           <Link to="/stats" className={`drawer-link ${isActive('/stats') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BarChart2 size={18} /> {t('layout.stats')}
           </Link>
@@ -763,6 +759,10 @@ export function Header() {
         <Link to="/battle" className={`bottom-nav-item ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
           <Swords size={20} className="bottom-nav-icon" />
           <span className="bottom-nav-label">{t('layout.battle')}</span>
+        </Link>
+        <Link to="/party" className={`bottom-nav-item ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
+          <Radio size={20} className="bottom-nav-icon" />
+          <span className="bottom-nav-label">{t('layout.party')}</span>
         </Link>
         <Link to="/watchlist" className={`bottom-nav-item ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
           <BookMarked size={20} className="bottom-nav-icon" />

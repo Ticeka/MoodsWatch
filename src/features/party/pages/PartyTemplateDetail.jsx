@@ -181,12 +181,12 @@ export function PartyTemplateDetailPage() {
       <div className="party-page">
         <div className="party-templates-page" style={{ paddingTop: '4rem', textAlign: 'center' }}>
           <Music size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-          <h2>{pick('Template not found', 'Template not found')}</h2>
+          <h2>{pick('ไม่พบเทมเพลต', 'Template not found')}</h2>
           <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
-            {pick('It may have been deleted or is private.', 'It may have been deleted or is private.')}
+            {pick('อาจถูกลบหรือเป็นแบบส่วนตัว', 'It may have been deleted or is private.')}
           </p>
           <button className="btn-secondary" onClick={() => navigate('/party/templates')}>
-            &larr; {pick('Back to Templates', 'Back to Templates')}
+            &larr; {pick('กลับหน้าเทมเพลต', 'Back to Templates')}
           </button>
         </div>
       </div>
@@ -215,7 +215,7 @@ export function PartyTemplateDetailPage() {
           style={{ display: 'inline-flex', padding: '0.5rem 1rem', marginBottom: '1rem' }}
           onClick={() => navigate('/party/templates')}
         >
-          &larr; {pick('Back', 'Back')}
+          &larr; {pick('กลับ', 'Back')}
         </button>
 
         <div className="party-template-detail-container">
@@ -241,7 +241,7 @@ export function PartyTemplateDetailPage() {
               )}
 
               <p style={{ color: 'var(--color-text-muted)', margin: '0 0 1.5rem 0', lineHeight: '1.6' }}>
-                {template.description || pick('No description.', 'No description.')}
+                {template.description || pick('ไม่มีคำอธิบาย', 'No description.')}
               </p>
 
               <div
@@ -256,8 +256,8 @@ export function PartyTemplateDetailPage() {
                 <Music size={16} />
                 <span>
 	                  {canPlayNow
-                    ? pick(`Ready to play - ${playableCount} playable songs`, `Ready to play - ${playableCount} playable songs`)
-                    : pick(`Not ready to play - ${playableCount} playable songs`, `Not ready to play - ${playableCount} playable songs`)}
+                    ? pick(`พร้อมเล่น - ${playableCount} เพลง`, `Ready to play - ${playableCount} playable songs`)
+                    : pick(`ยังไม่พร้อม - ${playableCount} เพลง`, `Not ready to play - ${playableCount} playable songs`)}
                 </span>
               </div>
 
@@ -294,17 +294,17 @@ export function PartyTemplateDetailPage() {
 	                      <strong>{pick(preset.labelTh, preset.label)}</strong>
 	                      <span>
 	                        {result.compatible
-	                          ? pick(`Ready for ${preset.label}`, `Ready for ${preset.label}`)
+	                          ? pick(`พร้อมสำหรับ ${preset.label}`, `Ready for ${preset.label}`)
 	                          : getTemplateCompatibilityCopy(result.blockingReasons?.[0], pick)}
 	                      </span>
 	                    </div>
 	                  );
 	                })}
 	                <div className={`pt-builder-compatibility-card ${templateCompatibility.voteResult.compatible ? 'is-ready' : 'is-blocked'}`}>
-	                  <strong>{pick('Vote Battle', 'Vote Battle')}</strong>
+	                  <strong>{pick('โหวตแบทเทิล', 'Vote Battle')}</strong>
 	                  <span>
 	                    {templateCompatibility.voteResult.compatible
-	                      ? pick('Ready for Vote Battle', 'Ready for Vote Battle')
+	                      ? pick('พร้อมสำหรับ Vote Battle', 'Ready for Vote Battle')
 	                      : getTemplateCompatibilityCopy(templateCompatibility.voteResult.blockingReasons?.[0], pick)}
 	                  </span>
 	                </div>
@@ -324,25 +324,25 @@ export function PartyTemplateDetailPage() {
 	                    )
 	                    : undefined}
 	                >
-                  <Play size={20} fill="currentColor" /> {pick('Play Now', 'Play Now')}
+                  <Play size={20} fill="currentColor" /> {pick('เล่นเลย', 'Play Now')}
                 </button>
                 <button className="btn-use-base" onClick={handleUseBase}>
-                  <Copy size={16} /> {pick('Use as Base', 'Use as Base')}
+                  <Copy size={16} /> {pick('ใช้เป็นต้นแบบ', 'Use as Base')}
                 </button>
                 {user?.id && user.id === template.ownerUserId && (
                   <button className="btn-use-base" onClick={() => navigate(`/party/templates/create?edit=${template.id}`)}>
-                    <Pencil size={16} /> {pick('Edit Template', 'Edit Template')}
+                    <Pencil size={16} /> {pick('แก้ไขเทมเพลต', 'Edit Template')}
                   </button>
                 )}
                 {user?.id && user.id === template.ownerUserId && (
                   <button className="btn-use-base btn-use-base-danger" onClick={handleDelete}>
-                    <Trash2 size={16} /> {pick('Delete Template', 'Delete Template')}
+                    <Trash2 size={16} /> {pick('ลบเทมเพลต', 'Delete Template')}
                   </button>
                 )}
                 {user?.id && user.id === template.ownerUserId && mappedItems.some(isTemplateItemImportedFromPlaylist) && (
                   <button className="btn-use-base" onClick={handleSync} disabled={syncing}>
                     <RefreshCw size={16} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} />
-                    {syncing ? pick('Syncing...', 'Syncing...') : pick('Sync YouTube Playlist', 'Sync YouTube Playlist')}
+                    {syncing ? pick('กำลังซิงค์...', 'Syncing...') : pick('ซิงค์ YouTube Playlist', 'Sync YouTube Playlist')}
                   </button>
                 )}
                 <button
@@ -352,7 +352,7 @@ export function PartyTemplateDetailPage() {
                   style={{ color: liked ? '#e74c3c' : undefined }}
                 >
                   <Heart size={16} fill={liked ? 'currentColor' : 'none'} />
-                  {liked ? pick('Liked', 'Liked') : pick('Like', 'Like')}
+                  {liked ? pick('ถูกใจแล้ว', 'Liked') : pick('ถูกใจ', 'Like')}
                   {likeCount > 0 && <span style={{ marginLeft: '0.25rem', opacity: 0.7 }}>({likeCount})</span>}
                 </button>
               </div>
@@ -360,9 +360,9 @@ export function PartyTemplateDetailPage() {
 
             <div className="ptd-info-card" style={{ padding: '1rem' }}>
               {[
-                { label: pick('Created by', 'Created by'), value: template.creatorName || pick('Unknown', 'Unknown') },
-                { label: pick('Songs', 'Songs'), value: template.itemCount },
-                { label: pick('Modes', 'Modes'), value: template.modeScope === 'all' ? 'Quiz / Vote' : template.modeScope },
+                { label: pick('สร้างโดย', 'Created by'), value: template.creatorName || pick('ไม่ทราบ', 'Unknown') },
+                { label: pick('เพลง', 'Songs'), value: template.itemCount },
+                { label: pick('โหมด', 'Modes'), value: template.modeScope === 'all' ? 'Quiz / Vote' : template.modeScope },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
@@ -371,7 +371,7 @@ export function PartyTemplateDetailPage() {
               ))}
               {template.viewCount > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '0.5rem', borderTop: '1px dashed var(--color-border)', paddingTop: '0.5rem' }}>
-                  <Eye size={14} /> {template.viewCount.toLocaleString()} {pick('views', 'views')}
+                  <Eye size={14} /> {template.viewCount.toLocaleString()} {pick('ครั้ง', 'views')}
                 </div>
               )}
             </div>
@@ -382,7 +382,7 @@ export function PartyTemplateDetailPage() {
             <div className="ptd-song-list-header">
               <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ListEnd size={20} />
-                {pick('Tracklist', 'Tracklist')}
+                {pick('รายการเพลง', 'Tracklist')}
                 {mappedItems.length > 0 && <span style={{ opacity: 0.5, fontWeight: 'normal' }}>({mappedItems.length})</span>}
               </h3>
             </div>
@@ -390,7 +390,7 @@ export function PartyTemplateDetailPage() {
             {mappedItems.length === 0 ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Music size={32} style={{ opacity: 0.2, marginBottom: '0.75rem' }} />
-                <p>{pick('No songs in this template yet.', 'No songs in this template yet.')}</p>
+                <p>{pick('ยังไม่มีเพลงในเทมเพลตนี้', 'No songs in this template yet.')}</p>
               </div>
             ) : (
               <div className="ptd-song-items">

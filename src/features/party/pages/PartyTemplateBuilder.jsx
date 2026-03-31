@@ -99,7 +99,7 @@ export function PartyTemplateBuilderPage() {
   const sourceId = editTemplateId || baseTemplateId;
 
   const [meta, setMeta] = useState({
-    name: pick('New Playlist', 'New Playlist'),
+    name: pick('เพลย์ลิสต์ใหม่', 'New Playlist'),
     description: '',
     visibility: 'public',
     modeScope: 'all',
@@ -169,7 +169,7 @@ export function PartyTemplateBuilderPage() {
           setItems((data.items || []).map(mapTemplateItemFromDb));
         }
       })
-      .catch(() => toast.error(pick('Failed to load template', 'Failed to load template')))
+      .catch(() => toast.error(pick('โหลดเทมเพลตไม่สำเร็จ', 'Failed to load template')))
       .finally(() => { if (!ignore) setLoadingBase(false); });
 
     return () => { ignore = true; };
@@ -196,7 +196,7 @@ export function PartyTemplateBuilderPage() {
       .catch((err) => {
         if (!ignore) {
           setSearchResults([]);
-          const msg = err?.message || pick('Failed to load songs', 'Failed to load songs');
+          const msg = err?.message || pick('โหลดเพลงไม่สำเร็จ', 'Failed to load songs');
           setSearchError(msg);
           toast.error(msg);
         }
@@ -424,14 +424,14 @@ export function PartyTemplateBuilderPage() {
         const { playlist, items: ytItems } = normalizeYoutubePlaylistPayload(result.playlist, 0);
         setYtPreview({ type: 'playlist', data: { playlist, items: ytItems } });
       } else {
-        setYtError(pick('Unrecognised URL format.', 'Unrecognised URL format.'));
+        setYtError(pick('รูปแบบ URL ไม่รู้จัก', 'Unrecognised URL format.'));
       }
     } catch (err) {
       const code = err?.code;
-      if (code === 'invalid_url') setYtError(pick('Invalid URL. Please paste a YouTube link.', 'Invalid URL. Please paste a YouTube link.'));
-      else if (code === 'not_found') setYtError(pick('Video or playlist not found.', 'Video or playlist not found.'));
-      else if (code === 'quota_exceeded') setYtError(pick('YouTube API quota exceeded. Try again later.', 'YouTube API quota exceeded. Try again later.'));
-      else setYtError(err?.message || pick('Failed to load YouTube data.', 'Failed to load YouTube data.'));
+      if (code === 'invalid_url') setYtError(pick('URL ไม่ถูกต้อง กรุณาวาง YouTube link', 'Invalid URL. Please paste a YouTube link.'));
+      else if (code === 'not_found') setYtError(pick('ไม่พบวิดีโอหรือเพลย์ลิสต์', 'Video or playlist not found.'));
+      else if (code === 'quota_exceeded') setYtError(pick('โควต้า YouTube API หมด ลองใหม่ภายหลัง', 'YouTube API quota exceeded. Try again later.'));
+      else setYtError(err?.message || pick('โหลดข้อมูล YouTube ไม่สำเร็จ', 'Failed to load YouTube data.'));
     } finally {
       setYtLoading(false);
     }
@@ -443,14 +443,14 @@ export function PartyTemplateBuilderPage() {
              || (it.provider_media_id === videoItem.provider_media_id)
     );
     if (isDupe) {
-      toast(pick('This video is already in the playlist.', 'This video is already in the playlist.'));
+      toast(pick('วิดีโอนี้อยู่ในเพลย์ลิสต์แล้ว', 'This video is already in the playlist.'));
       return;
     }
     const mapped = mapTemplateItemFromDb({ ...videoItem, id: null, template_id: null }, items.length);
     setItems((prev) => [...prev, { ...mapped, position: prev.length }]);
     setYtPreview(null);
     setYtInput('');
-    toast.success(pick('YouTube video added.', 'YouTube video added.'));
+    toast.success(pick('เพิ่มวิดีโอ YouTube แล้ว', 'YouTube video added.'));
   }, [items, pick]);
 
   const handleYtImportPlaylist = useCallback((ytItems, skipDuplicates = true) => {
@@ -462,7 +462,7 @@ export function PartyTemplateBuilderPage() {
       : ytItems;
 
     if (toAdd.length === 0) {
-      toast(pick('No new songs to add (all duplicates).', 'No new songs to add (all duplicates).'));
+      toast(pick('ไม่มีเพลงใหม่ (ซ้ำทั้งหมด)', 'No new songs to add (all duplicates).'));
       return;
     }
     const offset = items.length;
@@ -471,12 +471,12 @@ export function PartyTemplateBuilderPage() {
     setItems((prev) => [...prev, ...mapped]);
     setYtPreview(null);
     setYtInput('');
-    toast.success(pick(`Added ${toAdd.length} songs from YouTube Playlist.`, `Added ${toAdd.length} songs from YouTube Playlist.`));
+    toast.success(pick(`เพิ่ม ${toAdd.length} เพลงจาก YouTube Playlist`, `Added ${toAdd.length} songs from YouTube Playlist.`));
   }, [items, pick]);
 
   const handleSave = async () => {
     if (!user) {
-      toast.error(pick('Please log in first.', 'Please log in first.'));
+      toast.error(pick('กรุณาเข้าสู่ระบบก่อน', 'Please log in first.'));
       return;
     }
 
@@ -489,7 +489,7 @@ export function PartyTemplateBuilderPage() {
     }
 
     if (!meta.name.trim()) {
-      toast.error(pick('Please enter a name.', 'Please enter a name.'));
+      toast.error(pick('กรุณาใส่ชื่อเทมเพลต', 'Please enter a name.'));
       return;
     }
 
@@ -535,7 +535,7 @@ export function PartyTemplateBuilderPage() {
           sourceType,
         });
         await replacePartyTemplateItems(editTemplateId, dbItems);
-        toast.success(pick('Template saved!', 'Template saved!'));
+        toast.success(pick('บันทึกเทมเพลตแล้ว!', 'Template saved!'));
         navigate(`/party/templates/${editTemplateId}`);
       } else {
         const displayName = user.user_metadata?.display_name
@@ -558,11 +558,11 @@ export function PartyTemplateBuilderPage() {
           dbItems,
           displayName,
         );
-        toast.success(pick('Template created!', 'Template created!'));
+        toast.success(pick('สร้างเทมเพลตแล้ว!', 'Template created!'));
         navigate(`/party/templates/${created.id}`);
       }
     } catch (err) {
-      toast.error(err?.message || pick('Save failed.', 'Save failed.'));
+      toast.error(err?.message || pick('บันทึกไม่สำเร็จ', 'Save failed.'));
     } finally {
       setSaving(false);
     }
@@ -604,12 +604,12 @@ export function PartyTemplateBuilderPage() {
         <header className="pt-builder-header">
           <div className="pt-builder-title-group">
             <button className="pt-btn-back" onClick={() => navigate('/party/templates')}>
-              &larr; {pick('Back', 'Back')}
+              &larr; {pick('กลับ', 'Back')}
             </button>
             <div className="pt-builder-title-text">
-              <h1>{meta.name || pick('Name your playlist...', 'Name your playlist...')}</h1>
+              <h1>{meta.name || pick('ตั้งชื่อเพลย์ลิสต์...', 'Name your playlist...')}</h1>
               <p>
-                {items.length} {pick('songs selected', 'songs selected')}
+                {items.length} {pick('เพลงที่เลือก', 'songs selected')}
 	                {!validation.valid && (
 	                  <span className="pt-builder-status-error">
 	                    - {validation.reason}
@@ -618,15 +618,6 @@ export function PartyTemplateBuilderPage() {
               </p>
             </div>
           </div>
-          <Button
-            className="party-gradient-action"
-            size="large"
-            onClick={handleSave}
-            disabled={saving || !validation.valid}
-          >
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            {pick('Save Template', 'Save Template')}
-          </Button>
         </header>
 
         <div className="pt-builder-layout">
@@ -638,14 +629,14 @@ export function PartyTemplateBuilderPage() {
                 onClick={() => setActiveTab('add')}
               >
                 <ListPlus size={18} />
-                {pick('Add Songs', 'Add Songs')}
+                {pick('เพิ่มเพลง', 'Add Songs')}
               </button>
               <button
                 className={`pt-builder-tab ${activeTab === 'settings' ? 'active' : ''}`}
                 onClick={() => setActiveTab('settings')}
               >
                 <Settings size={18} />
-                {pick('Settings', 'Settings')}
+                {pick('ตั้งค่า', 'Settings')}
               </button>
             </div>
 
@@ -653,12 +644,12 @@ export function PartyTemplateBuilderPage() {
               {activeTab === 'add' && (
                 <div className="pt-add-songs-section">
                   <div className="pt-search-module">
-                    <label>{pick('Search Catalog', 'Search Catalog')}</label>
+                    <label>{pick('ค้นหาในคลัง', 'Search Catalog')}</label>
                     <div className="party-search-box party-search-box-large">
                       <Search size={20} className="search-icon" />
                       <input
                         type="text"
-                        placeholder={pick('Type song or anime name...', 'Type song or anime name...')}
+                        placeholder={pick('พิมพ์ชื่อเพลงหรืออนิเมะ...', 'Type song or anime name...')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                       />
@@ -687,7 +678,7 @@ export function PartyTemplateBuilderPage() {
                       {PARTY_PRESETS.map((preset) => {
                         const result = templateCompatibility.presetResults[preset.id];
                         const note = result.compatible
-                          ? pick(`Ready for ${preset.label}`, `Ready for ${preset.label}`)
+                          ? pick(`พร้อมสำหรับ ${preset.label}`, `Ready for ${preset.label}`)
                           : getTemplateCompatibilityCopy(result.blockingReasons?.[0], pick);
                         return (
                           <div
@@ -700,10 +691,10 @@ export function PartyTemplateBuilderPage() {
                         );
                       })}
                       <div className={`pt-builder-compatibility-card ${templateCompatibility.voteResult.compatible ? 'is-ready' : 'is-blocked'}`}>
-                        <strong>{pick('Vote Battle', 'Vote Battle')}</strong>
+                        <strong>{pick('โหวตแบทเทิล', 'Vote Battle')}</strong>
                         <span>
                           {templateCompatibility.voteResult.compatible
-                            ? pick('Ready for Vote Battle', 'Ready for Vote Battle')
+                            ? pick('พร้อมสำหรับ Vote Battle', 'Ready for Vote Battle')
                             : getTemplateCompatibilityCopy(templateCompatibility.voteResult.blockingReasons?.[0], pick)}
                         </span>
                       </div>
@@ -745,7 +736,7 @@ export function PartyTemplateBuilderPage() {
 	                              <span className="pt-result-title">
 	                                {song.songTitle}
 	                                {song.isPlayable === false && (
-	                                  <span title={pick('No video file - may not play in game', 'No video file - may not play in game')}
+	                                  <span title={pick('ไม่มีไฟล์วิดีโอ อาจไม่เล่นในเกม', 'No video file - may not play in game')}
 	                                    className="pt-inline-warning-icon">
 	                                    !
 	                                  </span>
@@ -764,8 +755,8 @@ export function PartyTemplateBuilderPage() {
                               disabled={isAdded}
                             >
                               {isAdded
-                                ? pick('Added', 'Added')
-                                : <><Plus size={16} /> {pick('Add', 'Add')}</>}
+                                ? pick('เพิ่มแล้ว', 'Added')
+                                : <><Plus size={16} /> {pick('เพิ่ม', 'Add')}</>}
                             </button>
                           </div>
                         );
@@ -776,8 +767,8 @@ export function PartyTemplateBuilderPage() {
                   {!searchLoading && !searchError && searchResults.length === 0 && (
                     <p className="pt-builder-empty-copy">
                       {searchQuery
-                        ? pick('No matching songs found.', 'No matching songs found.')
-                        : pick('No songs in catalog yet.', 'No songs in catalog yet.')}
+                        ? pick('ไม่พบเพลงที่ตรงกัน', 'No matching songs found.')
+                        : pick('ยังไม่มีเพลงในคลัง', 'No songs in catalog yet.')}
                     </p>
                   )}
 
@@ -787,7 +778,7 @@ export function PartyTemplateBuilderPage() {
                   <div className="pt-youtube-module">
                     <label className="pt-yt-label">
                       <Youtube size={20} className="pt-youtube-icon" />
-                      {pick('Import from YouTube', 'Import from YouTube')}
+                      {pick('นำเข้าจาก YouTube', 'Import from YouTube')}
                     </label>
 
                     <div className="pt-yt-input-row">
@@ -807,7 +798,7 @@ export function PartyTemplateBuilderPage() {
                         {ytLoading
                           ? <Loader2 size={16} className="animate-spin" />
                           : <Search size={16} />}
-                        {pick('Preview', 'Preview')}
+                        {pick('ดูตัวอย่าง', 'Preview')}
                       </button>
                     </div>
 
@@ -837,7 +828,7 @@ export function PartyTemplateBuilderPage() {
                             className="pt-yt-preview-thumb-btn"
                             onClick={() => { if (ytTestState === null) setYtTestState('testing'); }}
                             disabled={ytTestState !== null}
-                            title={ytTestState === null ? pick('Click to test playback', 'Click to test playback') : undefined}
+                            title={ytTestState === null ? pick('คลิกเพื่อทดสอบการเล่น', 'Click to test playback') : undefined}
                           >
                             {v.cover_url && <img src={v.cover_url} alt="" className="pt-yt-preview-thumb" />}
                             <div className="pt-yt-preview-thumb-overlay">
@@ -848,7 +839,7 @@ export function PartyTemplateBuilderPage() {
                             </div>
                           </button>
                           <div className="pt-yt-preview-info">
-                            <p className="pt-yt-preview-title">{v.song_title || pick('Unknown title', 'Unknown title')}</p>
+                            <p className="pt-yt-preview-title">{v.song_title || pick('ไม่ทราบชื่อ', 'Unknown title')}</p>
                             <p className="pt-yt-preview-channel">{v.artist_name}</p>
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                               <span className={`pt-yt-status-badge pt-yt-status-${statusCls}`}>
@@ -859,12 +850,12 @@ export function PartyTemplateBuilderPage() {
                               </span>
                               {ytTestState === 'ok' && (
                                 <span className="pt-yt-status-badge pt-yt-status-ready">
-                                  <CheckCircle size={11} /> {pick('Live: OK', 'Live: OK')}
+                                  <CheckCircle size={11} /> {pick('ทดสอบ: ผ่าน', 'Live: OK')}
                                 </span>
                               )}
                               {ytTestState === 'error' && (
                                 <span className="pt-yt-status-badge pt-yt-status-blocked">
-                                  <XCircle size={11} /> {pick('Live: Blocked', 'Live: Blocked')}
+                                  <XCircle size={11} /> {pick('ทดสอบ: บล็อก', 'Live: Blocked')}
                                 </span>
                               )}
                             </div>
@@ -880,7 +871,7 @@ export function PartyTemplateBuilderPage() {
                             disabled={v.playback_status === 'blocked'}
                           >
                             <Plus size={16} />
-                            {pick('Add', 'Add')}
+                            {pick('เพิ่ม', 'Add')}
                           </button>
                         </div>
 
@@ -898,30 +889,30 @@ export function PartyTemplateBuilderPage() {
                               {ytTestState === 'testing' && (
                                 <div className="pt-yt-live-overlay pt-yt-live-overlay--loading">
                                   <Loader2 size={22} className="animate-spin" />
-                                  <span>{pick('Testing...', 'Testing...')}</span>
+                                  <span>{pick('กำลังทดสอบ...', 'Testing...')}</span>
                                 </div>
                               )}
                               {ytTestState === 'error' && (
                                 <div className="pt-yt-live-overlay pt-yt-live-overlay--error">
                                   <XCircle size={32} />
-                                  <span>{pick('Cannot embed', 'Cannot embed')}</span>
+                                  <span>{pick('ฝังไม่ได้', 'Cannot embed')}</span>
                                 </div>
                               )}
                             </div>
                             <div className="pt-yt-live-test-status">
                               {ytTestState === 'testing' && (
                                 <span className="pt-yt-status-badge pt-yt-status-unknown">
-                                  <Loader2 size={11} className="animate-spin" /> {pick('Loading...', 'Loading...')}
+                                  <Loader2 size={11} className="animate-spin" /> {pick('กำลังโหลด...', 'Loading...')}
                                 </span>
                               )}
                               {ytTestState === 'ok' && (
                                 <span className="pt-yt-status-badge pt-yt-status-ready">
-	                                  <CheckCircle size={12} /> {pick('Test passed - plays OK in this browser', 'Test passed - plays OK in this browser')}
+	                                  <CheckCircle size={12} /> {pick('ผ่าน - เล่นได้ในเบราว์เซอร์นี้', 'Test passed - plays OK in this browser')}
                                 </span>
                               )}
                               {ytTestState === 'error' && (
                                 <span className="pt-yt-status-badge pt-yt-status-blocked">
-	                                  <XCircle size={12} /> {pick('Test failed - embed blocked', 'Test failed - embed blocked')}
+	                                  <XCircle size={12} /> {pick('ล้มเหลว - ถูกบล็อกการฝัง', 'Test failed - embed blocked')}
                                 </span>
                               )}
                             </div>
@@ -932,27 +923,27 @@ export function PartyTemplateBuilderPage() {
                         {ytTestState === 'error' ? (
                           <div className="pt-alert pt-alert-warning">
                             <XCircle size={15} />
-	                            <span>{pick('Live test failed: embed blocked - do not import this clip.', 'Live test failed: embed blocked - do not import this clip.')}</span>
+	                            <span>{pick('ทดสอบล้มเหลว: ถูกบล็อก ไม่ควรนำเข้าคลิปนี้', 'Live test failed: embed blocked - do not import this clip.')}</span>
                           </div>
                         ) : ytTestState === 'ok' ? (
                           <div className="pt-alert pt-alert-info">
                             <CheckCircle size={15} />
-	                            <span>{pick('Live test passed: plays OK here - safe to import.', 'Live test passed: plays OK here - safe to import.')}</span>
+	                            <span>{pick('ทดสอบผ่าน: เล่นได้ นำเข้าได้อย่างปลอดภัย', 'Live test passed: plays OK here - safe to import.')}</span>
                           </div>
                         ) : statusCls === 'ready' ? (
                           <div className="pt-alert pt-alert-info" style={{ opacity: 0.8 }}>
                             <CheckCircle size={15} />
-	                            <span>{pick('API says ready - click play on the thumbnail to verify before importing.', 'API says ready - click play on the thumbnail to verify before importing.')}</span>
+	                            <span>{pick('API พร้อม - กดเล่นที่ thumbnail เพื่อยืนยันก่อนนำเข้า', 'API says ready - click play on the thumbnail to verify before importing.')}</span>
                           </div>
                         ) : statusCls === 'limited' ? (
                           <div className="pt-alert pt-alert-warning">
                             <AlertTriangle size={15} />
-	                            <span>{pick('Limited playback - click play to test before importing.', 'Limited playback - click play to test before importing.')}</span>
+	                            <span>{pick('การเล่นจำกัด - กดเล่นเพื่อทดสอบก่อนนำเข้า', 'Limited playback - click play to test before importing.')}</span>
                           </div>
                         ) : (
                           <div className="pt-alert pt-alert-warning">
                             <XCircle size={15} />
-                            <span>{pick('This clip is blocked and will not play in-game.', 'This clip is blocked and will not play in-game.')}</span>
+                            <span>{pick('คลิปนี้ถูกบล็อก จะไม่เล่นในเกม', 'This clip is blocked and will not play in-game.')}</span>
                           </div>
                         )}
                         </>
@@ -1014,7 +1005,7 @@ export function PartyTemplateBuilderPage() {
                             })}
                             {ytItems.length > 8 && (
                               <p className="pt-yt-preview-more">
-                                +{ytItems.length - 8} {pick('more', 'more')}
+                                +{ytItems.length - 8} {pick('เพิ่มเติม', 'more')}
                               </p>
                             )}
                           </div>
@@ -1022,7 +1013,7 @@ export function PartyTemplateBuilderPage() {
                           {playable === 0 && (
                             <div className="pt-alert pt-alert-warning">
                               <AlertTriangle size={15} />
-                              <span>{pick('No playable songs in this playlist.', 'No playable songs in this playlist.')}</span>
+                              <span>{pick('ไม่มีเพลงที่เล่นได้ในเพลย์ลิสต์นี้', 'No playable songs in this playlist.')}</span>
                             </div>
                           )}
 
@@ -1033,14 +1024,14 @@ export function PartyTemplateBuilderPage() {
                               disabled={playable === 0}
                             >
                               <Plus size={16} />
-                              {pick(`Import ${playable} playable songs`, `Import ${playable} playable songs`)}
+                              {pick(`นำเข้า ${playable} เพลงที่เล่นได้`, `Import ${playable} playable songs`)}
                             </button>
                             {blocked > 0 && (
                               <button
                                 className="pt-btn-yt-import-all-force"
                                 onClick={() => handleYtImportPlaylist(ytItems, false)}
                               >
-                                {pick(`Import all ${ytItems.length} (incl. blocked)`, `Import all ${ytItems.length} (incl. blocked)`)}
+                                {pick(`นำเข้าทั้งหมด ${ytItems.length} (รวมที่บล็อก)`, `Import all ${ytItems.length} (incl. blocked)`)}
                               </button>
                             )}
                           </div>
@@ -1051,7 +1042,7 @@ export function PartyTemplateBuilderPage() {
 
                   {meta.modeScope !== 'vote' && (
                     <div className="pt-form-group">
-                      <label>{pick('Default Quiz Preset', 'Default Quiz Preset')}</label>
+                      <label>{pick('โหมดเกมเริ่มต้น', 'Default Quiz Preset')}</label>
                       <select
                         className="pt-select"
                         value={meta.presetId}
@@ -1071,7 +1062,7 @@ export function PartyTemplateBuilderPage() {
               {activeTab === 'settings' && (
                 <div className="pt-settings-section">
                   <div className="pt-form-group">
-                    <label>{pick('Playlist Name', 'Playlist Name')} <span className="pt-required">*</span></label>
+                    <label>{pick('ชื่อเพลย์ลิสต์', 'Playlist Name')} <span className="pt-required">*</span></label>
                     <input
                       type="text"
                       className="pt-input pt-input-lg"
@@ -1081,17 +1072,17 @@ export function PartyTemplateBuilderPage() {
                   </div>
 
                   <div className="pt-form-group">
-                    <label>{pick('Description', 'Description')}</label>
+                    <label>{pick('คำอธิบาย', 'Description')}</label>
                     <textarea
                       className="pt-input pt-textarea"
                       value={meta.description}
                       onChange={(e) => setMeta({ ...meta, description: e.target.value })}
-                      placeholder={pick('Describe this playlist...', 'Describe this playlist...')}
+                      placeholder={pick('อธิบายเพลย์ลิสต์นี้...', 'Describe this playlist...')}
                     />
                   </div>
 
                   <div className="pt-form-group">
-                    <label>{pick('Tags (comma-separated)', 'Tags (comma-separated)')}</label>
+                    <label>{pick('แท็ก (คั่นด้วยจุลภาค)', 'Tags (comma-separated)')}</label>
                     <input
                       type="text"
                       className="pt-input"
@@ -1102,7 +1093,7 @@ export function PartyTemplateBuilderPage() {
                   </div>
 
                   <div className="pt-form-group">
-                    <label>{pick('Cover Image (URL)', 'Cover Image (URL)')}</label>
+                    <label>{pick('ภาพปก (URL)', 'Cover Image (URL)')}</label>
                     <div className="pt-cover-input-group">
                       <div
                         className="pt-cover-preview"
@@ -1116,7 +1107,7 @@ export function PartyTemplateBuilderPage() {
                           className="btn-secondary pt-cover-upload-button"
                           onClick={() => fileInputRef.current?.click()}
                         >
-                          {pick('Upload Image File', 'Upload Image File')}
+                          {pick('อัปโหลดไฟล์ภาพ', 'Upload Image File')}
                         </button>
                         <input
                           type="file"
@@ -1141,8 +1132,8 @@ export function PartyTemplateBuilderPage() {
                         />
                         <span className="pt-cover-help-text">
                           {coverFile
-                            ? pick('The selected file will be uploaded and saved when you click Save Template.', 'The selected file will be uploaded and saved when you click Save Template.')
-                            : pick('If you do not add a URL or upload a file, the first song cover or the default template cover will be used.', 'If you do not add a URL or upload a file, the first song cover or the default template cover will be used.')}
+                            ? pick('ไฟล์ที่เลือกจะอัปโหลดเมื่อกด บันทึกเทมเพลต', 'The selected file will be uploaded and saved when you click Save Template.')
+                            : pick('หากไม่ใส่ URL หรืออัปโหลดไฟล์ ระบบจะใช้ภาพปกเพลงแรกหรือภาพเริ่มต้น', 'If you do not add a URL or upload a file, the first song cover or the default template cover will be used.')}
                         </span>
                       </div>
                     </div>
@@ -1150,28 +1141,28 @@ export function PartyTemplateBuilderPage() {
 
                   <div className="pt-form-row">
                     <div className="pt-form-group">
-                      <label>{pick('Visibility', 'Visibility')}</label>
+                      <label>{pick('การมองเห็น', 'Visibility')}</label>
                       <select
                         className="pt-select"
                         value={meta.visibility}
                         onChange={(e) => setMeta({ ...meta, visibility: e.target.value })}
                       >
-	                        <option value="public">{pick('Public', 'Public')}</option>
-	                        <option value="unlisted">{pick('Unlisted', 'Unlisted')}</option>
-	                        <option value="private">{pick('Private', 'Private')}</option>
+	                        <option value="public">{pick('สาธารณะ', 'Public')}</option>
+	                        <option value="unlisted">{pick('ไม่แสดงในรายการ', 'Unlisted')}</option>
+	                        <option value="private">{pick('ส่วนตัว', 'Private')}</option>
                       </select>
                     </div>
 
                     <div className="pt-form-group">
-                      <label>{pick('Supported Modes', 'Supported Modes')}</label>
+                      <label>{pick('โหมดที่รองรับ', 'Supported Modes')}</label>
                       <select
                         className="pt-select"
                         value={meta.modeScope}
                         onChange={(e) => setMeta({ ...meta, modeScope: e.target.value })}
                       >
-                        <option value="all">{pick('All Modes', 'All Modes')}</option>
-                        <option value="quiz">{pick('Quiz Only', 'Quiz Only')}</option>
-                        <option value="vote">{pick('Vote Only', 'Vote Only')}</option>
+                        <option value="all">{pick('ทุกโหมด', 'All Modes')}</option>
+                        <option value="quiz">{pick('เฉพาะ Quiz', 'Quiz Only')}</option>
+                        <option value="vote">{pick('เฉพาะ Vote', 'Vote Only')}</option>
                       </select>
                     </div>
                   </div>
@@ -1183,13 +1174,13 @@ export function PartyTemplateBuilderPage() {
           {/* Right Panel: Playlist */}
 	          <section className="pt-builder-right-panel">
 	            <div className="pt-playlist-header">
-	              <h2><LayoutGrid size={20} /> {pick('Current Playlist', 'Current Playlist')}</h2>
+	              <h2><LayoutGrid size={20} /> {pick('เพลย์ลิสต์ปัจจุบัน', 'Current Playlist')}</h2>
 	              <div className="pt-playlist-header-actions">
-	                <span className="pt-playlist-count">{items.length} {pick('songs', 'songs')}</span>
+	                <span className="pt-playlist-count">{items.length} {pick('เพลง', 'songs')}</span>
 	                <select className="pt-select pt-select-compact" value={itemFilter} onChange={(event) => setItemFilter(event.target.value)}>
-	                  <option value="all">{pick('All', 'All')}</option>
-	                  <option value="unresolved">{pick('Unresolved', 'Unresolved')}</option>
-	                  <option value="classic-ready">{pick('Classic-ready', 'Classic-ready')}</option>
+	                  <option value="all">{pick('ทั้งหมด', 'All')}</option>
+	                  <option value="unresolved">{pick('ยังไม่ลิงก์', 'Unresolved')}</option>
+	                  <option value="classic-ready">{pick('พร้อม Classic', 'Classic-ready')}</option>
 	                </select>
 	              </div>
 	            </div>
@@ -1200,8 +1191,8 @@ export function PartyTemplateBuilderPage() {
                   <div className="pt-empty-icon-wrapper">
                     <Music size={48} />
                   </div>
-                  <h3>{pick('Playlist is empty', 'Playlist is empty')}</h3>
-                  <p>{pick('Search for songs on the left to build your list.', 'Search for songs on the left to build your list.')}</p>
+                  <h3>{pick('เพลย์ลิสต์ว่างเปล่า', 'Playlist is empty')}</h3>
+                  <p>{pick('ค้นหาเพลงด้านซ้ายเพื่อสร้างรายการ', 'Search for songs on the left to build your list.')}</p>
                 </div>
               ) : (
 	                <div className="pt-playlist-tracks">
@@ -1214,15 +1205,15 @@ export function PartyTemplateBuilderPage() {
 		                    const status = item.playbackStatus || item.playback_status || 'unknown';
 	                    const sourceStatus = resolvedSource.sourceResolutionStatus;
 	                    const sourceStatusLabel = sourceStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
-	                      ? pick('Linked', 'Linked')
+	                      ? pick('ลิงก์แล้ว', 'Linked')
 	                      : sourceStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED
-	                        ? pick('Suggested', 'Suggested')
-	                        : pick('Unresolved', 'Unresolved');
+	                        ? pick('มีคำแนะนำ', 'Suggested')
+	                        : pick('ยังไม่ลิงก์', 'Unresolved');
 	                    const normalizedYtStatus = ['ready', 'limited', 'blocked'].includes(status) ? status : 'blocked';
 	                    const statusKind = isYt ? normalizedYtStatus : (playable ? 'ready' : 'blocked');
                     const statusLabel = isYt
                       ? getYoutubePlaybackLabel(normalizedYtStatus, pick)
-                      : (playable ? pick('Ready', 'Ready') : pick('Not playable', 'Not playable'));
+                      : (playable ? pick('พร้อม', 'Ready') : pick('เล่นไม่ได้', 'Not playable'));
                     const coverSrc = item.coverUrl || item.cover_url || '';
                     const trackKey = isYt
                       ? (item.providerMediaId || item.provider_media_id || index)
@@ -1263,41 +1254,41 @@ export function PartyTemplateBuilderPage() {
                             )}
                             {isYt && status === 'blocked' && (
                               <span className="pt-track-warning-copy">
-                                <XCircle size={11} /> {pick('blocked', 'blocked')}
+                                <XCircle size={11} /> {pick('บล็อก', 'blocked')}
                               </span>
                             )}
                             {isYt && status === 'limited' && (
                               <span className="pt-track-limited-copy">
-                                <AlertTriangle size={11} /> {pick('limited', 'limited')}
+                                <AlertTriangle size={11} /> {pick('จำกัด', 'limited')}
                               </span>
                             )}
                             {!isYt && !playable && (
                               <span className="pt-track-warning-copy">
-	                                {pick('not playable', 'not playable')}
+	                                {pick('เล่นไม่ได้', 'not playable')}
                               </span>
                             )}
                           </p>
 	                          {isYt ? (
 	                            <div className="pt-track-source-editor">
-	                              <span>{pick('Source linking', 'Source linking')}</span>
+	                              <span>{pick('ลิงก์แหล่งที่มา', 'Source linking')}</span>
 	                              <input
 	                                type="text"
 	                                className="pt-input"
 	                                value={resolvedSourceTitleName}
 	                                onChange={(event) => handleUpdateItemSourceTitle(index, event.target.value)}
-	                                placeholder={pick('Fallback answer text for Full Recall', 'Fallback answer text for Full Recall')}
+	                                placeholder={pick('ข้อความสำรองสำหรับ Full Recall', 'Fallback answer text for Full Recall')}
 	                              />
 	                              <small>
 	                                {resolvedSource.isClassicResolved
-	                                  ? pick(`Classic uses ${resolvedSource.resolvedSourceTitleName}`, `Classic uses ${resolvedSource.resolvedSourceTitleName}`)
+	                                  ? pick(`Classic ใช้ ${resolvedSource.resolvedSourceTitleName}`, `Classic uses ${resolvedSource.resolvedSourceTitleName}`)
 	                                  : resolvedSource.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED && resolvedSource.resolvedSourceTitleName
-	                                    ? pick(`Suggestion: ${resolvedSource.resolvedSourceTitleName}`, `Suggestion: ${resolvedSource.resolvedSourceTitleName}`)
-	                                    : pick('Not canonically linked yet, so 4-choice falls back to song-title answers for now.', 'Not canonically linked yet, so 4-choice falls back to song-title answers for now.')}
+	                                    ? pick(`คำแนะนำ: ${resolvedSource.resolvedSourceTitleName}`, `Suggestion: ${resolvedSource.resolvedSourceTitleName}`)
+	                                    : pick('ยังไม่ได้ลิงก์ 4 ตัวเลือกจะใช้ชื่อเพลงแทน', 'Not canonically linked yet, so 4-choice falls back to song-title answers for now.')}
 	                              </small>
 	                              <div className="pt-track-source-actions">
 	                                {resolvedSource.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED && resolvedSource.resolvedSourceTitleId > 0 ? (
 	                                  <button type="button" className="pt-btn-source-action is-primary" onClick={() => handleApplySourceSuggestion(index)}>
-	                                    {pick('Accept suggestion', 'Accept suggestion')}
+	                                    {pick('ยอมรับคำแนะนำ', 'Accept suggestion')}
 	                                  </button>
 	                                ) : null}
 	                                <button
@@ -1308,11 +1299,11 @@ export function PartyTemplateBuilderPage() {
 	                                    setSourceSearchQuery(resolvedSource.resolvedSourceTitleName || resolvedSourceTitleName || item.songTitle || '');
 	                                  }}
 	                                >
-	                                  {pick('Search source', 'Search source')}
+	                                  {pick('ค้นหาแหล่งที่มา', 'Search source')}
 	                                </button>
 	                                {(resolvedSource.resolvedSourceTitleId > 0 || resolvedSource.sourceResolutionStatus !== PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED) ? (
 	                                  <button type="button" className="pt-btn-source-action is-muted" onClick={() => handleClearSourceLink(index)}>
-	                                    {pick('Clear link', 'Clear link')}
+	                                    {pick('ล้างลิงก์', 'Clear link')}
 	                                  </button>
 	                                ) : null}
 	                              </div>
@@ -1323,10 +1314,10 @@ export function PartyTemplateBuilderPage() {
 	                                    className="pt-input"
 	                                    value={sourceSearchQuery}
 	                                    onChange={(event) => setSourceSearchQuery(event.target.value)}
-	                                    placeholder={pick('Search canonical source title', 'Search canonical source title')}
+	                                    placeholder={pick('ค้นหาชื่อแหล่งที่มา', 'Search canonical source title')}
 	                                  />
 	                                  {sourceSearchLoading ? (
-	                                    <small>{pick('Searching...', 'Searching...')}</small>
+	                                    <small>{pick('กำลังค้นหา...', 'Searching...')}</small>
 	                                  ) : sourceSearchResults.length > 0 ? (
 	                                    <div className="pt-track-source-search-results">
 	                                      {sourceSearchResults.map((sourceCandidate) => (
@@ -1341,7 +1332,7 @@ export function PartyTemplateBuilderPage() {
 	                                      ))}
 	                                    </div>
 	                                  ) : sourceSearchQuery.trim() ? (
-	                                    <small>{pick('No matching sources found yet.', 'No matching sources found yet.')}</small>
+	                                    <small>{pick('ไม่พบแหล่งที่มาที่ตรงกัน', 'No matching sources found yet.')}</small>
 	                                  ) : null}
 	                                </div>
 	                              ) : null}
@@ -1357,12 +1348,12 @@ export function PartyTemplateBuilderPage() {
                           </span>
                         </div>
                         {isYt && status === 'ready' && (
-                          <CheckCircle size={14} className="pt-track-ready-icon" title={pick('Ready', 'Ready')} />
+                          <CheckCircle size={14} className="pt-track-ready-icon" title={pick('พร้อม', 'Ready')} />
                         )}
                         <button
                           className="pt-track-delete"
                           onClick={() => handleRemoveItem(index)}
-                          title={pick('Remove', 'Remove')}
+                          title={pick('ลบ', 'Remove')}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1374,6 +1365,18 @@ export function PartyTemplateBuilderPage() {
             </div>
           </section>
         </div>
+
+        <footer className="pt-builder-footer">
+          <Button
+            className="party-gradient-action"
+            size="large"
+            onClick={handleSave}
+            disabled={saving || !validation.valid}
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            {pick('บันทึกเทมเพลต', 'Save Template')}
+          </Button>
+        </footer>
       </div>
     </div>
   );

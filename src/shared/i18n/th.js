@@ -63,6 +63,7 @@ export const translations = {
     "notificationsEmpty": "ไม่มีการแจ้งเตือน",
     "closeMenu": "ปิดเมนู",
     "feed": "ฟีด",
+    "party": "Party",
     "mainNav": "เมนูหลัก",
     "mobileNav": "เมนูมือถือ",
     "bottomNav": "เมนูด้านล่าง",

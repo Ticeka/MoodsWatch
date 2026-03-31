@@ -1061,16 +1061,20 @@ function mapPartyTemplate(row) {
   };
 }
 
-export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = '', userId = null } = {}) {
+export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = '', userId = null, page = 1, pageSize = 12 } = {}) {
   if (!supabase) {
-    return [];
+    return { templates: [], total: 0 };
   }
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
 
   // count() in nested select avoids fetching full item rows just for the count
   let query = supabase
     .from('party_song_templates')
-    .select('*, party_song_template_items(count)')
-    .order('updated_at', { ascending: false });
+    .select('*, party_song_template_items(count)', { count: 'exact' })
+    .order('updated_at', { ascending: false })
+    .range(from, to);
 
   if (tab === 'official') {
     query = query.eq('is_official', true);
@@ -1091,10 +1095,10 @@ export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = 
     query = query.ilike('name', `%${search}%`);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) throw error;
 
-  return (data || []).map(mapPartyTemplate);
+  return { templates: (data || []).map(mapPartyTemplate), total: count ?? 0 };
 }
 
 export async function fetchPartyTemplateDetail(templateId) {
