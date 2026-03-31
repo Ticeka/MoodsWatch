@@ -838,14 +838,6 @@ export function PartyTemplateBuilderPage() {
                         {!coverPreviewSrc && <ImageIcon size={24} className="pt-cover-preview__placeholder" />}
                       </div>
                       <div className="pt-cover-input-stack">
-                        <div className="pt-track-status-col">
-                          <span className={`pt-track-status-pill pt-track-status-pill--${statusKind}`}>
-                            {statusKind === 'ready' && <CheckCircle size={12} />}
-                            {statusKind === 'limited' && <AlertTriangle size={12} />}
-                            {statusKind === 'blocked' && <XCircle size={12} />}
-                            {statusLabel}
-                          </span>
-                        </div>
                         <button
                           type="button"
                           className="btn-secondary pt-cover-upload-button"
