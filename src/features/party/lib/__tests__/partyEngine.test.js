@@ -187,6 +187,19 @@ describe('partyEngine', () => {
     expect(settings.timePerRoundSec).toBe(90);
   });
 
+  it('defaults vote playback mode to preview and accepts full clip mode', () => {
+    const defaultVoteSettings = createPartySettings({
+      modeType: 'vote',
+    });
+    const fullClipSettings = createPartySettings({
+      modeType: 'vote',
+      clipPlaybackMode: 'full',
+    });
+
+    expect(defaultVoteSettings.clipPlaybackMode).toBe('preview');
+    expect(fullClipSettings.clipPlaybackMode).toBe('full');
+  });
+
   it('preserves template metadata used by the room hub and lobby summary', () => {
     const settings = createPartySettings({
       templateId: '42',

@@ -249,6 +249,7 @@ export function PartyVoteRoomView({
           songKey={songKey}
           songData={allSongs[songId]}
           isPlaying
+          playbackMode={settings.clipPlaybackMode || 'preview'}
           totalSec={settings.previewSec || 12}
           onPlaybackComplete={onPlaybackComplete}
           sideAction={(

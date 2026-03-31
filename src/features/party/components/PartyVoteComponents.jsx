@@ -76,6 +76,7 @@ export function TrackPlayback({
   songKey,
   songData,
   isPlaying,
+  playbackMode = 'preview',
   totalSec,
   onPlaybackComplete,
   sideAction = null,
@@ -84,9 +85,11 @@ export function TrackPlayback({
   const isYouTubeSong = songData?.provider === 'youtube' && Boolean(songData?.providerMediaId);
   const videoRef = useRef(null);
   const progressFillRef = useRef(null);
+  const ytPlayerRef = useRef(null);
   const ytTimerRef = useRef(null);
   const ytStartedAtRef = useRef(null);
   const ytCompletedRef = useRef(false);
+  const ytDurationMsRef = useRef(Math.max(1, Number(totalSec || 12)) * 1000);
   const [volume, setVolume] = useState(() => readPartyAudioVolume());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [bufferReady, setBufferReady] = useState(false);
@@ -99,6 +102,9 @@ export function TrackPlayback({
   const [ytPlaying, setYtPlaying] = useState(false);
   const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0));
   const isMuted = normalizedVolume <= 0;
+  const playbackModeValue = playbackMode === 'full' ? 'full' : 'preview';
+  const fallbackDurationMs = Math.max(1, Number(totalSec || 12)) * 1000;
+  const [displayDurationMs, setDisplayDurationMs] = useState(fallbackDurationMs);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -118,9 +124,15 @@ export function TrackPlayback({
     video.muted = isMuted;
   }, [isMuted, normalizedVolume]);
 
+  useEffect(() => {
+    setDisplayDurationMs(fallbackDurationMs);
+  }, [fallbackDurationMs, playbackModeValue, songData?.mediaUrl, songData?.providerMediaId]);
+
   // Reset YouTube timer state when song changes
   useEffect(() => {
     if (!isYouTubeSong) return;
+    ytPlayerRef.current = null;
+    ytDurationMsRef.current = fallbackDurationMs;
     ytStartedAtRef.current = null;
     ytCompletedRef.current = false;
     setYtPlaying(false);
@@ -128,17 +140,53 @@ export function TrackPlayback({
     if (ytTimerRef.current) window.clearInterval(ytTimerRef.current);
     if (progressFillRef.current) progressFillRef.current.style.transform = 'scaleX(0)';
     return () => { if (ytTimerRef.current) window.clearInterval(ytTimerRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [songData?.providerMediaId]);
+  }, [fallbackDurationMs, isYouTubeSong, songData?.providerMediaId]);
 
-  const handleYtReadyVote = useCallback(() => {
+  const resolveYtDurationMs = useCallback((player = ytPlayerRef.current) => {
+    if (playbackModeValue !== 'full') {
+      ytDurationMsRef.current = fallbackDurationMs;
+      return fallbackDurationMs;
+    }
+
+    const resolvedSec = Number(player?.getDuration?.() || 0);
+    if (Number.isFinite(resolvedSec) && resolvedSec > 0) {
+      const resolvedMs = Math.max(1, Math.round(resolvedSec * 1000));
+      ytDurationMsRef.current = resolvedMs;
+      setDisplayDurationMs((current) => (current === resolvedMs ? current : resolvedMs));
+      return resolvedMs;
+    }
+
+    ytDurationMsRef.current = fallbackDurationMs;
+    return fallbackDurationMs;
+  }, [fallbackDurationMs, playbackModeValue]);
+
+  const markYtPlaybackComplete = useCallback(() => {
+    if (ytCompletedRef.current) {
+      return;
+    }
+
+    ytCompletedRef.current = true;
+    if (ytTimerRef.current) {
+      window.clearInterval(ytTimerRef.current);
+    }
+    setYtPlaying(false);
+    setPlaybackElapsedMs(resolveYtDurationMs());
+    if (progressFillRef.current) {
+      progressFillRef.current.style.transform = 'scaleX(1)';
+    }
+    onPlaybackComplete?.(Date.now());
+  }, [onPlaybackComplete, resolveYtDurationMs]);
+
+  const handleYtReadyVote = useCallback((player) => {
+    ytPlayerRef.current = player || null;
+    const initialDurationMs = resolveYtDurationMs(player);
     if (ytStartedAtRef.current || ytCompletedRef.current) return;
-    const durationMs = Math.max(1, Number(totalSec || 12)) * 1000;
     ytStartedAtRef.current = Date.now();
     setYtPlaying(true);
     if (ytTimerRef.current) window.clearInterval(ytTimerRef.current);
     ytTimerRef.current = window.setInterval(() => {
       if (!ytStartedAtRef.current || ytCompletedRef.current) return;
+      const durationMs = resolveYtDurationMs();
       const elapsed = Date.now() - ytStartedAtRef.current;
       const clamped = Math.min(durationMs, elapsed);
       setPlaybackElapsedMs(clamped);
@@ -146,18 +194,20 @@ export function TrackPlayback({
         progressFillRef.current.style.transform = `scaleX(${Math.min(1, clamped / durationMs)})`;
       }
       if (elapsed >= durationMs) {
-        ytCompletedRef.current = true;
-        window.clearInterval(ytTimerRef.current);
-        setYtPlaying(false);
-        onPlaybackComplete?.(Date.now());
+        markYtPlaybackComplete();
       }
     }, 80);
-  }, [totalSec, onPlaybackComplete]);
+    setDisplayDurationMs(initialDurationMs);
+  }, [markYtPlaybackComplete, resolveYtDurationMs]);
 
   const handleYtErrorVote = useCallback(() => {
     setPlaybackFailed(true);
     setYtPlaying(false);
   }, []);
+
+  const handleYtEndedVote = useCallback(() => {
+    markYtPlaybackComplete();
+  }, [markYtPlaybackComplete]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -173,10 +223,27 @@ export function TrackPlayback({
     let intervalId = null;
     let lastRenderedElapsedMs = -1;
     const loadingStartedAtMs = Date.now();
-    const previewDurationMs = Math.max(1, Number(totalSec || 12)) * 1000;
     const previewStartSec = 0;
 
+    const resolvePlaybackTargetMs = () => {
+      if (playbackModeValue !== 'full') {
+        return fallbackDurationMs;
+      }
+
+      const resolvedDurationSec = Number(video.duration || 0);
+      if (Number.isFinite(resolvedDurationSec) && resolvedDurationSec > 0) {
+        const resolvedDurationMs = Math.max(1, Math.round(resolvedDurationSec * 1000));
+        if (!cancelled) {
+          setDisplayDurationMs((current) => (current === resolvedDurationMs ? current : resolvedDurationMs));
+        }
+        return resolvedDurationMs;
+      }
+
+      return fallbackDurationMs;
+    };
+
     const updateBufferState = () => {
+      const playbackTargetMs = resolvePlaybackTargetMs();
       const ranges = [];
       if (video.buffered) {
         for (let index = 0; index < video.buffered.length; index += 1) {
@@ -191,14 +258,14 @@ export function TrackPlayback({
         ranges,
         video.currentTime,
         previewStartSec,
-        previewDurationMs,
+        playbackTargetMs,
       );
-      const nextPercent = previewDurationMs > 0
-        ? Math.min(100, Math.round((bufferedPreviewMs / previewDurationMs) * 100))
+      const nextPercent = playbackTargetMs > 0
+        ? Math.min(100, Math.round((bufferedPreviewMs / playbackTargetMs) * 100))
         : 100;
       const nextReady = isPartyPlaybackReady({
         bufferedPreviewMs,
-        previewDurationMs,
+        previewDurationMs: playbackTargetMs,
         readyState: video.readyState,
       });
 
@@ -215,10 +282,11 @@ export function TrackPlayback({
         return;
       }
 
+      const playbackTargetMs = resolvePlaybackTargetMs();
       const elapsedMs = Math.max(0, (Number(video.currentTime || 0) - previewStartSec) * 1000);
-      const clampedElapsedMs = Math.min(previewDurationMs, elapsedMs);
-      const progressRatio = previewDurationMs > 0
-        ? Math.min(1, clampedElapsedMs / previewDurationMs)
+      const clampedElapsedMs = Math.min(playbackTargetMs, elapsedMs);
+      const progressRatio = playbackTargetMs > 0
+        ? Math.min(1, clampedElapsedMs / playbackTargetMs)
         : 0;
 
       if (progressFillRef.current) {
@@ -228,17 +296,17 @@ export function TrackPlayback({
       if (
         lastRenderedElapsedMs < 0
         || Math.abs(clampedElapsedMs - lastRenderedElapsedMs) >= 80
-        || clampedElapsedMs >= previewDurationMs
+        || clampedElapsedMs >= playbackTargetMs
       ) {
         lastRenderedElapsedMs = clampedElapsedMs;
         setPlaybackElapsedMs(clampedElapsedMs);
       }
 
-      if (elapsedMs >= previewDurationMs - 80) {
+      if (elapsedMs >= playbackTargetMs - 80) {
         playbackCompleted = true;
         video.pause();
         setBufferingPlayback(false);
-        setPlaybackElapsedMs(previewDurationMs);
+        setPlaybackElapsedMs(playbackTargetMs);
         if (progressFillRef.current) {
           progressFillRef.current.style.transform = 'scaleX(1)';
         }
@@ -290,6 +358,7 @@ export function TrackPlayback({
     setSlowNetwork(false);
     setPlaybackFailed(false);
     setPlaybackElapsedMs(0);
+    setDisplayDurationMs(fallbackDurationMs);
     if (progressFillRef.current) {
       progressFillRef.current.style.transform = 'scaleX(0)';
     }
@@ -327,12 +396,17 @@ export function TrackPlayback({
       void tryPlay();
     };
 
+    const handleLoadedMetadata = () => {
+      resolvePlaybackTargetMs();
+      updateBufferState();
+    };
+
     const handleEnded = () => {
       if (playbackCompleted) {
         return;
       }
       playbackCompleted = true;
-      setPlaybackElapsedMs(previewDurationMs);
+      setPlaybackElapsedMs(resolvePlaybackTargetMs());
       onPlaybackComplete?.(Date.now());
     };
 
@@ -349,6 +423,8 @@ export function TrackPlayback({
     video.addEventListener('progress', handleProgress);
     video.addEventListener('canplay', handleProgress);
     video.addEventListener('loadeddata', handleProgress);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('durationchange', handleLoadedMetadata);
     video.addEventListener('canplaythrough', handleCanPlayThrough);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
@@ -360,11 +436,13 @@ export function TrackPlayback({
         setSlowNetwork(true);
       }
 
-      if (playbackStartedAtMs && Date.now() >= playbackStartedAtMs + previewDurationMs) {
+      const playbackTargetMs = resolvePlaybackTargetMs();
+
+      if (playbackStartedAtMs && Date.now() >= playbackStartedAtMs + playbackTargetMs) {
         if (!playbackCompleted) {
           playbackCompleted = true;
           video.pause();
-          setPlaybackElapsedMs(previewDurationMs);
+          setPlaybackElapsedMs(playbackTargetMs);
           if (progressFillRef.current) {
             progressFillRef.current.style.transform = 'scaleX(1)';
           }
@@ -395,14 +473,16 @@ export function TrackPlayback({
       video.removeEventListener('progress', handleProgress);
       video.removeEventListener('canplay', handleProgress);
       video.removeEventListener('loadeddata', handleProgress);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('durationchange', handleLoadedMetadata);
       video.removeEventListener('canplaythrough', handleCanPlayThrough);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleError);
       video.pause();
     };
-  }, [isPlaying, onPlaybackComplete, retryNonce, songData?.mediaUrl, totalSec]);
+  }, [fallbackDurationMs, isPlaying, onPlaybackComplete, playbackModeValue, retryNonce, songData?.mediaUrl]);
 
-  const previewDurationMs = Math.max(1, Number(totalSec || 12)) * 1000;
+  const previewDurationMs = displayDurationMs;
   const progressLabel = formatClipSeconds(playbackElapsedMs);
   const totalLabel = formatClipSeconds(previewDurationMs);
   const isWaitingForStart = !bufferReady && !playbackBlocked && !playbackFailed;
@@ -426,6 +506,7 @@ export function TrackPlayback({
               muted={isMuted}
               onReady={handleYtReadyVote}
               onError={handleYtErrorVote}
+              onEnded={handleYtEndedVote}
             />
             {playbackFailed ? (
               <div className="track-playback-video-overlay" aria-live="polite">

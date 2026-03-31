@@ -1,4 +1,8 @@
-import { getPartyRuntimeSongKey, shufflePartyItems } from './partyEngine';
+import {
+  getPartyRuntimeSongKey,
+  normalizePartyVotePlaybackMode,
+  shufflePartyItems,
+} from './partyEngine';
 
 // ─── Timing constants (centralised — no magic numbers in components) ────────
 export const VOTE_PHASE_TIMING = {
@@ -75,6 +79,7 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
   const t = VOTE_PHASE_TIMING;
   const voteSec = Number(settings.voteSec || t.voteSec);
   const revealSec = Number(settings.revealSec || t.revealSec);
+  const clipPlaybackMode = normalizePartyVotePlaybackMode(settings.clipPlaybackMode);
 
   return {
     id: makeId('vote-match'),
@@ -100,6 +105,7 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
       },
     },
     settings: {
+      clipPlaybackMode,
       previewSec: settings.timePerRoundSec || 12,
       voteSec,
       revealSec,

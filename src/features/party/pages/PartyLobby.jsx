@@ -96,6 +96,12 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
             <article className="party-stat-pill"><strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('songs', 'songs') : pick('rounds', 'rounds')}</span></article>
             <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('clip sec', 'clip sec')}</span></article>
             {isVoteMode ? (
+              <article className="party-stat-pill">
+                <strong>{room?.settings?.clipPlaybackMode === 'full' ? pick('Full clip', 'Full clip') : pick('Preview clip', 'Preview clip')}</strong>
+                <span>{pick('โหมดเล่น', 'playback')}</span>
+              </article>
+            ) : null}
+            {isVoteMode ? (
               <article className="party-stat-pill"><strong>{room?.current_match?.settings?.voteSec || room?.settings?.voteSec || 10}</strong><span>{pick('vote sec', 'vote sec')}</span></article>
             ) : null}
             <article className="party-stat-pill"><strong>{room?.settings?.revealSec || 12}</strong><span>{pick('reveal sec', 'reveal sec')}</span></article>

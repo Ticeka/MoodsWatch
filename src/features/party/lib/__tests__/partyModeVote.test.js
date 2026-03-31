@@ -98,6 +98,11 @@ describe('buildPartyVoteSnapshot', () => {
     expect(snap.settings.freezeMs).toBe(VOTE_PHASE_TIMING.freezeMs);
   });
 
+  test('stores the requested vote playback mode in the snapshot settings', () => {
+    const snap = buildPartyVoteSnapshot(TWO_SONGS, { clipPlaybackMode: 'full' });
+    expect(snap.settings.clipPlaybackMode).toBe('full');
+  });
+
   test('keeps YouTube songs distinct by providerMediaId instead of colliding on id=0', () => {
     const youtubeSongs = [
       makeYoutubeSong('video-a'),

@@ -102,7 +102,7 @@ export function PartyYouTubePlayer({
     }
 
     setPlayerState('ready');
-    onReady?.();
+    onReady?.(player);
   }, [playing, seekOffsetSec, muted, onReady]);
 
   const handleStateChange = useCallback((event) => {

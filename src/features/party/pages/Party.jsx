@@ -20,6 +20,7 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
   PARTY_CATEGORY_OPTIONS,
   PARTY_PRESETS,
+  PARTY_VOTE_PLAYBACK_MODES,
   buildPartyMatchSnapshot,
   createPartySettings,
   getPartyCurrentRound,
@@ -148,6 +149,7 @@ export function PartyHubPage() {
     presetId: PARTY_PRESETS[0].id,
     roundCount: 10,
     entrantCount: 8,
+    clipPlaybackMode: 'preview',
     timePerRoundSec: 12,
     voteSec: 10,
     revealSec: 12,
@@ -496,7 +498,7 @@ export function PartyHubPage() {
             ) : null}
 
             {(() => {
-              if (true) return null;
+              if (!settings.templateId) return null;
               const minCount = settings.modeType === 'vote'
                 ? 2
                 : Math.min(5, Math.max(2, Number(settings.roundCount || 0)));
@@ -687,6 +689,20 @@ export function PartyHubPage() {
             <div className="party-field">
               <span>{pick('ตัวเลือกเสริม', 'Extra rules')}</span>
               <div className="party-toggle-grid">
+                {settings.modeType === 'vote' ? (
+                  <label className="party-toggle--card">
+                    <input
+                      type="checkbox"
+                      checked={settings.clipPlaybackMode === 'full'}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        clipPlaybackMode: event.target.checked ? 'full' : 'preview',
+                      }))}
+                    />
+                    <span>{pick('เล่นจนจบคลิป', 'Play full clip')}</span>
+                    <small>{pick('ถ้าปิดไว้จะเล่นตามเวลาคลิปที่ตั้ง ถ้าเปิดไว้จะเล่นจนจบคลิปจริง', 'Off uses the configured clip preview. On plays until the clip ends naturally.')}</small>
+                  </label>
+                ) : null}
                 <label className="party-toggle--card">
                   <input
                     type="checkbox"

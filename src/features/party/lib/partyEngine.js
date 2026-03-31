@@ -44,6 +44,11 @@ export const PARTY_CATEGORY_OPTIONS = [
   { id: 'creditless', label: 'Creditless Picks', labelTh: 'เน้นเวอร์ชัน creditless' },
 ];
 
+export const PARTY_VOTE_PLAYBACK_MODES = [
+  { id: 'preview', label: 'Preview clip', labelTh: 'เล่นตามเวลาที่ตั้ง' },
+  { id: 'full', label: 'Full clip', labelTh: 'เล่นจนจบคลิป' },
+];
+
 export const PARTY_AVATAR_OPTIONS = [
   { id: 'rose', label: 'Rose', labelTh: 'กุหลาบ', tone: 'rose' },
   { id: 'apricot', label: 'Apricot', labelTh: 'แอปริคอต', tone: 'apricot' },
@@ -153,6 +158,10 @@ function normalizeVoteEntrantCount(value) {
   ), allowed[0]);
 }
 
+export function normalizePartyVotePlaybackMode(value) {
+  return String(value || '').trim().toLowerCase() === 'full' ? 'full' : 'preview';
+}
+
 function getNormalizedAliasSet(values = []) {
   return new Set(
     buildUniquePartyAliases(values)
@@ -185,6 +194,9 @@ export function createPartySettings(input = {}) {
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
   const isLongPlaybackMode = modeType === 'vote';
+  const clipPlaybackMode = modeType === 'vote'
+    ? normalizePartyVotePlaybackMode(input.clipPlaybackMode)
+    : 'preview';
   const defaultTimePerRoundSec = Number(input.timePerRoundSec || 12);
   const timePerRoundSec = clamp(defaultTimePerRoundSec, 8, isLongPlaybackMode ? 180 : 20);
   const voteSec = clamp(Number(input.voteSec || 10), 5, 20);
@@ -200,6 +212,7 @@ export function createPartySettings(input = {}) {
     presetId: preset.id,
     roundCount,
     entrantCount,
+    clipPlaybackMode,
     timePerRoundSec,
     voteSec,
     revealSec,
