@@ -5,6 +5,11 @@ const mockState = vi.hoisted(() => ({
   rpc: vi.fn(),
   channel: vi.fn(),
   removeChannel: vi.fn(async () => {}),
+  functionsInvoke: vi.fn(),
+  authGetSession: vi.fn(),
+  authRefreshSession: vi.fn(),
+  authGetUser: vi.fn(),
+  authSignOut: vi.fn(),
   storageUpload: vi.fn(),
   storageGetPublicUrl: vi.fn(),
   operations: [],
@@ -159,6 +164,15 @@ vi.mock('@/shared/lib/supabase', () => ({
     rpc: mockState.rpc,
     channel: mockState.channel,
     removeChannel: mockState.removeChannel,
+    functions: {
+      invoke: mockState.functionsInvoke,
+    },
+    auth: {
+      getSession: mockState.authGetSession,
+      refreshSession: mockState.authRefreshSession,
+      getUser: mockState.authGetUser,
+      signOut: mockState.authSignOut,
+    },
     storage: {
       from: vi.fn(() => ({
         upload: mockState.storageUpload,
@@ -178,6 +192,7 @@ import {
   fetchPartyTemplateDetail,
   fetchPartyTemplates,
   replacePartyTemplateItems,
+  resolvePartyYoutubeUrl,
   submitPartySkipVote,
   subscribeToPartyRoom,
   togglePartyMemberReady,
@@ -215,8 +230,43 @@ describe('partyRemote realtime optimizations', () => {
       return Promise.resolve(result);
     });
     mockState.removeChannel.mockClear();
+    mockState.functionsInvoke.mockReset();
+    mockState.authGetSession.mockReset();
+    mockState.authRefreshSession.mockReset();
+    mockState.authGetUser.mockReset();
+    mockState.authSignOut.mockReset();
     mockState.storageUpload.mockReset();
     mockState.storageGetPublicUrl.mockReset();
+    mockState.authGetSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'access-token-123',
+        },
+      },
+      error: null,
+    });
+    mockState.functionsInvoke.mockResolvedValue({
+      data: null,
+      error: null,
+    });
+    mockState.authRefreshSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'refreshed-token-456',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      },
+      error: null,
+    });
+    mockState.authGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-1',
+        },
+      },
+      error: null,
+    });
+    mockState.authSignOut.mockResolvedValue({ error: null });
     mockState.storageUpload.mockResolvedValue({ error: null });
     mockState.storageGetPublicUrl.mockReturnValue({
       data: { publicUrl: 'https://cdn.example.com/uploaded-cover.jpg' },
@@ -967,6 +1017,47 @@ describe('partyRemote template CRUD', () => {
     expect(result).toMatchObject({ id: '42', name: 'Anime Classics', modeScope: 'all', presetId: 'song-typing' });
   });
 
+  it('createPartyTemplate preserves YouTube provider fields on first save', async () => {
+    const youtubeItems = [
+      {
+        provider: 'youtube',
+        providerMediaId: 'abc123video',
+        providerCollectionId: 'playlist42',
+        providerUrl: 'https://www.youtube.com/watch?v=abc123video',
+        sourceKind: 'youtube_playlist',
+        playbackStatus: 'ready',
+        songTitle: 'YT Song',
+        artistName: 'YT Channel',
+        coverUrl: 'https://i.ytimg.com/vi/abc123video/hqdefault.jpg',
+        durationSec: 95,
+        metadataJson: { availabilityReason: null },
+        importedAt: '2026-03-31T12:00:00Z',
+        importSourcePosition: 7,
+      },
+    ];
+
+    await createPartyTemplate(
+      { ownerUserId: 'user-1', name: 'YT Template', description: '', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'full-recall', tags: [], sourceType: 'youtube' },
+      youtubeItems,
+      'Tester',
+    );
+
+    const itemInsert = mockState.operations.find((op) => op.table === 'party_song_template_items' && op.action === 'insert');
+    expect(itemInsert).toBeTruthy();
+    expect(itemInsert.payload[0]).toMatchObject({
+      provider: 'youtube',
+      provider_media_id: 'abc123video',
+      provider_collection_id: 'playlist42',
+      provider_url: 'https://www.youtube.com/watch?v=abc123video',
+      source_kind: 'youtube_playlist',
+      playback_status: 'ready',
+      duration_sec: 95,
+      metadata_json: { availabilityReason: null },
+      imported_at: '2026-03-31T12:00:00Z',
+      import_source_position: 7,
+    });
+  });
+
   it('fetchPartyTemplates throws on Supabase error instead of returning []', async () => {
     mockState.from.mockImplementation((table) => {
       if (table === 'party_song_templates') {
@@ -1044,10 +1135,10 @@ describe('partyRemote template CRUD', () => {
     expect(rpcCall).toBeTruthy();
     expect(rpcCall.params.p_template_id).toBe(42);
 
-    const parsed = JSON.parse(rpcCall.params.p_items);
-    expect(parsed).toHaveLength(2);
-    expect(parsed[0]).toMatchObject({ song_id: '101', song_title: 'Guren', position: 0 });
-    expect(parsed[1]).toMatchObject({ song_id: '102', position: 1 });
+    expect(Array.isArray(rpcCall.params.p_items)).toBe(true);
+    expect(rpcCall.params.p_items).toHaveLength(2);
+    expect(rpcCall.params.p_items[0]).toMatchObject({ song_id: '101', song_title: 'Guren', position: 0 });
+    expect(rpcCall.params.p_items[1]).toMatchObject({ song_id: '102', position: 1 });
   });
 
   it('replacePartyTemplateItems throws when RPC returns an error', async () => {
@@ -1074,5 +1165,72 @@ describe('partyRemote template CRUD', () => {
       expect.objectContaining({ cacheControl: '31536000', upsert: false }),
     );
     expect(result).toMatch(/^https:\/\/cdn\.example\.com\/uploaded-cover\.jpg\?t=\d+$/);
+  });
+
+  it('resolvePartyYoutubeUrl validates the current session before invoking the edge function', async () => {
+    mockState.functionsInvoke.mockResolvedValue({
+      data: { type: 'video', video: { videoId: 'p_ZH_oqoz7k' } },
+      error: null,
+    });
+
+    await resolvePartyYoutubeUrl('https://www.youtube.com/watch?v=p_ZH_oqoz7k');
+
+    expect(mockState.authGetSession).toHaveBeenCalled();
+    expect(mockState.authGetUser).toHaveBeenCalledWith('access-token-123');
+    expect(mockState.functionsInvoke).toHaveBeenCalledWith('party-youtube-resolve', expect.objectContaining({
+      body: expect.objectContaining({
+        url: 'https://www.youtube.com/watch?v=p_ZH_oqoz7k',
+      }),
+    }));
+  });
+
+  it('resolvePartyYoutubeUrl surfaces parsed function error payloads', async () => {
+    mockState.functionsInvoke.mockResolvedValue({
+      data: null,
+      error: {
+        message: 'Edge Function returned a non-2xx status code',
+        context: {
+          json: vi.fn(async () => ({
+            error: 'Missing auth token',
+            code: 'auth_required',
+          })),
+        },
+      },
+    });
+
+    await expect(resolvePartyYoutubeUrl('https://www.youtube.com/watch?v=p_ZH_oqoz7k')).rejects.toMatchObject({
+      message: 'Missing auth token',
+      code: 'auth_required',
+    });
+  });
+
+  it('resolvePartyYoutubeUrl refreshes the session and retries once after an invalid JWT response', async () => {
+    mockState.functionsInvoke
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          message: 'Edge Function returned a non-2xx status code',
+          context: {
+            status: 401,
+            json: vi.fn(async () => ({
+              code: 401,
+              message: 'Invalid JWT',
+            })),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { type: 'video', video: { videoId: 'Hc4OrO4LRWw' } },
+        error: null,
+      });
+
+    const result = await resolvePartyYoutubeUrl('https://www.youtube.com/watch?v=Hc4OrO4LRWw');
+
+    expect(result).toEqual({ type: 'video', video: { videoId: 'Hc4OrO4LRWw' } });
+    expect(mockState.authRefreshSession).toHaveBeenCalledTimes(1);
+    expect(mockState.functionsInvoke.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      mockState.authGetUser.mock.calls.some(([token]) => token === 'refreshed-token-456'),
+    ).toBe(true);
   });
 });

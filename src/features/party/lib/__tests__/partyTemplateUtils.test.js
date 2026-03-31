@@ -27,7 +27,7 @@ describe('catalogSongToTemplateItem', () => {
       artistName: 'Linked Horizon',
       mediaUrl: 'https://cdn.example.com/aot-op.mp4',
       coverUrl: 'https://cdn.example.com/aot.jpg',
-    }, 2)).toEqual({
+    }, 2)).toMatchObject({
       song_id: 101,
       source_title_id: 55,
       source_title_name: 'Attack on Titan',
@@ -58,7 +58,7 @@ describe('catalogSongToTemplateItem', () => {
       position: 0,
     });
 
-    expect(catalogSongToTemplateItem(playlistItem, 3)).toEqual({
+    expect(catalogSongToTemplateItem(playlistItem, 3)).toMatchObject({
       song_id: 101,
       source_title_id: 55,
       source_title_name: 'Attack on Titan',
@@ -188,6 +188,23 @@ describe('template playability helpers', () => {
       playableCount: 2,
       requiredCount: 2,
     });
+  });
+
+  it('treats only ready YouTube items as playable', () => {
+    expect(isTemplateItemPlayable({
+      provider: 'youtube',
+      playback_status: 'ready',
+    })).toBe(true);
+
+    expect(isTemplateItemPlayable({
+      provider: 'youtube',
+      playback_status: 'limited',
+    })).toBe(false);
+
+    expect(isTemplateItemPlayable({
+      provider: 'youtube',
+      playback_status: 'blocked',
+    })).toBe(false);
   });
 });
 

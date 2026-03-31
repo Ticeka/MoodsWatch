@@ -200,4 +200,31 @@ describe('partyEngine', () => {
     expect(settings.templateCoverUrl).toBe('https://cdn.example.com/template.jpg');
     expect(settings.templatePlayableCount).toBe(6);
   });
+
+  it('builds distinct runtime song keys for YouTube rounds', () => {
+    const youtubeSongs = Array.from({ length: 5 }, (_, index) => ({
+      id: 0,
+      provider: 'youtube',
+      providerMediaId: `yt-video-${index + 1}`,
+      themeType: 'OP',
+      songTitle: `YouTube Song ${index + 1}`,
+      songAliases: [`YouTube Song ${index + 1}`],
+      artistName: 'Uploader',
+      sourceTitleId: 100 + index,
+      sourceTitleName: `YouTube Source ${index + 1}`,
+      sourceTitleAliases: [`YouTube Source ${index + 1}`],
+      mediaUrl: '',
+      coverUrl: `https://img.youtube.com/yt-video-${index + 1}.jpg`,
+    }));
+
+    const match = buildPartyMatchSnapshot(youtubeSongs, {
+      presetId: 'song-typing',
+      roundCount: 5,
+      randomOrder: false,
+    });
+
+    expect(match.rounds).toHaveLength(5);
+    expect(match.rounds[0].songId).toBe('yt:yt-video-1');
+    expect(new Set(match.rounds.map((round) => round.songId)).size).toBe(5);
+  });
 });

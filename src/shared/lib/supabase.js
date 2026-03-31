@@ -9,11 +9,21 @@ const VITE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_URL = VITE_URL || 'https://ntwgbtaxsovsnafpvbkj.supabase.co';
 const SUPABASE_ANON_KEY = VITE_KEY || 'sb_publishable_XtYX6GGbiAPGOS9QRLMisA_URDyjfJ_';
 
+function getSupabaseProjectRef(url) {
+  try {
+    return new URL(url).hostname.split('.')[0] || 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+export const SUPABASE_AUTH_STORAGE_KEY = `moodtoon-auth-${getSupabaseProjectRef(SUPABASE_URL)}`;
+
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_API_KEY'))
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         persistSession: true,
-        storageKey: 'moodtoon-auth',
+        storageKey: SUPABASE_AUTH_STORAGE_KEY,
         autoRefreshToken: true,
         detectSessionInUrl: true,
       },

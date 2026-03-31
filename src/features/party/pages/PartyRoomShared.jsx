@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Clock3,
@@ -22,6 +22,7 @@ import {
   getPartyPresetById,
 } from '@/features/party/lib/partyEngine';
 import { advancePartyRoom } from '@/features/party/lib/partyRemote';
+import { PartyYouTubePlayer } from '../components/PartyYouTubePlayer';
 import { PartyTimer } from './PartyTimer';
 import {
   formatClipSeconds,
@@ -391,6 +392,162 @@ function getBufferedPreviewMs(media, startSec = 0, previewDurationMs = 0) {
   }
 
   return getPartyBufferedPreviewMs(ranges, media.currentTime, startSec, previewDurationMs);
+}
+
+function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs, onPlaybackStarted, onPlaybackComplete, pick }) {
+  const playbackFillRef = useRef(null);
+  const timerRef = useRef(null);
+  const startedAtRef = useRef(null);
+  const completedRef = useRef(false);
+  const [volume, setVolume] = useState(() => readPartyAudioVolume());
+  const [ytReady, setYtReady] = useState(false);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0));
+  const isMuted = normalizedVolume <= 0;
+  const isGracePeriod = Boolean(answerGraceEndsAtMs);
+  const previewDurationMs = Number(round?.previewDurationSec || match?.timePerRoundSec || 12) * 1000;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('moodtoon-party-audio-volume', String(normalizedVolume));
+  }, [normalizedVolume]);
+
+  // Reset on round change
+  useEffect(() => {
+    setYtReady(false);
+    setPlaybackBlocked(false);
+    setPlaybackElapsedMs(0);
+    setIsPlaying(false);
+    startedAtRef.current = null;
+    completedRef.current = false;
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    if (playbackFillRef.current) playbackFillRef.current.style.transform = 'scaleX(0)';
+    onPlaybackComplete?.(null);
+    return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round?.id]);
+
+  const startProgressTimer = useCallback((durationMs) => {
+    if (startedAtRef.current || completedRef.current) return;
+    startedAtRef.current = Date.now();
+    onPlaybackStarted?.(Date.now());
+
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
+      if (!startedAtRef.current || completedRef.current) return;
+      const elapsed = Date.now() - startedAtRef.current;
+      const clamped = Math.min(durationMs, elapsed);
+      const ratio = durationMs > 0 ? Math.min(1, clamped / durationMs) : 0;
+      setPlaybackElapsedMs(clamped);
+      if (playbackFillRef.current) playbackFillRef.current.style.transform = `scaleX(${ratio})`;
+      if (elapsed >= durationMs) {
+        completedRef.current = true;
+        window.clearInterval(timerRef.current);
+        onPlaybackComplete?.(Date.now());
+      }
+    }, 80);
+  }, [onPlaybackStarted, onPlaybackComplete]);
+
+  const handleYtReady = useCallback(() => {
+    setYtReady(true);
+    setIsPlaying(true);
+    startProgressTimer(previewDurationMs);
+  }, [startProgressTimer, previewDurationMs]);
+
+  const handleYtError = useCallback(() => {
+    setPlaybackBlocked(true);
+    setIsPlaying(false);
+  }, []);
+
+  return (
+    <section className="party-question-stage">
+      <div className="party-question-stage-inner">
+        <div className="party-question-header">
+          <span className="party-chip subtle party-question-kicker">
+            <Headphones size={14} />
+            {pick('กำลังเล่นเพลงปริศนา', 'Mystery audio playing')}
+          </span>
+          <h2>{pick('ฟังให้ดี แล้วรีบตอบก่อนหมดเวลา', 'Listen closely — answer before time runs out')}</h2>
+          <p>
+            {isGracePeriod
+              ? pick('เพลงจบแล้ว เหลือเวลาอีกนิดสำหรับล็อกคำตอบสุดท้าย', 'Audio ended. Final seconds to lock in your answer.')
+              : pick('ชื่อเรื่องและชื่อเพลงถูกซ่อนไว้จนกว่าจะหมดเวลา', 'Title and song are hidden until the reveal.')}
+          </p>
+        </div>
+
+        <div className="party-waveform" aria-hidden="true">
+          {Array.from({ length: 22 }, (_, i) => (
+            <span key={i} className="party-waveform-bar" style={{ '--wi': i }} />
+          ))}
+        </div>
+
+        <div className="party-playback-track" aria-hidden="true">
+          <span ref={playbackFillRef} className="party-playback-fill" />
+        </div>
+
+        <div className="party-playback-controls-row">
+          <span className="party-playback-timestamp">
+            {formatClipSeconds(playbackElapsedMs)} / {formatClipSeconds(previewDurationMs)}
+          </span>
+          {!ytReady && !playbackBlocked && (
+            <span className="party-buffering-badge">
+              <Loader2 size={12} className="party-spin" />
+              {pick('กำลังโหลด...', 'Loading…')}
+            </span>
+          )}
+          <div className="party-volume-control">
+            <button
+              type="button"
+              className="party-volume-toggle"
+              onClick={() => setVolume((v) => (Number(v || 0) > 0 ? 0 : 85))}
+              aria-label={pick(isMuted ? 'เปิดเสียง' : 'ปิดเสียง', isMuted ? 'Unmute' : 'Mute')}
+            >
+              {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+            <input
+              type="range" min="0" max="100" step="1"
+              value={normalizedVolume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              aria-label={pick('ระดับเสียง', 'Volume')}
+              className="party-volume-slider"
+            />
+            <span className="party-volume-value">{normalizedVolume}%</span>
+          </div>
+        </div>
+
+        {playbackBlocked && (
+          <button
+            type="button"
+            className="party-inline-play"
+            onClick={() => {
+              setPlaybackBlocked(false);
+              setIsPlaying(true);
+              startProgressTimer(previewDurationMs);
+            }}
+          >
+            <Play size={16} />
+            {pick('กดเล่นเพลงอีกครั้ง', 'Tap to play audio')}
+          </button>
+        )}
+
+        {round?.providerMediaId && match?.phase === 'question' ? (
+          <PartyYouTubePlayer
+            key={`yt-q-${round.id || round.providerMediaId}`}
+            videoId={round.providerMediaId}
+            playing={isPlaying && !completedRef.current}
+            seekOffsetSec={Number(round.previewStartSec || 0)}
+            muted={isMuted}
+            onReady={handleYtReady}
+            onError={handleYtError}
+            className="party-yt-question-hidden"
+          />
+        ) : null}
+      </div>
+      <PartyEndCountdownOverlay targetTimeMs={phaseEndsAtMs} />
+    </section>
+  );
 }
 
 function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs, onPlaybackStarted, onPlaybackComplete, pick }) {
@@ -786,16 +943,29 @@ export function PartyAnswerPanel({
       {/* Two columns: question left, leaderboard right — both start at top */}
       <div className="party-game-grid">
         <div className="party-game-main">
-          <PartyQuestionPlayer
-            key={round?.id || round?.mediaUrl || 'question-player'}
-            match={room?.current_match}
-            round={round}
-            answerGraceEndsAtMs={answerGraceEndsAtMs}
-            phaseEndsAtMs={phaseEndsAtMs}
-            onPlaybackStarted={onPlaybackStarted}
-            onPlaybackComplete={onPlaybackComplete}
-            pick={pick}
-          />
+          {round?.provider === 'youtube' ? (
+            <PartyYouTubeQuestionPlayer
+              key={round?.id || round?.providerMediaId || 'yt-question-player'}
+              match={room?.current_match}
+              round={round}
+              answerGraceEndsAtMs={answerGraceEndsAtMs}
+              phaseEndsAtMs={phaseEndsAtMs}
+              onPlaybackStarted={onPlaybackStarted}
+              onPlaybackComplete={onPlaybackComplete}
+              pick={pick}
+            />
+          ) : (
+            <PartyQuestionPlayer
+              key={round?.id || round?.mediaUrl || 'question-player'}
+              match={room?.current_match}
+              round={round}
+              answerGraceEndsAtMs={answerGraceEndsAtMs}
+              phaseEndsAtMs={phaseEndsAtMs}
+              onPlaybackStarted={onPlaybackStarted}
+              onPlaybackComplete={onPlaybackComplete}
+              pick={pick}
+            />
+          )}
 
           {preset.answerMode === 'choice' ? (
             <section className="party-answer-card">
@@ -919,7 +1089,10 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
       ? pick('ถูก', 'Correct')
       : pick('ผิด', 'Incorrect');
 
+  const isYouTubeRound = round?.provider === 'youtube' && Boolean(round?.providerMediaId);
+
   useEffect(() => {
+    if (isYouTubeRound) return; // handled by PartyYouTubePlayer onReady
     const video = revealVideoRef.current;
     if (!video || !round?.mediaUrl) {
       return;
@@ -965,7 +1138,7 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
       video.removeEventListener('canplay', attemptPlay);
       video.removeEventListener('volumechange', handleVolumeChange);
     };
-  }, [onPlaybackStarted, round?.id, round?.mediaUrl]);
+  }, [isYouTubeRound, onPlaybackStarted, round?.id, round?.mediaUrl]);
 
   return (
     <div className="party-game-grid">
@@ -1008,7 +1181,18 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
             </div>
 
             {/* Video player */}
-            {round?.mediaUrl ? (
+            {isYouTubeRound ? (
+              <div className="party-reveal-video-wrap">
+                <PartyYouTubePlayer
+                  key={`yt-reveal-${round.id || round.providerMediaId}`}
+                  videoId={round.providerMediaId}
+                  playing
+                  seekOffsetSec={0}
+                  muted={false}
+                  onReady={() => onPlaybackStarted?.(Date.now())}
+                />
+              </div>
+            ) : round?.mediaUrl ? (
               <div className="party-reveal-video-wrap">
                 <video
                   ref={revealVideoRef}

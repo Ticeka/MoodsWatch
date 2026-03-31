@@ -20,11 +20,14 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
   PARTY_CATEGORY_OPTIONS,
   PARTY_PRESETS,
+  buildPartyMatchSnapshot,
   createPartySettings,
   getPartyCurrentRound,
   getPartyPresetById,
+  normalizePartyText,
 } from '@/features/party/lib/partyEngine';
 import { resumePartyAudioContext } from '@/features/party/lib/partyAudio';
+import { buildPartyVoteSnapshot } from '@/features/party/lib/partyModeVote';
 import {
   closePartyRoom,
   createPartyRoom,
@@ -67,6 +70,70 @@ import {
 } from './partyRoomUtils';
 import './Party.css';
 
+function getPartyTemplateValidation(playablePool = [], settings = {}, pick) {
+  const normalizedSettings = createPartySettings(settings);
+  const pool = Array.isArray(playablePool) ? playablePool : [];
+
+  if (normalizedSettings.modeType === 'vote') {
+    try {
+      buildPartyVoteSnapshot(pool, normalizedSettings);
+      return { ok: true, message: '' };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error?.message || pick('Template นี้ยังไม่พร้อมสำหรับ Vote Battle', 'This template is not ready for Vote Battle yet.'),
+      };
+    }
+  }
+
+  const preset = getPartyPresetById(normalizedSettings.presetId);
+  const requiredSongs = Math.min(5, Math.max(2, Number(normalizedSettings.roundCount || 0)));
+
+  if (preset.answerMode === 'choice') {
+    const distinctSourceIds = new Set(
+      pool
+        .map((song) => Number(song?.sourceTitleId || 0))
+        .filter((sourceTitleId) => sourceTitleId > 0)
+    ).size;
+    const youtubeOnlyPool = pool.length > 0 && pool.every((song) => String(song?.provider || '').trim().toLowerCase() === 'youtube');
+
+    if (distinctSourceIds < 4) {
+      return {
+        ok: false,
+        message: pick(
+          'Quiz แบบ 4 ตัวเลือกต้องมีเพลงจากอย่างน้อย 4 เรื่อง และ template นี้ยังมีข้อมูลเรื่องไม่พอ',
+          youtubeOnlyPool
+            ? 'YouTube-only templates cannot use 4-choice Music Quiz yet because they do not have enough source-title data. Try Song Typing or Full Recall instead.'
+            : '4-choice quiz needs songs from at least 4 distinct source titles, and this template does not have enough source-title data yet.',
+        ),
+      };
+    }
+  }
+
+  if (pool.length < requiredSongs) {
+    return {
+      ok: false,
+      message: pick(
+        `Template นี้มีเพลงที่เล่นได้ ${pool.length} เพลง แต่การตั้งค่าตอนนี้ต้องใช้อย่างน้อย ${requiredSongs} เพลง`,
+        `This template has ${pool.length} playable song${pool.length === 1 ? '' : 's'}, but the current quiz setup needs at least ${requiredSongs}.`,
+      ),
+    };
+  }
+
+  try {
+    buildPartyMatchSnapshot(
+      pool.filter((song) => normalizePartyText(song?.songTitle) && normalizePartyText(song?.sourceTitleName)),
+      normalizedSettings,
+    );
+    return { ok: true, message: '' };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error?.message || pick('Template นี้ยังไม่พร้อมสำหรับ Quiz', 'This template is not ready for Quiz yet.'),
+    };
+  }
+}
+
 export function PartyHubPage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
@@ -74,6 +141,8 @@ export function PartyHubPage() {
   const [searchParams] = useSearchParams();
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
+  const [templatePlayablePool, setTemplatePlayablePool] = useState([]);
+  const [templatePoolLoaded, setTemplatePoolLoaded] = useState(false);
   const [settings, setSettings] = useState(createPartySettings({
     modeType: 'quiz',
     presetId: PARTY_PRESETS[0].id,
@@ -124,6 +193,13 @@ export function PartyHubPage() {
     const options = [2, 4, 8, 16].filter((count) => count <= templatePlayableCount);
     return options.length > 0 ? options : [2];
   }, [settings.modeType, settings.templateId, templatePlayableCount]);
+  const templateValidation = useMemo(() => {
+    if (!settings.templateId || !templatePoolLoaded) {
+      return { ok: true, message: '' };
+    }
+
+    return getPartyTemplateValidation(templatePlayablePool, settings, pick);
+  }, [pick, settings, templatePlayablePool, templatePoolLoaded]);
 
   useEffect(() => {
     const templateId = searchParams.get('templateId');
@@ -173,10 +249,13 @@ export function PartyHubPage() {
 
   useEffect(() => {
     if (!settings.templateId) {
+      setTemplatePlayablePool([]);
+      setTemplatePoolLoaded(false);
       return undefined;
     }
 
     let ignore = false;
+    setTemplatePoolLoaded(false);
 
     Promise.all([
       fetchPartyTemplateDetail(settings.templateId).catch(() => null),
@@ -187,6 +266,8 @@ export function PartyHubPage() {
       }
 
       const playableCount = Array.isArray(playablePool) ? playablePool.length : 0;
+      setTemplatePlayablePool(Array.isArray(playablePool) ? playablePool : []);
+      setTemplatePoolLoaded(true);
       setSettings((current) => {
         if (String(current.templateId || '') !== String(settings.templateId || '')) {
           return current;
@@ -261,7 +342,12 @@ export function PartyHubPage() {
       if (settings.templateId) {
         const pool = await fetchPartyTemplateSongPool(settings.templateId).catch(() => null);
         if (pool !== null) {
-          const minCount = settings.modeType === 'vote' ? 2 : 4;
+          const validation = getPartyTemplateValidation(pool, settings, pick);
+          if (!validation.ok) {
+            toast.error(validation.message);
+            return;
+          }
+          const minCount = 0;
           if (pool.length < minCount) {
             const modeLabel = settings.modeType === 'vote'
               ? pick('Vote Battle', 'Vote Battle')
@@ -401,6 +487,30 @@ export function PartyHubPage() {
                 </span>
               </button>
             )}
+
+            {settings.templateId && templatePoolLoaded && !templateValidation.ok ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.85rem', color: '#b45309' }}>
+                <TimerReset size={15} style={{ flexShrink: 0 }} />
+                {templateValidation.message}
+              </div>
+            ) : null}
+
+            {(() => {
+              if (true) return null;
+              const minCount = settings.modeType === 'vote'
+                ? 2
+                : Math.min(5, Math.max(2, Number(settings.roundCount || 0)));
+              const modeLabel = settings.modeType === 'vote' ? 'Vote Battle' : 'Quiz';
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.85rem', color: '#b45309' }}>
+                  <TimerReset size={15} style={{ flexShrink: 0 }} />
+                  {pick(
+                    `Template นี้มีเพลงที่เล่นได้แค่ ${templatePlayableCount} เพลง — ${modeLabel} ต้องการอย่างน้อย ${minCount} เพลง`,
+                    `This template only has ${templatePlayableCount} playable song${templatePlayableCount === 1 ? '' : 's'} — ${modeLabel} needs at least ${minCount}.`,
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="party-field">
               <span>{pick('โหมดการแข่งขัน', 'Match Type')}</span>

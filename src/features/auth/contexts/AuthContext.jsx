@@ -94,6 +94,23 @@ async function ensureUserProfile(userId) {
   return data ?? { id: userId };
 }
 
+async function validateAuthSession(session) {
+  if (!supabase || !session?.access_token) {
+    return { session: null, user: null, error: null };
+  }
+
+  const { data, error } = await supabase.auth.getUser(session.access_token);
+  if (error || !data?.user) {
+    return { session: null, user: null, error: error || new Error('Invalid auth session') };
+  }
+
+  return {
+    session,
+    user: data.user,
+    error: null,
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -142,12 +159,20 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        setSession(currentSession);
+        if (currentSession?.access_token) {
+          const { session: validatedSession, user: validatedUser, error: validationError } = await validateAuthSession(currentSession);
 
-        if (currentSession?.user) {
-          setUser((prev) => mergeAuthUser(prev, currentSession.user));
+          if (validationError || !validatedSession || !validatedUser) {
+            await supabase.auth.signOut({ scope: 'local' });
+            setSession(null);
+            setUser(null);
+            return;
+          }
+
+          setSession(validatedSession);
+          setUser((prev) => mergeAuthUser(prev, validatedUser));
           setIsLoading(false);
-          void hydrateUserProfile(currentSession.user);
+          void hydrateUserProfile(validatedUser);
           return;
         }
       } catch (err) {

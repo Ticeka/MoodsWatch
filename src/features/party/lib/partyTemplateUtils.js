@@ -1,5 +1,12 @@
 import { isDirectPartyMediaUrl } from './partyEngine';
-import { PARTY_TEMPLATE_MIN_SONGS, PARTY_TEMPLATE_MODE_SCOPE } from './partyTemplateSchema';
+import {
+  PARTY_TEMPLATE_MIN_SONGS,
+  PARTY_TEMPLATE_MODE_SCOPE,
+  PARTY_TEMPLATE_PLAYBACK_STATUS,
+  PARTY_TEMPLATE_ITEM_PROVIDER,
+  PARTY_TEMPLATE_ITEM_SOURCE_KIND,
+} from './partyTemplateSchema';
+import { isYoutubeItemPlayable } from './partyYoutube';
 
 export const PARTY_TEMPLATE_FALLBACK_COVER_URL = '/images/default-party-cover.jpg';
 
@@ -40,8 +47,87 @@ export function resolveTemplateCoverUrl(value, items = [], fallback = PARTY_TEMP
   return sanitizeTemplateCoverUrl(value) || getTemplateFallbackItemCoverUrl(items) || fallback;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Playability helpers (mixed-provider aware)
+// ─────────────────────────────────────────────────────────────────
+
 /**
- * Validates that a template has enough songs for the intended mode.
+ * Returns true when an item is ready for runtime playback.
+ *
+ * - catalog items:  must have a direct media URL (mp4/webm/ogg)
+ *                   OR playback_status = 'ready'
+ * - YouTube items:  playback_status = 'ready'
+ *                   (limited is treated as not-ready to match runtime playback)
+ */
+export function isTemplateItemPlayable(item = {}) {
+  const explicitProvider = item.provider || '';
+
+  if (explicitProvider === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE) {
+    return isYoutubeItemPlayable(item);
+  }
+
+  // Catalog (default) — check playback_status first (set by backfill), then direct URL
+  const status = item.playbackStatus || item.playback_status;
+  if (status === PARTY_TEMPLATE_PLAYBACK_STATUS.READY) return true;
+  if (status === PARTY_TEMPLATE_PLAYBACK_STATUS.BLOCKED) return false;
+
+  // Fallback to URL check for legacy rows without playback_status
+  const mediaUrl = item.mediaUrl || item.media_url || '';
+  if (!mediaUrl) return false;
+  return Boolean(
+    (item.songId ?? item.song_id ?? item.id) &&
+    (item.sourceTitleId ?? item.source_title_id) &&
+    isDirectPartyMediaUrl(mediaUrl)
+  );
+}
+
+/**
+ * Returns true only for catalog items that have a fully valid direct URL.
+ * Use when you need strict catalog-only filtering (e.g. existing preset pool).
+ */
+export function isTemplateItemDirectPlayable(item = {}) {
+  return Boolean(
+    (item.songId ?? item.song_id ?? item.id)
+    && (item.sourceTitleId ?? item.source_title_id)
+    && (item.mediaUrl ?? item.media_url)
+    && isDirectPartyMediaUrl(item.mediaUrl ?? item.media_url)
+  );
+}
+
+export function getTemplatePlayableCount(items = []) {
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+  return items.filter(isTemplateItemPlayable).length;
+}
+
+/**
+ * Returns { total, ready, limited, blocked, unknown } counts for a playlist.
+ */
+export function getTemplatePlaybackSummary(items = []) {
+  if (!Array.isArray(items)) {
+    return { total: 0, ready: 0, limited: 0, blocked: 0, unknown: 0 };
+  }
+
+  let ready = 0, limited = 0, blocked = 0, unknown = 0;
+  for (const item of items) {
+    const status = item.playbackStatus || item.playback_status || '';
+    if (status === PARTY_TEMPLATE_PLAYBACK_STATUS.READY) ready++;
+    else if (status === PARTY_TEMPLATE_PLAYBACK_STATUS.LIMITED) limited++;
+    else if (status === PARTY_TEMPLATE_PLAYBACK_STATUS.BLOCKED) blocked++;
+    else unknown++;
+  }
+
+  return { total: items.length, ready, limited, blocked, unknown };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Validation (total count — save gate)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Validates that a template has enough songs (total) for the intended mode.
+ * Used as a save gate — allows saving with blocked items.
  * Returns { valid: boolean, reason?: string }
  */
 export function validateTemplateForMode(items = [], modeScope = 'all') {
@@ -71,23 +157,10 @@ export function validateTemplateForMode(items = [], modeScope = 'all') {
   return { valid: true };
 }
 
-export function isTemplateItemPlayable(item = {}) {
-  return Boolean(
-    (item.songId ?? item.song_id ?? item.id)
-    && (item.sourceTitleId ?? item.source_title_id)
-    && (item.mediaUrl ?? item.media_url)
-    && isDirectPartyMediaUrl(item.mediaUrl ?? item.media_url)
-  );
-}
-
-export function getTemplatePlayableCount(items = []) {
-  if (!Array.isArray(items)) {
-    return 0;
-  }
-
-  return items.filter(isTemplateItemPlayable).length;
-}
-
+/**
+ * Validates that a template has enough *playable* songs for the mode.
+ * Used as a Play Now gate.
+ */
 export function validatePlayableTemplateForMode(items = [], modeScope = 'all') {
   const totalCount = Array.isArray(items) ? items.length : 0;
   const playableCount = getTemplatePlayableCount(items);
@@ -129,13 +202,16 @@ export function validatePlayableTemplateForMode(items = [], modeScope = 'all') {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Item mappers
+// ─────────────────────────────────────────────────────────────────
+
 /**
- * Converts a catalog song search result into a template item row ready for DB insert.
- * The shape matches party_song_template_items columns.
+ * Converts a catalog song search result into a template item row
+ * ready for DB insert. Shape matches party_song_template_items columns.
  */
 export function catalogSongToTemplateItem(song, position = 0) {
   return {
-    // Accept both raw catalog search rows and UI playlist items.
     song_id: song.songId ?? song.song_id ?? song.id ?? null,
     source_title_id: song.sourceTitleId ?? song.source_title_id ?? null,
     source_title_name: song.sourceTitleName || song.source_title_name || song.source || '',
@@ -145,16 +221,50 @@ export function catalogSongToTemplateItem(song, position = 0) {
     media_url: song.mediaUrl || song.media_url || '',
     cover_url: song.coverUrl || song.cover_url || '',
     position,
+    provider: PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG,
+    source_kind: PARTY_TEMPLATE_ITEM_SOURCE_KIND.CATALOG,
+    playback_status: song.playbackStatus || song.playback_status || PARTY_TEMPLATE_PLAYBACK_STATUS.UNKNOWN,
   };
 }
 
 /**
+ * Converts a YouTube video payload (from partyYoutube.normalizeYoutubeVideoPayload)
+ * into a template item row ready for DB insert.
+ */
+export function youtubeVideoToTemplateItem(video, position = 0) {
+  return {
+    ...video,
+    position,
+  };
+}
+
+/**
+ * Converts an array of YouTube playlist item payloads into template item rows.
+ * positionOffset lets you append after existing catalog items.
+ */
+export function youtubePlaylistItemsToTemplateItems(items = [], positionOffset = 0) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => ({
+    ...item,
+    position: positionOffset + index,
+  }));
+}
+
+/**
  * Converts a DB template item row into a UI-friendly object.
+ * Handles both catalog and YouTube items.
  */
 export function mapTemplateItemFromDb(row, index = 0) {
+  const provider = row.provider || PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG;
+  const sourceKind = row.source_kind || PARTY_TEMPLATE_ITEM_SOURCE_KIND.CATALOG;
+  const playbackStatus = row.playback_status || PARTY_TEMPLATE_PLAYBACK_STATUS.UNKNOWN;
+
   return {
+    // identity
     id: row.id,
     templateId: row.template_id,
+
+    // catalog fields
     songId: row.song_id,
     sourceTitleId: row.source_title_id,
     sourceTitleName: row.source_title_name || '',
@@ -164,18 +274,41 @@ export function mapTemplateItemFromDb(row, index = 0) {
     mediaUrl: row.media_url || '',
     coverUrl: row.cover_url || '',
     position: row.position ?? index,
-    // UI convenience
+
+    // provider / YouTube fields
+    provider,
+    sourceKind,
+    playbackStatus,
+    providerMediaId: row.provider_media_id || null,
+    providerCollectionId: row.provider_collection_id || null,
+    providerUrl: row.provider_url || null,
+    durationSec: row.duration_sec ?? null,
+    metadataJson: row.metadata_json || {},
+    importedAt: row.imported_at || null,
+    importSourcePosition: row.import_source_position ?? null,
+    syncState: row.sync_state || null,
+
+    // UI convenience aliases
     title: row.song_title || '',
     artist: row.artist_name || '',
     source: row.source_title_name || '',
-    provider: 'catalog',
   };
 }
 
 /**
- * Filters templates client-side (used while DB returns full set).
- * For real filtering prefer passing params to fetchPartyTemplates().
+ * Returns true when the item was imported from a YouTube playlist.
  */
+export function isTemplateItemImportedFromPlaylist(item = {}) {
+  return (
+    item.sourceKind === PARTY_TEMPLATE_ITEM_SOURCE_KIND.YOUTUBE_PLAYLIST ||
+    item.source_kind === PARTY_TEMPLATE_ITEM_SOURCE_KIND.YOUTUBE_PLAYLIST
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Template list helpers
+// ─────────────────────────────────────────────────────────────────
+
 export function filterTemplates(templates, { search = '', mode = 'all' } = {}) {
   if (!Array.isArray(templates)) return [];
 

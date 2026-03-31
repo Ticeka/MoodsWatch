@@ -120,6 +120,23 @@ export function shufflePartyItems(items = []) {
   return next;
 }
 
+export function getPartyRuntimeSongKey(song) {
+  if (!song) {
+    return '';
+  }
+
+  const provider = String(song.provider || '').trim().toLowerCase();
+  if (provider === 'youtube') {
+    const mediaId = String(song.providerMediaId || '').trim();
+    if (mediaId) {
+      return `yt:${mediaId}`;
+    }
+  }
+
+  const fallbackId = song.id ?? song.songId ?? song.song_id ?? '';
+  return String(fallbackId || '').trim();
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -239,7 +256,7 @@ function buildRound(song, settings, titlePool) {
 
   return {
     id: makeId('party-round'),
-    songId: Number(song.id || 0),
+    songId: getPartyRuntimeSongKey(song),
     themeType: song.themeType || 'OP',
     artistName: song.artistName || '',
     songTitle: song.songTitle || '',
@@ -251,6 +268,8 @@ function buildRound(song, settings, titlePool) {
     coverUrl: song.coverUrl || '',
     previewStartSec: Number(song.previewStartSec || 0),
     previewDurationSec: Number(settings.timePerRoundSec || 12),
+    provider: song.provider || 'catalog',
+    providerMediaId: song.providerMediaId || null,
     options,
   };
 }

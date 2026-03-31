@@ -20,8 +20,18 @@ import {
   buildPartyVoteSnapshot,
   advancePartyVoteMatch,
 } from './partyModeVote';
-import { PARTY_TEMPLATE_DEFAULT_PRESET_ID } from './partyTemplateSchema';
+import {
+  PARTY_TEMPLATE_DEFAULT_PRESET_ID,
+  PARTY_TEMPLATE_ITEM_PROVIDER,
+  PARTY_TEMPLATE_ITEM_SOURCE_KIND,
+  PARTY_TEMPLATE_PLAYBACK_STATUS,
+} from './partyTemplateSchema';
 import { resolveTemplateCoverUrl, sanitizeTemplateCoverUrl } from './partyTemplateUtils';
+import {
+  isYoutubeItemPlayable,
+  normalizeYoutubeVideoPayload,
+  normalizeYoutubePlaylistPayload,
+} from './partyYoutube';
 
 const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
 const PARTY_PROFILE_KEY = 'moodtoon-party-profile';
@@ -484,6 +494,55 @@ function mapPartyPresetSongItem(row) {
   };
 }
 
+/**
+ * Maps a party_song_template_items row to a runtime song object.
+ * Handles both catalog items (song_id) and YouTube items (provider_media_id).
+ */
+function mapPartyTemplateSongItem(row) {
+  const provider = String(row?.provider || PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG);
+  const isYoutube = provider === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE;
+
+  return {
+    // Runtime identity — for catalog: numeric song_id; for YouTube: 0 (unused)
+    id: isYoutube ? 0 : Number(row?.song_id || 0),
+    themeType: row?.theme_type || 'OP',
+    songTitle: row?.song_title || '',
+    songAliases: buildUniquePartyAliases([row?.song_title]),
+    artistName: row?.artist_name || '',
+    isCreditless: false,
+    // Catalog: direct media URL; YouTube: empty (engine uses provider fields)
+    mediaUrl: row?.media_url || '',
+    sourceTitleId: isYoutube ? 0 : Number(row?.source_title_id || 0),
+    sourceTitleName: row?.source_title_name || '',
+    sourceTitleAliases: buildUniquePartyAliases([row?.source_title_name]),
+    coverUrl: row?.cover_url || '',
+    previewStartSec: 0,
+    // Provider fields (used by PartyYouTubePlayer and resolvePlaybackSource)
+    provider,
+    sourceKind: row?.source_kind || PARTY_TEMPLATE_ITEM_SOURCE_KIND.CATALOG,
+    playbackStatus: row?.playback_status || PARTY_TEMPLATE_PLAYBACK_STATUS.UNKNOWN,
+    providerMediaId: row?.provider_media_id || null,
+    providerCollectionId: row?.provider_collection_id || null,
+    providerUrl: row?.provider_url || null,
+    durationSec: row?.duration_sec ?? null,
+  };
+}
+
+/**
+ * Returns true when a mapped template song is usable in the runtime pool.
+ * Catalog: must have a direct media URL.
+ * YouTube: playbackStatus must be 'ready'.
+ */
+function isRuntimePlayableSong(song) {
+  if (song.provider === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE) {
+    return isYoutubeItemPlayable(song);
+  }
+  // Catalog fallback — check playback_status first, then URL shape
+  if (song.playbackStatus === PARTY_TEMPLATE_PLAYBACK_STATUS.READY) return true;
+  if (song.playbackStatus === PARTY_TEMPLATE_PLAYBACK_STATUS.BLOCKED) return false;
+  return Boolean(song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+}
+
 function mapPartySongPreset(record) {
   const items = Array.isArray(record?.party_song_preset_items) ? record.party_song_preset_items : [];
 
@@ -849,8 +908,8 @@ export async function fetchPartyTemplateSongPool(templateId) {
     }
 
     return (data || [])
-      .map(mapPartyPresetSongItem)
-      .filter((song) => song.id && song.sourceTitleId && song.mediaUrl && isDirectPartyMediaUrl(song.mediaUrl));
+      .map(mapPartyTemplateSongItem)
+      .filter(isRuntimePlayableSong);
   });
 }
 
@@ -935,6 +994,13 @@ function mapPartyTemplate(row) {
     tags: Array.isArray(row?.tags) ? row.tags : [],
     createdAt: row?.created_at || '',
     updatedAt: row?.updated_at || '',
+    // YouTube playlist snapshot metadata
+    youtubeSourceUrl: row?.youtube_source_url || null,
+    youtubePlaylistId: row?.youtube_playlist_id || null,
+    youtubeSyncMode: row?.youtube_sync_mode || null,
+    lastSyncedAt: row?.last_synced_at || null,
+    importStatus: row?.import_status || null,
+    importError: row?.import_error || null,
   };
 }
 
@@ -1060,7 +1126,7 @@ export async function createPartyTemplate(templateData, items = [], creatorName 
       visibility: templateData.visibility || 'public',
       mode_scope: templateData.modeScope || 'all',
       default_preset_id: templateData.presetId || PARTY_TEMPLATE_DEFAULT_PRESET_ID,
-      source_type: 'catalog',
+      source_type: templateData.sourceType || 'catalog',
       is_official: false,
       tags: Array.isArray(templateData.tags) ? templateData.tags : [],
     })
@@ -1072,7 +1138,7 @@ export async function createPartyTemplate(templateData, items = [], creatorName 
   if (items.length > 0) {
     const rows = items.map((item, index) => ({
       template_id: tpl.id,
-      song_id: item.song_id ?? item.songId,
+      song_id: item.song_id ?? item.songId ?? null,
       source_title_id: item.source_title_id ?? item.sourceTitleId ?? null,
       source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
       song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
@@ -1081,6 +1147,17 @@ export async function createPartyTemplate(templateData, items = [], creatorName 
       media_url: item.media_url ?? item.mediaUrl ?? '',
       cover_url: item.cover_url ?? item.coverUrl ?? '',
       position: index,
+      provider: item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG,
+      provider_media_id: item.provider_media_id ?? item.providerMediaId ?? null,
+      provider_collection_id: item.provider_collection_id ?? item.providerCollectionId ?? null,
+      provider_url: item.provider_url ?? item.providerUrl ?? null,
+      source_kind: item.source_kind ?? item.sourceKind ?? PARTY_TEMPLATE_ITEM_SOURCE_KIND.CATALOG,
+      playback_status: item.playback_status ?? item.playbackStatus ?? PARTY_TEMPLATE_PLAYBACK_STATUS.UNKNOWN,
+      duration_sec: item.duration_sec ?? item.durationSec ?? null,
+      metadata_json: item.metadata_json ?? item.metadataJson ?? {},
+      imported_at: item.imported_at ?? item.importedAt ?? null,
+      import_source_position: item.import_source_position ?? item.importSourcePosition ?? null,
+      sync_state: item.sync_state ?? item.syncState ?? null,
     }));
 
     const { error: itemsError } = await supabase
@@ -1108,6 +1185,7 @@ export async function updatePartyTemplate(templateId, updates) {
   if (updates.modeScope !== undefined)   allowed.mode_scope = updates.modeScope;
   if (updates.presetId !== undefined)    allowed.default_preset_id = updates.presetId || PARTY_TEMPLATE_DEFAULT_PRESET_ID;
   if (updates.tags !== undefined)        allowed.tags = Array.isArray(updates.tags) ? updates.tags : [];
+  if (updates.sourceType !== undefined)  allowed.source_type = updates.sourceType;
 
   const { data, error } = await supabase
     .from('party_song_templates')
@@ -1120,6 +1198,20 @@ export async function updatePartyTemplate(templateId, updates) {
   return mapPartyTemplate(data);
 }
 
+export async function deletePartyTemplate(templateId) {
+  if (!supabase || !templateId) throw new Error('Invalid arguments');
+
+  const { error } = await supabase
+    .from('party_song_templates')
+    .delete()
+    .eq('id', templateId);
+
+  if (error) throw error;
+
+  partyTemplateSongPoolCache.delete(String(templateId).trim());
+  return true;
+}
+
 /**
  * Atomically replaces all items of a template via a DB transaction RPC.
  * Uses replace_party_template_items(bigint, jsonb) — delete + insert in one PG transaction.
@@ -1129,7 +1221,8 @@ export async function replacePartyTemplateItems(templateId, items = []) {
   if (!supabase || !templateId) throw new Error('Invalid arguments');
 
   const rows = items.map((item, index) => ({
-    song_id: String(item.song_id ?? item.songId ?? ''),
+    // Catalog fields
+    song_id: item.song_id != null ? String(item.song_id) : (item.songId != null ? String(item.songId) : ''),
     source_title_id: String(item.source_title_id ?? item.sourceTitleId ?? ''),
     source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
     song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
@@ -1138,15 +1231,280 @@ export async function replacePartyTemplateItems(templateId, items = []) {
     media_url: item.media_url ?? item.mediaUrl ?? '',
     cover_url: item.cover_url ?? item.coverUrl ?? '',
     position: index,
+    // Provider fields (YouTube items)
+    provider: item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG,
+    provider_media_id: item.provider_media_id ?? item.providerMediaId ?? '',
+    provider_collection_id: item.provider_collection_id ?? item.providerCollectionId ?? '',
+    provider_url: item.provider_url ?? item.providerUrl ?? '',
+    source_kind: item.source_kind ?? item.sourceKind ?? PARTY_TEMPLATE_ITEM_SOURCE_KIND.CATALOG,
+    playback_status: item.playback_status ?? item.playbackStatus ?? PARTY_TEMPLATE_PLAYBACK_STATUS.UNKNOWN,
+    duration_sec: item.duration_sec ?? item.durationSec ?? '',
+    metadata_json: item.metadata_json ?? item.metadataJson ?? {},
+    imported_at: item.imported_at ?? item.importedAt ?? '',
+    import_source_position: item.import_source_position ?? item.importSourcePosition ?? '',
+    sync_state: item.sync_state ?? item.syncState ?? '',
   }));
 
   const { error } = await supabase.rpc('replace_party_template_items', {
     p_template_id: Number(templateId),
-    p_items: JSON.stringify(rows),
+    p_items: rows,
   });
 
   if (error) throw error;
+
+  // Invalidate template song pool cache so next play reflects new items
+  partyTemplateSongPoolCache.delete(String(templateId).trim());
   return rows;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// YouTube import / sync
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Calls the party-youtube-resolve Edge Function and returns the raw result.
+ * @returns {{ type: 'video'|'playlist', video?, playlist? }}
+ */
+async function maybeClearPartyAuthSession() {
+  if (!supabase?.auth?.signOut) {
+    return;
+  }
+
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    // Best effort only.
+  }
+}
+
+async function ensurePartyAuthenticated({ forceRefresh = false } = {}) {
+  if (!supabase) throw new Error('No database connection');
+
+  const getMissingAuthError = (message = 'Please sign in again to use YouTube import.') => {
+    const err = new Error(message);
+    err.code = 'auth_required';
+    err.status = 401;
+    return err;
+  };
+
+  const validateSession = async (session) => {
+    const accessToken = session?.access_token || null;
+    if (!accessToken) {
+      return { user: null, valid: false };
+    }
+
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (error || !data?.user) {
+      return { user: null, valid: false };
+    }
+
+    return { user: data.user, valid: true };
+  };
+
+  if (!forceRefresh) {
+    const { data: authData, error: authError } = await supabase.auth.getSession();
+    if (authError) {
+      throw authError;
+    }
+
+    const session = authData?.session || null;
+    const accessToken = session?.access_token || null;
+    if (!accessToken) {
+      throw getMissingAuthError();
+    }
+
+    const expiresAtMs = Number(session?.expires_at || 0) * 1000;
+    if (expiresAtMs && expiresAtMs <= (Date.now() + 60_000)) {
+      return ensurePartyAuthenticated({ forceRefresh: true });
+    }
+
+    const validation = await validateSession(session);
+    if (validation.valid) {
+      return validation.user;
+    }
+  }
+
+  const { data: refreshedData, error: refreshedError } = await supabase.auth.refreshSession();
+  if (refreshedError) {
+    await maybeClearPartyAuthSession();
+    throw getMissingAuthError();
+  }
+
+  const refreshedSession = refreshedData?.session || null;
+  const refreshedValidation = await validateSession(refreshedSession);
+  if (!refreshedValidation.valid) {
+    await maybeClearPartyAuthSession();
+    throw getMissingAuthError();
+  }
+
+  return refreshedValidation.user;
+}
+
+async function invokePartyYoutubeResolve(body) {
+  return supabase.functions.invoke('party-youtube-resolve', { body });
+}
+
+async function parsePartyYoutubeInvokeError(error) {
+  let message = error?.message || 'YouTube resolve failed';
+  let code = null;
+  let status = null;
+
+  const response = error?.context;
+  if (response) {
+    status = Number(response?.status || response?.code || 0) || null;
+  }
+
+  if (response && typeof response.json === 'function') {
+    try {
+      const payload = await response.json();
+      if (payload?.error) {
+        message = payload.error;
+      } else if (payload?.message) {
+        message = payload.message;
+      }
+      if (payload?.code) {
+        code = payload.code;
+      }
+    } catch {
+      // Fall back to the generic SDK error message.
+    }
+  } else if (response?.code) {
+    code = response.code;
+  }
+
+  return { message, code, status };
+}
+
+export async function resolvePartyYoutubeUrl(url, { maxItems = 100, pageToken = null } = {}) {
+  if (!supabase) throw new Error('No database connection');
+
+  const requestBody = { url, maxItems, pageToken };
+  await ensurePartyAuthenticated();
+  let { data, error } = await invokePartyYoutubeResolve(requestBody);
+
+  if (error) {
+    let parsedError = await parsePartyYoutubeInvokeError(error);
+    const looksLikeJwtFailure = parsedError.status === 401
+      || parsedError.code === 401
+      || String(parsedError.message || '').toLowerCase().includes('invalid jwt');
+
+    if (looksLikeJwtFailure) {
+      await ensurePartyAuthenticated({ forceRefresh: true });
+      ({ data, error } = await invokePartyYoutubeResolve(requestBody));
+
+      if (!error) {
+        return data;
+      }
+
+      parsedError = await parsePartyYoutubeInvokeError(error);
+    }
+
+    const err = new Error(parsedError.message);
+    if (parsedError.code) err.code = parsedError.code;
+    if (parsedError.status) err.status = parsedError.status;
+    throw err;
+  }
+
+  return data;
+}
+
+/**
+ * Resolves a YouTube video URL → normalized template item (not saved to DB).
+ * Caller is responsible for adding to the item list and saving via replacePartyTemplateItems.
+ */
+export async function importPartyTemplateYoutubeVideo(url) {
+  const result = await resolvePartyYoutubeUrl(url);
+  if (result?.type !== 'video' || !result.video) {
+    throw new Error('URL did not resolve to a YouTube video.');
+  }
+  return normalizeYoutubeVideoPayload(result.video, 0);
+}
+
+/**
+ * Resolves a YouTube playlist URL → { playlist metadata, normalized items[] }.
+ * Not saved to DB — caller decides position offset and calls replacePartyTemplateItems.
+ *
+ * @param {string} url
+ * @param {{ maxItems?: number, pageToken?: string }} options
+ */
+export async function importPartyTemplateYoutubePlaylist(url, { maxItems = 100, pageToken = null } = {}) {
+  const result = await resolvePartyYoutubeUrl(url, { maxItems, pageToken });
+  if (result?.type !== 'playlist' || !result.playlist) {
+    throw new Error('URL did not resolve to a YouTube playlist.');
+  }
+  return normalizeYoutubePlaylistPayload(result.playlist, 0);
+}
+
+/**
+ * Re-syncs an existing YouTube playlist template from the source playlist.
+ * Fetches fresh metadata, preserves manual additions (catalog items), replaces YouTube items.
+ *
+ * @param {string|number} templateId
+ * @param {object[]} currentItems - current UI items (used to preserve catalog items)
+ */
+export async function syncPartyTemplateYoutubePlaylist(templateId, currentItems = []) {
+  if (!supabase || !templateId) throw new Error('Invalid arguments');
+
+  // 1. Fetch the template to get the playlist URL
+  const template = await fetchPartyTemplateDetail(templateId);
+  if (!template) throw new Error('Template not found');
+  if (!template.youtubePlaylistId && !template.youtubeSourceUrl) {
+    throw new Error('Template has no YouTube playlist to sync');
+  }
+
+  const syncUrl = template.youtubeSourceUrl
+    || `https://www.youtube.com/playlist?list=${template.youtubePlaylistId}`;
+
+  // 2. Mark import_status = importing
+  await supabase
+    .from('party_song_templates')
+    .update({ import_status: 'importing', import_error: null })
+    .eq('id', templateId)
+    .then(() => null);
+
+  try {
+    // 3. Fetch fresh playlist data
+    const { playlist, items: freshYoutubeItems } = await importPartyTemplateYoutubePlaylist(
+      syncUrl,
+      { maxItems: 200 }
+    );
+
+    // 4. Keep catalog items, replace YouTube items with fresh data
+    const catalogItems = currentItems.filter(
+      (item) => (item.provider || PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+    );
+    const mergedItems = [
+      ...catalogItems.map((item, i) => ({ ...item, position: i })),
+      ...freshYoutubeItems.map((item, i) => ({ ...item, position: catalogItems.length + i })),
+    ];
+
+    // 5. Persist
+    await replacePartyTemplateItems(templateId, mergedItems);
+
+    // 6. Update template header with sync info
+    const hasBlocked = freshYoutubeItems.some(
+      (item) => item.playback_status === PARTY_TEMPLATE_PLAYBACK_STATUS.BLOCKED
+    );
+    await supabase
+      .from('party_song_templates')
+      .update({
+        import_status: hasBlocked ? 'partial' : 'done',
+        last_synced_at: new Date().toISOString(),
+        youtube_playlist_id: playlist.playlistId,
+        import_error: null,
+      })
+      .eq('id', templateId)
+      .then(() => null);
+
+    return { playlist, items: mergedItems };
+  } catch (err) {
+    await supabase
+      .from('party_song_templates')
+      .update({ import_status: 'failed', import_error: err?.message || 'Sync failed' })
+      .eq('id', templateId)
+      .then(() => null);
+    throw err;
+  }
 }
 
 /**

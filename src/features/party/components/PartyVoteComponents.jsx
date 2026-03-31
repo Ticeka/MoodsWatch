@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Play, RefreshCw, Swords, Volume2, VolumeX, Zap } from 'lucide-react';
 import { resumePartyAudioContext } from '@/features/party/lib/partyAudio';
+import { PartyYouTubePlayer } from './PartyYouTubePlayer';
 import {
   formatClipSeconds,
   getPartyBufferedPreviewMs,
@@ -80,8 +81,12 @@ export function TrackPlayback({
   sideAction = null,
   pick,
 }) {
+  const isYouTubeSong = songData?.provider === 'youtube' && Boolean(songData?.providerMediaId);
   const videoRef = useRef(null);
   const progressFillRef = useRef(null);
+  const ytTimerRef = useRef(null);
+  const ytStartedAtRef = useRef(null);
+  const ytCompletedRef = useRef(false);
   const [volume, setVolume] = useState(() => readPartyAudioVolume());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [bufferReady, setBufferReady] = useState(false);
@@ -91,6 +96,7 @@ export function TrackPlayback({
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [playbackElapsedMs, setPlaybackElapsedMs] = useState(0);
+  const [ytPlaying, setYtPlaying] = useState(false);
   const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0));
   const isMuted = normalizedVolume <= 0;
 
@@ -111,6 +117,47 @@ export function TrackPlayback({
     video.volume = normalizedVolume / 100;
     video.muted = isMuted;
   }, [isMuted, normalizedVolume]);
+
+  // Reset YouTube timer state when song changes
+  useEffect(() => {
+    if (!isYouTubeSong) return;
+    ytStartedAtRef.current = null;
+    ytCompletedRef.current = false;
+    setYtPlaying(false);
+    setPlaybackElapsedMs(0);
+    if (ytTimerRef.current) window.clearInterval(ytTimerRef.current);
+    if (progressFillRef.current) progressFillRef.current.style.transform = 'scaleX(0)';
+    return () => { if (ytTimerRef.current) window.clearInterval(ytTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [songData?.providerMediaId]);
+
+  const handleYtReadyVote = useCallback(() => {
+    if (ytStartedAtRef.current || ytCompletedRef.current) return;
+    const durationMs = Math.max(1, Number(totalSec || 12)) * 1000;
+    ytStartedAtRef.current = Date.now();
+    setYtPlaying(true);
+    if (ytTimerRef.current) window.clearInterval(ytTimerRef.current);
+    ytTimerRef.current = window.setInterval(() => {
+      if (!ytStartedAtRef.current || ytCompletedRef.current) return;
+      const elapsed = Date.now() - ytStartedAtRef.current;
+      const clamped = Math.min(durationMs, elapsed);
+      setPlaybackElapsedMs(clamped);
+      if (progressFillRef.current) {
+        progressFillRef.current.style.transform = `scaleX(${Math.min(1, clamped / durationMs)})`;
+      }
+      if (elapsed >= durationMs) {
+        ytCompletedRef.current = true;
+        window.clearInterval(ytTimerRef.current);
+        setYtPlaying(false);
+        onPlaybackComplete?.(Date.now());
+      }
+    }, 80);
+  }, [totalSec, onPlaybackComplete]);
+
+  const handleYtErrorVote = useCallback(() => {
+    setPlaybackFailed(true);
+    setYtPlaying(false);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -369,7 +416,34 @@ export function TrackPlayback({
           <span>{pick(`กำลังเล่น TRACK ${songKey}`, `NOW PLAYING TRACK ${songKey}`)}</span>
         </div>
 
-        {songData?.mediaUrl ? (
+        {isYouTubeSong ? (
+          <div className="track-playback-video-wrapper">
+            <PartyYouTubePlayer
+              key={`yt-vote-${songData.providerMediaId}`}
+              videoId={songData.providerMediaId}
+              playing={isPlaying && ytPlaying}
+              seekOffsetSec={0}
+              muted={isMuted}
+              onReady={handleYtReadyVote}
+              onError={handleYtErrorVote}
+            />
+            {playbackFailed ? (
+              <div className="track-playback-video-overlay" aria-live="polite">
+                <div className="track-playback-status-card is-error">
+                  <RefreshCw size={18} />
+                  <strong>{pick('โหลดคลิปไม่สำเร็จ', 'Clip failed to load')}</strong>
+                </div>
+              </div>
+            ) : !ytPlaying && !ytCompletedRef.current ? (
+              <div className="track-playback-video-overlay" aria-live="polite">
+                <div className="track-playback-status-card">
+                  <Loader2 size={18} className="party-spin" />
+                  <strong>{pick('กำลังโหลด YouTube...', 'Loading YouTube…')}</strong>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : songData?.mediaUrl ? (
           <div className={`track-playback-video-wrapper ${isWaitingForStart ? 'is-loading' : ''} ${bufferingPlayback ? 'is-buffering' : ''} ${playbackFailed ? 'is-failed' : ''}`}>
             <video
               ref={videoRef}
@@ -670,6 +744,7 @@ export function RevealResult({ battle, allSongs, secondsLeft, revealSec, freezeM
 
 export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost }) {
   const champion = allSongs[championId];
+  const isYouTubeChampion = champion?.provider === 'youtube' && Boolean(champion?.providerMediaId);
   const [audioCtx] = useState(() => typeof window !== 'undefined' && window.AudioContext ? new (window.AudioContext || window.webkitAudioContext)() : null);
   const champVideoRef = useRef(null);
 
@@ -714,7 +789,18 @@ export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost
         <p className="champion-subtitle">{pick('เพลงสุดท้ายที่ยืนอยู่ในแบทเทิลนี้', 'The last track standing in this battle')}</p>
       </div>
       <div className="champion-card shine-effect">
-        {champion?.mediaUrl ? (
+        {isYouTubeChampion ? (
+          <div className="champion-media-frame">
+            <PartyYouTubePlayer
+              key={`yt-champion-${champion.providerMediaId}`}
+              videoId={champion.providerMediaId}
+              playing
+              seekOffsetSec={0}
+              muted={readPartyAudioVolume() <= 0}
+              className="champion-cover-video"
+            />
+          </div>
+        ) : champion?.mediaUrl ? (
           <div className="champion-media-frame">
             <video ref={champVideoRef} src={champion.mediaUrl} loop playsInline controls className="champion-cover-video" />
           </div>

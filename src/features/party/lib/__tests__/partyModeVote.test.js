@@ -24,6 +24,20 @@ function makeSong(id) {
   };
 }
 
+function makeYoutubeSong(videoId) {
+  return {
+    id: 0,
+    provider: 'youtube',
+    providerMediaId: videoId,
+    songTitle: `YT ${videoId}`,
+    sourceTitleName: `YT Source ${videoId}`,
+    artistName: 'YT Artist',
+    mediaUrl: '',
+    coverUrl: `https://img.youtube.com/${videoId}.jpg`,
+    themeType: 'OP',
+  };
+}
+
 const FOUR_SONGS = ['a', 'b', 'c', 'd'].map(makeSong);
 const TWO_SONGS = ['x', 'y'].map(makeSong);
 const ONE_SONG = ['lone'].map(makeSong);
@@ -82,6 +96,25 @@ describe('buildPartyVoteSnapshot', () => {
     expect(snap.settings.voteSec).toBe(VOTE_PHASE_TIMING.voteSec);
     expect(snap.settings.revealSec).toBe(VOTE_PHASE_TIMING.revealSec);
     expect(snap.settings.freezeMs).toBe(VOTE_PHASE_TIMING.freezeMs);
+  });
+
+  test('keeps YouTube songs distinct by providerMediaId instead of colliding on id=0', () => {
+    const youtubeSongs = [
+      makeYoutubeSong('video-a'),
+      makeYoutubeSong('video-b'),
+      makeYoutubeSong('video-c'),
+      makeYoutubeSong('video-d'),
+    ];
+
+    const snap = buildPartyVoteSnapshot(youtubeSongs, {});
+    const allSongIds = Object.keys(snap.allSongs);
+
+    expect(allSongIds).toHaveLength(4);
+    expect(allSongIds).toContain('yt:video-a');
+    expect(allSongIds).toContain('yt:video-b');
+    expect(snap.currentBattle.songA).not.toBe(snap.currentBattle.songB);
+    expect(snap.allSongs[snap.currentBattle.songA]?.providerMediaId).toBeTruthy();
+    expect(snap.allSongs[snap.currentBattle.songB]?.providerMediaId).toBeTruthy();
   });
 });
 

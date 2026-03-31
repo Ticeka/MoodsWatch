@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Copy, ListEnd, Music, Loader2, Star, Heart, Eye, Pencil } from 'lucide-react';
+import { Play, Copy, ListEnd, Music, Loader2, Star, Heart, Eye, Pencil, Video, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getPartyPresetById } from '@/features/party/lib/partyEngine';
@@ -9,7 +9,12 @@ import {
   recordPartyTemplateView,
   togglePartyTemplateLike,
   checkPartyTemplateLiked,
+  syncPartyTemplateYoutubePlaylist,
+  replacePartyTemplateItems,
+  deletePartyTemplate,
 } from '@/features/party/lib/partyRemote';
+import { isYoutubeTemplateItem, getYoutubePlaybackLabel, getYoutubePlaybackStatusClass } from '@/features/party/lib/partyYoutube';
+import { isTemplateItemImportedFromPlaylist } from '@/features/party/lib/partyTemplateUtils';
 import {
   getTemplatePlayableCount,
   mapTemplateItemFromDb,
@@ -31,6 +36,7 @@ export function PartyTemplateDetailPage() {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [liking, setLiking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!templateId) return;
@@ -81,6 +87,22 @@ export function PartyTemplateDetailPage() {
     navigate(`/party/templates/create?base=${template.id}`);
   };
 
+  const handleSync = async () => {
+    if (!template || syncing) return;
+    setSyncing(true);
+    try {
+      const currentItems = (template.items || []).map(mapTemplateItemFromDb);
+      const { items: updatedItems } = await syncPartyTemplateYoutubePlaylist(template.id, currentItems);
+      await replacePartyTemplateItems(template.id, updatedItems);
+      const refreshed = await fetchPartyTemplateDetail(template.id);
+      if (refreshed) setTemplate(refreshed);
+    } catch {
+      // ignore
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleLike = async () => {
     if (!user) {
       navigate('/login');
@@ -96,6 +118,23 @@ export function PartyTemplateDetailPage() {
       // ignore
     } finally {
       setLiking(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!template || !user?.id || user.id !== template.ownerUserId) return;
+    const confirmed = window.confirm(
+      pick(
+        `ลบ template "${template.name}" ใช่ไหม? การลบนี้ย้อนกลับไม่ได้`,
+        `Delete "${template.name}"? This action cannot be undone.`,
+      ),
+    );
+    if (!confirmed) return;
+    try {
+      await deletePartyTemplate(template.id);
+      navigate('/party/templates');
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -196,6 +235,17 @@ export function PartyTemplateDetailPage() {
                     <Pencil size={16} /> {pick('แก้ไข Template', 'Edit Template')}
                   </button>
                 )}
+                {user?.id && user.id === template.ownerUserId && (
+                  <button className="btn-use-base btn-use-base-danger" onClick={handleDelete}>
+                    <Trash2 size={16} /> {pick('ลบ Template', 'Delete Template')}
+                  </button>
+                )}
+                {user?.id && user.id === template.ownerUserId && mappedItems.some(isTemplateItemImportedFromPlaylist) && (
+                  <button className="btn-use-base" onClick={handleSync} disabled={syncing}>
+                    <RefreshCw size={16} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} />
+                    {syncing ? pick('กำลัง Sync...', 'Syncing...') : pick('Sync YouTube Playlist', 'Sync YouTube Playlist')}
+                  </button>
+                )}
                 <button
                   className="btn-use-base"
                   onClick={handleLike}
@@ -258,8 +308,29 @@ export function PartyTemplateDetailPage() {
                       </p>
                     </div>
                     <div className="ptd-song-provider">
-                      <Music size={12} />
-                      Catalog
+                      {isYoutubeTemplateItem(item) ? (
+                        <>
+                          <Video size={12} style={{ color: '#ff4444', flexShrink: 0 }} />
+                          <div className="ptd-song-provider-copy">
+                            {(() => {
+                              const sc = getYoutubePlaybackStatusClass(item.playbackStatus);
+                              return (
+                                <span className={`pt-yt-status-badge pt-yt-status-${sc}`}>
+                                  {sc === 'ready' && <CheckCircle size={11} />}
+                                  {sc === 'limited' && <AlertTriangle size={11} />}
+                                  {sc === 'blocked' && <XCircle size={11} />}
+                                  {getYoutubePlaybackLabel(item.playbackStatus, pick)}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Music size={12} />
+                          Catalog
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}

@@ -1,4 +1,4 @@
-import { shufflePartyItems } from './partyEngine';
+import { getPartyRuntimeSongKey, shufflePartyItems } from './partyEngine';
 
 // ─── Timing constants (centralised — no magic numbers in components) ────────
 export const VOTE_PHASE_TIMING = {
@@ -51,7 +51,7 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
 
   const allSongs = {};
   shuffled.forEach(song => {
-    const songId = String(song.id || '');
+    const songId = getPartyRuntimeSongKey(song);
     allSongs[songId] = {
       id: songId,
       themeType: song.themeType || 'OP',
@@ -61,12 +61,14 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
       sourceTitleName: song.sourceTitleName || '',
       mediaUrl: song.mediaUrl || '',
       coverUrl: song.coverUrl || '',
+      provider: song.provider || 'catalog',
+      providerMediaId: song.providerMediaId || null,
     };
   });
 
-  const songA_id = String(shuffled[0].id || '');
-  const songB_id = String(shuffled[1].id || '');
-  const queue = shuffled.slice(2).map((song) => String(song.id || ''));
+  const songA_id = getPartyRuntimeSongKey(shuffled[0]);
+  const songB_id = getPartyRuntimeSongKey(shuffled[1]);
+  const queue = shuffled.slice(2).map((song) => getPartyRuntimeSongKey(song));
   const totalBattles = poolSize - 1;
   const now = Date.now();
 
