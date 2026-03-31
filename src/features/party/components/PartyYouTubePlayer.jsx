@@ -72,6 +72,8 @@ export function PartyYouTubePlayer({
   playing = false,
   seekOffsetSec = 0,
   muted = false,
+  volume = 85,
+  allowPointerEvents = true,
   onReady,
   onError,
   onEnded,
@@ -81,12 +83,14 @@ export function PartyYouTubePlayer({
   const playerRef = useRef(null);
   const seekAppliedRef = useRef(false);
   const [playerState, setPlayerState] = useState('loading'); // loading | ready | error
+  const normalizedVolume = Math.min(100, Math.max(0, Number(volume) || 0));
 
   const handleReady = useCallback((event) => {
     const player = event.target;
     playerRef.current = player;
     seekAppliedRef.current = false;
 
+    player.setVolume(normalizedVolume);
     if (muted) player.mute();
     else player.unMute();
 
@@ -103,7 +107,7 @@ export function PartyYouTubePlayer({
 
     setPlayerState('ready');
     onReady?.(player);
-  }, [playing, seekOffsetSec, muted, onReady]);
+  }, [muted, normalizedVolume, onReady, playing, seekOffsetSec]);
 
   const handleStateChange = useCallback((event) => {
     if (event.data === YT_PLAYER_STATES.ENDED) {
@@ -183,12 +187,18 @@ export function PartyYouTubePlayer({
   useEffect(() => {
     const player = playerRef.current;
     if (!player || playerState !== 'ready') return;
+    player.setVolume(normalizedVolume);
+  }, [normalizedVolume, playerState]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || playerState !== 'ready') return;
     if (muted) player.mute();
     else player.unMute();
   }, [muted, playerState]);
 
   return (
-    <div className={`party-yt-player-wrapper${className ? ` ${className}` : ''}`}>
+    <div className={`party-yt-player-wrapper${allowPointerEvents ? '' : ' is-noninteractive'}${className ? ` ${className}` : ''}`}>
       {/* YT API creates an iframe here */}
       <div ref={containerRef} className="party-yt-player-container" />
 

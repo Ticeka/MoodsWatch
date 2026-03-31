@@ -226,6 +226,21 @@
   transition: box-shadow 0.3s ease;
   position: relative;
 }
+.track-playback-video-wrapper .party-yt-player-wrapper,
+.track-playback-video-wrapper .party-yt-player-container,
+.track-playback-video-wrapper .party-yt-player-container iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.track-playback-video-wrapper .party-yt-player-wrapper {
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+.track-playback-video-wrapper .party-yt-player-wrapper.is-noninteractive,
+.track-playback-video-wrapper .party-yt-player-wrapper.is-noninteractive iframe {
+  pointer-events: none;
+}
 .vote-phase-playback.is-a .track-playback-video-wrapper {
   box-shadow: 0 0 80px rgba(0,204,255,0.4), 0 0 20px rgba(0,204,255,0.6);
   border-color: #00ccff;

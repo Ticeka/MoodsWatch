@@ -538,6 +538,7 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
             videoId={round.providerMediaId}
             playing={isPlaying && !completedRef.current}
             seekOffsetSec={Number(round.previewStartSec || 0)}
+            volume={normalizedVolume}
             muted={isMuted}
             onReady={handleYtReady}
             onError={handleYtError}
@@ -1188,6 +1189,7 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
                   videoId={round.providerMediaId}
                   playing
                   seekOffsetSec={0}
+                  volume={readPartyAudioVolume()}
                   muted={false}
                   onReady={() => onPlaybackStarted?.(Date.now())}
                 />

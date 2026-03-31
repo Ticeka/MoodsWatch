@@ -503,7 +503,9 @@ export function TrackPlayback({
               videoId={songData.providerMediaId}
               playing={isPlaying && ytPlaying}
               seekOffsetSec={0}
+              volume={normalizedVolume}
               muted={isMuted}
+              allowPointerEvents={false}
               onReady={handleYtReadyVote}
               onError={handleYtErrorVote}
               onEnded={handleYtEndedVote}
@@ -532,7 +534,6 @@ export function TrackPlayback({
               className="track-playback-video"
               playsInline
               preload="metadata"
-              controls={playbackBlocked || playbackFailed}
             />
             <div className="track-playback-video-overlay" aria-live="polite">
               {isWaitingForStart ? (
@@ -877,6 +878,7 @@ export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost
               videoId={champion.providerMediaId}
               playing
               seekOffsetSec={0}
+              volume={readPartyAudioVolume()}
               muted={readPartyAudioVolume() <= 0}
               className="champion-cover-video"
             />
