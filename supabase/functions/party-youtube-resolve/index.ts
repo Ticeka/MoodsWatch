@@ -10,6 +10,8 @@ type YoutubeVideoResult = {
   videoId: string
   title: string
   channelTitle: string
+  description: string
+  tags: string[]
   thumbnailUrl: string | null
   durationSec: number | null
   playbackStatus: PlaybackStatus
@@ -27,6 +29,7 @@ type YoutubePlaylistResult = {
   playlistId: string
   title: string
   channelTitle: string
+  description: string
   thumbnailUrl: string | null
   totalItems: number
   items: YoutubePlaylistItem[]
@@ -213,6 +216,8 @@ async function resolveVideo(videoId: string, apiKey: string): Promise<YoutubeVid
     videoId,
     title: String(snippet.title || ''),
     channelTitle: String(snippet.channelTitle || ''),
+    description: String(snippet.description || ''),
+    tags: Array.isArray(snippet.tags) ? snippet.tags.map((tag) => String(tag || '')) : [],
     thumbnailUrl: buildThumbnailUrl(thumbnails, videoId),
     durationSec: parseDuration(String(contentDetails.duration || '')),
     playbackStatus,
@@ -330,6 +335,8 @@ async function resolvePlaylist(
       videoId: pi.videoId,
       title: pi.title,
       channelTitle: pi.channelTitle,
+      description: String(details?.description || ''),
+      tags: Array.isArray(details?.tags) ? details.tags : [],
       thumbnailUrl: pi.thumbnailUrl,
       durationSec: details?.durationSec ?? null,
       playbackStatus: details?.playbackStatus ?? 'unknown',
@@ -349,6 +356,7 @@ async function resolvePlaylist(
     playlistId,
     title: String(playlistSnippet.title || ''),
     channelTitle: String(playlistSnippet.channelTitle || ''),
+    description: String(playlistSnippet.description || ''),
     thumbnailUrl: coverThumbnail,
     totalItems,
     items,

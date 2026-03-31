@@ -1,12 +1,45 @@
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PARTY_ANSWER_GRACE_SEC = 3;
 
+function resolvePartyTemplateSourceIdentity(song = {}) {
+  const provider = String(song?.provider || '').trim().toLowerCase();
+  const sourceTitleId = Number(song?.sourceTitleId ?? song?.source_title_id ?? 0);
+  const sourceTitleName = String(song?.sourceTitleName ?? song?.source_title_name ?? '').trim();
+  const resolutionStatus = String(song?.sourceResolutionStatus ?? song?.source_resolution_status ?? '').trim().toLowerCase();
+  const resolvedSourceTitleId = Number(song?.resolvedSourceTitleId ?? song?.resolved_source_title_id ?? 0);
+  const resolvedSourceTitleName = String(song?.resolvedSourceTitleName ?? song?.resolved_source_title_name ?? '').trim();
+
+  if (provider !== 'youtube' && sourceTitleId > 0 && sourceTitleName) {
+    return {
+      answerableSourceTitleName: sourceTitleName,
+      classicSourceTitleId: sourceTitleId,
+      classicSourceTitleName: sourceTitleName,
+      classicSourceKey: `id:${sourceTitleId}`,
+      isClassicResolved: true,
+    };
+  }
+
+  const linkedResolvedId = resolvedSourceTitleId || (resolutionStatus === 'linked' ? sourceTitleId : 0);
+  const linkedResolvedName = resolvedSourceTitleName || (resolutionStatus === 'linked' ? sourceTitleName : '');
+  const isClassicResolved = resolutionStatus === 'linked'
+    && linkedResolvedId > 0
+    && Boolean(normalizePartyText(linkedResolvedName));
+
+  return {
+    answerableSourceTitleName: linkedResolvedName || resolvePartySourceTitleName(song),
+    classicSourceTitleId: isClassicResolved ? linkedResolvedId : 0,
+    classicSourceTitleName: isClassicResolved ? linkedResolvedName : '',
+    classicSourceKey: isClassicResolved ? `id:${linkedResolvedId}` : '',
+    isClassicResolved,
+  };
+}
+
 export const PARTY_PRESETS = [
   {
     id: 'party-classic',
     label: 'Party Classic',
     labelTh: 'Party Classic',
-    description: 'Listen to a clip and guess the source title from 4 choices.',
+    description: 'Listen to a clip and pick the correct answer from 4 choices.',
     descriptionTh: 'ฟังคลิปแล้วทายชื่อเรื่องจาก 4 ตัวเลือก',
     answerMode: 'choice',
     target: 'title',
@@ -102,6 +135,80 @@ export function buildUniquePartyAliases(values = []) {
   });
 
   return aliases;
+}
+
+export function resolvePartySourceTitleName(song) {
+  const rawValue = String(song?.sourceTitleName ?? song?.source_title_name ?? '').trim();
+  if (!rawValue) {
+    return '';
+  }
+
+  const sourceTitleId = Number(song?.sourceTitleId ?? song?.source_title_id ?? 0);
+  if (sourceTitleId > 0) {
+    return rawValue;
+  }
+
+  const provider = String(song?.provider || '').trim().toLowerCase();
+  const sourceKind = String(song?.sourceKind ?? song?.source_kind ?? '').trim().toLowerCase();
+  if (provider === 'youtube' || sourceKind.startsWith('youtube_')) {
+    const artistName = String(song?.artistName ?? song?.artist_name ?? '').trim();
+    const metadataChannelTitle = String(song?.metadataJson?.channelTitle ?? song?.metadata_json?.channelTitle ?? '').trim();
+    const normalizedRawValue = normalizePartyText(rawValue);
+    const matchesArtist = artistName && normalizedRawValue === normalizePartyText(artistName);
+    const matchesChannel = metadataChannelTitle && normalizedRawValue === normalizePartyText(metadataChannelTitle);
+    if (matchesArtist || matchesChannel) {
+      return '';
+    }
+  }
+
+  return rawValue;
+}
+
+export function resolvePartyChoiceIdentity(song = {}) {
+  const resolvedSource = resolvePartyTemplateSourceIdentity(song);
+  const songTitle = String(song?.songTitle ?? song?.song_title ?? '').trim();
+  const normalizedSongTitle = normalizePartyText(songTitle);
+
+  if (resolvedSource.isClassicResolved && resolvedSource.classicSourceKey && resolvedSource.classicSourceTitleName) {
+    return {
+      answerKey: resolvedSource.classicSourceKey,
+      answerLabel: resolvedSource.classicSourceTitleName,
+      answerTarget: 'source',
+      answerTargetLabel: 'Source title',
+      answerTargetLabelTh: 'ชื่อเรื่อง',
+      sourceTitleId: resolvedSource.classicSourceTitleId,
+    };
+  }
+
+  if (normalizedSongTitle) {
+    return {
+      answerKey: `song:${normalizedSongTitle}`,
+      answerLabel: songTitle,
+      answerTarget: 'song',
+      answerTargetLabel: 'Song title',
+      answerTargetLabelTh: 'ชื่อเพลง',
+      sourceTitleId: 0,
+    };
+  }
+
+  return {
+    answerKey: '',
+    answerLabel: '',
+    answerTarget: 'song',
+    answerTargetLabel: 'Song title',
+    answerTargetLabelTh: 'ชื่อเพลง',
+    sourceTitleId: 0,
+  };
+}
+
+export function getPartySourceKey(song) {
+  const sourceTitleId = Number(song?.sourceTitleId ?? song?.source_title_id ?? 0);
+  if (sourceTitleId > 0) {
+    return `id:${sourceTitleId}`;
+  }
+
+  const normalizedSourceTitle = normalizePartyText(resolvePartySourceTitleName(song));
+  return normalizedSourceTitle ? `name:${normalizedSourceTitle}` : '';
 }
 
 export function isDirectPartyMediaUrl(url) {
@@ -231,8 +338,14 @@ export function createPartySettings(input = {}) {
 }
 
 function buildChoiceOptions(correctSong, titlePool = []) {
+  const correctAnswerKey = correctSong.choiceAnswerKey || '';
+  const correctAnswerLabel = correctSong.choiceAnswerLabel || '';
+  if (!correctAnswerKey || !correctAnswerLabel) {
+    return null;
+  }
+
   const distractors = shufflePartyItems(
-    titlePool.filter((entry) => Number(entry.sourceTitleId) !== Number(correctSong.sourceTitleId))
+    titlePool.filter((entry) => entry.answerKey !== correctAnswerKey)
   ).slice(0, 3);
 
   if (distractors.length < 3) {
@@ -242,15 +355,19 @@ function buildChoiceOptions(correctSong, titlePool = []) {
   return shufflePartyItems([
     {
       id: makeId('party-option'),
-      label: correctSong.sourceTitleName,
-      value: correctSong.sourceTitleName,
-      sourceTitleId: correctSong.sourceTitleId,
+      label: correctAnswerLabel,
+      value: correctAnswerLabel,
+      answerKey: correctAnswerKey,
+      sourceKey: correctAnswerKey,
+      sourceTitleId: correctSong.choiceAnswerSourceTitleId || correctSong.classicSourceTitleId,
       isCorrect: true,
     },
     ...distractors.map((entry) => ({
       id: makeId('party-option'),
-      label: entry.sourceTitleName,
-      value: entry.sourceTitleName,
+      label: entry.answerLabel,
+      value: entry.answerLabel,
+      answerKey: entry.answerKey,
+      sourceKey: entry.answerKey,
       sourceTitleId: entry.sourceTitleId,
       isCorrect: false,
     })),
@@ -259,11 +376,27 @@ function buildChoiceOptions(correctSong, titlePool = []) {
 
 function buildRound(song, settings, titlePool) {
   const preset = getPartyPresetById(settings.presetId);
+  const resolvedSource = resolvePartyTemplateSourceIdentity(song);
+  const choiceIdentity = resolvePartyChoiceIdentity({ ...song, ...resolvedSource });
+  const sourceTitleName = resolvedSource.answerableSourceTitleName;
+  const sourceKey = resolvedSource.isClassicResolved ? resolvedSource.classicSourceKey : getPartySourceKey(song);
   const options = preset.answerMode === 'choice'
-    ? buildChoiceOptions(song, titlePool)
+    ? buildChoiceOptions({
+      ...song,
+      ...resolvedSource,
+      sourceKey,
+      sourceTitleName,
+      choiceAnswerKey: choiceIdentity.answerKey,
+      choiceAnswerLabel: choiceIdentity.answerLabel,
+      choiceAnswerSourceTitleId: choiceIdentity.sourceTitleId,
+    }, titlePool)
     : [];
 
-  if (preset.answerMode === 'choice' && !options) {
+  if (preset.answerMode === 'choice' && (!choiceIdentity.answerKey || !options)) {
+    return null;
+  }
+
+  if (preset.answerMode === 'dual' && !sourceTitleName) {
     return null;
   }
 
@@ -274,15 +407,19 @@ function buildRound(song, settings, titlePool) {
     artistName: song.artistName || '',
     songTitle: song.songTitle || '',
     songAliases: buildUniquePartyAliases(song.songAliases || [song.songTitle]),
-    sourceTitleId: Number(song.sourceTitleId || 0),
-    sourceTitleName: song.sourceTitleName || '',
-    sourceTitleAliases: buildUniquePartyAliases(song.sourceTitleAliases || [song.sourceTitleName]),
+    sourceKey,
+    sourceTitleId: resolvedSource.classicSourceTitleId || Number(song.sourceTitleId || 0),
+    sourceTitleName,
+    sourceTitleAliases: buildUniquePartyAliases(song.sourceTitleAliases || [sourceTitleName]),
     mediaUrl: song.mediaUrl || '',
     coverUrl: song.coverUrl || '',
     previewStartSec: Number(song.previewStartSec || 0),
     previewDurationSec: Number(settings.timePerRoundSec || 12),
     provider: song.provider || 'catalog',
     providerMediaId: song.providerMediaId || null,
+    choiceTarget: choiceIdentity.answerTarget || 'source',
+    choiceTargetLabel: choiceIdentity.answerTargetLabel || 'Source title',
+    choiceTargetLabelTh: choiceIdentity.answerTargetLabelTh || 'ชื่อเรื่อง',
     options,
   };
 }
@@ -290,20 +427,57 @@ function buildRound(song, settings, titlePool) {
 export function buildPartyMatchSnapshot(songs = [], settings = {}) {
   const normalizedSettings = createPartySettings(settings);
   const preset = getPartyPresetById(normalizedSettings.presetId);
+  const roundLimit = normalizedSettings.roundCount;
+  const normalizedSongs = Array.isArray(songs)
+    ? songs.map((song) => {
+      const resolvedSource = resolvePartyTemplateSourceIdentity(song);
+      const choiceIdentity = resolvePartyChoiceIdentity({ ...song, ...resolvedSource });
+      return {
+        ...song,
+        ...resolvedSource,
+        ...choiceIdentity,
+        sourceKey: getPartySourceKey(song),
+        sourceTitleName: resolvedSource.answerableSourceTitleName,
+      };
+    })
+    : [];
+  const eligibleSongs = normalizedSongs.filter((song) => {
+    const hasSongTitle = Boolean(normalizePartyText(song.songTitle));
+    const hasSourceTitle = Boolean(normalizePartyText(song.sourceTitleName));
+    if (preset.answerMode === 'choice') {
+      return hasSongTitle && Boolean(song.answerKey) && Boolean(song.answerLabel);
+    }
+    if (preset.answerMode === 'dual') {
+      return hasSongTitle && hasSourceTitle;
+    }
+    return hasSongTitle;
+  });
   const titlePool = Array.from(
     new Map(
-      songs.map((song) => [
-        Number(song.sourceTitleId || 0),
+      eligibleSongs.map((song) => [
+        song.answerKey,
         {
-          sourceTitleId: Number(song.sourceTitleId || 0),
-          sourceTitleName: song.sourceTitleName || '',
+          answerKey: song.answerKey,
+          answerLabel: song.answerLabel || '',
+          sourceTitleId: Number(song.sourceTitleId || song.classicSourceTitleId || 0),
         },
       ])
     ).values()
-  ).filter((entry) => entry.sourceTitleId && entry.sourceTitleName);
+  ).filter((entry) => entry.answerKey && entry.answerLabel);
 
-  const roundLimit = normalizedSettings.roundCount;
-  const orderedSongs = normalizedSettings.randomOrder ? shufflePartyItems(songs) : [...songs];
+  const requiredPoolSize = preset.answerMode === 'choice'
+    ? Math.max(5, roundLimit)
+    : roundLimit;
+
+  if (eligibleSongs.length < requiredPoolSize) {
+    throw new Error('Not enough playable songs to start this room.');
+  }
+
+  if (preset.answerMode === 'choice' && titlePool.length < 4) {
+    throw new Error('Not enough distinct answer choices to start this room.');
+  }
+
+  const orderedSongs = normalizedSettings.randomOrder ? shufflePartyItems(eligibleSongs) : [...eligibleSongs];
   const rounds = [];
 
   for (const song of orderedSongs) {
@@ -317,7 +491,7 @@ export function buildPartyMatchSnapshot(songs = [], settings = {}) {
     }
   }
 
-  if (rounds.length < Math.min(5, roundLimit)) {
+  if (rounds.length < roundLimit) {
     throw new Error('Not enough playable songs to start this room.');
   }
 

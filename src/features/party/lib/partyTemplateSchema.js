@@ -60,6 +60,26 @@ export const PARTY_TEMPLATE_PLAYBACK_STATUS = {
   UNKNOWN: 'unknown',
 };
 
+export const PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS = {
+  LINKED: 'linked',
+  SUGGESTED: 'suggested',
+  UNRESOLVED: 'unresolved',
+};
+
+export const PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE = {
+  EXACT: 'exact',
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+};
+
+export const PARTY_TEMPLATE_SOURCE_MATCH_METHOD = {
+  CATALOG_EXACT: 'catalog_exact',
+  ALIAS_MATCH: 'alias_match',
+  YOUTUBE_TITLE_PARSE: 'youtube_title_parse',
+  MANUAL: 'manual',
+};
+
 /**
  * Playlist sync modes.
  *   snapshot           — imported once, never auto-synced

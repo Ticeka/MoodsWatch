@@ -1,10 +1,21 @@
-import { isDirectPartyMediaUrl } from './partyEngine';
+import {
+  createPartySettings,
+  getPartyPresetById,
+  isDirectPartyMediaUrl,
+  normalizePartyText,
+  resolvePartyChoiceIdentity,
+  resolvePartySourceTitleName,
+} from './partyEngine';
 import {
   PARTY_TEMPLATE_MIN_SONGS,
   PARTY_TEMPLATE_MODE_SCOPE,
   PARTY_TEMPLATE_PLAYBACK_STATUS,
   PARTY_TEMPLATE_ITEM_PROVIDER,
   PARTY_TEMPLATE_ITEM_SOURCE_KIND,
+  PARTY_TEMPLATE_PRESET_IDS,
+  PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE,
+  PARTY_TEMPLATE_SOURCE_MATCH_METHOD,
+  PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS,
 } from './partyTemplateSchema';
 import { isYoutubeItemPlayable } from './partyYoutube';
 
@@ -99,6 +110,359 @@ export function getTemplatePlayableCount(items = []) {
     return 0;
   }
   return items.filter(isTemplateItemPlayable).length;
+}
+
+function getTemplateSongTitle(item = {}) {
+  return String(item.songTitle ?? item.song_title ?? item.title ?? '').trim();
+}
+
+function normalizeSourceResolutionStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED) {
+    return PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED;
+  }
+  if (normalized === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED) {
+    return PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED;
+  }
+  return PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED;
+}
+
+function normalizeSourceMatchConfidence(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (Object.values(PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE).includes(normalized)) {
+    return normalized;
+  }
+  return PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW;
+}
+
+function normalizeSourceMatchMethod(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (Object.values(PARTY_TEMPLATE_SOURCE_MATCH_METHOD).includes(normalized)) {
+    return normalized;
+  }
+  return PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE;
+}
+
+export function getTemplateResolvedSource(item = {}) {
+  const provider = String(item?.provider || '').trim().toLowerCase();
+  const sourceTitleId = Number(item?.sourceTitleId ?? item?.source_title_id ?? 0);
+  const sourceTitleName = String(item?.sourceTitleName ?? item?.source_title_name ?? '').trim();
+  const resolvedSourceTitleId = Number(item?.resolvedSourceTitleId ?? item?.resolved_source_title_id ?? 0);
+  const resolvedSourceTitleName = String(item?.resolvedSourceTitleName ?? item?.resolved_source_title_name ?? '').trim();
+  const fallbackAnswerableSourceTitle = resolvePartySourceTitleName(item);
+
+  if (provider !== PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE && sourceTitleId > 0) {
+    return {
+      sourceResolutionStatus: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED,
+      resolvedSourceTitleId: sourceTitleId,
+      resolvedSourceTitleName: sourceTitleName,
+      sourceMatchConfidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT,
+      sourceMatchMethod: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.CATALOG_EXACT,
+      answerableSourceTitleName: sourceTitleName || fallbackAnswerableSourceTitle,
+      isClassicResolved: Boolean(sourceTitleId && sourceTitleName),
+      resolvedSourceKey: sourceTitleId ? `id:${sourceTitleId}` : '',
+    };
+  }
+
+  const sourceResolutionStatus = normalizeSourceResolutionStatus(
+    item?.sourceResolutionStatus ?? item?.source_resolution_status,
+  );
+  const linkedResolvedId = resolvedSourceTitleId || (sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED ? sourceTitleId : 0);
+  const linkedResolvedName = resolvedSourceTitleName || (sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED ? sourceTitleName : '');
+  const isClassicResolved = sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+    && linkedResolvedId > 0
+    && Boolean(normalizePartyText(linkedResolvedName));
+
+  return {
+    sourceResolutionStatus,
+    resolvedSourceTitleId: linkedResolvedId || 0,
+    resolvedSourceTitleName: linkedResolvedName,
+    sourceMatchConfidence: normalizeSourceMatchConfidence(item?.sourceMatchConfidence ?? item?.source_match_confidence),
+    sourceMatchMethod: normalizeSourceMatchMethod(item?.sourceMatchMethod ?? item?.source_match_method),
+    answerableSourceTitleName: linkedResolvedName || fallbackAnswerableSourceTitle,
+    isClassicResolved,
+    resolvedSourceKey: isClassicResolved ? `id:${linkedResolvedId}` : '',
+  };
+}
+
+function createCompatibilityReason(code, params = {}) {
+  if (code === 'insufficient_playable_songs') {
+    return {
+      code,
+      message: `${params.label} needs at least ${params.requiredCount} playable songs, but this template only has ${params.actualCount}.`,
+      ...params,
+    };
+  }
+
+  if (code === 'insufficient_distinct_sources') {
+    return {
+      code,
+      message: `${params.label} needs at least ${params.requiredCount} distinct answer choices, but this template only has ${params.actualCount}.`,
+      ...params,
+    };
+  }
+
+  if (code === 'insufficient_answerable_songs') {
+    return {
+      code,
+      message: `${params.label} needs at least ${params.requiredCount} playable songs with ${params.requirementLabel}, but this template only has ${params.actualCount}.`,
+      ...params,
+    };
+  }
+
+  if (code === 'missing_source_metadata') {
+    return {
+      code,
+      message: `${params.actualCount} playable song${params.actualCount === 1 ? '' : 's'} ${params.actualCount === 1 ? 'is' : 'are'} missing a usable source title.`,
+      ...params,
+    };
+  }
+
+  if (code === 'missing_song_titles') {
+    return {
+      code,
+      message: `${params.actualCount} playable song${params.actualCount === 1 ? '' : 's'} ${params.actualCount === 1 ? 'is' : 'are'} missing a song title.`,
+      ...params,
+    };
+  }
+
+  return {
+    code,
+    message: params.message || 'Template compatibility check failed.',
+    ...params,
+  };
+}
+
+function getTemplateCompatibilityTarget(settingsOrPreset = {}) {
+  if (typeof settingsOrPreset === 'string') {
+    const preset = getPartyPresetById(settingsOrPreset);
+    return {
+      type: 'preset',
+      id: preset.id,
+      requiredCount: preset.id === 'party-classic' ? 5 : 2,
+      label: preset.label,
+    };
+  }
+
+  const raw = settingsOrPreset || {};
+  const hasExplicitTarget = Object.keys(raw).some((key) => raw[key] != null && raw[key] !== '');
+  if (!hasExplicitTarget) {
+    return null;
+  }
+
+  if (raw.modeType === 'vote') {
+    const normalizedSettings = createPartySettings({ ...raw, modeType: 'vote' });
+    return {
+      type: 'vote',
+      id: 'vote',
+      requiredCount: Math.max(2, Number(normalizedSettings.entrantCount || 0)),
+      label: 'Vote Battle',
+    };
+  }
+
+  const normalizedSettings = createPartySettings({
+    ...raw,
+    modeType: 'quiz',
+    presetId: raw.presetId || PARTY_TEMPLATE_PRESET_IDS[0],
+  });
+  const preset = getPartyPresetById(normalizedSettings.presetId);
+  return {
+    type: 'preset',
+    id: preset.id,
+    requiredCount: preset.id === 'party-classic'
+      ? Math.max(5, Number(normalizedSettings.roundCount || 0))
+      : Math.max(2, Number(normalizedSettings.roundCount || 0)),
+    label: preset.label,
+  };
+}
+
+function buildPresetCompatibilityResult(presetId, metrics, requiredCount) {
+  const preset = getPartyPresetById(presetId);
+  const label = preset.label;
+  const blockingReasons = [];
+  const warnings = [];
+
+  if (metrics.playableSongCount < requiredCount) {
+    blockingReasons.push(createCompatibilityReason('insufficient_playable_songs', {
+      presetId,
+      label,
+      requiredCount,
+      actualCount: metrics.playableSongCount,
+    }));
+  }
+
+  if (presetId === 'party-classic') {
+    if (metrics.choiceEligibleCount < requiredCount && metrics.playableSongCount >= requiredCount) {
+      blockingReasons.push(createCompatibilityReason('insufficient_answerable_songs', {
+        presetId,
+        label,
+        requiredCount,
+        actualCount: metrics.choiceEligibleCount,
+        requirementLabel: 'usable choice answers',
+      }));
+    }
+
+    if (metrics.distinctChoiceAnswerCount < 4) {
+      blockingReasons.push(createCompatibilityReason('insufficient_distinct_sources', {
+        presetId,
+        label,
+        requiredCount: 4,
+        actualCount: metrics.distinctChoiceAnswerCount,
+      }));
+    }
+  } else if (presetId === 'song-typing') {
+    if (metrics.songTypingEligibleCount < requiredCount && metrics.playableSongCount >= requiredCount) {
+      blockingReasons.push(createCompatibilityReason('insufficient_answerable_songs', {
+        presetId,
+        label,
+        requiredCount,
+        actualCount: metrics.songTypingEligibleCount,
+        requirementLabel: 'song titles',
+      }));
+    }
+  } else if (presetId === 'full-recall' && metrics.fullRecallEligibleCount < requiredCount && metrics.playableSongCount >= requiredCount) {
+    blockingReasons.push(createCompatibilityReason('insufficient_answerable_songs', {
+      presetId,
+      label,
+      requiredCount,
+      actualCount: metrics.fullRecallEligibleCount,
+      requirementLabel: 'song titles and source titles',
+    }));
+  }
+
+  if (metrics.missingSourceMetadataCount > 0) {
+    warnings.push(createCompatibilityReason('missing_source_metadata', {
+      presetId,
+      actualCount: metrics.missingSourceMetadataCount,
+    }));
+  }
+
+  if (metrics.missingSongTitleCount > 0) {
+    warnings.push(createCompatibilityReason('missing_song_titles', {
+      presetId,
+      actualCount: metrics.missingSongTitleCount,
+    }));
+  }
+
+  return {
+    presetId,
+    label,
+    requiredCount,
+    compatible: blockingReasons.length === 0,
+    blockingReasons,
+    warnings,
+  };
+}
+
+function buildVoteCompatibilityResult(metrics, requiredCount) {
+  const blockingReasons = [];
+  if (metrics.playableSongCount < requiredCount) {
+    blockingReasons.push(createCompatibilityReason('insufficient_playable_songs', {
+      presetId: 'vote',
+      label: 'Vote Battle',
+      requiredCount,
+      actualCount: metrics.playableSongCount,
+    }));
+  }
+
+  return {
+    presetId: 'vote',
+    label: 'Vote Battle',
+    requiredCount,
+    compatible: blockingReasons.length === 0,
+    blockingReasons,
+    warnings: [],
+  };
+}
+
+export function analyzePartyTemplateCompatibility(items = [], settingsOrPreset = {}) {
+  const playableItems = Array.isArray(items)
+    ? items
+      .filter(isTemplateItemPlayable)
+      .map((item) => {
+        const songTitle = getTemplateSongTitle(item);
+        const resolvedSource = getTemplateResolvedSource(item);
+        const sourceTitleName = resolvedSource.answerableSourceTitleName;
+        const choiceIdentity = resolvePartyChoiceIdentity({
+          ...item,
+          songTitle,
+          sourceTitleName,
+          ...resolvedSource,
+        });
+        return {
+          ...item,
+          songTitle,
+          sourceTitleName,
+          ...resolvedSource,
+          ...choiceIdentity,
+          hasSongTitle: Boolean(normalizePartyText(songTitle)),
+          hasSourceTitle: Boolean(normalizePartyText(sourceTitleName)),
+        };
+      })
+    : [];
+  const metrics = {
+    playableSongCount: playableItems.length,
+    distinctChoiceAnswerCount: new Set(
+      playableItems
+        .filter((item) => item.hasSongTitle && item.answerKey)
+        .map((item) => item.answerKey)
+    ).size,
+    distinctResolvedSourceCount: new Set(
+      playableItems
+        .filter((item) => item.hasSongTitle && item.isClassicResolved && item.resolvedSourceKey)
+        .map((item) => item.resolvedSourceKey)
+    ).size,
+    missingSourceMetadataCount: playableItems.filter((item) => !item.hasSourceTitle).length,
+    missingSongTitleCount: playableItems.filter((item) => !item.hasSongTitle).length,
+    classicEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.isClassicResolved).length,
+    choiceEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.answerKey).length,
+    resolvedClassicEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.isClassicResolved).length,
+    songTypingEligibleCount: playableItems.filter((item) => item.hasSongTitle).length,
+    fullRecallEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.hasSourceTitle).length,
+    unresolvedSourceCount: playableItems.filter((item) => item.sourceResolutionStatus !== PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED).length,
+    sourceSuggestionCount: playableItems.filter((item) => item.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED).length,
+  };
+
+  const presetResults = Object.fromEntries(
+    PARTY_TEMPLATE_PRESET_IDS.map((presetId) => [
+      presetId,
+      buildPresetCompatibilityResult(
+        presetId,
+        metrics,
+        presetId === 'party-classic' ? 5 : 2,
+      ),
+    ])
+  );
+  const voteResult = buildVoteCompatibilityResult(metrics, 2);
+  const compatiblePresets = PARTY_TEMPLATE_PRESET_IDS.filter((presetId) => presetResults[presetId]?.compatible);
+  const target = getTemplateCompatibilityTarget(settingsOrPreset);
+  const targetResult = !target
+    ? null
+    : target.type === 'vote'
+      ? buildVoteCompatibilityResult(metrics, target.requiredCount)
+      : buildPresetCompatibilityResult(target.id, metrics, target.requiredCount);
+
+  return {
+    playableSongCount: metrics.playableSongCount,
+    classicEligibleCount: metrics.classicEligibleCount,
+    choiceEligibleCount: metrics.choiceEligibleCount,
+    resolvedClassicEligibleCount: metrics.resolvedClassicEligibleCount,
+    songTypingEligibleCount: metrics.songTypingEligibleCount,
+    fullRecallEligibleCount: metrics.fullRecallEligibleCount,
+    distinctChoiceAnswerCount: metrics.distinctChoiceAnswerCount,
+    distinctSourceCount: metrics.distinctResolvedSourceCount,
+    distinctResolvedSourceCount: metrics.distinctResolvedSourceCount,
+    missingSourceMetadataCount: metrics.missingSourceMetadataCount,
+    missingSongTitleCount: metrics.missingSongTitleCount,
+    unresolvedSourceCount: metrics.unresolvedSourceCount,
+    sourceSuggestionCount: metrics.sourceSuggestionCount,
+    compatiblePresets,
+    blockingReasons: targetResult?.blockingReasons || [],
+    warnings: targetResult?.warnings || [],
+    presetResults,
+    voteResult,
+    targetResult,
+  };
 }
 
 /**
@@ -215,6 +579,18 @@ export function catalogSongToTemplateItem(song, position = 0) {
     song_id: song.songId ?? song.song_id ?? song.id ?? null,
     source_title_id: song.sourceTitleId ?? song.source_title_id ?? null,
     source_title_name: song.sourceTitleName || song.source_title_name || song.source || '',
+    resolved_source_title_id: song.resolvedSourceTitleId ?? song.resolved_source_title_id ?? song.sourceTitleId ?? song.source_title_id ?? null,
+    resolved_source_title_name: (
+      song.resolvedSourceTitleName
+      ?? song.resolved_source_title_name
+      ?? song.sourceTitleName
+      ?? song.source_title_name
+      ?? song.source
+      ?? ''
+    ),
+    source_resolution_status: song.sourceResolutionStatus ?? song.source_resolution_status ?? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED,
+    source_match_confidence: song.sourceMatchConfidence ?? song.source_match_confidence ?? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT,
+    source_match_method: song.sourceMatchMethod ?? song.source_match_method ?? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.CATALOG_EXACT,
     song_title: song.songTitle || song.song_title || song.title || '',
     theme_type: song.themeType || song.theme_type || 'OP',
     artist_name: song.artistName || song.artist_name || song.artist || '',
@@ -282,6 +658,11 @@ export function mapTemplateItemFromDb(row, index = 0) {
     providerMediaId: row.provider_media_id || null,
     providerCollectionId: row.provider_collection_id || null,
     providerUrl: row.provider_url || null,
+    resolvedSourceTitleId: row.resolved_source_title_id ?? null,
+    resolvedSourceTitleName: row.resolved_source_title_name || '',
+    sourceResolutionStatus: row.source_resolution_status || '',
+    sourceMatchConfidence: row.source_match_confidence || '',
+    sourceMatchMethod: row.source_match_method || '',
     durationSec: row.duration_sec ?? null,
     metadataJson: row.metadata_json || {},
     importedAt: row.imported_at || null,

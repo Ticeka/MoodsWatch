@@ -73,6 +73,7 @@ export function PartyYouTubePlayer({
   seekOffsetSec = 0,
   muted = false,
   volume = 85,
+  visualMode = 'visible',
   allowPointerEvents = true,
   onReady,
   onError,
@@ -198,7 +199,7 @@ export function PartyYouTubePlayer({
   }, [muted, playerState]);
 
   return (
-    <div className={`party-yt-player-wrapper${allowPointerEvents ? '' : ' is-noninteractive'}${className ? ` ${className}` : ''}`}>
+    <div className={`party-yt-player-wrapper${allowPointerEvents ? '' : ' is-noninteractive'}${visualMode === 'hidden' ? ' is-visual-hidden' : ''}${className ? ` ${className}` : ''}`}>
       {/* YT API creates an iframe here */}
       <div ref={containerRef} className="party-yt-player-container" />
 

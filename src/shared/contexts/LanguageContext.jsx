@@ -12,6 +12,26 @@ const translationRequests = new Map();
 
 loadedTranslations.set('th', thaiTranslations);
 
+function looksLikeMojibake(value) {
+  if (typeof value !== 'string' || !value) {
+    return false;
+  }
+
+  return /[\u0080-\u009F\uFFFD]|(?:เน€|โ€|Â|Ã)/u.test(value);
+}
+
+function pickLocalizedValue(preferredValue, fallbackValue) {
+  if (!looksLikeMojibake(preferredValue)) {
+    return preferredValue;
+  }
+
+  if (!looksLikeMojibake(fallbackValue)) {
+    return fallbackValue;
+  }
+
+  return preferredValue;
+}
+
 function scheduleWhenIdle(callback, timeout = 2000) {
   if (typeof window === 'undefined') {
     return () => {};
@@ -172,7 +192,11 @@ export function LanguageProvider({ children }) {
         ?? key;
       return interpolate(resolved, values);
     },
-    pick: (thValue, enValue) => (language === 'th' ? thValue : enValue),
+    pick: (thValue, enValue) => (
+      language === 'th'
+        ? pickLocalizedValue(thValue, enValue)
+        : pickLocalizedValue(enValue, thValue)
+    ),
     isThai: language === 'th',
   }), [language, translationMaps]);
 

@@ -25,12 +25,22 @@ import {
   PARTY_TEMPLATE_ITEM_PROVIDER,
   PARTY_TEMPLATE_ITEM_SOURCE_KIND,
   PARTY_TEMPLATE_PLAYBACK_STATUS,
+  PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE,
+  PARTY_TEMPLATE_SOURCE_MATCH_METHOD,
+  PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS,
 } from './partyTemplateSchema';
-import { resolveTemplateCoverUrl, sanitizeTemplateCoverUrl } from './partyTemplateUtils';
 import {
+  analyzePartyTemplateCompatibility,
+  resolveTemplateCoverUrl,
+  sanitizeTemplateCoverUrl,
+} from './partyTemplateUtils';
+import {
+  applyYoutubeSourceSuggestion,
+  extractYoutubeSourceCandidates,
   isYoutubeItemPlayable,
   normalizeYoutubeVideoPayload,
   normalizeYoutubePlaylistPayload,
+  scoreYoutubeSourceCandidateMatch,
 } from './partyYoutube';
 
 const PARTY_GUEST_TOKEN_KEY = 'moodtoon-party-guest-token';
@@ -44,6 +54,40 @@ const partyRoomRealtimeRegistry = new Map();
 const partySongPoolCache = new Map();
 const partyPresetSongPoolCache = new Map();
 const partyTemplateSongPoolCache = new Map();
+const partySourceSuggestionCache = new Map();
+
+function getSourceConfidenceRank(value = '') {
+  switch (String(value || '').trim().toLowerCase()) {
+    case PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT:
+      return 4;
+    case PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.HIGH:
+      return 3;
+    case PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.MEDIUM:
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function shouldReplaceSourceSuggestion(currentItem = {}, nextSuggestion = null) {
+  if (!nextSuggestion?.resolvedSourceTitleId || !nextSuggestion?.resolvedSourceTitleName) {
+    return false;
+  }
+
+  const currentResolutionStatus = String(
+    currentItem?.sourceResolutionStatus ?? currentItem?.source_resolution_status ?? '',
+  ).trim().toLowerCase();
+  if (currentResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED) {
+    return false;
+  }
+
+  const currentConfidence = String(
+    currentItem?.sourceMatchConfidence ?? currentItem?.source_match_confidence ?? '',
+  ).trim().toLowerCase();
+
+  return getSourceConfidenceRank(nextSuggestion.sourceMatchConfidence)
+    >= getSourceConfidenceRank(currentConfidence);
+}
 
 function getPartyRoomChannelName(roomId) {
   return `party-room-${roomId}`;
@@ -488,7 +532,12 @@ function mapPartyPresetSongItem(row) {
     mediaUrl: row?.media_url || '',
     sourceTitleId: Number(row?.source_title_id || 0),
     sourceTitleName: row?.source_title_name || '',
-    sourceTitleAliases: buildUniquePartyAliases([row?.source_title_name]),
+    sourceTitleAliases: buildUniquePartyAliases([row?.resolved_source_title_name, row?.source_title_name]),
+    resolvedSourceTitleId: Number(row?.resolved_source_title_id || 0),
+    resolvedSourceTitleName: row?.resolved_source_title_name || '',
+    sourceResolutionStatus: row?.source_resolution_status || '',
+    sourceMatchConfidence: row?.source_match_confidence || '',
+    sourceMatchMethod: row?.source_match_method || '',
     coverUrl: row?.cover_url || '',
     previewStartSec: 0,
   };
@@ -512,9 +561,17 @@ function mapPartyTemplateSongItem(row) {
     isCreditless: false,
     // Catalog: direct media URL; YouTube: empty (engine uses provider fields)
     mediaUrl: row?.media_url || '',
-    sourceTitleId: isYoutube ? 0 : Number(row?.source_title_id || 0),
+    sourceTitleId: Number(row?.source_title_id || 0),
     sourceTitleName: row?.source_title_name || '',
-    sourceTitleAliases: buildUniquePartyAliases([row?.source_title_name]),
+    sourceTitleAliases: buildUniquePartyAliases([
+      row?.resolved_source_title_name,
+      row?.source_title_name,
+    ]),
+    resolvedSourceTitleId: Number(row?.resolved_source_title_id || 0),
+    resolvedSourceTitleName: row?.resolved_source_title_name || '',
+    sourceResolutionStatus: row?.source_resolution_status || '',
+    sourceMatchConfidence: row?.source_match_confidence || '',
+    sourceMatchMethod: row?.source_match_method || '',
     coverUrl: row?.cover_url || '',
     previewStartSec: 0,
     // Provider fields (used by PartyYouTubePlayer and resolvePlaybackSource)
@@ -1141,6 +1198,23 @@ export async function createPartyTemplate(templateData, items = [], creatorName 
       song_id: item.song_id ?? item.songId ?? null,
       source_title_id: item.source_title_id ?? item.sourceTitleId ?? null,
       source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
+      resolved_source_title_id: item.resolved_source_title_id ?? item.resolvedSourceTitleId ?? null,
+      resolved_source_title_name: item.resolved_source_title_name ?? item.resolvedSourceTitleName ?? '',
+      source_resolution_status: item.source_resolution_status ?? item.sourceResolutionStatus ?? (
+        (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+          ? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          : PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED
+      ),
+      source_match_confidence: item.source_match_confidence ?? item.sourceMatchConfidence ?? (
+        (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+          ? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT
+          : PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW
+      ),
+      source_match_method: item.source_match_method ?? item.sourceMatchMethod ?? (
+        (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+          ? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.CATALOG_EXACT
+          : PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE
+      ),
       song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
       theme_type: item.theme_type ?? item.themeType ?? 'OP',
       artist_name: item.artist_name ?? item.artistName ?? item.artist ?? '',
@@ -1225,6 +1299,23 @@ export async function replacePartyTemplateItems(templateId, items = []) {
     song_id: item.song_id != null ? String(item.song_id) : (item.songId != null ? String(item.songId) : ''),
     source_title_id: String(item.source_title_id ?? item.sourceTitleId ?? ''),
     source_title_name: item.source_title_name ?? item.sourceTitleName ?? '',
+    resolved_source_title_id: String(item.resolved_source_title_id ?? item.resolvedSourceTitleId ?? ''),
+    resolved_source_title_name: item.resolved_source_title_name ?? item.resolvedSourceTitleName ?? '',
+    source_resolution_status: item.source_resolution_status ?? item.sourceResolutionStatus ?? (
+      (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+        ? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+        : PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED
+    ),
+    source_match_confidence: item.source_match_confidence ?? item.sourceMatchConfidence ?? (
+      (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+        ? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT
+        : PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW
+    ),
+    source_match_method: item.source_match_method ?? item.sourceMatchMethod ?? (
+      (item.provider ?? PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
+        ? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.CATALOG_EXACT
+        : PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE
+    ),
     song_title: item.song_title ?? item.songTitle ?? item.title ?? '',
     theme_type: item.theme_type ?? item.themeType ?? 'OP',
     artist_name: item.artist_name ?? item.artistName ?? item.artist ?? '',
@@ -1473,9 +1564,57 @@ export async function syncPartyTemplateYoutubePlaylist(templateId, currentItems 
     const catalogItems = currentItems.filter(
       (item) => (item.provider || PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG) === PARTY_TEMPLATE_ITEM_PROVIDER.CATALOG
     );
+    const currentYoutubeItemByProviderMediaId = new Map(
+      currentItems
+        .filter((item) => (item.provider || '') === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE)
+        .map((item) => [String(item.providerMediaId || item.provider_media_id || ''), item])
+        .filter(([providerMediaId]) => providerMediaId)
+    );
+    const mergedYoutubeItems = await Promise.all(freshYoutubeItems.map(async (item, i) => {
+      const currentItem = currentYoutubeItemByProviderMediaId.get(String(item.provider_media_id || '')) || null;
+      const suggestedItem = applyYoutubeSourceSuggestion(item, await suggestPartyTemplateItemSource(item));
+      const shouldKeepCurrentSuggestion = currentItem && shouldReplaceSourceSuggestion(currentItem, {
+        resolvedSourceTitleId: suggestedItem?.resolvedSourceTitleId ?? suggestedItem?.resolved_source_title_id ?? null,
+        resolvedSourceTitleName: suggestedItem?.resolvedSourceTitleName ?? suggestedItem?.resolved_source_title_name ?? '',
+        sourceMatchConfidence: suggestedItem?.sourceMatchConfidence ?? suggestedItem?.source_match_confidence ?? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+      }) === false;
+      return {
+        ...suggestedItem,
+        source_title_id: currentItem?.sourceTitleId ?? currentItem?.source_title_id ?? suggestedItem.source_title_id ?? null,
+        source_title_name: currentItem?.sourceTitleName ?? currentItem?.source_title_name ?? suggestedItem.source_title_name ?? '',
+        resolved_source_title_id: currentItem?.resolvedSourceTitleId ?? currentItem?.resolved_source_title_id ?? (
+          shouldKeepCurrentSuggestion ? currentItem?.resolvedSourceTitleId ?? currentItem?.resolved_source_title_id ?? null : suggestedItem.resolved_source_title_id ?? null
+        ),
+        resolved_source_title_name: currentItem?.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          || currentItem?.source_resolution_status === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          ? (currentItem?.resolvedSourceTitleName ?? currentItem?.resolved_source_title_name ?? '')
+          : (shouldKeepCurrentSuggestion
+            ? (currentItem?.resolvedSourceTitleName ?? currentItem?.resolved_source_title_name ?? '')
+            : (suggestedItem.resolved_source_title_name ?? '')),
+        source_resolution_status: currentItem?.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          || currentItem?.source_resolution_status === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          ? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          : (shouldKeepCurrentSuggestion
+            ? (currentItem?.sourceResolutionStatus ?? currentItem?.source_resolution_status ?? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED)
+            : (suggestedItem.source_resolution_status ?? PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED)),
+        source_match_confidence: currentItem?.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          || currentItem?.source_resolution_status === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          ? (currentItem?.sourceMatchConfidence ?? currentItem?.source_match_confidence ?? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT)
+          : (shouldKeepCurrentSuggestion
+            ? (currentItem?.sourceMatchConfidence ?? currentItem?.source_match_confidence ?? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW)
+            : (suggestedItem.source_match_confidence ?? PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW)),
+        source_match_method: currentItem?.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          || currentItem?.source_resolution_status === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED
+          ? (currentItem?.sourceMatchMethod ?? currentItem?.source_match_method ?? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.MANUAL)
+          : (shouldKeepCurrentSuggestion
+            ? (currentItem?.sourceMatchMethod ?? currentItem?.source_match_method ?? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE)
+            : (suggestedItem.source_match_method ?? PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE)),
+        position: catalogItems.length + i,
+      };
+    }));
     const mergedItems = [
       ...catalogItems.map((item, i) => ({ ...item, position: i })),
-      ...freshYoutubeItems.map((item, i) => ({ ...item, position: catalogItems.length + i })),
+      ...mergedYoutubeItems,
     ];
 
     // 5. Persist
@@ -1752,6 +1891,78 @@ export async function searchPartyTemplateCatalog(query = '', { page = 0, pageSiz
     page: safePage,
     pageSize: safePageSize,
     totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
+export async function searchPartySourceTitles(query = '', { limit = 8 } = {}) {
+  const result = await searchPartyTemplateCatalog(query, { page: 0, pageSize: Math.max(8, Number(limit || 8) * 3) });
+  const bySource = new Map();
+
+  (result.items || []).forEach((song) => {
+    const sourceTitleId = Number(song?.sourceTitleId || 0);
+    const sourceTitleName = String(song?.sourceTitleName || '').trim();
+    if (!sourceTitleId || !sourceTitleName || bySource.has(sourceTitleId)) {
+      return;
+    }
+
+    bySource.set(sourceTitleId, {
+      resolvedSourceTitleId: sourceTitleId,
+      resolvedSourceTitleName: sourceTitleName,
+      songCountHint: 1,
+    });
+  });
+
+  return [...bySource.values()].slice(0, Math.max(1, Number(limit || 8)));
+}
+
+export async function suggestPartyTemplateItemSource(item = {}) {
+  const candidates = extractYoutubeSourceCandidates(item);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  let bestSuggestion = null;
+  for (const candidate of candidates) {
+    const cacheKey = normalizePartyText(candidate);
+    if (!cacheKey) {
+      continue;
+    }
+
+    let sourceCandidates = partySourceSuggestionCache.get(cacheKey) || null;
+    if (!sourceCandidates) {
+      sourceCandidates = await searchPartySourceTitles(candidate, { limit: 8 });
+      partySourceSuggestionCache.set(cacheKey, sourceCandidates);
+    }
+
+    sourceCandidates.forEach((sourceCandidate) => {
+      const scored = scoreYoutubeSourceCandidateMatch(candidate, sourceCandidate.resolvedSourceTitleName);
+      const nextSuggestion = {
+        ...sourceCandidate,
+        sourceMatchConfidence: scored.confidence,
+        sourceMatchMethod: scored.method,
+        score: scored.score,
+        sourceCandidate: candidate,
+      };
+
+      if (!bestSuggestion || nextSuggestion.score > bestSuggestion.score) {
+        bestSuggestion = nextSuggestion;
+      }
+    });
+  }
+
+  if (!bestSuggestion) {
+    return null;
+  }
+
+  if (bestSuggestion.score < 70) {
+    return null;
+  }
+
+  return {
+    resolvedSourceTitleId: bestSuggestion.resolvedSourceTitleId,
+    resolvedSourceTitleName: bestSuggestion.resolvedSourceTitleName,
+    sourceMatchConfidence: bestSuggestion.sourceMatchConfidence,
+    sourceMatchMethod: bestSuggestion.sourceMatchMethod,
   };
 }
 
@@ -2038,11 +2249,19 @@ export async function startPartyMatch(room) {
 
   const settings = createPartySettings(freshRoom.settings || {});
   const pool = await fetchPartySongPool(settings);
-  const playablePool = pool.filter((song) => normalizePartyText(song.sourceTitleName) && normalizePartyText(song.songTitle));
+  if (settings.templateId) {
+    const compatibility = analyzePartyTemplateCompatibility(pool, settings);
+    if (!compatibility.targetResult?.compatible) {
+      throw new Error(
+        compatibility.targetResult?.blockingReasons?.[0]?.message
+        || 'This template is not ready for the selected mode yet.'
+      );
+    }
+  }
   
   const snapshot = settings.modeType === 'vote'
-    ? buildPartyVoteSnapshot(playablePool, settings)
-    : buildPartyMatchSnapshot(playablePool, settings);
+    ? buildPartyVoteSnapshot(pool, settings)
+    : buildPartyMatchSnapshot(pool, settings);
 
   const { data, error } = await supabase
     .from('party_rooms')

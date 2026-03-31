@@ -192,8 +192,10 @@ import {
   fetchPartyTemplateDetail,
   fetchPartyTemplates,
   replacePartyTemplateItems,
-  resolvePartyYoutubeUrl,
-  submitPartySkipVote,
+	  resolvePartyYoutubeUrl,
+	  syncPartyTemplateYoutubePlaylist,
+	  startPartyMatch,
+	  submitPartySkipVote,
   subscribeToPartyRoom,
   togglePartyMemberReady,
   uploadPartyTemplateCover,
@@ -807,7 +809,7 @@ describe('partyRemote realtime optimizations', () => {
     });
   });
 
-  it('advances the room when skip votes reach the majority threshold', async () => {
+	  it('advances the room when skip votes reach the majority threshold', async () => {
     mockState.partyRoomsSelectResponse = [{
       id: 'room-1',
       host_member_token: 'host-1',
@@ -888,9 +890,65 @@ describe('partyRemote realtime optimizations', () => {
       votes: 2,
       requiredVotes: 2,
     }));
-    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.phase).toBe('intro-b');
-  });
-});
+	    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.phase).toBe('intro-b');
+	  });
+
+	  it('rejects starting a template room when Party Classic source metadata is still incompatible', async () => {
+	    mockState.partyRoomsSelectResponse = [{
+	      id: 'room-1',
+	      host_member_token: 'host-1',
+	      status: 'lobby',
+	      updated_at: '2026-03-29T10:00:01.000Z',
+	      settings: {
+	        templateId: '42',
+	        modeType: 'quiz',
+	        presetId: 'party-classic',
+	        roundCount: 5,
+	        timePerRoundSec: 12,
+	        revealSec: 8,
+	      },
+	    }];
+	    mockState.partyRoomMembersSelectResponse = [
+	      { member_token: 'host-1', is_ready: true },
+	      { member_token: 'guest-1', is_ready: true },
+	    ];
+
+	    const originalFrom = mockState.from.getMockImplementation();
+	    mockState.from.mockImplementation((table) => {
+	      if (table === 'party_song_template_items') {
+	        return {
+	          select: vi.fn(() => ({
+	            eq: vi.fn(() => ({
+	              order: vi.fn(() => Promise.resolve({
+	                data: Array.from({ length: 5 }, (_, index) => ({
+	                  id: index + 1,
+	                  template_id: 42,
+	                  song_id: 100 + index,
+	                  source_title_id: index < 3 ? 501 : 502,
+	                  source_title_name: index < 3 ? 'Shared Source A' : 'Shared Source B',
+	                  song_title: `Song ${index + 1}`,
+	                  theme_type: 'OP',
+	                  artist_name: `Artist ${index + 1}`,
+	                  media_url: `https://cdn.example.com/song-${index + 1}.mp4`,
+	                  cover_url: '',
+	                  position: index,
+	                  provider: 'catalog',
+	                  playback_status: 'ready',
+	                })),
+	                error: null,
+	              })),
+	            })),
+	          })),
+	        };
+	      }
+
+	      return originalFrom(table);
+	    });
+
+    await expect(startPartyMatch({ id: 'room-1' })).rejects.toThrow('distinct answer choices');
+	    expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')).toBeFalsy();
+	  });
+	});
 
 // ---------------------------------------------------------------------------
 // Template CRUD
@@ -1051,10 +1109,157 @@ describe('partyRemote template CRUD', () => {
       provider_url: 'https://www.youtube.com/watch?v=abc123video',
       source_kind: 'youtube_playlist',
       playback_status: 'ready',
+      source_resolution_status: 'unresolved',
+      source_match_confidence: 'low',
+      source_match_method: 'youtube_title_parse',
       duration_sec: 95,
       metadata_json: { availabilityReason: null },
       imported_at: '2026-03-31T12:00:00Z',
       import_source_position: 7,
+    });
+  });
+
+  it('syncPartyTemplateYoutubePlaylist preserves manual linked source mappings for existing videos', async () => {
+    const templateRow = {
+      ...SAMPLE_TEMPLATE_ROW,
+      source_type: 'youtube',
+      youtube_playlist_id: 'playlist42',
+      youtube_source_url: 'https://www.youtube.com/playlist?list=playlist42',
+    };
+    const existingItemRows = [
+      {
+        id: 1,
+        template_id: 42,
+        provider: 'youtube',
+        provider_media_id: 'keep-me-001',
+        provider_collection_id: 'playlist42',
+        provider_url: 'https://www.youtube.com/watch?v=keep-me-001',
+        source_kind: 'youtube_playlist',
+        playback_status: 'ready',
+        song_title: 'Keep Song',
+        artist_name: 'Uploader',
+        source_title_id: 999,
+        source_title_name: 'Manual Source',
+        resolved_source_title_id: 999,
+        resolved_source_title_name: 'Manual Source',
+        source_resolution_status: 'linked',
+        source_match_confidence: 'high',
+        source_match_method: 'manual',
+        cover_url: 'https://img.youtube.com/keep-me-001/hqdefault.jpg',
+        position: 0,
+      },
+    ];
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_song_templates') {
+        return {
+          select: vi.fn(function select() { return this; }),
+          eq: vi.fn(function eq() { return this; }),
+          maybeSingle: vi.fn(async () => ({ data: templateRow, error: null })),
+          update: vi.fn((payload) => {
+            mockState.operations.push({ table, action: 'update', payload });
+            return {
+              eq: vi.fn(() => ({
+                then: (resolve) => resolve({ data: null, error: null }),
+              })),
+            };
+          }),
+        };
+      }
+
+      if (table === 'party_song_template_items') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(() => Promise.resolve({ data: existingItemRows, error: null })),
+            })),
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    mockState.functionsInvoke.mockResolvedValue({
+      data: {
+        type: 'playlist',
+        playlist: {
+          playlistId: 'playlist42',
+          title: 'Playlist 42',
+          channelTitle: 'Channel 42',
+          thumbnailUrl: 'https://img.youtube.com/playlist42/hqdefault.jpg',
+          totalItems: 2,
+          nextPageToken: null,
+          fetchedCount: 2,
+          items: [
+            {
+              videoId: 'keep-me-001',
+              title: 'Keep Song',
+              channelTitle: 'Uploader',
+              thumbnailUrl: 'https://img.youtube.com/keep-me-001/hqdefault.jpg',
+              durationSec: 90,
+              playbackStatus: 'ready',
+              availabilityReason: null,
+              embedUrl: 'https://www.youtube.com/embed/keep-me-001',
+              watchUrl: 'https://www.youtube.com/watch?v=keep-me-001',
+              playlistId: 'playlist42',
+              importSourcePosition: 0,
+            },
+            {
+              videoId: 'new-video-002',
+              title: 'New Song',
+              channelTitle: 'Uploader 2',
+              thumbnailUrl: 'https://img.youtube.com/new-video-002/hqdefault.jpg',
+              durationSec: 95,
+              playbackStatus: 'ready',
+              availabilityReason: null,
+              embedUrl: 'https://www.youtube.com/embed/new-video-002',
+              watchUrl: 'https://www.youtube.com/watch?v=new-video-002',
+              playlistId: 'playlist42',
+              importSourcePosition: 1,
+            },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    const result = await syncPartyTemplateYoutubePlaylist(42, [
+      {
+        provider: 'youtube',
+        providerMediaId: 'keep-me-001',
+        providerCollectionId: 'playlist42',
+        providerUrl: 'https://www.youtube.com/watch?v=keep-me-001',
+        sourceKind: 'youtube_playlist',
+        playbackStatus: 'ready',
+        songTitle: 'Keep Song',
+        artistName: 'Uploader',
+        sourceTitleId: 999,
+        sourceTitleName: 'Manual Source',
+        resolvedSourceTitleId: 999,
+        resolvedSourceTitleName: 'Manual Source',
+        sourceResolutionStatus: 'linked',
+        sourceMatchConfidence: 'high',
+        sourceMatchMethod: 'manual',
+        coverUrl: 'https://img.youtube.com/keep-me-001/hqdefault.jpg',
+      },
+    ]);
+
+    const rpcCall = mockState.rpcCalls.find((call) => call.fn === 'replace_party_template_items');
+    expect(rpcCall).toBeTruthy();
+    expect(rpcCall.params.p_items[0]).toMatchObject({
+      provider_media_id: 'keep-me-001',
+      resolved_source_title_id: '999',
+      resolved_source_title_name: 'Manual Source',
+      source_resolution_status: 'linked',
+      source_match_confidence: 'high',
+      source_match_method: 'manual',
+    });
+    expect(result.items[0]).toMatchObject({
+      provider_media_id: 'keep-me-001',
+      resolved_source_title_id: 999,
+      resolved_source_title_name: 'Manual Source',
+      source_resolution_status: 'linked',
     });
   });
 
@@ -1126,7 +1331,21 @@ describe('partyRemote template CRUD', () => {
   it('replacePartyTemplateItems calls replace_party_template_items RPC with correct args', async () => {
     const items = [
       { songId: 101, sourceTitleId: 55, sourceTitleName: 'AoT', songTitle: 'Guren', themeType: 'OP', artistName: 'LH', mediaUrl: 'https://cdn.example.com/1.mp4', coverUrl: '' },
-      { songId: 102, sourceTitleId: 56, sourceTitleName: 'Naruto', songTitle: 'Blue Bird', themeType: 'OP', artistName: 'IG', mediaUrl: 'https://cdn.example.com/2.mp4', coverUrl: '' },
+      {
+        provider: 'youtube',
+        providerMediaId: 'yt-blue-bird',
+        sourceTitleName: 'Naruto',
+        resolvedSourceTitleId: 56,
+        resolvedSourceTitleName: 'Naruto',
+        sourceResolutionStatus: 'linked',
+        sourceMatchConfidence: 'high',
+        sourceMatchMethod: 'manual',
+        songTitle: 'Blue Bird',
+        themeType: 'OP',
+        artistName: 'IG',
+        coverUrl: '',
+        playbackStatus: 'ready',
+      },
     ];
 
     await replacePartyTemplateItems(42, items);
@@ -1138,7 +1357,16 @@ describe('partyRemote template CRUD', () => {
     expect(Array.isArray(rpcCall.params.p_items)).toBe(true);
     expect(rpcCall.params.p_items).toHaveLength(2);
     expect(rpcCall.params.p_items[0]).toMatchObject({ song_id: '101', song_title: 'Guren', position: 0 });
-    expect(rpcCall.params.p_items[1]).toMatchObject({ song_id: '102', position: 1 });
+    expect(rpcCall.params.p_items[1]).toMatchObject({
+      song_id: '',
+      provider_media_id: 'yt-blue-bird',
+      resolved_source_title_id: '56',
+      resolved_source_title_name: 'Naruto',
+      source_resolution_status: 'linked',
+      source_match_confidence: 'high',
+      source_match_method: 'manual',
+      position: 1,
+    });
   });
 
   it('replacePartyTemplateItems throws when RPC returns an error', async () => {

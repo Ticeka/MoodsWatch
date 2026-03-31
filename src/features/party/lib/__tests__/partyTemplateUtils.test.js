@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  analyzePartyTemplateCompatibility,
   catalogSongToTemplateItem,
   filterTemplates,
   getTemplateCoverUrl,
@@ -205,6 +206,115 @@ describe('template playability helpers', () => {
       provider: 'youtube',
       playback_status: 'blocked',
     })).toBe(false);
+  });
+
+  it('marks Party Classic incompatible when a large template only has two distinct sources', () => {
+    const items = Array.from({ length: 50 }, (_, index) => ({
+      provider: 'catalog',
+      songId: index + 1,
+      sourceTitleId: index % 2 === 0 ? 10 : 11,
+      sourceTitleName: index % 2 === 0 ? 'Naruto' : 'Bleach',
+      songTitle: `Song ${index + 1}`,
+      mediaUrl: `https://cdn.example.com/song-${index + 1}.mp4`,
+    }));
+
+    const compatibility = analyzePartyTemplateCompatibility(items);
+
+    expect(compatibility.presetResults['party-classic'].compatible).toBe(false);
+    expect(compatibility.presetResults['party-classic'].blockingReasons[0]?.code).toBe('insufficient_distinct_sources');
+    expect(compatibility.presetResults['song-typing'].compatible).toBe(true);
+  });
+
+  it('treats YouTube channel-name placeholders as missing source metadata', () => {
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      provider: 'youtube',
+      playback_status: 'ready',
+      provider_media_id: `yt-${index + 1}`,
+      song_title: `YouTube Song ${index + 1}`,
+      artist_name: `Uploader ${index + 1}`,
+      source_title_name: `Uploader ${index + 1}`,
+    }));
+
+    const compatibility = analyzePartyTemplateCompatibility(items);
+
+    expect(compatibility.missingSourceMetadataCount).toBe(5);
+    expect(compatibility.presetResults['party-classic'].compatible).toBe(true);
+    expect(compatibility.presetResults['full-recall'].compatible).toBe(false);
+  });
+
+  it('allows unresolved YouTube templates in Party Classic by falling back to song-title choices', () => {
+    const sourceTitles = ['Bocchi the Rock!', 'Frieren', 'Naruto', 'Bleach', 'JJK'];
+    const items = sourceTitles.map((sourceTitleName, index) => ({
+      provider: 'youtube',
+      playback_status: 'ready',
+      provider_media_id: `yt-ready-${index + 1}`,
+      song_title: `Mapped Song ${index + 1}`,
+      artist_name: `Uploader ${index + 1}`,
+      source_title_name: sourceTitleName,
+    }));
+
+    const compatibility = analyzePartyTemplateCompatibility(items, {
+      modeType: 'quiz',
+      presetId: 'party-classic',
+      roundCount: 5,
+    });
+
+    expect(compatibility.songTypingEligibleCount).toBe(5);
+    expect(compatibility.choiceEligibleCount).toBe(5);
+    expect(compatibility.distinctChoiceAnswerCount).toBe(5);
+    expect(compatibility.unresolvedSourceCount).toBe(5);
+    expect(compatibility.presetResults['song-typing'].compatible).toBe(true);
+    expect(compatibility.targetResult?.compatible).toBe(true);
+    expect(compatibility.distinctResolvedSourceCount).toBe(0);
+  });
+
+  it('still blocks Party Classic when unresolved YouTube items only provide two distinct song-title choices', () => {
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      provider: 'youtube',
+      playback_status: 'ready',
+      provider_media_id: `yt-dup-${index + 1}`,
+      song_title: index < 3 ? 'Shared Song A' : 'Shared Song B',
+      artist_name: `Uploader ${index + 1}`,
+      source_title_name: `Series ${index + 1}`,
+    }));
+
+    const compatibility = analyzePartyTemplateCompatibility(items, {
+      modeType: 'quiz',
+      presetId: 'party-classic',
+      roundCount: 5,
+    });
+
+    expect(compatibility.choiceEligibleCount).toBe(5);
+    expect(compatibility.distinctChoiceAnswerCount).toBe(2);
+    expect(compatibility.targetResult?.compatible).toBe(false);
+    expect(compatibility.targetResult?.blockingReasons[0]?.code).toBe('insufficient_distinct_sources');
+  });
+
+  it('allows YouTube templates in Party Classic only after canonical sources are linked', () => {
+    const sourceTitles = ['Bocchi the Rock!', 'Frieren', 'Naruto', 'Bleach', 'JJK'];
+    const items = sourceTitles.map((sourceTitleName, index) => ({
+      provider: 'youtube',
+      playback_status: 'ready',
+      provider_media_id: `yt-linked-${index + 1}`,
+      song_title: `Mapped Song ${index + 1}`,
+      artist_name: `Uploader ${index + 1}`,
+      source_title_name: sourceTitleName,
+      resolved_source_title_id: 700 + index,
+      resolved_source_title_name: sourceTitleName,
+      source_resolution_status: 'linked',
+      source_match_confidence: 'high',
+      source_match_method: 'manual',
+    }));
+
+    const compatibility = analyzePartyTemplateCompatibility(items, {
+      modeType: 'quiz',
+      presetId: 'party-classic',
+      roundCount: 5,
+    });
+
+    expect(compatibility.targetResult?.compatible).toBe(true);
+    expect(compatibility.resolvedClassicEligibleCount).toBe(5);
+    expect(compatibility.distinctResolvedSourceCount).toBe(5);
   });
 });
 

@@ -240,4 +240,79 @@ describe('partyEngine', () => {
     expect(match.rounds[0].songId).toBe('yt:yt-video-1');
     expect(new Set(match.rounds.map((round) => round.songId)).size).toBe(5);
   });
+
+  it('falls back to song-title choices for unresolved YouTube Party Classic rounds', () => {
+    const youtubeSongs = Array.from({ length: 5 }, (_, index) => ({
+      id: 0,
+      provider: 'youtube',
+      providerMediaId: `classic-yt-${index + 1}`,
+      themeType: 'YT',
+      songTitle: `Classic Song ${index + 1}`,
+      songAliases: [`Classic Song ${index + 1}`],
+      artistName: `Uploader ${index + 1}`,
+      sourceTitleId: 0,
+      sourceTitleName: `Series ${index + 1}`,
+      sourceTitleAliases: [`Series ${index + 1}`],
+      mediaUrl: '',
+      coverUrl: `https://img.youtube.com/classic-${index + 1}.jpg`,
+    }));
+
+    const match = buildPartyMatchSnapshot(youtubeSongs, {
+      presetId: 'party-classic',
+      roundCount: 5,
+      randomOrder: false,
+    });
+
+    expect(match.rounds).toHaveLength(5);
+    expect(match.rounds[0].choiceTarget).toBe('song');
+    expect(match.rounds[0].options).toHaveLength(4);
+    expect(match.rounds[0].options.some((option) => option.label === 'Classic Song 1')).toBe(true);
+  });
+
+  it('builds Party Classic rounds for YouTube songs once canonical sources are linked', () => {
+    const youtubeSongs = Array.from({ length: 5 }, (_, index) => ({
+      id: 0,
+      provider: 'youtube',
+      providerMediaId: `classic-linked-${index + 1}`,
+      themeType: 'YT',
+      songTitle: `Classic Song ${index + 1}`,
+      songAliases: [`Classic Song ${index + 1}`],
+      artistName: `Uploader ${index + 1}`,
+      sourceTitleId: 800 + index,
+      sourceTitleName: `Series ${index + 1}`,
+      resolvedSourceTitleId: 800 + index,
+      resolvedSourceTitleName: `Series ${index + 1}`,
+      sourceResolutionStatus: 'linked',
+      sourceTitleAliases: [`Series ${index + 1}`],
+      mediaUrl: '',
+      coverUrl: `https://img.youtube.com/classic-linked-${index + 1}.jpg`,
+    }));
+
+    const match = buildPartyMatchSnapshot(youtubeSongs, {
+      presetId: 'party-classic',
+      roundCount: 5,
+      randomOrder: false,
+    });
+
+    expect(match.rounds).toHaveLength(5);
+    expect(match.rounds[0].options).toHaveLength(4);
+    expect(match.rounds[0].sourceTitleName).toBe('Series 1');
+  });
+
+  it('rejects Party Classic when there are not enough distinct choice answers', () => {
+    const limitedSongs = Array.from({ length: 5 }, (_, index) => ({
+      ...SONGS[index],
+      songTitle: index < 3 ? 'Shared Song A' : 'Shared Song B',
+      songAliases: [index < 3 ? 'Shared Song A' : 'Shared Song B'],
+      sourceTitleId: 0,
+      sourceTitleName: '',
+      sourceTitleAliases: [],
+    }));
+
+    expect(() => buildPartyMatchSnapshot(limitedSongs, {
+      presetId: 'party-classic',
+      roundCount: 5,
+      randomOrder: false,
+    })).toThrow('Not enough distinct answer choices');
+  });
 });

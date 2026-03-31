@@ -7,7 +7,163 @@
  *   3. UI helpers      — labels, thumbnails, status display
  */
 
+import {
+  PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE,
+  PARTY_TEMPLATE_SOURCE_MATCH_METHOD,
+  PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS,
+} from './partyTemplateSchema';
+
 export const YOUTUBE_SUPPORT_ENABLED = true;
+
+const YOUTUBE_SOURCE_NOISE_PATTERN = /\b(op|ed|opening|ending|ost|soundtrack|full|ver|version|mv|pv|amv|lyrics?|lyric video|official|creditless|tv size|short ver|long ver|nightcore|cover|reaction)\b/giu;
+const YOUTUBE_SOURCE_BRACKET_NOISE_PATTERN = /[\[(【（](.*?)(op|ed|opening|ending|ost|soundtrack|full|lyrics?|mv|pv|amv|official|creditless|tv size|ver|version)(.*?)[\])】）]/giu;
+const YOUTUBE_SOURCE_SPLIT_PATTERN = /\s(?:[-|/:~]|by|from)\s/iu;
+
+function toStringArray(value) {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeYoutubeCandidateText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(YOUTUBE_SOURCE_BRACKET_NOISE_PATTERN, ' ')
+    .replace(/[【】\[\]（）()「」『』]/g, ' ')
+    .replace(YOUTUBE_SOURCE_NOISE_PATTERN, ' ')
+    .replace(/\b\d{1,2}(st|nd|rd|th)\s+(op|ed)\b/giu, ' ')
+    .replace(/\bseason\s+\d+\b/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildCandidateVariants(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return [];
+  }
+
+  const normalized = normalizeYoutubeCandidateText(raw);
+  const segments = [
+    raw,
+    normalized,
+    ...raw.split(YOUTUBE_SOURCE_SPLIT_PATTERN),
+    ...normalized.split(YOUTUBE_SOURCE_SPLIT_PATTERN),
+  ];
+
+  return [...new Set(
+    segments
+      .map((entry) => normalizeYoutubeCandidateText(entry))
+      .filter((entry) => entry.length >= 2)
+  )];
+}
+
+export function extractYoutubeSourceCandidates(video = {}) {
+  const metadata = video?.metadata_json || video?.metadataJson || {};
+  const candidates = [
+    ...buildCandidateVariants(video?.song_title || video?.songTitle || video?.title || ''),
+    ...buildCandidateVariants(video?.playlist_title || video?.playlistTitle || metadata?.playlistTitle || ''),
+    ...buildCandidateVariants(video?.source_title_name || video?.sourceTitleName || ''),
+    ...toStringArray(metadata?.sourceCandidates),
+    ...buildCandidateVariants(metadata?.description || ''),
+    ...toStringArray(metadata?.tags),
+  ];
+
+  const channelTitle = String(video?.artist_name || video?.artistName || metadata?.channelTitle || '').trim().toLowerCase();
+  return [...new Set(
+    candidates.filter((candidate) => {
+      const normalized = candidate.toLowerCase();
+      return normalized && normalized !== channelTitle;
+    })
+  )];
+}
+
+function getSuggestionConfidenceLabel(score = 0) {
+  if (score >= 96) return PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT;
+  if (score >= 84) return PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.HIGH;
+  if (score >= 70) return PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.MEDIUM;
+  return PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW;
+}
+
+export function scoreYoutubeSourceCandidateMatch(candidate = '', sourceTitleName = '') {
+  const left = normalizeYoutubeCandidateText(candidate).toLowerCase();
+  const right = normalizeYoutubeCandidateText(sourceTitleName).toLowerCase();
+  if (!left || !right) {
+    return {
+      score: 0,
+      confidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+      method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+    };
+  }
+
+  if (left === right) {
+    return {
+      score: 100,
+      confidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.EXACT,
+      method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.CATALOG_EXACT,
+    };
+  }
+
+  if (left.includes(right) || right.includes(left)) {
+    const score = Math.min(left.length, right.length) >= 8 ? 88 : 82;
+    return {
+      score,
+      confidence: getSuggestionConfidenceLabel(score),
+      method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.ALIAS_MATCH,
+    };
+  }
+
+  const rightTokens = right.split(' ').filter(Boolean);
+  const sharedTokens = left.split(' ').filter((token) => token && rightTokens.includes(token));
+  const score = Math.max(0, Math.min(78, Math.round((sharedTokens.length / Math.max(1, rightTokens.length)) * 100)));
+  return {
+    score,
+    confidence: getSuggestionConfidenceLabel(score),
+    method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+  };
+}
+
+export function applyYoutubeSourceSuggestion(item = {}, suggestion = null) {
+  const metadata = item?.metadata_json || item?.metadataJson || {};
+  const nextMetadata = {
+    ...metadata,
+    sourceCandidates: extractYoutubeSourceCandidates(item),
+  };
+
+  if (!suggestion?.resolvedSourceTitleId || !suggestion?.resolvedSourceTitleName) {
+    return {
+      ...item,
+      source_resolution_status: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED,
+      sourceResolutionStatus: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED,
+      resolved_source_title_id: null,
+      resolvedSourceTitleId: null,
+      resolved_source_title_name: '',
+      resolvedSourceTitleName: '',
+      source_match_confidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+      sourceMatchConfidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+      source_match_method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+      sourceMatchMethod: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+      metadata_json: nextMetadata,
+      metadataJson: nextMetadata,
+    };
+  }
+
+  return {
+    ...item,
+    source_resolution_status: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED,
+    sourceResolutionStatus: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED,
+    resolved_source_title_id: suggestion.resolvedSourceTitleId,
+    resolvedSourceTitleId: suggestion.resolvedSourceTitleId,
+    resolved_source_title_name: suggestion.resolvedSourceTitleName,
+    resolvedSourceTitleName: suggestion.resolvedSourceTitleName,
+    source_match_confidence: suggestion.sourceMatchConfidence || PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.MEDIUM,
+    sourceMatchConfidence: suggestion.sourceMatchConfidence || PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.MEDIUM,
+    source_match_method: suggestion.sourceMatchMethod || PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+    sourceMatchMethod: suggestion.sourceMatchMethod || PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
+    metadata_json: nextMetadata,
+    metadataJson: nextMetadata,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────
 // 1. Parse helpers
@@ -92,6 +248,12 @@ export function parseYoutubeUrl(url) {
  */
 export function normalizeYoutubeVideoPayload(video, position = 0) {
   const videoId = String(video?.videoId || '');
+  const metadata = {
+    availabilityReason: video?.availabilityReason ?? null,
+    channelTitle: video?.channelTitle || '',
+    description: video?.description || '',
+    tags: Array.isArray(video?.tags) ? video.tags : [],
+  };
   return {
     // provider identity
     provider: 'youtube',
@@ -104,16 +266,28 @@ export function normalizeYoutubeVideoPayload(video, position = 0) {
     // catalog-compatible display fields
     song_id: null,
     source_title_id: null,
-    source_title_name: video?.channelTitle || '',
+    source_title_name: '',
     song_title: video?.title || '',
     theme_type: 'YT',
     artist_name: video?.channelTitle || '',
     media_url: '',
     cover_url: video?.thumbnailUrl || '',
+    resolved_source_title_id: null,
+    resolved_source_title_name: '',
+    source_resolution_status: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED,
+    source_match_confidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+    source_match_method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
 
     // YouTube-specific
     duration_sec: video?.durationSec ?? null,
-    metadata_json: { availabilityReason: video?.availabilityReason ?? null },
+    metadata_json: {
+      ...metadata,
+      sourceCandidates: extractYoutubeSourceCandidates({
+        song_title: video?.title || '',
+        artist_name: video?.channelTitle || '',
+        metadata_json: metadata,
+      }),
+    },
     imported_at: new Date().toISOString(),
     import_source_position: null,
     sync_state: null,
@@ -155,18 +329,39 @@ export function normalizeYoutubePlaylistPayload(playlist, positionOffset = 0) {
       // catalog-compatible display fields
       song_id: null,
       source_title_id: null,
-      source_title_name: item?.channelTitle || '',
+      source_title_name: '',
       song_title: item?.title || '',
       theme_type: 'YT',
       artist_name: item?.channelTitle || '',
       media_url: '',
       cover_url: item?.thumbnailUrl || '',
+      resolved_source_title_id: null,
+      resolved_source_title_name: '',
+      source_resolution_status: PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.UNRESOLVED,
+      source_match_confidence: PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE.LOW,
+      source_match_method: PARTY_TEMPLATE_SOURCE_MATCH_METHOD.YOUTUBE_TITLE_PARSE,
 
       // YouTube-specific
       duration_sec: item?.durationSec ?? null,
       metadata_json: {
         availabilityReason: item?.availabilityReason ?? null,
+        channelTitle: item?.channelTitle || '',
         playlistId,
+        playlistTitle: playlist?.title || '',
+        playlistChannelTitle: playlist?.channelTitle || '',
+        description: item?.description || '',
+        tags: Array.isArray(item?.tags) ? item.tags : [],
+        sourceCandidates: extractYoutubeSourceCandidates({
+          song_title: item?.title || '',
+          artist_name: item?.channelTitle || '',
+          playlist_title: playlist?.title || '',
+          metadata_json: {
+            channelTitle: item?.channelTitle || '',
+            playlistTitle: playlist?.title || '',
+            description: item?.description || '',
+            tags: Array.isArray(item?.tags) ? item.tags : [],
+          },
+        }),
       },
       imported_at: new Date().toISOString(),
       import_source_position: item?.importSourcePosition ?? index,
