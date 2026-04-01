@@ -17,7 +17,7 @@ import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
-import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
+import { getTitleTypeMeta } from '@/shared/lib/titleType';
 import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Loader2, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
@@ -39,6 +39,20 @@ const PLATFORM_DISPLAY_NAME_MAP = {
 function getPlatformDisplayName(platform, t) {
   const baseName = PLATFORM_DISPLAY_NAME_MAP[platform.name] || platform.name;
   return platform.isSearchFallback ? `${baseName} ${t('titleDetail.searchLabel')}` : baseName;
+}
+
+function buildGoogleSearchUrl(title, primaryTitle) {
+  const query = String(primaryTitle || title?.title_en || title?.title_romaji || title?.title_native || '').trim();
+  if (!query) return null;
+
+  let suffix = '';
+  if (title?.type === 'anime') {
+    suffix = ' anime ไทย';
+  } else if (title?.type === 'manga') {
+    suffix = title?.subtype === 'manhwa' ? ' manhwa แปลไทย' : ' มังงะ ไทย';
+  }
+
+  return `https://www.google.com/search?q=${encodeURIComponent(`${query}${suffix}`.trim())}`;
 }
 
 export function TitleDetail() {
@@ -376,6 +390,8 @@ export function TitleDetail() {
 
   const officialPlatforms = orderedPlatforms.filter((platform) => !platform.isSearchFallback);
   const fallbackPlatforms = orderedPlatforms.filter((platform) => platform.isSearchFallback);
+  const googleSearchPlatform = fallbackPlatforms.find((platform) => platform.name === 'Google') || fallbackPlatforms[0] || null;
+  const googleSearchUrl = googleSearchPlatform?.url || buildGoogleSearchUrl(title, primaryTitle);
 
   const scrollSimilarByPage = (direction) => {
     const rail = similarRailRef.current;
@@ -623,9 +639,18 @@ export function TitleDetail() {
                   <div className="add-actions">
                     <Button onClick={() => addToList(title.id, 'planned')}>{t('titleDetail.addToList')}</Button>
                     <Button variant="secondary" onClick={() => addToList(title.id, 'completed')}>{t('titleDetail.markCompleted')}</Button>
-                    <Button variant="ghost" onClick={() => addToList(title.id, isEpisodeBasedType(title.type) ? 'watching' : 'reading')}>
-                      {t('titleDetail.startNow')}
-                    </Button>
+                    {googleSearchUrl && (
+                      <a
+                        href={googleSearchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary btn-md add-actions-search-link"
+                        aria-label={t('titleDetail.searchOnGoogleForTitle', { title: primaryTitle })}
+                      >
+                        <span className="btn-text">{t('titleDetail.searchOnGoogle')}</span>
+                        <span className="btn-slot" aria-hidden="true"><ExternalLink size={16} /></span>
+                      </a>
+                    )}
                   </div>
                 )}
               </div>

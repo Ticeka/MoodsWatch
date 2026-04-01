@@ -9,7 +9,6 @@ import {
   PARTY_CATEGORY_OPTIONS,
   PARTY_PRESETS,
   createPartySettings,
-  getPartyPresetById,
 } from '@/features/party/lib/partyEngine';
 import {
   createPartyRoom,
@@ -18,7 +17,6 @@ import {
   joinPartyRoom,
   readPartyProfile,
 } from '@/features/party/lib/partyRemote';
-import { PresetCard } from './PartyPresetCard';
 import { buildPartyProfile } from './partyRoomUtils';
 import './Party.css';
 
@@ -43,31 +41,14 @@ export function PartyHubPage() {
   }));
   const [joinCode, setJoinCode] = useState('');
   const [busyAction, setBusyAction] = useState('');
-  const selectedPreset = getPartyPresetById(settings.presetId);
-  const selectedPoolLabel = settings.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.label
-    || PARTY_CATEGORY_OPTIONS[0].label;
-  const selectedPoolLabelTh = settings.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.labelTh
-    || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const songPoolSelectValue = settings.songPresetId ? `preset:${settings.songPresetId}` : settings.categoryId;
 
   useEffect(() => {
     let ignore = false;
-
     fetchPublishedPartySongPresets()
-      .then((presets) => {
-        if (!ignore) {
-          setSongPresetOptions(presets);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load published party song presets', error);
-      });
-
-    return () => {
-      ignore = true;
-    };
+      .then((presets) => { if (!ignore) setSongPresetOptions(presets); })
+      .catch((error) => { console.error('Failed to load published party song presets', error); });
+    return () => { ignore = true; };
   }, []);
 
   const handleCreate = async (event) => {
@@ -100,184 +81,146 @@ export function PartyHubPage() {
 
   return (
     <div className="party-page is-modern">
-      <section className="party-hero container party-hub-shell">
-        <header className="party-hero-copy party-hero-copy--refresh party-hub-header">
-          <span className="party-kicker"><Radio size={16} />Music Guess Party</span>
-          <h1>{pick('Music Guess Party', 'Music Guess Party')}</h1>
-          <p>{pick('สร้างห้องแล้วเริ่มเดาเพลงได้ทันที', 'Create a room and start guessing instantly.')}</p>
+      <div className="phub container">
+
+        <header className="phub-header">
+          <span className="party-kicker"><Radio size={13} />Music Party</span>
+          <h1 className="phub-title">Music Party</h1>
+          <p className="phub-sub">{pick('เดาเพลง · โหวตเพลง · เล่นกับเพื่อน', 'Guess songs · Vote battles · Play together')}</p>
         </header>
 
-        <form className="party-join-strip card-modern" onSubmit={handleJoin}>
-          <div className="party-join-strip-copy">
-            <strong>{pick('เข้าร่วมห้อง', 'Join Room')}</strong>
-          </div>
-          <div className="party-join-inline-form">
-            <input
-              type="text"
-              className="party-room-code-input party-room-code-input--compact"
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="XXXXXX"
-              maxLength={6}
-              aria-label={pick('รหัสห้อง', 'Room code')}
-            />
-            <Button className="party-gradient-action party-gradient-action--join" size="large" type="submit" disabled={busyAction === 'join' || joinCode.trim().length < 6}>
-              {busyAction === 'join' ? pick('กำลังเข้า...', 'Joining...') : pick('Join Room', 'Join Room')}
-            </Button>
-          </div>
-        </form>
+        <div className="phub-body">
 
-        <div className="party-builder-layout party-builder-layout--refresh">
-          <form className="party-builder-panel card-modern party-builder-panel--refresh" onSubmit={handleCreate}>
-            <h2 className="party-builder-title">{pick('สร้างห้องใหม่', 'Create New Room')}</h2>
+          {/* ── Create Room ── */}
+          <form className="phub-create" onSubmit={handleCreate}>
+            <h2 className="phub-section-title">{pick('สร้างห้อง', 'Create Room')}</h2>
 
-            <div className="party-field">
-              <span>{pick('โหมดเกม', 'Game mode')}</span>
-              <div className="party-preset-showcase">
+            {/* Mode selector */}
+            <div className="phub-field">
+              <span className="phub-label">{pick('โหมด', 'Mode')}</span>
+              <div className="phub-mode-group">
                 {PARTY_PRESETS.map((preset) => (
-                  <PresetCard
+                  <button
                     key={preset.id}
-                    preset={preset}
-                    selected={settings.presetId === preset.id}
-                    pick={pick}
-                    onSelect={(presetId) => setSettings((current) => ({ ...current, presetId }))}
-                  />
+                    type="button"
+                    className={`phub-mode-btn${settings.presetId === preset.id ? ' is-active' : ''}`}
+                    onClick={() => setSettings((c) => ({ ...c, presetId: preset.id }))}
+                  >
+                    {pick(preset.labelTh, preset.label)}
+                  </button>
                 ))}
               </div>
             </div>
 
-            <div className="party-inline-fields">
-              <label className="party-field">
-                <span>{pick('หมวดเพลง', 'Song pool')}</span>
+            {/* Settings selects */}
+            <div className="phub-selects">
+              <label className="phub-field">
+                <span className="phub-label">{pick('หมวดเพลง', 'Song pool')}</span>
                 <select
                   value={songPoolSelectValue}
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     if (nextValue.startsWith('preset:')) {
                       const presetId = Number(nextValue.replace('preset:', '')) || 0;
-                      const preset = songPresetOptions.find((entry) => entry.id === presetId);
-                      setSettings((current) => ({
-                        ...current,
-                        categoryId: 'all',
-                        songPresetId: preset ? String(preset.id) : '',
-                        songPresetName: preset?.name || '',
-                      }));
+                      const preset = songPresetOptions.find((e) => e.id === presetId);
+                      setSettings((c) => ({ ...c, categoryId: 'all', songPresetId: preset ? String(preset.id) : '', songPresetName: preset?.name || '' }));
                       return;
                     }
-
-                    setSettings((current) => ({
-                      ...current,
-                      categoryId: nextValue,
-                      songPresetId: '',
-                      songPresetName: '',
-                    }));
+                    setSettings((c) => ({ ...c, categoryId: nextValue, songPresetId: '', songPresetName: '' }));
                   }}
                 >
                   {PARTY_CATEGORY_OPTIONS.map((option) => (
                     <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
                   ))}
-                  {songPresetOptions.length > 0 ? (
+                  {songPresetOptions.length > 0 && (
                     <optgroup label={pick('Preset เพลง', 'Song presets')}>
                       {songPresetOptions.map((option) => (
                         <option key={option.id} value={`preset:${option.id}`}>{option.name}</option>
                       ))}
                     </optgroup>
-                  ) : null}
+                  )}
                 </select>
               </label>
-              <label className="party-field">
-                <span>{pick('จำนวนรอบ', 'Rounds')}</span>
-                <select
-                  value={settings.roundCount}
-                  onChange={(event) => setSettings((current) => ({ ...current, roundCount: Number(event.target.value) }))}
-                >
-                  {[2, 5, 10, 15, 20].map((count) => (
-                    <option key={count} value={count}>{count} {pick('รอบ', 'rounds')}</option>
-                  ))}
+
+              <label className="phub-field">
+                <span className="phub-label">{pick('จำนวนรอบ', 'Rounds')}</span>
+                <select value={settings.roundCount} onChange={(e) => setSettings((c) => ({ ...c, roundCount: Number(e.target.value) }))}>
+                  {[2, 5, 10, 15, 20].map((n) => <option key={n} value={n}>{n} {pick('รอบ', 'rounds')}</option>)}
                 </select>
               </label>
-              <label className="party-field">
-                <span>{pick('เวลาเล่นเพลง', 'Clip time')}</span>
-                <select
-                  value={settings.timePerRoundSec}
-                  onChange={(event) => setSettings((current) => ({ ...current, timePerRoundSec: Number(event.target.value) }))}
-                >
-                  {[8, 10, 12, 15, 20].map((seconds) => (
-                    <option key={seconds} value={seconds}>{seconds} {pick('วินาที', 'sec')}</option>
-                  ))}
+
+              <label className="phub-field">
+                <span className="phub-label">{pick('เวลาเพลง', 'Clip')}</span>
+                <select value={settings.timePerRoundSec} onChange={(e) => setSettings((c) => ({ ...c, timePerRoundSec: Number(e.target.value) }))}>
+                  {[8, 10, 12, 15, 20].map((n) => <option key={n} value={n}>{n} {pick('วิ', 'sec')}</option>)}
                 </select>
               </label>
-              <label className="party-field">
-                <span>{pick('เวลาเฉลย', 'Reveal time')}</span>
-                <select
-                  value={settings.revealSec}
-                  onChange={(event) => setSettings((current) => ({ ...current, revealSec: Number(event.target.value) }))}
-                >
-                  {[6, 8, 10, 12, 15, 20].map((seconds) => (
-                    <option key={seconds} value={seconds}>{seconds} {pick('วินาที', 'sec')}</option>
-                  ))}
+
+              <label className="phub-field">
+                <span className="phub-label">{pick('เวลาเฉลย', 'Reveal')}</span>
+                <select value={settings.revealSec} onChange={(e) => setSettings((c) => ({ ...c, revealSec: Number(e.target.value) }))}>
+                  {[6, 8, 10, 12, 15, 20].map((n) => <option key={n} value={n}>{n} {pick('วิ', 'sec')}</option>)}
                 </select>
               </label>
             </div>
 
-            <div className="party-field">
-              <span>{pick('ตัวเลือกเสริม', 'Extra rules')}</span>
-              <div className="party-toggle-grid">
-                <label className="party-toggle--card">
-                  <input
-                    type="checkbox"
-                    checked={settings.showLiveScores}
-                    onChange={(event) => setSettings((current) => ({ ...current, showLiveScores: event.target.checked }))}
-                  />
-                  <span>{pick('แสดงคะแนนสด', 'Live scores')}</span>
-                  <small>{pick('เห็นอันดับหลังจบแต่ละรอบ', 'Show standings after each round')}</small>
-                </label>
-                <label className="party-toggle--card">
-                  <input
-                    type="checkbox"
-                    checked={settings.randomOrder}
-                    onChange={(event) => setSettings((current) => ({ ...current, randomOrder: event.target.checked }))}
-                  />
-                  <span>{pick('สุ่มลำดับเพลง', 'Shuffle songs')}</span>
-                  <small>{pick('สลับเพลย์ลิสต์ก่อนเริ่มเกม', 'Randomize the playlist before the match begins')}</small>
-                </label>
-              </div>
-            </div>
-
-            <div className="party-settings-summary party-settings-summary--compact">
-              <article className="party-stat-pill">
-                <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
-                <span>{pick('preset', 'preset')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
-                <span>{pick('pool', 'pool')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{settings.roundCount}</strong>
-                <span>{pick('รอบ', 'rounds')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{settings.timePerRoundSec}</strong>
-                <span>{pick('วินาทีเพลง', 'clip sec')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{settings.revealSec}</strong>
-                <span>{pick('วินาทีเฉลย', 'reveal sec')}</span>
-              </article>
+            {/* Toggles */}
+            <div className="phub-toggles">
+              <label className="phub-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.showLiveScores}
+                  onChange={(e) => setSettings((c) => ({ ...c, showLiveScores: e.target.checked }))}
+                />
+                <span>{pick('คะแนนสด', 'Live scores')}</span>
+              </label>
+              <label className="phub-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.randomOrder}
+                  onChange={(e) => setSettings((c) => ({ ...c, randomOrder: e.target.checked }))}
+                />
+                <span>{pick('สุ่มเพลง', 'Shuffle')}</span>
+              </label>
             </div>
 
             <Button className="party-gradient-action" size="large" type="submit" disabled={busyAction === 'create'}>
-              {busyAction === 'create' ? pick('กำลังสร้างห้อง...', 'Creating room...') : pick('Create Room', 'Create Room')}
+              {busyAction === 'create' ? pick('กำลังสร้าง...', 'Creating...') : pick('สร้างห้อง', 'Create Room')}
             </Button>
           </form>
+
+          {/* ── Divider ── */}
+          <div className="phub-or" aria-hidden="true">
+            <span>{pick('หรือ', 'or')}</span>
+          </div>
+
+          {/* ── Join Room ── */}
+          <form className="phub-join" onSubmit={handleJoin}>
+            <h2 className="phub-section-title">{pick('เข้าร่วมห้อง', 'Join Room')}</h2>
+            <p className="phub-join-hint">{pick('ใส่รหัสห้อง 6 ตัว', 'Enter the 6-character room code')}</p>
+            <input
+              type="text"
+              className="party-room-code-input phub-code-input"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              placeholder="XXXXXX"
+              maxLength={6}
+              aria-label={pick('รหัสห้อง', 'Room code')}
+            />
+            <Button
+              className="party-gradient-action party-gradient-action--join"
+              size="large"
+              type="submit"
+              disabled={busyAction === 'join' || joinCode.trim().length < 6}
+            >
+              {busyAction === 'join' ? pick('กำลังเข้า...', 'Joining...') : pick('Join Room', 'Join Room')}
+            </Button>
+          </form>
+
         </div>
-      </section>
+      </div>
     </div>
   );
 }
 
 export default PartyHubPage;
-
-
-

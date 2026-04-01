@@ -336,6 +336,8 @@ export const translations = {
     "addToList": "Add to List",
     "markCompleted": "Mark Completed",
     "startNow": "Start Now",
+    "searchOnGoogle": "Search on Google",
+    "searchOnGoogleForTitle": "Search for {title} on Google",
     "availableOn": "Available on:",
     "linksAvailable": "{count} links available",
     "noPlatformLinks": "No platform links yet",

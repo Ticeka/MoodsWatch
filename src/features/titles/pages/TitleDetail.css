@@ -779,6 +779,17 @@
   min-width: 160px;
 }
 
+.add-actions-search-link {
+  gap: 0.5rem;
+  text-decoration: none;
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border-default));
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-elevated));
+}
+
+.add-actions-search-link:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
 .add-actions .btn-ghost {
   background: color-mix(in srgb, var(--text-secondary) 7%, transparent);
   border: none;

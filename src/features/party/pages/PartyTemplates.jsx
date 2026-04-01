@@ -85,6 +85,10 @@ export function PartyTemplatesPage() {
       <div className="party-templates-page">
         <header className="party-templates-header">
           <div>
+            <button className="party-back-btn" onClick={() => navigate('/party')} aria-label={pick('ย้อนกลับ', 'Back')}>
+              <ChevronLeft size={18} />
+              {pick('ย้อนกลับ', 'Back')}
+            </button>
             <span className="party-kicker"><LibrarySquare size={16} /> Templates</span>
             <h1>{pick('เพลงปาร์ตี้ (Templates)', 'Party Templates')}</h1>
             <p>{pick('ค้นหาแพ็กเพลง สร้างห้องเล่นเกม หรือสร้างเพลย์ลิสต์ของคุณเอง', 'Find song packs, create a room, or build your own playlist.')}</p>

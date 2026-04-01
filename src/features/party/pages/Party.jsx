@@ -491,11 +491,11 @@ export function PartyHubPage() {
                   <LibrarySquare size={18} />
                 </span>
                 <span className="party-template-picker-button__content">
-                  <strong>{pick('เลือก Song Template', 'Select a Song Template')}</strong>
+                  <strong>{pick('เลือกเทมเพลตจากชุมชน', 'Browse Community Templates')}</strong>
                   <small>
                     {pick(
-                      'เลือกชุดเพลงสำเร็จรูปสำหรับห้องนี้',
-                      'Browse ready-made song sets and use one to create this room.',
+                      'ชุดเพลงที่คนอื่นสร้างไว้ นำมาใช้ได้เลย',
+                      'Ready-made song sets created by the community.',
                     )}
                   </small>
                 </span>
