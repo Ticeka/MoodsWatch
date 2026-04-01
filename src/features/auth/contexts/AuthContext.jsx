@@ -237,6 +237,24 @@ export function AuthProvider({ children }) {
     return data;
   }, [hydrateUserProfile]);
 
+  const signInWithProvider = useCallback(async (provider) => {
+    if (!supabase) throw new Error('Supabase client is not available');
+
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    if (!normalizedProvider) {
+      throw new Error('OAuth provider is required');
+    }
+
+    const redirectTo = `${window.location.origin}/`;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: normalizedProvider,
+      options: { redirectTo },
+    });
+
+    if (error) throw error;
+    return data;
+  }, []);
+
   const signOut = useCallback(async () => {
     if (!supabase) throw new Error('Supabase client is not available');
 
@@ -280,9 +298,10 @@ export function AuthProvider({ children }) {
     isProfileLoading,
     signInWithEmail,
     signUpWithEmail,
+    signInWithProvider,
     signOut,
     updateUserProfile,
-  }), [user, session, isLoading, isProfileLoading, signInWithEmail, signUpWithEmail, signOut, updateUserProfile]);
+  }), [user, session, isLoading, isProfileLoading, signInWithEmail, signUpWithEmail, signInWithProvider, signOut, updateUserProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

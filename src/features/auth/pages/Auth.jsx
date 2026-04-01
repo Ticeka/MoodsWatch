@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Mail, Lock, UserRound, Sparkles, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, UserRound, Sparkles, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -10,7 +10,7 @@ import { useTheme } from '@/shared/contexts/ThemeContext';
 import './Auth.css';
 
 export function Auth() {
-  const { signInWithEmail, signUpWithEmail, user, isLoading } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithProvider, user, isLoading } = useAuth();
   const { theme } = useTheme();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -19,8 +19,10 @@ export function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [providerLoading, setProviderLoading] = useState('');
   const [error, setError] = useState(null);
 
   const isDark = theme === 'dark';
@@ -35,6 +37,12 @@ export function Auth() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError(null);
+
+    if (!isLogin && password !== confirmPassword) {
+      setError(t('auth.passwordsDoNotMatch'));
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -51,6 +59,17 @@ export function Auth() {
       setError(err.message || t('auth.genericError'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProviderLogin = async (provider) => {
+    setError(null);
+    setProviderLoading(provider);
+    try {
+      await signInWithProvider(provider);
+    } catch (err) {
+      setError(err.message || t('auth.genericError'));
+      setProviderLoading('');
     }
   };
 
@@ -135,6 +154,12 @@ export function Auth() {
             </p>
           </div>
 
+          <div className="auth-value-strip" aria-hidden="true">
+            <span>{t('auth.valueFast')}</span>
+            <span>{t('auth.valueSafe')}</span>
+            <span>{t('auth.valueSync')}</span>
+          </div>
+
           {error && (
             <div className="auth-error">
               <span className="auth-error-dot" />
@@ -142,7 +167,34 @@ export function Auth() {
             </div>
           )}
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <div className="auth-provider-stack">
+            <button
+              type="button"
+              className="auth-provider-btn auth-provider-btn-google"
+              onClick={() => handleProviderLogin('google')}
+              disabled={loading || Boolean(providerLoading)}
+              aria-label={t('auth.continueWithGoogle')}
+              title={t('auth.continueWithGoogle')}
+            >
+              <span className="auth-provider-mark auth-provider-mark-google">G</span>
+            </button>
+            <button
+              type="button"
+              className="auth-provider-btn auth-provider-btn-facebook"
+              onClick={() => handleProviderLogin('facebook')}
+              disabled={loading || Boolean(providerLoading)}
+              aria-label={t('auth.continueWithFacebook')}
+              title={t('auth.continueWithFacebook')}
+            >
+              <span className="auth-provider-mark auth-provider-mark-facebook">f</span>
+            </button>
+          </div>
+
+          <div className="auth-separator" aria-hidden="true">
+            <span>{t('auth.orUseEmail')}</span>
+          </div>
+
+	          <form className="auth-form" onSubmit={handleSubmit}>
             {!isLogin && (
               <div className="auth-field">
                 <label className="auth-field-label">{t('auth.username')}</label>
@@ -195,6 +247,23 @@ export function Auth() {
               </div>
             </div>
 
+            {!isLogin && (
+              <div className="auth-field">
+                <label className="auth-field-label">{t('auth.confirmPassword')}</label>
+                <div className="auth-input-wrap">
+                  <Lock size={17} className="auth-input-icon" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required={!isLogin}
+                    minLength={6}
+                    placeholder={t('auth.confirmPasswordPlaceholder')}
+                  />
+                </div>
+              </div>
+            )}
+
             <button type="submit" className="auth-submit" disabled={loading}>
               {loading
                 ? isLogin
@@ -205,6 +274,11 @@ export function Auth() {
                   : t('auth.signUp')}
             </button>
           </form>
+
+          <div className="auth-trust-note">
+            <ShieldCheck size={16} />
+            <span>{t('auth.oauthHint')}</span>
+          </div>
 
           <p className="auth-footnote">
             {isLogin ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
