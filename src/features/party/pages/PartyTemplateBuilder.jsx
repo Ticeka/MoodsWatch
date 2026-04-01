@@ -538,8 +538,11 @@ export function PartyTemplateBuilderPage() {
         toast.success(pick('บันทึกเทมเพลตแล้ว!', 'Template saved!'));
         navigate(`/party/templates/${editTemplateId}`);
       } else {
-        const displayName = user.user_metadata?.display_name
+        const displayName = user.profile?.name
+          || user.profile?.username
+          || user.user_metadata?.display_name
           || user.user_metadata?.full_name
+          || user.user_metadata?.username
           || user.email?.split('@')[0]
           || 'User';
 

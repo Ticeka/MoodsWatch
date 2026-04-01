@@ -1061,6 +1061,45 @@ function mapPartyTemplate(row) {
   };
 }
 
+async function fetchPartyTemplateCreatorMap(ownerUserIds = []) {
+  const ids = [...new Set(
+    (Array.isArray(ownerUserIds) ? ownerUserIds : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )];
+  if (!supabase || ids.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, name, username')
+    .in('id', ids);
+
+  if (error) {
+    console.warn('Failed to load template creator profiles:', error.message || error);
+    return new Map();
+  }
+
+  return new Map(
+    (data || []).map((profile) => ([
+      String(profile?.id || '').trim(),
+      String(profile?.name || profile?.username || '').trim(),
+    ]))
+  );
+}
+
+function applyPartyTemplateCreatorNames(templates = [], creatorMap = new Map()) {
+  return templates.map((template) => {
+    const ownerUserId = String(template?.ownerUserId || '').trim();
+    const creatorName = creatorMap.get(ownerUserId) || template?.creatorName || '';
+    return {
+      ...template,
+      creatorName,
+    };
+  });
+}
+
 export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = '', userId = null, page = 1, pageSize = 12 } = {}) {
   if (!supabase) {
     return { templates: [], total: 0 };
@@ -1098,7 +1137,9 @@ export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = 
   const { data, error, count } = await query;
   if (error) throw error;
 
-  return { templates: (data || []).map(mapPartyTemplate), total: count ?? 0 };
+  const templates = (data || []).map(mapPartyTemplate);
+  const creatorMap = await fetchPartyTemplateCreatorMap(templates.map((template) => template.ownerUserId));
+  return { templates: applyPartyTemplateCreatorNames(templates, creatorMap), total: count ?? 0 };
 }
 
 export async function fetchPartyTemplateDetail(templateId) {
@@ -1138,8 +1179,11 @@ export async function fetchPartyTemplateDetail(templateId) {
     throw err;
   }
 
+  const mappedTemplate = mapPartyTemplate(template);
+  const creatorMap = await fetchPartyTemplateCreatorMap([mappedTemplate.ownerUserId]);
+
   return {
-    ...mapPartyTemplate(template),
+    ...applyPartyTemplateCreatorNames([mappedTemplate], creatorMap)[0],
     coverUrl: resolveTemplateCoverUrl(template?.cover_url, items || []),
     items: items || [],
   };
