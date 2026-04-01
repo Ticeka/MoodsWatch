@@ -6,5 +6,8 @@ verify_jwt = false
 [functions.trailer-source-proxy]
 verify_jwt = true
 
+[functions.anilist-proxy]
+verify_jwt = true
+
 [functions.party-youtube-resolve]
 verify_jwt = false

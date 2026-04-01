@@ -5,6 +5,7 @@ import {
   TrendingUp, Star, Flame, Clock, CalendarDays, Hash, Users, Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { fetchAniListGraphQL } from '@/shared/lib/anilist';
 import { supabase } from '@/shared/lib/supabase';
 import { getAutoDerivableMoods } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -136,35 +137,13 @@ function normalizeMedia(media) {
 
 // ─── AniList ─────────────────────────────────────────────────────────────────
 
-const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
 const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank} trailer{id site thumbnail}}}}`;
 const ANILIST_TRAILER_GQL = `query($id:Int!){Media(id:$id){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}`;
 const ANILIST_TRAILER_SEARCH_GQL = `query($search:String!$type:MediaType){Page(page:1,perPage:5){media(search:$search,type:$type,isAdult:false){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}}`;
 
-async function fetchAniListGraphQL(query, variables, signal) {
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`AniList ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
-  return json.data;
-}
-
 async function fetchAniListPage(vars, signal) {
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ query: GQL, variables: vars }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`AniList ตอบกลับ ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
-  return json.data.Page;
+  const data = await fetchAniListGraphQL(GQL, vars, { signal });
+  return data?.Page;
 }
 
 // ─── AniList characters & staff query ────────────────────────────────────────
@@ -172,25 +151,17 @@ async function fetchAniListPage(vars, signal) {
 const CHAR_STAFF_GQL = `query($id:Int!){Media(id:$id){characters(sort:[ROLE,RELEVANCE],perPage:25){edges{role node{id name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
 
 async function fetchAniListCharStaff(anilistId, signal) {
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ query: CHAR_STAFF_GQL, variables: { id: anilistId } }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`AniList ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
-  return json.data?.Media || null;
+  const data = await fetchAniListGraphQL(CHAR_STAFF_GQL, { id: anilistId }, { signal });
+  return data?.Media || null;
 }
 
 async function fetchAniListTrailerById(anilistId, signal) {
-  const data = await fetchAniListGraphQL(ANILIST_TRAILER_GQL, { id: anilistId }, signal);
+  const data = await fetchAniListGraphQL(ANILIST_TRAILER_GQL, { id: anilistId }, { signal });
   return data?.Media || null;
 }
 
 async function searchAniListTrailerByName(search, type, signal) {
-  const data = await fetchAniListGraphQL(ANILIST_TRAILER_SEARCH_GQL, { search, type }, signal);
+  const data = await fetchAniListGraphQL(ANILIST_TRAILER_SEARCH_GQL, { search, type }, { signal });
   return data?.Page?.media || [];
 }
 

@@ -7,6 +7,7 @@ import {
   CANONICAL_TITLE_SELECT,
   mapCanonicalRecordToAdminForm,
 } from '@/shared/lib/catalog';
+import { fetchAniListGraphQL } from '@/shared/lib/anilist';
 import { supabase } from '@/shared/lib/supabase';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
@@ -44,7 +45,6 @@ const PLATFORM_OPTIONS = [
 
 const ADMIN_SAVE_TIMEOUT_MS = 10000;
 const ADMIN_TITLE_DRAFT_PREFIX = 'moodwatch-admin-title-draft';
-const ANILIST_URL = import.meta.env.DEV ? '/anilist-gql' : 'https://graphql.anilist.co';
 const TRAILER_SOURCE_OPTIONS = ['manual', 'anilist', 'tmdb', 'youtube', 'dailymotion'];
 const ANILIST_TRAILER_QUERY = `
   query AdminTitleTrailer($id: Int!) {
@@ -226,28 +226,6 @@ function buildTrailerPatch(media) {
     trailer_thumbnail_url: trailer?.thumbnailUrl || '',
     trailer_source: trailer?.source || 'anilist',
   };
-}
-
-async function fetchAniListGraphQL(query, variables) {
-  const response = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`AniList request failed with ${response.status}`);
-  }
-
-  const payload = await response.json();
-  if (payload.errors?.length) {
-    throw new Error(payload.errors.map((item) => item.message).join('; '));
-  }
-
-  return payload.data;
 }
 
 export function AdminTitleEdit() {
