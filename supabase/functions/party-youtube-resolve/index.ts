@@ -102,7 +102,11 @@ function parseYoutubeVideoId(raw: string): string | null {
   if (!url) return null
   try {
     const u = new URL(url)
-    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v')
+    if (u.hostname.includes('youtube.com')) {
+      if (u.pathname === '/watch') return u.searchParams.get('v')
+      const pathMatch = u.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/)
+      if (pathMatch) return pathMatch[1]
+    }
     if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0] || null
   } catch {
     if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url

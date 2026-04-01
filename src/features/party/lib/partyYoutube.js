@@ -179,7 +179,13 @@ export function parseYoutubeVideoId(url) {
   try {
     const urlObj = new URL(url);
     if (urlObj.hostname.includes('youtube.com')) {
-      return urlObj.searchParams.get('v');
+      if (urlObj.pathname === '/watch') {
+        return urlObj.searchParams.get('v');
+      }
+      const pathMatch = urlObj.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/);
+      if (pathMatch) {
+        return pathMatch[1];
+      }
     }
     if (urlObj.hostname.includes('youtu.be')) {
       return urlObj.pathname.slice(1).split('?')[0] || null;

@@ -1014,11 +1014,44 @@ describe('partyRemote template CRUD', () => {
     mockState.operations = [];
     mockState.rpcCalls = [];
     mockState.rpc.mockClear();
+    mockState.functionsInvoke.mockReset();
+    mockState.authGetSession.mockReset();
+    mockState.authRefreshSession.mockReset();
+    mockState.authGetUser.mockReset();
     mockState.rpc.mockImplementation((fn, params = {}) => {
       mockState.rpcCalls.push({ fn, params });
       return Promise.resolve({ data: null, error: null });
     });
     mockState.from.mockClear();
+    mockState.functionsInvoke.mockResolvedValue({
+      data: null,
+      error: null,
+    });
+    mockState.authGetSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'access-token-123',
+        },
+      },
+      error: null,
+    });
+    mockState.authRefreshSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'refreshed-token-456',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      },
+      error: null,
+    });
+    mockState.authGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-1',
+        },
+      },
+      error: null,
+    });
 
     // Default: template tables return sample data
     mockState.from.mockImplementation((table) => {
@@ -1408,6 +1441,21 @@ describe('partyRemote template CRUD', () => {
     expect(mockState.functionsInvoke).toHaveBeenCalledWith('party-youtube-resolve', expect.objectContaining({
       body: expect.objectContaining({
         url: 'https://www.youtube.com/watch?v=p_ZH_oqoz7k',
+      }),
+    }));
+  });
+
+  it('resolvePartyYoutubeUrl forwards youtube shorts URLs unchanged', async () => {
+    mockState.functionsInvoke.mockResolvedValue({
+      data: { type: 'video', video: { videoId: 'Hc4OrO4LRWw' } },
+      error: null,
+    });
+
+    await resolvePartyYoutubeUrl('https://www.youtube.com/shorts/Hc4OrO4LRWw?feature=share');
+
+    expect(mockState.functionsInvoke).toHaveBeenCalledWith('party-youtube-resolve', expect.objectContaining({
+      body: expect.objectContaining({
+        url: 'https://www.youtube.com/shorts/Hc4OrO4LRWw?feature=share',
       }),
     }));
   });
