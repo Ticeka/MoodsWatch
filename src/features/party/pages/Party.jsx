@@ -539,7 +539,7 @@ export function PartyHubPage() {
 
             <div className="party-field">
                 <span>{pick('ประเภทแมตช์', 'Match Type')}</span>
-              <div className="party-toggle-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div className="party-toggle-grid">
                 <label
                   className="party-toggle--card"
                   style={settings.templateId && settings.modeScope === 'vote' ? { opacity: 0.4, pointerEvents: 'none' } : undefined}

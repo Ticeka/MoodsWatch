@@ -8,6 +8,7 @@ import {
   Compass,
   Crown,
   Download,
+  GripVertical,
   Layers,
   Loader2,
   MessageSquare,
@@ -60,6 +61,7 @@ import {
   loadTierTemplateDetail,
   loadTierTemplates,
   moveTitle,
+  moveTierRow,
   removeTierRow,
   saveTierList,
   saveTierTemplate,
@@ -1427,10 +1429,13 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [dragState, setDragState] = useState(null);
   const [dragTarget, setDragTarget] = useState(null);
+  const [rowDragState, setRowDragState] = useState(null);
+  const [rowDragTarget, setRowDragTarget] = useState(null);
   const [activeSong, setActiveSong] = useState(null);
   const [isSongModalOpen, setIsSongModalOpen] = useState(false);
   const boardRef = useRef(null);
   const dragStateRef = useRef(null);
+  const rowDragStateRef = useRef(null);
   const sampleEntity = titleById.values().next().value;
   const isSongTierList = normalizeCatalogEntityType(tierList?.entityType) === THEME_SONG_ENTITY_TYPE || isThemeSongEntity(sampleEntity);
   const normalizedPoolQuery = useMemo(() => String(query || '').trim().toLowerCase(), [query]);
@@ -1438,6 +1443,10 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
+
+  useEffect(() => {
+    rowDragStateRef.current = rowDragState;
+  }, [rowDragState]);
 
   useEffect(() => {
     if (!isSongTierList) {
@@ -1478,6 +1487,21 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
     });
     setDragTarget(null);
     setHighlightPool(false);
+  };
+
+  const beginRowPointerDrag = (event, payload) => {
+    if (readOnly) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    setRowDragState({
+      ...payload,
+      y: event.clientY,
+    });
+    setRowDragTarget(payload.index);
   };
 
   const autoScrollDuringDrag = useEffectEvent((clientY, eventTarget = null) => {
@@ -1546,6 +1570,27 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
     return null;
   });
 
+  const resolveRowDragTarget = useEffectEvent((clientY) => {
+    const rows = Array.from(document.querySelectorAll('.tiermaker-row[data-row-id]'));
+    if (rows.length === 0) {
+      return null;
+    }
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (!(row instanceof HTMLElement)) {
+        continue;
+      }
+      const rect = row.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      if (clientY < midpoint) {
+        return index;
+      }
+    }
+
+    return rows.length;
+  });
+
   useEffect(() => {
     if (!dragState) {
       return undefined;
@@ -1608,6 +1653,57 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       window.removeEventListener('pointercancel', cancelDrag);
     };
   }, [dragState, readOnly, setTierList]);
+
+  useEffect(() => {
+    if (!rowDragState) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event) => {
+      event.preventDefault();
+      autoScrollDuringDrag(event.clientY, event.target);
+      setRowDragState((current) => (
+        current
+          ? {
+            ...current,
+            y: event.clientY,
+          }
+          : current
+      ));
+      setRowDragTarget(resolveRowDragTarget(event.clientY));
+    };
+
+    const finishRowDrag = (event) => {
+      const current = rowDragStateRef.current;
+      const targetIndex = resolveRowDragTarget(event.clientY);
+
+      if (current && !readOnly && targetIndex != null) {
+        setTierList((existing) => moveTierRow(existing, current.rowId, targetIndex));
+        setSaveState('idle');
+        setSaveMessage('');
+      }
+
+      setRowDragState(null);
+      setRowDragTarget(null);
+    };
+
+    const cancelRowDrag = () => {
+      setRowDragState(null);
+      setRowDragTarget(null);
+    };
+
+    document.body.style.cursor = 'grabbing';
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', finishRowDrag);
+    window.addEventListener('pointercancel', cancelRowDrag);
+
+    return () => {
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishRowDrag);
+      window.removeEventListener('pointercancel', cancelRowDrag);
+    };
+  }, [autoScrollDuringDrag, readOnly, resolveRowDragTarget, rowDragState, setTierList]);
 
   const filteredPoolIds = useMemo(() => {
     if (!normalizedPoolQuery) return tierList.poolTitleIds;
@@ -1879,6 +1975,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   const dragOverRowId = dragTarget?.type === 'row' ? dragTarget.rowId : null;
   const isDragOverPool = dragTarget?.type === 'pool';
   const dragPreviewTitle = dragState ? titleById.get(Number(dragState.titleId)) : null;
+  const rowDragInsertIndex = rowDragState ? rowDragTarget : null;
   const activeSongSummary = getThemeSongSummary(activeSong);
 
   return (
@@ -2054,6 +2151,9 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                 'tiermaker-row',
                 row.titleIds.length === 0 ? 'is-empty' : 'has-items',
                 dragOverRowId === row.id ? 'is-drag-over' : '',
+                rowDragState?.rowId === row.id ? 'is-row-dragging' : '',
+                rowDragInsertIndex === index ? 'is-row-insert-before' : '',
+                rowDragInsertIndex === index + 1 ? 'is-row-insert-after' : '',
               ].filter(Boolean).join(' ')}
             >
               {/* Colored label */}
@@ -2061,6 +2161,17 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
                 className="tiermaker-label"
                 style={{ background: row.color || TIER_COLORS[index % TIER_COLORS.length] }}
               >
+                {!readOnly ? (
+                  <button
+                    type="button"
+                    className="tiermaker-row-handle"
+                    onPointerDown={(event) => beginRowPointerDrag(event, { rowId: row.id, index })}
+                    aria-label={pick('ลากเพื่อจัดลำดับแถว Tier', 'Drag to reorder tier row')}
+                    title={pick('ลากเพื่อจัดลำดับแถว Tier', 'Drag to reorder tier row')}
+                  >
+                    <GripVertical size={14} />
+                  </button>
+                ) : null}
                 <input
                   type="text"
                   aria-label={pick('ป้ายชื่อ Tier', 'Tier label')}

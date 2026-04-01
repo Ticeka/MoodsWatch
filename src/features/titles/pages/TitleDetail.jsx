@@ -18,7 +18,7 @@ import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
 import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
-import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Loader2, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
 import './TitleDetail.css';
@@ -281,9 +281,16 @@ export function TitleDetail() {
 
   if (isLoading) {
     return (
-      <div className="detail-loading">
-        <div className="detail-loading-spinner">{t('titleDetail.loadingLabel')}</div>
-        <h3>{t('titleDetail.loadingTitle')}</h3>
+      <div className="detail-loading" aria-live="polite" aria-busy="true">
+        <div className="detail-loading-card">
+          <div className="detail-loading-spinner" aria-hidden="true">
+            <Loader2 size={28} />
+          </div>
+          <div className="detail-loading-copy">
+            <span className="detail-loading-kicker">{t('titleDetail.loadingLabel')}</span>
+            <h3>{t('titleDetail.loadingTitle')}</h3>
+          </div>
+        </div>
       </div>
     );
   }

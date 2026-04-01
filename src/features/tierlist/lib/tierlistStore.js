@@ -2004,3 +2004,22 @@ export function addTierRow(tierList, label = '') {
     }],
   });
 }
+
+export function moveTierRow(tierList, rowId, targetIndex) {
+  const normalized = normalizeTierList(tierList);
+  const fromIndex = normalized.rows.findIndex((row) => row.id === rowId);
+  if (fromIndex < 0) {
+    return normalized;
+  }
+
+  const boundedTargetIndex = Math.max(0, Math.min(Number(targetIndex) || 0, normalized.rows.length));
+  const rows = [...normalized.rows];
+  const [movedRow] = rows.splice(fromIndex, 1);
+  const insertIndex = boundedTargetIndex > fromIndex ? boundedTargetIndex - 1 : boundedTargetIndex;
+  rows.splice(insertIndex, 0, movedRow);
+
+  return normalizeTierList({
+    ...normalized,
+    rows,
+  });
+}

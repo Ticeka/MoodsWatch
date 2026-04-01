@@ -1231,6 +1231,30 @@ export function Profile() {
             </div>
 
             <div className="profile-form-grid">
+              <section className="profile-modal-avatar-card">
+                <div className="profile-modal-avatar-preview">
+                  {form.avatarUrl ? (
+                    <img src={form.avatarUrl} alt="" className="profile-avatar" />
+                  ) : (
+                    <div className="profile-avatar profile-avatar-fallback">{userInitial}</div>
+                  )}
+                </div>
+                <div className="profile-modal-avatar-copy">
+                  <span className="profile-modal-section-kicker">{t('profile.orUploadAvatar')}</span>
+                  <strong>{language === 'th' ? 'อัปเดตรูปโปรไฟล์ของคุณ' : 'Refresh your profile photo'}</strong>
+                  <p>
+                    {language === 'th'
+                      ? 'เลือกภาพใหม่เพื่อใช้แทนรูปเดิม ระบบจะอัปโหลดและตั้งค่าให้อัตโนมัติ'
+                      : 'Pick a new image and we will upload it and set it as your avatar automatically.'}
+                  </p>
+                </div>
+                <label className={`profile-upload-button ${isUploadingAvatar ? 'is-uploading' : ''}`}>
+                  <Camera size={16} />
+                  <span>{isUploadingAvatar ? t('profile.uploadingPhoto') : t('profile.orUploadAvatar')}</span>
+                  <input type="file" accept="image/*" onChange={uploadAvatar} disabled={isUploadingAvatar} />
+                </label>
+              </section>
+
               <label className="profile-field">
                 <span>{t('profile.displayName')}</span>
                 <input
@@ -1239,21 +1263,6 @@ export function Profile() {
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                   placeholder={t('profile.displayNamePlaceholder')}
                 />
-              </label>
-
-              <label className="profile-field">
-                <span>{t('profile.avatarUrl')}</span>
-                <input
-                  type="url"
-                  value={form.avatarUrl}
-                  onChange={(event) => setForm((current) => ({ ...current, avatarUrl: event.target.value }))}
-                  placeholder={t('profile.avatarUrlPlaceholder')}
-                />
-              </label>
-
-              <label className="profile-field">
-                <span>{t('profile.orUploadAvatar')}</span>
-                <input type="file" accept="image/*" onChange={uploadAvatar} disabled={isUploadingAvatar} />
               </label>
 
               <label className="profile-field">

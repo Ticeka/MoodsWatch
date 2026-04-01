@@ -453,6 +453,31 @@
   -webkit-user-select: none;
 }
 
+.tiermaker-row.is-row-dragging {
+  opacity: 0.6;
+}
+
+.tiermaker-row.is-row-insert-before::before,
+.tiermaker-row.is-row-insert-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-500), var(--primary-500));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-500) 26%, transparent);
+  z-index: 3;
+}
+
+.tiermaker-row.is-row-insert-before::before {
+  top: -2px;
+}
+
+.tiermaker-row.is-row-insert-after::after {
+  bottom: -2px;
+}
+
 .tiermaker-row:last-child {
   border-bottom: none;
 }
@@ -473,6 +498,34 @@
   min-height: 120px;
   border-right: 1px solid color-mix(in srgb, var(--border-default) 50%, transparent);
   overflow: hidden;
+}
+
+.tiermaker-row-handle {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.14);
+  color: rgba(0, 0, 0, 0.72);
+  cursor: grab;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.tiermaker-row-handle:hover {
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(0, 0, 0, 0.9);
+  transform: translateY(-1px);
+}
+
+.tiermaker-row-handle:active {
+  cursor: grabbing;
 }
 
 .tiermaker-label input {
@@ -1611,6 +1664,13 @@
 
   .tiermaker-label {
     min-height: 100px;
+  }
+
+  .tiermaker-row-handle {
+    width: 1.6rem;
+    height: 1.6rem;
+    top: 0.3rem;
+    right: 0.3rem;
   }
 
   .tiermaker-label input {
@@ -3323,6 +3383,46 @@
   .tiermaker-pool-rail {
     grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
     max-height: 260px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tierlist-hero-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tierlist-browse-layout {
+    gap: 1rem;
+  }
+
+  .tierlist-browse-filters {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .tierlist-browse-cats {
+    flex-wrap: wrap;
+  }
+
+  .tiermaker-toolbar {
+    padding: 0.65rem;
+  }
+
+  .tiermaker-toolbar-title,
+  .tiermaker-toolbar-search {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .tiermaker-toolbar.is-collapsed .tiermaker-toolbar-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .tierlist-hero-panel {
+    grid-template-columns: 1fr;
   }
 }
 

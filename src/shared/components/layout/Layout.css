@@ -131,9 +131,41 @@
   gap: 0.6rem;
 }
 
-/* Hide language toggle by default on smaller desktops, show at 1280px+ */
-.guest-actions-desktop > .language-toggle {
-  display: none;
+/* ── Guest settings dropdown ─────────────────────────────── */
+.guest-settings-panel {
+  min-width: 220px;
+  border-radius: 14px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 0.5rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.guest-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 9px;
+}
+
+.guest-settings-row:hover {
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-secondary));
+}
+
+.guest-settings-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* Compact pill wrapper for guest icon-buttons */
@@ -285,17 +317,23 @@
   box-shadow: 0 10px 22px rgba(var(--primary-rgb), 0.28);
 }
 
+/* ── Per-menu accent colors ──────────────────────────────── */
+.desktop-nav .nav-link {
+  --link-color: var(--primary);
+  --link-bg: rgba(var(--primary-rgb), 0.12);
+}
+
 .nav-link {
   position: relative;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-size: 0.82rem;
+  font-weight: 600;
   color: var(--text-secondary);
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.55rem;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
   border-radius: 10px;
 }
 
@@ -304,17 +342,25 @@
   flex-shrink: 0;
 }
 
-.nav-link:hover, .nav-link.active {
-  color: var(--text-primary);
+.nav-link:hover {
+  color: var(--link-color, var(--text-primary));
+  background: var(--link-bg, color-mix(in srgb, var(--primary) 8%, var(--bg-secondary)));
 }
 
 .nav-link:hover svg {
   transform: scale(1.15);
+  color: var(--link-color, var(--text-primary));
+}
+
+.nav-link.active {
+  color: var(--link-color, var(--primary));
+  background: var(--link-bg, color-mix(in srgb, var(--primary) 10%, var(--bg-secondary)));
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb), 0.14);
 }
 
 .nav-link.active svg {
   transform: scale(1.1);
-  color: var(--primary);
+  color: var(--link-color, var(--primary));
 }
 
 .nav-link-label {
@@ -617,7 +663,8 @@
   align-items: center;
   gap: 0.45rem;
   margin-bottom: 0.9rem;
-  padding: 0.45rem 0.5rem 0.45rem 0.95rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.9rem;
+  min-height: 44px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
   border: 1px solid var(--border-default);
@@ -1175,7 +1222,8 @@
   }
 
   .bottom-nav-label {
-    font-size: 0.62rem;
+    font-size: 0.6rem;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -1207,7 +1255,7 @@
   }
 
   .desktop-only {
-    display: flex !important;
+    display: initial !important;
   }
 
   .mobile-only {
@@ -1218,22 +1266,18 @@
 /* โ”€โ”€ Tablet: compact guest controls โ”€โ”€ */
 @media (min-width: 768px) and (max-width: 1099px) {
 
+  .header-search {
+    display: block;
+    flex: 1 1 auto;
+    max-width: 14rem;
+  }
+
   .header-content {
     gap: 0.6rem;
   }
 
   .desktop-nav {
     gap: 0.15rem;
-  }
-
-  .nav-link:hover,
-  .nav-link.active {
-    background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
-  }
-
-  /* Hide language toggle on tablet */
-  .guest-actions-desktop > .language-toggle {
-    display: none;
   }
 
   .header-actions {
@@ -1260,21 +1304,25 @@
   .nav-link-discover {
     display: none;
   }
+}
 
-  .nav-link:hover,
-  .nav-link.active {
-    background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
+/* โ”€โ”€ Large desktop โ”€โ”€ */
+@media (min-width: 1280px) {
+  .desktop-nav {
+    gap: 0.35rem;
   }
 }
 
-/* โ”€โ”€ Large desktop: show language toggle โ”€โ”€ */
-@media (min-width: 1280px) {
-  .guest-actions-desktop > .language-toggle {
-    display: inline-flex;
+/* ── Wide desktop: show nav labels ───────────────────── */
+@media (min-width: 1100px) {
+  .nav-link-label {
+    display: inline;
   }
+}
 
-  .desktop-nav {
-    gap: 0.35rem;
+@media (min-width: 1440px) {
+  .header-search {
+    min-width: 18rem;
   }
 }
 
@@ -1459,7 +1507,7 @@
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* โ”€โ”€ Notification Bell โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€ */
+/* ── Notification Bell ───────────────────────────────────────────────────── */
 .notif-bell-btn {
   position: relative;
   display: flex;
