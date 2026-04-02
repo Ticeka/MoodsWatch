@@ -36,6 +36,29 @@ function withTimeout(promise, timeoutMs, label) {
   });
 }
 
+function parseOAuthHashSession() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const hash = String(window.location.hash || '').replace(/^#/, '');
+  if (!hash) {
+    return null;
+  }
+
+  const params = new URLSearchParams(hash);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken || !refreshToken) {
+    return null;
+  }
+
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  };
+}
+
 async function fetchUserProfile(userId) {
   if (!userId || !supabase) return null;
 
@@ -151,6 +174,17 @@ export function AuthProvider({ children }) {
 
     const initializeAuth = async () => {
       try {
+        // Fallback for OAuth hash callbacks when session detection misses on first paint.
+        const oauthHashSession = parseOAuthHashSession();
+        if (oauthHashSession) {
+          const { error: setSessionError } = await supabase.auth.setSession(oauthHashSession);
+          if (!setSessionError) {
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+          } else {
+            console.warn('OAuth hash session restore failed:', setSessionError.message);
+          }
+        }
+
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
 
         if (error) {
