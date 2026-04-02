@@ -591,7 +591,7 @@ function mapPartyTemplateSongItem(row) {
  * YouTube: playbackStatus must be 'ready'.
  */
 function isRuntimePlayableSong(song) {
-  if (song.provider === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE) {
+  if (String(song.provider || '').trim().toLowerCase() === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE) {
     return isYoutubeItemPlayable(song);
   }
   // Catalog fallback — check playback_status first, then URL shape
@@ -2114,7 +2114,7 @@ export async function fetchPartyRoomBundle(roomCode) {
   };
 }
 
-export async function createPartyRoom({ profile = {}, settings = {} } = {}) {
+export async function createPartyRoom({ profile = {}, settings = {}, roomName = '', visibility = 'public' } = {}) {
   if (!supabase) {
     throw new Error('Supabase is unavailable.');
   }
@@ -2122,6 +2122,8 @@ export async function createPartyRoom({ profile = {}, settings = {} } = {}) {
   const memberToken = getPartyGuestToken();
   const normalizedProfile = normalizePartyProfile(profile, memberToken);
   const normalizedSettings = createPartySettings(settings);
+  const normalizedRoomName = String(roomName || '').trim().slice(0, 60);
+  const normalizedVisibility = visibility === 'private' ? 'private' : 'public';
 
   if (!normalizedProfile.displayName) {
     throw new Error('Display name is required.');
@@ -2139,6 +2141,8 @@ export async function createPartyRoom({ profile = {}, settings = {} } = {}) {
         host_member_token: memberToken,
         settings: normalizedSettings,
         current_match: null,
+        room_name: normalizedRoomName,
+        visibility: normalizedVisibility,
       })
       .select('*')
       .single();
@@ -3042,6 +3046,215 @@ export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
 
   return () => {
     unregisterPartyRoomRealtimeChannel(roomId, channel);
+    void supabase.removeChannel(channel);
+  };
+}
+
+// ─── Room Directory ────────────────────────────────────────────────────────────
+
+const PARTY_ROOM_STALE_LOBBY_MINUTES = 120;
+
+export async function searchPublicPartyRooms({ query = '', mode = '', page = 0, pageSize = 20 } = {}) {
+  if (!supabase) {
+    return [];
+  }
+
+  const cutoff = new Date(Date.now() - PARTY_ROOM_STALE_LOBBY_MINUTES * 60 * 1000).toISOString();
+
+  let req = supabase
+    .from('party_rooms')
+    .select('id, room_code, room_name, visibility, status, host_member_token, settings, created_at, updated_at')
+    .eq('visibility', 'public')
+    .eq('status', 'lobby')
+    .gte('updated_at', cutoff)
+    .order('updated_at', { ascending: false })
+    .range(page * pageSize, page * pageSize + pageSize - 1);
+
+  if (query) {
+    req = req.ilike('room_name', `%${query}%`);
+  }
+
+  if (mode === 'quiz' || mode === 'vote') {
+    req = req.contains('settings', { modeType: mode });
+  }
+
+  const { data, error } = await req;
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function updatePartyRoomAccess(roomId, { roomName, visibility } = {}) {
+  if (!supabase || !roomId) {
+    throw new Error('Invalid arguments.');
+  }
+
+  const patch = {};
+  if (roomName !== undefined) {
+    patch.room_name = String(roomName || '').trim().slice(0, 60);
+  }
+  if (visibility === 'public' || visibility === 'private') {
+    patch.visibility = visibility;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('party_rooms')
+    .update(patch)
+    .eq('id', roomId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+// ─── Join Requests ─────────────────────────────────────────────────────────────
+
+export async function requestPartyRoomJoin(roomId, profile = {}) {
+  if (!supabase || !roomId) {
+    throw new Error('Invalid arguments.');
+  }
+
+  const requesterToken = getPartyGuestToken();
+  const normalizedProfile = normalizePartyProfile(profile, requesterToken);
+
+  if (!normalizedProfile.displayName) {
+    throw new Error('Display name is required.');
+  }
+
+  savePartyProfile(normalizedProfile);
+
+  const { data, error } = await supabase
+    .from('party_room_join_requests')
+    .upsert({
+      room_id: roomId,
+      requester_token: requesterToken,
+      requester_name: normalizedProfile.displayName,
+      requester_avatar_key: normalizedProfile.avatarKey || 'rose',
+      status: 'pending',
+    }, { onConflict: 'room_id,requester_token' })
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function cancelPartyRoomJoinRequest(requestId) {
+  if (!supabase || !requestId) {
+    throw new Error('Invalid arguments.');
+  }
+
+  const { error } = await supabase
+    .from('party_room_join_requests')
+    .delete()
+    .eq('id', requestId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function fetchPartyRoomJoinRequests(roomId) {
+  if (!supabase || !roomId) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('party_room_join_requests')
+    .select('*')
+    .eq('room_id', roomId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function approvePartyRoomJoin(requestId, roomId, requesterToken, requesterName, requesterAvatarKey) {
+  if (!supabase || !requestId || !roomId || !requesterToken) {
+    throw new Error('Invalid arguments.');
+  }
+
+  // Update request to approved
+  const { error: requestError } = await supabase
+    .from('party_room_join_requests')
+    .update({ status: 'approved' })
+    .eq('id', requestId);
+
+  if (requestError) {
+    throw requestError;
+  }
+
+  // Insert member so they can enter the lobby
+  const memberPayload = {
+    room_id: roomId,
+    member_token: requesterToken,
+    display_name: requesterName,
+    avatar_key: requesterAvatarKey || 'rose',
+    is_host: false,
+    is_ready: false,
+  };
+
+  let { error: memberError } = await supabase
+    .from('party_room_members')
+    .upsert(memberPayload, { onConflict: 'room_id,member_token' });
+
+  if (memberError && hasMissingColumn(memberError, 'avatar_url')) {
+    ({ error: memberError } = await supabase
+      .from('party_room_members')
+      .upsert(memberPayload, { onConflict: 'room_id,member_token' }));
+  }
+
+  if (memberError) {
+    throw memberError;
+  }
+}
+
+export async function rejectPartyRoomJoin(requestId) {
+  if (!supabase || !requestId) {
+    throw new Error('Invalid arguments.');
+  }
+
+  const { error } = await supabase
+    .from('party_room_join_requests')
+    .update({ status: 'rejected' })
+    .eq('id', requestId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export function subscribeToPartyRoomJoinRequests(roomId, onEvent) {
+  if (!supabase || !roomId) {
+    return () => {};
+  }
+
+  const channel = supabase
+    .channel(`party-join-requests-${roomId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'party_room_join_requests', filter: `room_id=eq.${roomId}` },
+      (payload) => {
+        onEvent?.({ type: payload.eventType, record: payload.new || payload.old });
+      },
+    );
+
+  channel.subscribe();
+
+  return () => {
     void supabase.removeChannel(channel);
   };
 }

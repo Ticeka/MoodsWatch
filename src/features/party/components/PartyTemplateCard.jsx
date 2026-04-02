@@ -1,7 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Play, Layers, Users, Star, Heart, Clock } from 'lucide-react';
-import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import './PartyTemplates.css';
 
@@ -30,7 +28,7 @@ export function PartyTemplateCard({ template, onClick, pick }) {
           {isOfficial && (
             <div className="party-badge badge-official">
               <Star size={12} fill="currentColor" />
-              <span>Official</span>
+              <span>{pick('ทางการ', 'Official')}</span>
             </div>
           )}
           <div className="party-template-card-overlay">
@@ -47,13 +45,13 @@ export function PartyTemplateCard({ template, onClick, pick }) {
             <span key={tag} className="party-tag">{tag}</span>
           ))}
           {modeScope === 'all' && (
-            <span className="party-tag tag-mode">Quiz & Vote</span>
+            <span className="party-tag tag-mode">{pick('Quiz + Vote', 'Quiz & Vote')}</span>
           )}
           {modeScope === 'quiz' && (
-            <span className="party-tag tag-mode-quiz">Quiz Only</span>
+            <span className="party-tag tag-mode-quiz">{pick('เฉพาะ Quiz', 'Quiz Only')}</span>
           )}
           {modeScope === 'vote' && (
-            <span className="party-tag tag-mode-vote">Vote Only</span>
+            <span className="party-tag tag-mode-vote">{pick('เฉพาะ Vote', 'Vote Only')}</span>
           )}
         </div>
         

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   analyzePartyTemplateCompatibility,
   catalogSongToTemplateItem,
@@ -41,7 +41,7 @@ describe('catalogSongToTemplateItem', () => {
     });
   });
 
-  it('always uses the explicit position argument — not the song.position property', () => {
+  it('always uses the explicit position argument โ€” not the song.position property', () => {
     // After mapTemplateItemFromDb the item has position=0 from the DB row.
     // When the builder re-saves with items.map((item, index) => catalogSongToTemplateItem(item, index))
     // the index (3) must win so reordered playlists are stored correctly.
@@ -239,7 +239,7 @@ describe('template playability helpers', () => {
 
     expect(compatibility.missingSourceMetadataCount).toBe(5);
     expect(compatibility.presetResults['party-classic'].compatible).toBe(true);
-    expect(compatibility.presetResults['full-recall'].compatible).toBe(false);
+    expect(compatibility.presetResults['song-typing'].compatible).toBe(true);
   });
 
   it('allows unresolved YouTube templates in Party Classic by falling back to song-title choices', () => {
@@ -392,3 +392,5 @@ describe('filterTemplates', () => {
     expect(filterTemplates(undefined)).toEqual([]);
   });
 });
+
+

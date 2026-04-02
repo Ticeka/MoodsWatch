@@ -95,7 +95,6 @@ export const PARTY_TEMPLATE_DEFAULT_PRESET_ID = 'party-classic';
 export const PARTY_TEMPLATE_PRESET_IDS = [
   'party-classic',
   'song-typing',
-  'full-recall',
 ];
 
 /**

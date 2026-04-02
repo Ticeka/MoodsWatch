@@ -71,7 +71,7 @@ export function resolveTemplateCoverUrl(value, items = [], fallback = PARTY_TEMP
  *                   (limited is treated as not-ready to match runtime playback)
  */
 export function isTemplateItemPlayable(item = {}) {
-  const explicitProvider = item.provider || '';
+  const explicitProvider = String(item.provider || '').trim().toLowerCase();
 
   if (explicitProvider === PARTY_TEMPLATE_ITEM_PROVIDER.YOUTUBE) {
     return isYoutubeItemPlayable(item);
@@ -320,14 +320,6 @@ function buildPresetCompatibilityResult(presetId, metrics, requiredCount) {
         requirementLabel: 'song titles',
       }));
     }
-  } else if (presetId === 'full-recall' && metrics.fullRecallEligibleCount < requiredCount && metrics.playableSongCount >= requiredCount) {
-    blockingReasons.push(createCompatibilityReason('insufficient_answerable_songs', {
-      presetId,
-      label,
-      requiredCount,
-      actualCount: metrics.fullRecallEligibleCount,
-      requirementLabel: 'song titles and source titles',
-    }));
   }
 
   if (metrics.missingSourceMetadataCount > 0) {
@@ -418,7 +410,6 @@ export function analyzePartyTemplateCompatibility(items = [], settingsOrPreset =
     choiceEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.answerKey).length,
     resolvedClassicEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.isClassicResolved).length,
     songTypingEligibleCount: playableItems.filter((item) => item.hasSongTitle).length,
-    fullRecallEligibleCount: playableItems.filter((item) => item.hasSongTitle && item.hasSourceTitle).length,
     unresolvedSourceCount: playableItems.filter((item) => item.sourceResolutionStatus !== PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.LINKED).length,
     sourceSuggestionCount: playableItems.filter((item) => item.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED).length,
   };
@@ -448,7 +439,6 @@ export function analyzePartyTemplateCompatibility(items = [], settingsOrPreset =
     choiceEligibleCount: metrics.choiceEligibleCount,
     resolvedClassicEligibleCount: metrics.resolvedClassicEligibleCount,
     songTypingEligibleCount: metrics.songTypingEligibleCount,
-    fullRecallEligibleCount: metrics.fullRecallEligibleCount,
     distinctChoiceAnswerCount: metrics.distinctChoiceAnswerCount,
     distinctSourceCount: metrics.distinctResolvedSourceCount,
     distinctResolvedSourceCount: metrics.distinctResolvedSourceCount,

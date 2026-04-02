@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   advancePartyMatch,
   buildPartyMatchSnapshot,
@@ -111,8 +111,8 @@ describe('partyEngine', () => {
       timeLimitMs: 12000,
     });
 
-    const dualScore = scorePartyAnswer({
-      presetId: 'full-recall',
+    const fasterTypingScore = scorePartyAnswer({
+      presetId: 'song-typing',
       round,
       typedTitle: 'Naruto',
       typedSong: 'Blue Bird',
@@ -122,9 +122,8 @@ describe('partyEngine', () => {
 
     expect(typingScore.songCorrect).toBe(true);
     expect(typingScore.points).toBeGreaterThan(180);
-    expect(dualScore.titleCorrect).toBe(true);
-    expect(dualScore.songCorrect).toBe(true);
-    expect(dualScore.points).toBeGreaterThan(260);
+    expect(fasterTypingScore.songCorrect).toBe(true);
+    expect(fasterTypingScore.points).toBeGreaterThan(typingScore.points);
   });
 
   it('advances match phases in order until final', () => {
@@ -316,3 +315,5 @@ describe('partyEngine', () => {
     })).toThrow('Not enough distinct answer choices');
   });
 });
+
+

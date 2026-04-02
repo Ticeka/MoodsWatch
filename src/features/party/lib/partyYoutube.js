@@ -387,14 +387,14 @@ export function normalizeYoutubePlaylistPayload(playlist, positionOffset = 0) {
  */
 export function isYoutubeTemplateItem(item) {
   if (!item) return false;
-  const provider = item.provider || item?.providerMediaId ? 'youtube' : '';
+  const provider = String(item.provider || '').trim().toLowerCase();
+  const providerMediaId = String(item.providerMediaId || item.provider_media_id || '').trim();
+  const sourceKind = String(item.sourceKind || item.source_kind || '').trim().toLowerCase();
   return (
     provider === 'youtube' ||
-    item.provider === 'youtube' ||
-    item.sourceKind === 'youtube_video' ||
-    item.sourceKind === 'youtube_playlist' ||
-    item.source_kind === 'youtube_video' ||
-    item.source_kind === 'youtube_playlist'
+    Boolean(providerMediaId) ||
+    sourceKind === 'youtube_video' ||
+    sourceKind === 'youtube_playlist'
   );
 }
 

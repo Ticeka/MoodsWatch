@@ -82,11 +82,11 @@ async function loadTranslationMap(language) {
 
 export function getInitialLanguagePreference() {
   if (typeof window === 'undefined') {
-    return 'th';
+    return 'en';
   }
 
   const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return storedLanguage === 'en' ? 'en' : 'th';
+  return storedLanguage === 'th' ? 'th' : 'en';
 }
 
 export async function preloadTranslations(language) {

@@ -531,19 +531,19 @@
 
 /* Preset cards */
 .party-preset-showcase {
-  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem;
+  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.15rem;
 }
 .party-preset-card {
   position: relative; 
   display: flex; 
   flex-direction: column; 
-  padding: 1.25rem; 
+  padding: 1.35rem; 
   border-radius: 1.25rem;
   background: var(--bg-secondary); 
   border: 2px solid var(--border-default);
   text-align: left; 
   cursor: pointer; 
-  min-height: 175px;
+  min-height: 188px;
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: var(--shadow-sm);
   overflow: visible;
@@ -632,10 +632,10 @@
 }
 
 .party-preset-card p { 
-  font-size: 0.82rem; 
+  font-size: 0.84rem; 
   color: var(--text-secondary); 
   margin: 0; 
-  line-height: 1.45;
+  line-height: 1.5;
   flex-grow: 1;
 }
 

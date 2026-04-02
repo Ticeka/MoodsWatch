@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
   from: vi.fn(),
@@ -1090,7 +1090,7 @@ describe('partyRemote template CRUD', () => {
 
   it('createPartyTemplate inserts header then items and returns mapped template', async () => {
     const result = await createPartyTemplate(
-      { ownerUserId: 'user-1', name: 'Anime Classics', description: 'Best OPs ever', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'full-recall', tags: ['OP'] },
+      { ownerUserId: 'user-1', name: 'Anime Classics', description: 'Best OPs ever', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'song-typing', tags: ['OP'] },
       SAMPLE_ITEM_ROWS,
       'Tester',
     );
@@ -1098,7 +1098,7 @@ describe('partyRemote template CRUD', () => {
     // Header insert happened
     const headerInsert = mockState.operations.find((op) => op.table === 'party_song_templates' && op.action === 'insert');
     expect(headerInsert).toBeTruthy();
-    expect(headerInsert.payload).toMatchObject({ name: 'Anime Classics', owner_user_id: 'user-1', default_preset_id: 'full-recall' });
+    expect(headerInsert.payload).toMatchObject({ name: 'Anime Classics', owner_user_id: 'user-1', default_preset_id: 'song-typing' });
 
     // Items insert happened
     const itemInsert = mockState.operations.find((op) => op.table === 'party_song_template_items' && op.action === 'insert');
@@ -1128,7 +1128,7 @@ describe('partyRemote template CRUD', () => {
     ];
 
     await createPartyTemplate(
-      { ownerUserId: 'user-1', name: 'YT Template', description: '', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'full-recall', tags: [], sourceType: 'youtube' },
+      { ownerUserId: 'user-1', name: 'YT Template', description: '', coverUrl: '', visibility: 'public', modeScope: 'all', presetId: 'song-typing', tags: [], sourceType: 'youtube' },
       youtubeItems,
       'Tester',
     );
@@ -1510,3 +1510,5 @@ describe('partyRemote template CRUD', () => {
     ).toBe(true);
   });
 });
+
+

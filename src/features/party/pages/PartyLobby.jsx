@@ -4,6 +4,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { getPartyRequiredReadyCount } from '@/features/party/lib/partyEngine';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
+import { PartyJoinRequestsPanel } from '@/features/party/components/PartyJoinRequestsPanel';
 import { PartyPlayerList } from './PartyRoomShared';
 
 export const PartyLobbyView = React.memo(function PartyLobbyView({
@@ -21,6 +22,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   onCloseRoom,
   pick,
 }) {
+  const roomId = room?.id;
   const members = useHydratedPartyMembers(guestToken, partyProfile);
   const isVoteMode = room?.settings?.modeType === 'vote';
   const templateName = room?.settings?.templateName || '';
@@ -37,6 +39,11 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
 
   return (
     <div className="party-lobby-layout">
+      {isHost && roomId ? (
+        <div className="party-lobby-section">
+          <PartyJoinRequestsPanel roomId={roomId} pick={pick} />
+        </div>
+      ) : null}
       <div className="party-lobby-section">
         <div className="party-lobby-block">
           <div className="party-lobby-block-head">
@@ -110,7 +117,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
           <div className="party-lobby-actions">
             {!isHost ? (
               <Button variant={currentMember?.is_ready ? 'outline' : 'primary'} onClick={onToggleReady} disabled={busyAction === 'ready'}>
-                Ready
+                {pick('พร้อม', 'Ready')}
               </Button>
             ) : (
               <Button variant="primary" onClick={onStartMatch} disabled={busyAction === 'start' || readyCount < requiredReadyCount}>

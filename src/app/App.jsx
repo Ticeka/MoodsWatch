@@ -20,6 +20,7 @@ const BattleLeaderboard = lazy(() => import('@/features/battle/pages/BattleLeade
 const DailyChallenge = lazy(() => import('@/features/battle/pages/DailyChallenge').then((module) => ({ default: module.DailyChallenge })));
 const PartyHubPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyHubPage })));
 const PartyRoomPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyRoomPage })));
+const PartyRoomDirectoryPage = lazy(() => import('@/features/party/pages/PartyRoomDirectory').then((module) => ({ default: module.PartyRoomDirectoryPage })));
 const PartyTemplatesPage = lazy(() => import('@/features/party/pages/PartyTemplates').then((module) => ({ default: module.PartyTemplatesPage })));
 const PartyTemplateDetailPage = lazy(() => import('@/features/party/pages/PartyTemplateDetail').then((module) => ({ default: module.PartyTemplateDetailPage })));
 const PartyTemplateBuilderPage = lazy(() => import('@/features/party/pages/PartyTemplateBuilder').then((module) => ({ default: module.PartyTemplateBuilderPage })));
@@ -110,6 +111,7 @@ function App() {
                     <Route path="battle/daily" element={<DailyChallenge />} />
                     <Route path="battle/:sessionId" element={<BattleSessionPage />} />
                     <Route path="party" element={<PartyHubPage />} />
+                    <Route path="party/rooms" element={<PartyRoomDirectoryPage />} />
                     <Route path="party/templates" element={<PartyTemplatesPage />} />
                     <Route path="party/templates/create" element={<PartyTemplateBuilderPage />} />
                     <Route path="party/templates/:templateId" element={<PartyTemplateDetailPage />} />

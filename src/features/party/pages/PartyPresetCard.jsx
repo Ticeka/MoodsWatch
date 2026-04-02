@@ -1,12 +1,10 @@
 import React from 'react';
-import { Mic2, Radio, WandSparkles, CheckCircle2 } from 'lucide-react';
+import { Mic2, Radio, CheckCircle2 } from 'lucide-react';
 
 export const PresetCard = React.memo(function PresetCard({ preset, selected, pick, onSelect }) {
   const icon = preset.id === 'party-classic'
     ? <Radio size={22} />
-    : preset.id === 'song-typing'
-      ? <Mic2 size={22} />
-      : <WandSparkles size={22} />;
+    : <Mic2 size={22} />;
 
   return (
     <button
@@ -26,9 +24,7 @@ export const PresetCard = React.memo(function PresetCard({ preset, selected, pic
           <span className="party-preset-tag">
             {preset.answerMode === 'choice'
               ? pick('4 ตัวเลือก', '4 choices')
-              : preset.answerMode === 'typing'
-                ? pick('พิมพ์ชื่อเพลง', 'Type song title')
-                : pick('พิมพ์ 2 คำตอบ', 'Dual input')}
+              : pick('พิมพ์ชื่อเพลง', 'Type song title')}
           </span>
         </div>
       </div>
@@ -37,3 +33,4 @@ export const PresetCard = React.memo(function PresetCard({ preset, selected, pic
 });
 
 export default PresetCard;
+

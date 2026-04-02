@@ -1,4 +1,4 @@
-const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+﻿const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PARTY_ANSWER_GRACE_SEC = 3;
 
 function resolvePartyTemplateSourceIdentity(song = {}) {
@@ -40,7 +40,7 @@ export const PARTY_PRESETS = [
     label: 'Party Classic',
     labelTh: 'Party Classic',
     description: 'Listen to a clip and pick the correct answer from 4 choices.',
-    descriptionTh: 'ฟังคลิปแล้วทายชื่อเรื่องจาก 4 ตัวเลือก',
+    descriptionTh: 'เธเธฑเธเธเธฅเธดเธเนเธฅเนเธงเธ—เธฒเธขเธเธทเนเธญเน€เธฃเธทเนเธญเธเธเธฒเธ 4 เธ•เธฑเธงเน€เธฅเธทเธญเธ',
     answerMode: 'choice',
     target: 'title',
     basePoints: 100,
@@ -51,44 +51,33 @@ export const PARTY_PRESETS = [
     label: 'Song Typing',
     labelTh: 'Song Typing',
     description: 'Type the song title before the timer runs out.',
-    descriptionTh: 'พิมพ์ชื่อเพลงให้ทันก่อนหมดเวลา',
+    descriptionTh: 'เธเธดเธกเธเนเธเธทเนเธญเน€เธเธฅเธเนเธซเนเธ—เธฑเธเธเนเธญเธเธซเธกเธ”เน€เธงเธฅเธฒ',
     answerMode: 'typing',
     target: 'song',
     basePoints: 180,
     speedBonus: 70,
-  },
-  {
-    id: 'full-recall',
-    label: 'Full Recall',
-    labelTh: 'Full Recall',
-    description: 'Type both the title and the song name for a perfect round.',
-    descriptionTh: 'พิมพ์ทั้งชื่อเรื่องและชื่อเพลงให้ครบ',
-    answerMode: 'dual',
-    target: 'title_song',
-    basePoints: 0,
-    speedBonus: 90,
-  },
+  },
 ];
 
 export const PARTY_CATEGORY_OPTIONS = [
-  { id: 'all', label: 'All Songs', labelTh: 'รวมทุกเพลง' },
-  { id: 'op', label: 'Openings Only', labelTh: 'เฉพาะเพลงเปิด' },
-  { id: 'ed', label: 'Endings Only', labelTh: 'เฉพาะเพลงปิด' },
-  { id: 'creditless', label: 'Creditless Picks', labelTh: 'เน้นเวอร์ชัน creditless' },
+  { id: 'all', label: 'All Songs', labelTh: 'เธฃเธงเธกเธ—เธธเธเน€เธเธฅเธ' },
+  { id: 'op', label: 'Openings Only', labelTh: 'เน€เธเธเธฒเธฐเน€เธเธฅเธเน€เธเธดเธ”' },
+  { id: 'ed', label: 'Endings Only', labelTh: 'เน€เธเธเธฒเธฐเน€เธเธฅเธเธเธดเธ”' },
+  { id: 'creditless', label: 'Creditless Picks', labelTh: 'เน€เธเนเธเน€เธงเธญเธฃเนเธเธฑเธ creditless' },
 ];
 
 export const PARTY_VOTE_PLAYBACK_MODES = [
-  { id: 'preview', label: 'Preview clip', labelTh: 'เล่นตามเวลาที่ตั้ง' },
-  { id: 'full', label: 'Full clip', labelTh: 'เล่นจนจบคลิป' },
+  { id: 'preview', label: 'Preview clip', labelTh: 'เน€เธฅเนเธเธ•เธฒเธกเน€เธงเธฅเธฒเธ—เธตเนเธ•เธฑเนเธ' },
+  { id: 'full', label: 'Full clip', labelTh: 'เน€เธฅเนเธเธเธเธเธเธเธฅเธดเธ' },
 ];
 
 export const PARTY_AVATAR_OPTIONS = [
-  { id: 'rose', label: 'Rose', labelTh: 'กุหลาบ', tone: 'rose' },
-  { id: 'apricot', label: 'Apricot', labelTh: 'แอปริคอต', tone: 'apricot' },
-  { id: 'gold', label: 'Gold', labelTh: 'ทองอุ่น', tone: 'gold' },
-  { id: 'mint', label: 'Mint', labelTh: 'มิ้นต์', tone: 'mint' },
-  { id: 'sky', label: 'Sky', labelTh: 'ฟ้าใส', tone: 'sky' },
-  { id: 'violet', label: 'Violet', labelTh: 'ไวโอเลต', tone: 'violet' },
+  { id: 'rose', label: 'Rose', labelTh: 'เธเธธเธซเธฅเธฒเธ', tone: 'rose' },
+  { id: 'apricot', label: 'Apricot', labelTh: 'เนเธญเธเธฃเธดเธเธญเธ•', tone: 'apricot' },
+  { id: 'gold', label: 'Gold', labelTh: 'เธ—เธญเธเธญเธธเนเธ', tone: 'gold' },
+  { id: 'mint', label: 'Mint', labelTh: 'เธกเธดเนเธเธ•เน', tone: 'mint' },
+  { id: 'sky', label: 'Sky', labelTh: 'เธเนเธฒเนเธช', tone: 'sky' },
+  { id: 'violet', label: 'Violet', labelTh: 'เนเธงเนเธญเน€เธฅเธ•', tone: 'violet' },
 ];
 
 function makeId(prefix = 'party') {
@@ -112,7 +101,7 @@ export function normalizePartyText(value) {
     .normalize('NFKC')
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/[’'"]/g, ' ')
+    .replace(/[โ€'"]/g, ' ')
     .replace(/\([^)]*\)/g, ' ')
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -175,7 +164,7 @@ export function resolvePartyChoiceIdentity(song = {}) {
       answerLabel: resolvedSource.classicSourceTitleName,
       answerTarget: 'source',
       answerTargetLabel: 'Source title',
-      answerTargetLabelTh: 'ชื่อเรื่อง',
+      answerTargetLabelTh: 'เธเธทเนเธญเน€เธฃเธทเนเธญเธ',
       sourceTitleId: resolvedSource.classicSourceTitleId,
     };
   }
@@ -186,7 +175,7 @@ export function resolvePartyChoiceIdentity(song = {}) {
       answerLabel: songTitle,
       answerTarget: 'song',
       answerTargetLabel: 'Song title',
-      answerTargetLabelTh: 'ชื่อเพลง',
+      answerTargetLabelTh: 'เธเธทเนเธญเน€เธเธฅเธ',
       sourceTitleId: 0,
     };
   }
@@ -196,7 +185,7 @@ export function resolvePartyChoiceIdentity(song = {}) {
     answerLabel: '',
     answerTarget: 'song',
     answerTargetLabel: 'Song title',
-    answerTargetLabelTh: 'ชื่อเพลง',
+    answerTargetLabelTh: 'เธเธทเนเธญเน€เธเธฅเธ',
     sourceTitleId: 0,
   };
 }
@@ -419,7 +408,7 @@ function buildRound(song, settings, titlePool) {
     providerMediaId: song.providerMediaId || null,
     choiceTarget: choiceIdentity.answerTarget || 'source',
     choiceTargetLabel: choiceIdentity.answerTargetLabel || 'Source title',
-    choiceTargetLabelTh: choiceIdentity.answerTargetLabelTh || 'ชื่อเรื่อง',
+    choiceTargetLabelTh: choiceIdentity.answerTargetLabelTh || 'เธเธทเนเธญเน€เธฃเธทเนเธญเธ',
     options,
   };
 }
@@ -709,3 +698,5 @@ export function buildPartyLeaderboard(members = [], answers = []) {
 export function countPartyRoundAnswers(answers = [], roundId = '') {
   return answers.filter((answer) => String(answer.round_id || '') === String(roundId || '')).length;
 }
+
+

@@ -4,11 +4,16 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChevronRight,
   Copy,
+  Globe,
   LibrarySquare,
   Loader2,
+  Lock,
+  Music2,
   Radio,
+  Search,
   Sparkles,
   TimerReset,
+  Vote,
   X,
   XCircle,
 } from 'lucide-react';
@@ -70,6 +75,7 @@ import {
   readPartyAudioVolume,
 } from './partyRoomUtils';
 import './Party.css';
+import './PartyHub.css';
 
 function getPartyTemplateReasonText(reason) {
   if (!reason) {
@@ -122,6 +128,8 @@ export function PartyHubPage() {
     showLiveScores: true,
     randomOrder: true,
   }));
+  const [roomName, setRoomName] = useState('');
+  const [visibility, setVisibility] = useState('public');
   const [joinCode, setJoinCode] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const selectedPreset = getPartyPresetById(settings.presetId);
@@ -160,7 +168,6 @@ export function PartyHubPage() {
         ? templateCompatibility.choiceEligibleCount
         : 0,
       'song-typing': templateCompatibility.songTypingEligibleCount,
-      'full-recall': templateCompatibility.fullRecallEligibleCount,
     };
   }, [settings.templateId, templateCompatibility, templatePoolLoaded]);
   const quizRoundOptions = useMemo(() => {
@@ -379,7 +386,7 @@ export function PartyHubPage() {
         }
       }
 
-      const room = await createPartyRoom({ profile: partyProfile, settings });
+      const room = await createPartyRoom({ profile: partyProfile, settings, roomName, visibility });
       toast.success(pick('สร้างห้องสำเร็จ', 'Room created'));
       navigate(`/party/room/${room.room_code}`);
     } catch (error) {
@@ -404,414 +411,415 @@ export function PartyHubPage() {
   };
 
   return (
-    <div className="party-page is-hub">
-      <section className="container party-hub-shell">
-        <header className="party-hub-header">
-          <span className="party-kicker"><Radio size={16} />Music Guess Party</span>
-          <h1>{pick('Music Guess Party', 'Music Guess Party')}</h1>
-          <p>{pick('สร้างห้องแล้วเดาเพลงได้เลย', 'Create a room and start guessing instantly.')}</p>
-        </header>
+    <div className="pgh-page">
+      <div className="pgh-shell">
 
-        <form className="party-join-strip" onSubmit={handleJoin}>
-          <div className="party-join-strip-copy">
-            <strong>{pick('เข้าร่วมห้อง', 'Join Room')}</strong>
-          </div>
-          <div className="party-join-inline-form">
-            <input
-              type="text"
-              className="party-room-code-input party-room-code-input--compact"
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="XXXXXX"
-              maxLength={6}
-              aria-label={pick('รหัสห้อง', 'Room code')}
-            />
-            <Button className="party-gradient-action party-gradient-action--join" size="large" type="submit" disabled={busyAction === 'join' || joinCode.trim().length < 6}>
-              {busyAction === 'join' ? pick('กำลังเข้าร่วม...', 'Joining...') : pick('เข้าร่วมห้อง', 'Join Room')}
-            </Button>
-          </div>
-        </form>
+        {/* ── Hero ── */}
+        <div className="pgh-hero">
+          <div className="pgh-kicker"><Radio size={11} />Music Guess Party</div>
+          <h1 className="pgh-title">PARTY</h1>
+          <p className="pgh-sub">{pick('สร้างห้องแล้วเดาเพลงกับเพื่อน', 'Create a room and guess songs with friends.')}</p>
+        </div>
 
-        <div className="party-builder-layout--refresh">
-          <form className="party-builder-panel--refresh" onSubmit={handleCreate}>
-            <h2 className="party-builder-title">{pick('สร้างห้องใหม่', 'Create New Room')}</h2>
-
-            {settings.templateId ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(var(--color-primary-rgb), 0.1)', border: '1px solid rgba(var(--color-primary-rgb), 0.35)', borderRadius: '10px', padding: '0.75rem 1rem', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem' }}>
-                  <LibrarySquare size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
-                  <span style={{ color: 'var(--color-text-muted)' }}>{pick('เทมเพลต:', 'Template:')}</span>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: '2rem',
-                      height: '2rem',
-                      borderRadius: '0.6rem',
-                      backgroundImage: `url(${getTemplateCoverUrl(settings.templateCoverUrl)})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      border: '1px solid rgba(var(--color-primary-rgb), 0.25)',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <strong style={{ color: 'var(--color-text)' }}>{settings.templateName || settings.templateId}</strong>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
-                    onClick={() => navigate('/party/templates')}
-                  >
-                    {pick('เปลี่ยน', 'Change')}
-                  </button>
-                  <button
-                    type="button"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '0.3rem' }}
-                    onClick={() => setSettings((current) => ({
-                      ...current,
-                      templateId: '',
-                      templateName: '',
-                      templateCoverUrl: '',
-                      templatePlayableCount: 0,
-                    }))}
-                    title={pick('ล้างเทมเพลต', 'Clear template')}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="btn-secondary party-template-picker-button"
-                onClick={() => navigate('/party/templates')}
+        {/* ── Quick Actions ── */}
+        <div className="pgh-quick">
+          <form className="pgh-join-card" onSubmit={handleJoin}>
+            <div className="pgh-join-label">{pick('เข้าด้วย Code', 'Enter a Code')}</div>
+            <div className="pgh-join-row">
+              <input
+                type="text"
+                className="pgh-code-input"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="XXXXXX"
+                maxLength={6}
+                aria-label={pick('รหัสห้อง', 'Room code')}
+              />
+              <Button
+                size="md"
+                variant="primary"
+                type="submit"
+                disabled={busyAction === 'join' || joinCode.trim().length < 6}
               >
-                <span className="party-template-picker-button__icon" aria-hidden="true">
-                  <LibrarySquare size={18} />
-                </span>
-                <span className="party-template-picker-button__content">
-                  <strong>{pick('เลือกเทมเพลตจากชุมชน', 'Browse Community Templates')}</strong>
-                  <small>
-                    {pick(
-                      'ชุดเพลงที่คนอื่นสร้างไว้ นำมาใช้ได้เลย',
-                      'Ready-made song sets created by the community.',
-                    )}
-                  </small>
-                </span>
-                <span className="party-template-picker-button__action">
-                  {pick('เลือกดู', 'Browse')}
-                  <ChevronRight size={16} />
-                </span>
-              </button>
-            )}
+                {busyAction === 'join'
+                  ? <Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite' }} />
+                  : pick('เข้า', 'Join')}
+              </Button>
+            </div>
+          </form>
 
-            {settings.templateId && templatePoolLoaded && !templateValidation.ok ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.85rem', color: '#b45309' }}>
-                <TimerReset size={15} style={{ flexShrink: 0 }} />
-                {templateValidation.message}
-              </div>
-            ) : null}
-            {settings.templateId && templatePoolLoaded && templateValidation.ok && templateCompatibility?.warnings?.[0] ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.85rem', color: '#b45309' }}>
-                <TimerReset size={15} style={{ flexShrink: 0 }} />
-                {getPartyTemplateReasonText(templateCompatibility.warnings[0], pick)}
-              </div>
-            ) : null}
-            {settings.templateId && templatePoolLoaded && templateCompatibility ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(var(--color-primary-rgb), 0.06)', border: '1px solid rgba(var(--color-primary-rgb), 0.16)', borderRadius: '8px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                <span>
-                  {pick(
-                    `${templateCompatibility.playableSongCount} playable songs, ${templateCompatibility.choiceEligibleCount} choice-ready songs, ${templateCompatibility.distinctChoiceAnswerCount} distinct choices.`,
-                    `${templateCompatibility.playableSongCount} playable songs, ${templateCompatibility.choiceEligibleCount} choice-ready songs, ${templateCompatibility.distinctChoiceAnswerCount} distinct choices.`,
-                  )}
-                </span>
-                {templateCompatibility.unresolvedSourceCount > 0 ? (
-                  <span>
-                    {pick(
-                      `${templateCompatibility.unresolvedSourceCount} songs are still missing canonical source links; without them, 4-choice falls back to song-title answers.`,
-                      `${templateCompatibility.unresolvedSourceCount} songs are still missing canonical source links; without them, 4-choice falls back to song-title answers.`,
-                    )}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
+          <Link to="/party/rooms" className="pgh-find-card">
+            <Search size={20} className="pgh-find-card-icon" />
+            <span>{pick('หาห้อง', 'Find Rooms')}</span>
+          </Link>
+        </div>
 
-            <div className="party-field">
-                <span>{pick('ประเภทแมตช์', 'Match Type')}</span>
-              <div className="party-toggle-grid">
-                <label
-                  className="party-toggle--card"
-                  style={settings.templateId && settings.modeScope === 'vote' ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
-                >
-                  <input
-                    type="radio"
-                    name="mainModeType"
-                    checked={settings.modeType === 'quiz'}
-                    disabled={Boolean(settings.templateId && settings.modeScope === 'vote')}
-                    onChange={() => setSettings((current) => ({ ...current, modeType: 'quiz', timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)) }))}
-                  />
-                  <span>{pick('ทายเพลง', 'Music Quiz')}</span>
-                </label>
-                <label
-                  className="party-toggle--card"
-                  style={settings.templateId && settings.modeScope === 'quiz' ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
-                >
-                  <input
-                    type="radio"
-                    name="mainModeType"
-                    checked={settings.modeType === 'vote'}
-                    disabled={Boolean(settings.templateId && settings.modeScope === 'quiz')}
-                    onChange={() => setSettings((current) => ({ ...current, modeType: 'vote' }))}
-                  />
-                    <span>{pick('โหวตแบทเทิล', 'Vote Battle')}</span>
-                </label>
-              </div>
-              {settings.templateId && settings.modeScope !== 'all' ? (
-                <small style={{ color: 'var(--color-text-muted)', marginTop: '0.4rem', display: 'block' }}>
-                  {pick(
-                      `Template only supports ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'}`,
-                    `This template only supports ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'} mode.`,
-                  )}
-                </small>
-              ) : null}
+        {/* ── Create Form ── */}
+        <form onSubmit={handleCreate}>
+          <div className="pgc-form">
+
+            <div className="pgc-form-header">
+              <p className="pgc-form-title">{pick('สร้างห้องใหม่', 'New Room')}</p>
+              <p className="pgc-form-desc">{pick('ตั้งค่าห้องของคุณ', 'Set up your room')}</p>
             </div>
 
-            {settings.modeType === 'quiz' && (
-              <div className="party-field">
-                <span>{pick('โหมดเกม', 'Game mode')}</span>
-                <div className="party-preset-showcase">
-                  {PARTY_PRESETS.map((preset) => {
-                    const availability = templatePresetAvailability[preset.id];
-                    const isTemplateBound = settings.templateId && templatePoolLoaded;
-                    const helperText = !isTemplateBound
-                      ? ''
-                      : availability?.compatible
-                        ? suggestedTemplatePresetId === preset.id
-                    ? pick('แนะนำสำหรับเทมเพลตนี้', 'Recommended for this template')
-                          : ''
-                        : getPartyTemplateReasonText(availability?.blockingReasons?.[0], pick);
-                    return (
-                      <PresetCard
-                        key={preset.id}
-                        preset={preset}
-                        selected={settings.presetId === preset.id}
-                        disabled={Boolean(isTemplateBound && availability && !availability.compatible)}
-                        helperText={helperText}
-                        pick={pick}
-                        onSelect={(presetId) => {
-                          setSettings((current) => ({
-                            ...current,
-                            presetId,
-                            timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
-                          }));
-                        }}
-                      />
-                    );
-                  })}
+	            <div className="pgc-body">
+	              <div className="pgc-layout">
+	                <div className="pgc-column pgc-column--basics">
+
+              {/* Room name */}
+              <div>
+                <label className="pgc-label" htmlFor="pgc-room-name">
+                  {pick('ชื่อห้อง', 'Room Name')}
+                </label>
+                <input
+                  id="pgc-room-name"
+                  type="text"
+                  className="pgc-name-input"
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  placeholder={pick('ตั้งชื่อห้อง... (ไม่บังคับ)', 'Name your room… (optional)')}
+                  maxLength={60}
+                />
+              </div>
+
+              {/* Visibility */}
+              <div>
+                <span className="pgc-label">{pick('การมองเห็น', 'Visibility')}</span>
+                <div className="pgc-vis-row">
+                  <button type="button" className={`pgc-vis-card${visibility === 'public' ? ' is-active' : ''}`} onClick={() => setVisibility('public')}>
+                    <div className="pgc-vis-icon"><Globe size={16} /></div>
+                    <span className="pgc-vis-name">{pick('สาธารณะ', 'Public')}</span>
+                    <span className="pgc-vis-desc">{pick('ค้นหาได้ · host อนุมัติก่อนเข้า', 'Discoverable · host approves')}</span>
+                  </button>
+                  <button type="button" className={`pgc-vis-card${visibility === 'private' ? ' is-active' : ''}`} onClick={() => setVisibility('private')}>
+                    <div className="pgc-vis-icon"><Lock size={16} /></div>
+                    <span className="pgc-vis-name">{pick('ส่วนตัว', 'Private')}</span>
+                    <span className="pgc-vis-desc">{pick('เข้าได้ด้วย code เท่านั้น', 'Code-only access')}</span>
+                  </button>
                 </div>
               </div>
-            )}
 
-            <div className="party-inline-fields">
+              {/* Template */}
               {settings.templateId ? (
-                <div className="party-field">
-                <span>{pick('คลังเพลง', 'Song pool')}</span>
-                  <div style={{ padding: '0.55rem 0.75rem', borderRadius: '8px', background: 'rgba(var(--color-primary-rgb), 0.08)', border: '1px solid rgba(var(--color-primary-rgb), 0.25)', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                    <LibrarySquare size={14} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'middle', color: 'var(--color-primary)' }} />
-                  {pick('เพลงจากเทมเพลต', 'Songs from template')}
+                <div className="pgc-template-selected">
+                  <div
+                    className="pgc-template-cover"
+                    style={{ backgroundImage: `url(${getTemplateCoverUrl(settings.templateCoverUrl)})` }}
+                    aria-hidden="true"
+                  />
+                  <div className="pgc-template-name">
+                    <strong>{settings.templateName || settings.templateId}</strong>
+                    <small>{pick('เทมเพลต', 'Template')}</small>
+                  </div>
+                  <div className="pgc-template-actions">
+                    <button type="button" className="pgc-template-btn" onClick={() => navigate('/party/templates')}>
+                      {pick('เปลี่ยน', 'Change')}
+                    </button>
+                    <button
+                      type="button"
+                      className="pgc-template-btn"
+                      onClick={() => setSettings((c) => ({ ...c, templateId: '', templateName: '', templateCoverUrl: '', templatePlayableCount: 0 }))}
+                      title={pick('ล้าง', 'Clear')}
+                    >
+                      <X size={13} />
+                    </button>
                   </div>
                 </div>
               ) : (
-                <label className="party-field">
-                <span>{pick('คลังเพลง', 'Song pool')}</span>
-                  <select
-                    value={songPoolSelectValue}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      if (nextValue.startsWith('preset:')) {
-                        const presetId = Number(nextValue.replace('preset:', '')) || 0;
-                        const preset = songPresetOptions.find((entry) => entry.id === presetId);
-                        setSettings((current) => ({
-                          ...current,
-                          categoryId: 'all',
-                          songPresetId: preset ? String(preset.id) : '',
-                          songPresetName: preset?.name || '',
-                        }));
-                        return;
-                      }
-
-                      setSettings((current) => ({
-                        ...current,
-                        categoryId: nextValue,
-                        songPresetId: '',
-                        songPresetName: '',
-                      }));
-                    }}
-                  >
-                    {PARTY_CATEGORY_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>{pick(option.labelTh, option.label)}</option>
-                    ))}
-                    {songPresetOptions.length > 0 ? (
-                    <optgroup label={pick('ชุดเพลง', 'Song presets')}>
-                        {songPresetOptions.map((option) => (
-                          <option key={option.id} value={`preset:${option.id}`}>{option.name}</option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
-                </label>
+                <button type="button" className="pgc-template-picker" onClick={() => navigate('/party/templates')}>
+                  <div className="pgc-template-picker-icon"><LibrarySquare size={18} /></div>
+                  <div className="pgc-template-picker-text">
+                    <strong>{pick('เลือกเทมเพลตจากชุมชน', 'Browse Community Templates')}</strong>
+                    <small>{pick('ชุดเพลงที่คนอื่นสร้างไว้', 'Ready-made song sets')}</small>
+                  </div>
+                  <ChevronRight size={15} style={{ marginLeft: 'auto', color: 'var(--text-tertiary)' }} />
+                </button>
               )}
-              <label className="party-field">
-                <span>{settings.modeType === 'vote' ? pick('เพลงเริ่มต้น', 'Starting songs') : pick('รอบ', 'Rounds')}</span>
-                <select
-                  value={settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}
-                  onChange={(event) => setSettings((current) => (
-                    current.modeType === 'vote'
-                      ? { ...current, entrantCount: Number(event.target.value) }
-                      : { ...current, roundCount: Number(event.target.value) }
-                  ))}
-                >
-                  {(settings.modeType === 'vote' ? voteEntrantOptions : quizRoundOptions).map((count) => (
-                    <option key={count} value={count}>{count} {settings.modeType === 'vote' ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</option>
-                  ))}
-                </select>
-                {settings.templateId && settings.templatePlayableCount > 0 ? (
-                  <small style={{ color: 'var(--color-text-muted)', marginTop: '0.4rem', display: 'block' }}>
-                    {pick(
-                      settings.modeType === 'quiz'
-                        ? `This preset supports up to ${templatePresetMaxRounds[settings.presetId] || settings.templatePlayableCount} rounds with this template`
-                        : `Limited by ${settings.templatePlayableCount} playable songs in this template`,
-                      settings.modeType === 'quiz'
-                        ? `This preset supports up to ${templatePresetMaxRounds[settings.presetId] || settings.templatePlayableCount} rounds with this template.`
-                        : `Limited by ${settings.templatePlayableCount} playable songs in this template.`,
-                    )}
+
+              {/* Template alerts */}
+              {settings.templateId && templatePoolLoaded && !templateValidation.ok ? (
+                <div className="pgc-alert is-warn">
+                  <TimerReset size={14} style={{ flexShrink: 0, marginTop: '0.05rem' }} />
+                  {templateValidation.message}
+                </div>
+              ) : null}
+              {settings.templateId && templatePoolLoaded && templateValidation.ok && templateCompatibility?.warnings?.[0] ? (
+                <div className="pgc-alert is-warn">
+                  <TimerReset size={14} style={{ flexShrink: 0, marginTop: '0.05rem' }} />
+                  {getPartyTemplateReasonText(templateCompatibility.warnings[0], pick)}
+                </div>
+              ) : null}
+              {settings.templateId && templatePoolLoaded && templateCompatibility ? (
+                <div className="pgc-alert is-info">
+                  {`${templateCompatibility.playableSongCount} playable · ${templateCompatibility.choiceEligibleCount} choice-ready · ${templateCompatibility.distinctChoiceAnswerCount} distinct`}
+                  {templateCompatibility.unresolvedSourceCount > 0
+                    ? ` · ${templateCompatibility.unresolvedSourceCount} missing source`
+                    : null}
+                </div>
+              ) : null}
+
+              {/* ─── Game Settings divider ─── */}
+              <div className="pgc-divider">{pick('การตั้งค่าเกม', 'Game Settings')}</div>
+
+	                </div>
+	                <div className="pgc-column pgc-column--game">
+	              {/* Match type */}
+              <div>
+                <span className="pgc-label">{pick('ประเภทเกม', 'Match Type')}</span>
+                <div className="pgc-mode-row">
+                  <button
+                    type="button"
+                    className={`pgc-mode-card is-quiz${settings.modeType === 'quiz' ? ' is-active' : ''}${settings.templateId && settings.modeScope === 'vote' ? ' is-disabled' : ''}`}
+                    onClick={() => setSettings((c) => ({ ...c, modeType: 'quiz', timePerRoundSec: Math.min(20, Number(c.timePerRoundSec || 12)) }))}
+                  >
+                    <div className="pgc-mode-dot is-quiz"><Music2 size={14} /></div>
+                    <span className="pgc-mode-name">{pick('ทายเพลง', 'Music Quiz')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`pgc-mode-card is-vote${settings.modeType === 'vote' ? ' is-active' : ''}${settings.templateId && settings.modeScope === 'quiz' ? ' is-disabled' : ''}`}
+                    onClick={() => setSettings((c) => ({ ...c, modeType: 'vote' }))}
+                  >
+                    <div className="pgc-mode-dot is-vote"><Vote size={14} /></div>
+                    <span className="pgc-mode-name">{pick('โหวตแบทเทิล', 'Vote Battle')}</span>
+                  </button>
+                </div>
+                {settings.templateId && settings.modeScope !== 'all' ? (
+                  <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginTop: '0.4rem', display: 'block' }}>
+                    {pick(`Template รองรับเฉพาะ ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'}`, `Template only supports ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'}.`)}
                   </small>
                 ) : null}
-              </label>
-              <label className="party-field">
-                <span>{supportsLongClipTime ? pick('เวลาเพลงสูงสุด', 'Song max time') : pick('เวลาคลิป', 'Clip time')}</span>
-                <select
-                  value={settings.timePerRoundSec}
-                  onChange={(event) => setSettings((current) => ({ ...current, timePerRoundSec: Number(event.target.value) }))}
-                >
-                  {clipTimeOptions.map((seconds) => (
-                    <option key={seconds} value={seconds}>{seconds} {pick('วิ', 'sec')}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="party-field">
-                <span>{pick('เวลาเฉลย', 'Reveal time')}</span>
-                <select
-                  value={settings.revealSec}
-                  onChange={(event) => setSettings((current) => ({ ...current, revealSec: Number(event.target.value) }))}
-                >
-                  {[6, 8, 10, 12, 15, 20].map((seconds) => (
-                    <option key={seconds} value={seconds}>{seconds} {pick('วิ', 'sec')}</option>
-                  ))}
-                </select>
-              </label>
-              {settings.modeType === 'vote' ? (
-                <label className="party-field">
-                  <span>{pick('เวลาโหวต', 'Vote time')}</span>
+              </div>
+
+              {/* Game mode presets (quiz only) */}
+              {settings.modeType === 'quiz' && (
+                <div>
+                  <span className="pgc-label">{pick('โหมดเกม', 'Game Mode')}</span>
+                  <div className="party-preset-showcase pgc-preset-grid">
+                    {PARTY_PRESETS.map((preset) => {
+                      const availability = templatePresetAvailability[preset.id];
+                      const isTemplateBound = settings.templateId && templatePoolLoaded;
+                      const helperText = !isTemplateBound
+                        ? ''
+                        : availability?.compatible
+                          ? suggestedTemplatePresetId === preset.id ? pick('แนะนำ', 'Recommended') : ''
+                          : getPartyTemplateReasonText(availability?.blockingReasons?.[0], pick);
+                      return (
+                        <PresetCard
+                          key={preset.id}
+                          preset={preset}
+                          selected={settings.presetId === preset.id}
+                          disabled={Boolean(isTemplateBound && availability && !availability.compatible)}
+                          helperText={helperText}
+                          pick={pick}
+                          onSelect={(presetId) => setSettings((c) => ({ ...c, presetId, timePerRoundSec: Math.min(20, Number(c.timePerRoundSec || 12)) }))}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Settings grid */}
+              <div className="pgc-settings-grid">
+                {/* Song pool */}
+                {settings.templateId ? (
+                  <div className="pgc-select-field">
+                    <span className="pgc-label">{pick('คลังเพลง', 'Song Pool')}</span>
+                    <div style={{ height: '40px', display: 'flex', alignItems: 'center', padding: '0 0.75rem', background: 'var(--bg-secondary)', border: '1.5px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-tertiary)', gap: '0.4rem' }}>
+                      <LibrarySquare size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                      {pick('จากเทมเพลต', 'From template')}
+                    </div>
+                  </div>
+                ) : (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('คลังเพลง', 'Song Pool')}</span>
+                    <select
+                      className="pgc-select"
+                      value={songPoolSelectValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v.startsWith('preset:')) {
+                          const pid = Number(v.replace('preset:', '')) || 0;
+                          const p = songPresetOptions.find((x) => x.id === pid);
+                          setSettings((c) => ({ ...c, categoryId: 'all', songPresetId: p ? String(p.id) : '', songPresetName: p?.name || '' }));
+                        } else {
+                          setSettings((c) => ({ ...c, categoryId: v, songPresetId: '', songPresetName: '' }));
+                        }
+                      }}
+                    >
+                      {PARTY_CATEGORY_OPTIONS.map((o) => (
+                        <option key={o.id} value={o.id}>{pick(o.labelTh, o.label)}</option>
+                      ))}
+                      {songPresetOptions.length > 0 ? (
+                        <optgroup label={pick('ชุดเพลง', 'Song presets')}>
+                          {songPresetOptions.map((o) => (
+                            <option key={o.id} value={`preset:${o.id}`}>{o.name}</option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                    </select>
+                  </label>
+                )}
+
+                {/* Rounds / songs */}
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{settings.modeType === 'vote' ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}</span>
                   <select
-                    value={settings.voteSec}
-                    onChange={(event) => setSettings((current) => ({ ...current, voteSec: Number(event.target.value) }))}
+                    className="pgc-select"
+                    value={settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}
+                    onChange={(e) => setSettings((c) => c.modeType === 'vote' ? { ...c, entrantCount: Number(e.target.value) } : { ...c, roundCount: Number(e.target.value) })}
                   >
-                    {[5, 8, 10, 12, 15, 20].map((seconds) => (
-                      <option key={seconds} value={seconds}>{seconds} {pick('วิ', 'sec')}</option>
+                    {(settings.modeType === 'vote' ? voteEntrantOptions : quizRoundOptions).map((n) => (
+                      <option key={n} value={n}>{n} {settings.modeType === 'vote' ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</option>
                     ))}
                   </select>
                 </label>
-              ) : null}
-            </div>
 
-            <div className="party-field">
-              <span>{pick('กฎเพิ่มเติม', 'Extra rules')}</span>
-              <div className="party-toggle-grid">
+                {/* Clip time */}
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{supportsLongClipTime ? pick('เวลาเพลง', 'Song time') : pick('เวลาคลิป', 'Clip')}</span>
+                  <select
+                    className="pgc-select"
+                    value={settings.timePerRoundSec}
+                    onChange={(e) => setSettings((c) => ({ ...c, timePerRoundSec: Number(e.target.value) }))}
+                  >
+                    {clipTimeOptions.map((s) => (
+                      <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Reveal time */}
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal')}</span>
+                  <select
+                    className="pgc-select"
+                    value={settings.revealSec}
+                    onChange={(e) => setSettings((c) => ({ ...c, revealSec: Number(e.target.value) }))}
+                  >
+                    {[6, 8, 10, 12, 15, 20].map((s) => (
+                      <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Vote time */}
                 {settings.modeType === 'vote' ? (
-                  <label className="party-toggle--card">
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('เวลาโหวต', 'Vote time')}</span>
+                    <select
+                      className="pgc-select"
+                      value={settings.voteSec}
+                      onChange={(e) => setSettings((c) => ({ ...c, voteSec: Number(e.target.value) }))}
+                    >
+                      {[5, 8, 10, 12, 15, 20].map((s) => (
+                        <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              {/* Toggles */}
+              <div className="pgc-toggles">
+                {settings.modeType === 'vote' ? (
+                  <label className="pgc-toggle-item">
                     <input
                       type="checkbox"
                       checked={settings.clipPlaybackMode === 'full'}
-                      onChange={(event) => setSettings((current) => ({
-                        ...current,
-                        clipPlaybackMode: event.target.checked ? 'full' : 'preview',
-                      }))}
+                      onChange={(e) => setSettings((c) => ({ ...c, clipPlaybackMode: e.target.checked ? 'full' : 'preview' }))}
                     />
-                    <span>{pick('เล่นเต็มคลิป', 'Play full clip')}</span>
-                    <small>{pick('ปิด = เล่นแค่ช่วงตัวอย่าง, เปิด = เล่นจนจบคลิป', 'Off uses the configured clip preview. On plays until the clip ends naturally.')}</small>
+                    <div className="pgc-toggle-text">
+                      <strong>{pick('เล่นเต็มคลิป', 'Play full clip')}</strong>
+                      <small>{pick('เล่นจนจบแทนที่จะเล่นแค่ตัวอย่าง', 'Play until end instead of preview')}</small>
+                    </div>
                   </label>
                 ) : null}
-                <label className="party-toggle--card">
+                <label className="pgc-toggle-item">
                   <input
                     type="checkbox"
                     checked={settings.showLiveScores}
-                    onChange={(event) => setSettings((current) => ({ ...current, showLiveScores: event.target.checked }))}
+                    onChange={(e) => setSettings((c) => ({ ...c, showLiveScores: e.target.checked }))}
                   />
-                  <span>{pick('คะแนนเรียลไทม์', 'Live scores')}</span>
-                  <small>{pick('แสดงอันดับหลังแต่ละรอบ', 'Show standings after each round')}</small>
+                  <div className="pgc-toggle-text">
+                    <strong>{pick('คะแนนเรียลไทม์', 'Live scores')}</strong>
+                    <small>{pick('แสดงอันดับหลังแต่ละรอบ', 'Show standings after each round')}</small>
+                  </div>
                 </label>
-                <label className="party-toggle--card">
+                <label className="pgc-toggle-item">
                   <input
                     type="checkbox"
                     checked={settings.randomOrder}
-                    onChange={(event) => setSettings((current) => ({ ...current, randomOrder: event.target.checked }))}
+                    onChange={(e) => setSettings((c) => ({ ...c, randomOrder: e.target.checked }))}
                   />
-                  <span>{pick('สุ่มเพลง', 'Shuffle songs')}</span>
-                  <small>{pick('สุ่มลำดับเพลงก่อนเริ่มแมตช์', 'Randomize the playlist before the match begins')}</small>
+                  <div className="pgc-toggle-text">
+                    <strong>{pick('สุ่มเพลง', 'Shuffle songs')}</strong>
+                    <small>{pick('สุ่มลำดับก่อนเริ่ม', 'Randomize order before the match')}</small>
+                  </div>
                 </label>
               </div>
+
+              {/* Summary pills */}
+              <div className="pgc-summary">
+                <div className="pgc-pill">
+                  <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
+                  <span>{pick('โหมด', 'mode')}</span>
+                </div>
+                {settings.templateId ? (
+                  <div className="pgc-pill">
+                    <strong style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{settings.templateName || '—'}</strong>
+                    <span>{pick('เทมเพลต', 'template')}</span>
+                  </div>
+                ) : (
+                  <div className="pgc-pill">
+                    <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
+                    <span>{pick('คลัง', 'pool')}</span>
+                  </div>
+                )}
+                <div className="pgc-pill">
+                  <strong>{settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}</strong>
+                  <span>{settings.modeType === 'vote' ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</span>
+                </div>
+                <div className="pgc-pill">
+                  <strong>{settings.timePerRoundSec}{pick('วิ', 's')}</strong>
+                  <span>{pick('คลิป', 'clip')}</span>
+                </div>
+                <div className="pgc-pill">
+                  <strong>{settings.revealSec}{pick('วิ', 's')}</strong>
+                  <span>{pick('เฉลย', 'reveal')}</span>
+                </div>
+                {settings.modeType === 'vote' ? (
+                  <div className="pgc-pill">
+                    <strong>{settings.voteSec}{pick('วิ', 's')}</strong>
+                    <span>{pick('โหวต', 'vote')}</span>
+                  </div>
+                ) : null}
+              </div>
+
+	                </div>
+	              </div>
+	            </div>{/* /pgc-body */}
+
+            <div className="pgc-footer">
+              <Button
+                className="party-gradient-action"
+                size="lg"
+                type="submit"
+                fullWidth
+                disabled={busyAction === 'create'}
+              >
+                {busyAction === 'create'
+                  ? <><Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite', marginRight: '0.4rem' }} />{pick('กำลังสร้าง…', 'Creating…')}</>
+                  : pick('🎮  สร้างห้อง', '🎮  Create Room')}
+              </Button>
             </div>
 
-            <div className="party-settings-summary party-settings-summary--compact">
-              <article className="party-stat-pill">
-                <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
-                <span>{pick('โหมด', 'preset')}</span>
-              </article>
-              {settings.templateId ? (
-                <article className="party-stat-pill" style={{ background: 'rgba(var(--color-primary-rgb), 0.15)' }}>
-                  <strong>{settings.templateName || settings.templateId}</strong>
-                  <span>{pick('เทมเพลต', 'template')}</span>
-                </article>
-              ) : (
-                <article className="party-stat-pill">
-                  <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
-                  <span>{pick('คลังเพลง', 'pool')}</span>
-                </article>
-              )}
-              {settings.templateId && settings.templatePlayableCount > 0 ? (
-                <article className="party-stat-pill">
-                  <strong>{settings.templatePlayableCount}</strong>
-                  <span>{pick('เพลงที่เล่นได้', 'playable songs')}</span>
-                </article>
-              ) : null}
-              <article className="party-stat-pill">
-                <strong>{settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}</strong>
-                <span>{settings.modeType === 'vote' ? pick('เพลงเริ่มต้น', 'Starting songs') : pick('รอบ', 'Rounds')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{settings.timePerRoundSec}</strong>
-                <span>{supportsLongClipTime ? pick('วิ สูงสุด', 'max sec') : pick('วิ คลิป', 'clip sec')}</span>
-              </article>
-              <article className="party-stat-pill">
-                <strong>{settings.revealSec}</strong>
-                <span>{pick('วิ เฉลย', 'reveal sec')}</span>
-              </article>
-              {settings.modeType === 'vote' ? (
-                <article className="party-stat-pill">
-                  <strong>{settings.voteSec}</strong>
-                  <span>{pick('วิ โหวต', 'vote sec')}</span>
-                </article>
-              ) : null}
-            </div>
+          </div>{/* /pgc-form */}
+        </form>
 
-            <Button className="party-gradient-action" size="large" type="submit" disabled={busyAction === 'create'}>
-              {busyAction === 'create' ? pick('กำลังสร้างห้อง...', 'Creating room...') : pick('สร้างห้อง', 'Create Room')}
-            </Button>
-          </form>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -1297,7 +1305,7 @@ export function PartyRoomPage() {
           patch: { is_ready: false },
         },
       });
-      toast.success(pick('Match started', 'Match started'));
+      toast.success(pick('เริ่มแมตช์แล้ว', 'Match started'));
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
@@ -1329,9 +1337,9 @@ export function PartyRoomPage() {
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(String(room?.room_code || roomCode || ''));
-      toast.success(pick('Room code copied', 'Room code copied'));
+      toast.success(pick('คัดลอกรหัสห้องแล้ว', 'Room code copied'));
     } catch {
-      toast.error(pick('Could not copy the room code', 'Could not copy the room code'));
+      toast.error(pick('คัดลอกรหัสห้องไม่สำเร็จ', 'Could not copy the room code'));
     }
   };
 
@@ -1371,7 +1379,7 @@ export function PartyRoomPage() {
           room: closedRoom,
         },
       });
-      toast.success(pick('Room closed', 'Room closed'));
+      toast.success(pick('ปิดห้องแล้ว', 'Room closed'));
       navigate('/party');
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
@@ -1386,7 +1394,7 @@ export function PartyRoomPage() {
         <div className="party-game-canvas">
           <div className="party-loading-card">
             <Loader2 size={28} className="party-spin" />
-            <strong>{pick('Loading the party room...', 'Loading the party room...')}</strong>
+            <strong>{pick('กำลังโหลดห้องปาร์ตี้...', 'Loading the party room...')}</strong>
           </div>
         </div>
       </div>
@@ -1486,7 +1494,7 @@ export function PartyRoomPage() {
               <strong>
                 {syncState === 'syncing' ? pick('กำลังซิงค์...', 'Syncing...') : syncState === 'reconnecting' ? pick('กำลังเชื่อมต่อใหม่...', 'Reconnecting...') : pick('ข้อมูลห้องอาจไม่อัปเดต', 'Room state may be stale')}
               </strong>
-              <span>{syncError || (lastSyncedLabel ? pick(`Last synced at ${lastSyncedLabel}`, `Last synced at ${lastSyncedLabel}`) : '')}</span>
+              <span>{syncError || (lastSyncedLabel ? pick(`ซิงก์ล่าสุดเมื่อ ${lastSyncedLabel}`, `Last synced at ${lastSyncedLabel}`) : '')}</span>
             </div>
           </div>
         ) : null}

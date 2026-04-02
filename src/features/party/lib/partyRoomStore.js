@@ -88,14 +88,23 @@ export const usePartyRoomStore = create((set) => ({
   room: null,
   members: [],
   answers: [],
+  joinRequests: [],
   ...createSyncMeta(),
   setBundle: (bundle, syncMeta = {}) => set(sanitizeBundle(bundle, syncMeta)),
   clearBundle: () => set({
     room: null,
     members: [],
     answers: [],
+    joinRequests: [],
     ...createSyncMeta(),
   }),
+  setJoinRequests: (joinRequests) => set({ joinRequests: Array.isArray(joinRequests) ? joinRequests : [] }),
+  upsertJoinRequest: (request) => set((state) => ({
+    joinRequests: upsertByKey(state.joinRequests, request, 'id'),
+  })),
+  removeJoinRequest: (requestId) => set((state) => ({
+    joinRequests: state.joinRequests.filter((r) => String(r?.id || '') !== String(requestId || '')),
+  })),
   setSyncState: (syncState, extras = {}) => set((state) => ({
     syncState,
     syncError: extras.syncError ?? state.syncError,
