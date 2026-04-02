@@ -92,6 +92,18 @@
 /* ── Hidden media ─────────────────────────────────────────────── */
 .party-hidden-media { display: none; }
 
+.party-yt-player-wrapper.is-visual-hidden,
+.party-yt-question-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+  overflow: hidden;
+  bottom: 0;
+  right: 0;
+}
+
 
 /* ── Spin ─────────────────────────────────────────────────────── */
 .party-spin { animation: pg-spin 1s linear infinite; }
