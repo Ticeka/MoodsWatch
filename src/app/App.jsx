@@ -189,6 +189,7 @@ function App() {
         </AuthProvider>
         </AgeGateProvider>
       </ThemeProvider>
+      <Analytics />
     </LanguageProvider>
   );
 }
