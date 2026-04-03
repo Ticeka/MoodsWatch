@@ -5,6 +5,7 @@ import {
 } from '@/features/party/lib/usePartyRoomSelectors';
 import { buildPartyLeaderboard } from '@/features/party/lib/partyEngine';
 import { PartyRevealPanel } from './PartyRoomShared';
+import { PartyTitleGuessRevealStage } from '../components/PartyTitleGuessView';
 
 export const PartyRevealView = React.memo(function PartyRevealView({
   room,
@@ -48,13 +49,23 @@ export const PartyRevealView = React.memo(function PartyRevealView({
   }, [currentRound?.id, leaderboard, previousLeaderboard]);
 
   return (
-    <PartyRevealPanel
-      round={currentRound}
-      answers={currentRoundAnswers}
-      leaderboard={animatedLeaderboard}
-      memberToken={guestToken}
-      onPlaybackStarted={onPlaybackStarted}
-      pick={pick}
-    />
+    currentRound?.kind === 'title-guess' ? (
+      <PartyTitleGuessRevealStage
+        round={currentRound}
+        answers={currentRoundAnswers}
+        leaderboard={animatedLeaderboard}
+        memberToken={guestToken}
+        pick={pick}
+      />
+    ) : (
+      <PartyRevealPanel
+        round={currentRound}
+        answers={currentRoundAnswers}
+        leaderboard={animatedLeaderboard}
+        memberToken={guestToken}
+        onPlaybackStarted={onPlaybackStarted}
+        pick={pick}
+      />
+    )
   );
 });

@@ -68,6 +68,8 @@ export function PartyTemplateDetailPage() {
   const [likeCount, setLikeCount] = useState(0);
   const [liking, setLiking] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const backDestination = returnTo || '/party/templates';
+  const backLabel = returnTo ? pick('กลับไปห้อง', 'Back to room') : pick('Back to Templates', 'Back to Templates');
 
   useEffect(() => {
     if (!templateId) return;
@@ -117,7 +119,11 @@ export function PartyTemplateDetailPage() {
   };
 
   const handleUseBase = () => {
-    navigate(`/party/templates/create?base=${template.id}`);
+    const query = new URLSearchParams({ base: template.id });
+    if (returnTo) {
+      query.set('returnTo', returnTo);
+    }
+    navigate(`/party/templates/create?${query.toString()}`);
   };
 
   const handleSync = async () => {
@@ -190,8 +196,8 @@ export function PartyTemplateDetailPage() {
           <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
             {pick('อาจถูกลบหรือเป็นแบบส่วนตัว', 'It may have been deleted or is private.')}
           </p>
-          <button className="btn-secondary" onClick={() => navigate(returnTo ? `/party/templates?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(returnMode)}` : '/party/templates')}>
-            &larr; {pick('กลับหน้าเทมเพลต', 'Back to Templates')}
+          <button className="btn-secondary" onClick={() => navigate(backDestination, { replace: true })}>
+            &larr; {backLabel}
           </button>
         </div>
       </div>
@@ -218,9 +224,9 @@ export function PartyTemplateDetailPage() {
         <button
           className="btn-secondary"
           style={{ display: 'inline-flex', padding: '0.5rem 1rem', marginBottom: '1rem' }}
-          onClick={() => navigate(returnTo ? `/party/templates?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(returnMode)}` : '/party/templates')}
+          onClick={() => navigate(backDestination, { replace: true })}
         >
-          &larr; {pick('กลับ', 'Back')}
+          &larr; {backLabel}
         </button>
 
         <div className="party-template-detail-container">

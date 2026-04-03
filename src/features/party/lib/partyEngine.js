@@ -1,5 +1,22 @@
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PARTY_ANSWER_GRACE_SEC = 3;
+const PARTY_TITLE_GUESS_MAX_CLUES = 4;
+const PARTY_TITLE_GUESS_BASE_POINTS = [400, 300, 200, 100];
+const PARTY_TITLE_GUESS_DEFAULT_CLUE_SEC = 7;
+
+const PARTY_VIRTUAL_PRESETS = [
+  {
+    id: 'title-guess',
+    label: 'Guess the Title',
+    labelTh: 'ทายชื่อเรื่อง',
+    description: 'Guess the title from character clue cards before the reveal ends.',
+    descriptionTh: 'ทายชื่อเรื่องจากการ์ดตัวละครที่ค่อยๆ เปิดทีละใบ',
+    answerMode: 'typing',
+    target: 'title',
+    basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
+    speedBonus: 40,
+  },
+];
 
 function resolvePartyTemplateSourceIdentity(song = {}) {
   const provider = String(song?.provider || '').trim().toLowerCase();
@@ -93,7 +110,9 @@ export function generatePartyRoomCode(length = 6) {
 }
 
 export function getPartyPresetById(presetId) {
-  return PARTY_PRESETS.find((preset) => preset.id === presetId) || PARTY_PRESETS[0];
+  return PARTY_PRESETS.find((preset) => preset.id === presetId)
+    || PARTY_VIRTUAL_PRESETS.find((preset) => preset.id === presetId)
+    || PARTY_PRESETS[0];
 }
 
 export function normalizePartyText(value) {
@@ -285,16 +304,26 @@ function computeSpeedBonus(elapsedMs, limitMs, maxBonus) {
 }
 
 export function createPartySettings(input = {}) {
-  const modeType = input.modeType === 'vote' ? 'vote' : 'quiz';
-  const preset = getPartyPresetById(input.presetId);
+  const modeType = input.modeType === 'vote'
+    ? 'vote'
+    : (input.modeType === 'title-guess' ? 'title-guess' : 'quiz');
+  const preset = modeType === 'title-guess'
+    ? getPartyPresetById('title-guess')
+    : getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
   const isLongPlaybackMode = modeType === 'vote';
   const clipPlaybackMode = modeType === 'vote'
     ? normalizePartyVotePlaybackMode(input.clipPlaybackMode)
     : 'preview';
-  const defaultTimePerRoundSec = Number(input.timePerRoundSec || 12);
-  const timePerRoundSec = clamp(defaultTimePerRoundSec, 8, isLongPlaybackMode ? 180 : 20);
+  const defaultTimePerRoundSec = Number(
+    input.timePerRoundSec || (modeType === 'title-guess' ? PARTY_TITLE_GUESS_DEFAULT_CLUE_SEC : 12)
+  );
+  const timePerRoundSec = clamp(
+    defaultTimePerRoundSec,
+    modeType === 'title-guess' ? 4 : 8,
+    modeType === 'title-guess' ? 15 : (isLongPlaybackMode ? 180 : 20)
+  );
   const voteSec = clamp(Number(input.voteSec || 10), 5, 20);
   const revealSec = clamp(Number(input.revealSec || 12), 6, 20);
   const categoryId = PARTY_CATEGORY_OPTIONS.some((item) => item.id === input.categoryId)
@@ -313,16 +342,152 @@ export function createPartySettings(input = {}) {
     voteSec,
     revealSec,
     categoryId,
-    songPresetId,
-    songPresetName,
+    songPresetId: modeType === 'title-guess' ? '' : songPresetId,
+    songPresetName: modeType === 'title-guess' ? '' : songPresetName,
     keyword: String(input.keyword || '').trim(),
     showLiveScores: Boolean(input.showLiveScores ?? true),
     randomOrder: Boolean(input.randomOrder ?? true),
-    templateId: String(input.templateId || '').trim(),
-    templateName: String(input.templateName || '').trim(),
-    templateCoverUrl: String(input.templateCoverUrl || '').trim(),
-    templatePlayableCount: Math.max(0, Number(input.templatePlayableCount || 0)),
-    modeScope: String(input.modeScope || 'all').trim(),
+    templateId: modeType === 'title-guess' ? '' : String(input.templateId || '').trim(),
+    templateName: modeType === 'title-guess' ? '' : String(input.templateName || '').trim(),
+    templateCoverUrl: modeType === 'title-guess' ? '' : String(input.templateCoverUrl || '').trim(),
+    templatePlayableCount: modeType === 'title-guess' ? 0 : Math.max(0, Number(input.templatePlayableCount || 0)),
+    modeScope: modeType === 'title-guess' ? 'title-guess' : String(input.modeScope || 'all').trim(),
+    titleGuessSetId: modeType === 'title-guess'
+      ? String(input.titleGuessSetId ?? input.setId ?? '').trim()
+      : '',
+    titleGuessSetName: modeType === 'title-guess'
+      ? String(input.titleGuessSetName ?? input.setName ?? '').trim()
+      : '',
+    titleGuessQuestionCount: modeType === 'title-guess'
+      ? Math.max(0, Number(input.titleGuessQuestionCount ?? input.setQuestionCount ?? 0))
+      : 0,
+  };
+}
+
+function normalizeTitleGuessClueRoleBucket(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['background', 'supporting', 'main-side', 'wildcard'].includes(normalized)
+    ? normalized
+    : 'supporting';
+}
+
+function normalizeTitleGuessClues(clues = []) {
+  const uniqueByOrder = new Map();
+
+  (Array.isArray(clues) ? clues : []).forEach((clue) => {
+    const clueOrder = clamp(Number(clue?.clueOrder ?? clue?.clue_order ?? 0), 1, PARTY_TITLE_GUESS_MAX_CLUES);
+    if (uniqueByOrder.has(clueOrder)) {
+      return;
+    }
+
+    const characterName = String(
+      clue?.characterName
+      ?? clue?.character_name_snapshot
+      ?? clue?.character_name
+      ?? ''
+    ).trim();
+    if (!characterName) {
+      return;
+    }
+
+    uniqueByOrder.set(clueOrder, {
+      id: String(clue?.id || `clue-${clueOrder}`).trim() || `clue-${clueOrder}`,
+      clueOrder,
+      clueRoleBucket: normalizeTitleGuessClueRoleBucket(clue?.clueRoleBucket ?? clue?.clue_role_bucket),
+      characterId: Number(clue?.characterId ?? clue?.character_id ?? 0) || null,
+      characterName,
+      characterNameNative: String(
+        clue?.characterNameNative
+        ?? clue?.character_name_native_snapshot
+        ?? ''
+      ).trim(),
+      characterImageUrl: String(
+        clue?.characterImageUrl
+        ?? clue?.character_image_url_snapshot
+        ?? clue?.image_url
+        ?? ''
+      ).trim(),
+      isManualOverride: Boolean(clue?.isManualOverride ?? clue?.is_manual_override),
+    });
+  });
+
+  return [...uniqueByOrder.values()]
+    .sort((left, right) => left.clueOrder - right.clueOrder)
+    .slice(0, PARTY_TITLE_GUESS_MAX_CLUES);
+}
+
+function buildTitleGuessRound(question = {}) {
+  const clues = normalizeTitleGuessClues(question?.clues ?? question?.party_title_guess_clues);
+  if (clues.length < PARTY_TITLE_GUESS_MAX_CLUES) {
+    return null;
+  }
+
+  const answerTitle = String(question?.answerTitle || question?.answer_title || '').trim();
+  const answerTitleAliases = buildUniquePartyAliases(
+    question?.answerTitleAliases
+    ?? question?.answer_aliases
+    ?? (answerTitle ? [answerTitle] : [])
+  );
+  if (!answerTitleAliases.length) {
+    return null;
+  }
+
+  return {
+    id: String(question?.id || makeId('party-round')).trim(),
+    kind: 'title-guess',
+    answerTitleId: Number(question?.answerTitleId ?? question?.answer_title_id ?? 0) || null,
+    sourceTitleName: answerTitle || answerTitleAliases[0],
+    sourceTitleAliases: answerTitleAliases,
+    choiceTarget: 'source',
+    choiceTargetLabel: 'Title',
+    choiceTargetLabelTh: 'ชื่อเรื่อง',
+    clues,
+    totalClues: clues.length,
+    difficultyTier: clamp(Number(question?.difficultyTier ?? question?.difficulty_tier ?? 2), 1, 5),
+  };
+}
+
+export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
+  const normalizedSettings = createPartySettings({ ...settings, modeType: 'title-guess' });
+  const roundLimit = normalizedSettings.roundCount;
+  const eligibleQuestions = (Array.isArray(questions) ? questions : [])
+    .map(buildTitleGuessRound)
+    .filter(Boolean);
+
+  if (eligibleQuestions.length < roundLimit) {
+    throw new Error('Not enough ready Guess the Title questions to start this room.');
+  }
+
+  const orderedQuestions = normalizedSettings.randomOrder
+    ? shufflePartyItems(eligibleQuestions)
+    : [...eligibleQuestions];
+  const rounds = orderedQuestions.slice(0, roundLimit);
+
+  if (rounds.length < roundLimit) {
+    throw new Error('Not enough ready Guess the Title questions to start this room.');
+  }
+
+  const now = Date.now();
+  const countdownMs = 3000;
+
+  return {
+    id: makeId('title-guess-match'),
+    modeType: 'title-guess',
+    presetId: 'title-guess',
+    phase: 'countdown',
+    roundIndex: 0,
+    totalRounds: rounds.length,
+    timePerRoundSec: normalizedSettings.timePerRoundSec,
+    answerGraceSec: PARTY_ANSWER_GRACE_SEC,
+    countdownSec: 3,
+    revealSec: normalizedSettings.revealSec,
+    titleGuessSetId: normalizedSettings.titleGuessSetId || '',
+    titleGuessSetName: normalizedSettings.titleGuessSetName || '',
+    titleGuessQuestionCount: normalizedSettings.titleGuessQuestionCount || rounds.length,
+    revealedClueCount: 0,
+    rounds,
+    phaseStartedAt: new Date(now).toISOString(),
+    phaseEndsAt: new Date(now + countdownMs).toISOString(),
   };
 }
 
@@ -415,6 +580,9 @@ function buildRound(song, settings, titlePool) {
 
 export function buildPartyMatchSnapshot(songs = [], settings = {}) {
   const normalizedSettings = createPartySettings(settings);
+  if (normalizedSettings.modeType === 'title-guess') {
+    return buildPartyTitleGuessSnapshot(songs, normalizedSettings);
+  }
   const preset = getPartyPresetById(normalizedSettings.presetId);
   const roundLimit = normalizedSettings.roundCount;
   const normalizedSongs = Array.isArray(songs)
@@ -489,6 +657,7 @@ export function buildPartyMatchSnapshot(songs = [], settings = {}) {
 
   return {
     id: makeId('party-match'),
+    modeType: 'quiz',
     presetId: preset.id,
     phase: 'countdown',
     roundIndex: 0,
@@ -533,6 +702,59 @@ export function getPartyRequiredReadyCount(memberCount = 0) {
 export function advancePartyMatch(match) {
   if (!match) {
     return null;
+  }
+
+  if (match.modeType === 'title-guess') {
+    const now = Date.now();
+    const nextMatch = { ...match };
+    const currentRound = getPartyCurrentRound(nextMatch);
+    const totalClues = Math.max(1, Number(currentRound?.totalClues || PARTY_TITLE_GUESS_MAX_CLUES));
+
+    if (nextMatch.phase === 'countdown') {
+      nextMatch.phase = 'question';
+      nextMatch.revealedClueCount = 1;
+      nextMatch.phaseStartedAt = new Date(now).toISOString();
+      nextMatch.phaseEndsAt = new Date(
+        now + ((Number(nextMatch.timePerRoundSec || PARTY_TITLE_GUESS_DEFAULT_CLUE_SEC) + Number(nextMatch.answerGraceSec || PARTY_ANSWER_GRACE_SEC)) * 1000)
+      ).toISOString();
+      return nextMatch;
+    }
+
+    if (nextMatch.phase === 'question') {
+      const currentClueCount = clamp(Number(nextMatch.revealedClueCount || 1), 1, totalClues);
+      if (currentClueCount < totalClues) {
+        nextMatch.revealedClueCount = currentClueCount + 1;
+        nextMatch.phaseStartedAt = new Date(now).toISOString();
+        nextMatch.phaseEndsAt = new Date(
+          now + ((Number(nextMatch.timePerRoundSec || PARTY_TITLE_GUESS_DEFAULT_CLUE_SEC) + Number(nextMatch.answerGraceSec || PARTY_ANSWER_GRACE_SEC)) * 1000)
+        ).toISOString();
+        return nextMatch;
+      }
+
+      nextMatch.phase = 'reveal';
+      nextMatch.phaseStartedAt = new Date(now).toISOString();
+      nextMatch.phaseEndsAt = new Date(now + (Number(nextMatch.revealSec || 6) * 1000)).toISOString();
+      return nextMatch;
+    }
+
+    if (nextMatch.phase === 'reveal') {
+      const nextRoundIndex = Number(nextMatch.roundIndex || 0) + 1;
+      if (nextRoundIndex >= Number(nextMatch.totalRounds || 0)) {
+        nextMatch.phase = 'final';
+        nextMatch.phaseStartedAt = new Date(now).toISOString();
+        nextMatch.phaseEndsAt = null;
+        return nextMatch;
+      }
+
+      nextMatch.phase = 'countdown';
+      nextMatch.roundIndex = nextRoundIndex;
+      nextMatch.revealedClueCount = 0;
+      nextMatch.phaseStartedAt = new Date(now).toISOString();
+      nextMatch.phaseEndsAt = new Date(now + (Number(nextMatch.countdownSec || 3) * 1000)).toISOString();
+      return nextMatch;
+    }
+
+    return nextMatch;
   }
 
   const now = Date.now();
@@ -600,6 +822,19 @@ export function scorePartyAnswer({
       titleCorrect: choiceCorrect,
       songCorrect: false,
       points: choiceCorrect ? preset.basePoints + bonus : 0,
+    };
+  }
+
+  if (preset.id === 'title-guess' || round?.kind === 'title-guess') {
+    const titleCorrect = isAnswerMatch(typedTitle, round.sourceTitleAliases);
+    const revealedClueCount = clamp(Number(round?.revealedClueCount || 1), 1, PARTY_TITLE_GUESS_MAX_CLUES);
+    const basePoints = PARTY_TITLE_GUESS_BASE_POINTS[revealedClueCount - 1]
+      || PARTY_TITLE_GUESS_BASE_POINTS[PARTY_TITLE_GUESS_BASE_POINTS.length - 1]
+      || 100;
+    return {
+      titleCorrect,
+      songCorrect: false,
+      points: titleCorrect ? basePoints + bonus : 0,
     };
   }
 

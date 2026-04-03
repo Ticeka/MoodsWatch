@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
@@ -18,7 +18,7 @@ const BattleDeckLibraryPage = lazy(() => import('@/features/battle/pages/Battle'
 const BattleSessionPage = lazy(() => import('@/features/battle/pages/BattleSessionPage').then((module) => ({ default: module.BattleSessionPage })));
 const BattleLeaderboard = lazy(() => import('@/features/battle/pages/BattleLeaderboard').then((module) => ({ default: module.BattleLeaderboard })));
 const DailyChallenge = lazy(() => import('@/features/battle/pages/DailyChallenge').then((module) => ({ default: module.DailyChallenge })));
-const PartyHubPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyHubPage })));
+const PartyHubPage = lazy(() => import('@/features/party/pages/PartyHubEntry'));
 const PartyRoomPage = lazy(() => import('@/features/party/pages/Party').then((module) => ({ default: module.PartyRoomPage })));
 const PartyRoomDirectoryPage = lazy(() => import('@/features/party/pages/PartyRoomDirectory').then((module) => ({ default: module.PartyRoomDirectoryPage })));
 const PartyTemplatesPage = lazy(() => import('@/features/party/pages/PartyTemplates').then((module) => ({ default: module.PartyTemplatesPage })));
@@ -81,6 +81,13 @@ function AdminFallback() {
   );
 }
 
+function LegacyPartyTitleGuessCreateRedirect() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  params.set('mode', 'title-guess');
+  return <Navigate to={`/party/templates/create?${params.toString()}`} replace />;
+}
+
 function App() {
   return (
     <LanguageProvider>
@@ -114,6 +121,7 @@ function App() {
                     <Route path="party/rooms" element={<PartyRoomDirectoryPage />} />
                     <Route path="party/templates" element={<PartyTemplatesPage />} />
                     <Route path="party/templates/create" element={<PartyTemplateBuilderPage />} />
+                    <Route path="party/title-guess/create" element={<LegacyPartyTitleGuessCreateRedirect />} />
                     <Route path="party/templates/:templateId" element={<PartyTemplateDetailPage />} />
                     <Route path="party/room/:roomCode" element={<PartyRoomPage />} />
                     <Route path="tierlist" element={<TierListBrowsePage />} />

@@ -148,11 +148,172 @@ async function fetchAniListPage(vars, signal) {
 
 // ─── AniList characters & staff query ────────────────────────────────────────
 
-const CHAR_STAFF_GQL = `query($id:Int!){Media(id:$id){characters(sort:[ROLE,RELEVANCE],perPage:25){edges{role node{id name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
+const ANILIST_CHARACTER_PAGE_SIZE = 25;
+const ANILIST_CHARACTER_PAGE_HARD_LIMIT = 40;
+const ANILIST_CHARACTER_ROLE_OPTIONS = ['MAIN', 'SUPPORTING', 'BACKGROUND'];
+const ANILIST_RATE_LIMIT_MAX_RETRIES = 4;
+const ANILIST_RATE_LIMIT_BASE_DELAY_MS = 2500;
+const ANILIST_RATE_LIMIT_TITLE_COOLDOWN_MS = 8000;
+const CHAR_STAFF_GQL = `query($id:Int!$characterPage:Int!$characterPerPage:Int!){Media(id:$id){characters(page:$characterPage,perPage:$characterPerPage,sort:[ROLE,RELEVANCE]){pageInfo{currentPage hasNextPage}edges{role node{id name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
 
-async function fetchAniListCharStaff(anilistId, signal) {
-  const data = await fetchAniListGraphQL(CHAR_STAFF_GQL, { id: anilistId }, { signal });
-  return data?.Media || null;
+function isAniListRateLimitError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('429') || message.includes('rate limit');
+}
+
+function getAniListCharacterEdgeKey(edge) {
+  const characterId = edge?.node?.id ?? null;
+  const role = String(edge?.role || '').toUpperCase();
+  return `${characterId ?? 'unknown'}:${role}`;
+}
+
+function getStoredCharacterRowKey(row) {
+  return `${row?.anilist_id ?? row?.name_full ?? 'unknown'}:${String(row?.role || '').toUpperCase()}`;
+}
+
+function buildStoredCharacterKeySet(rows, options = {}) {
+  const allowedRoles = new Set((options.allowedRoles || ANILIST_CHARACTER_ROLE_OPTIONS).map((role) => String(role || '').toUpperCase()));
+  return new Set(
+    (rows || [])
+      .filter((row) => allowedRoles.has(String(row?.role || '').toUpperCase()))
+      .filter((row) => !options.imageOnly || row?.image_url)
+      .map((row) => getStoredCharacterRowKey(row)),
+  );
+}
+
+async function fetchAniListCharStaff(anilistId, signal, options = {}) {
+  const aggregatedEdges = [];
+  const seenCharacterKeys = new Set();
+  let currentPage = 1;
+  let staffEdges = [];
+  let lastMedia = null;
+  let partialCharacterSync = false;
+
+  while (currentPage <= ANILIST_CHARACTER_PAGE_HARD_LIMIT) {
+    let data = null;
+
+    for (let attempt = 0; attempt <= ANILIST_RATE_LIMIT_MAX_RETRIES; attempt += 1) {
+      try {
+        data = await fetchAniListGraphQL(
+          CHAR_STAFF_GQL,
+          { id: anilistId, characterPage: currentPage, characterPerPage: ANILIST_CHARACTER_PAGE_SIZE },
+          { signal },
+        );
+        break;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!isAniListRateLimitError(error) || attempt === ANILIST_RATE_LIMIT_MAX_RETRIES) {
+          throw error;
+        }
+        const retryDelay = ANILIST_RATE_LIMIT_BASE_DELAY_MS * (2 ** attempt) + Math.round(Math.random() * 400);
+        await sleep(retryDelay);
+      }
+    }
+
+    const media = data?.Media || null;
+    if (!media) {
+      return lastMedia;
+    }
+
+    lastMedia = media;
+    for (const edge of media.characters?.edges || []) {
+      const characterId = edge?.node?.id ?? null;
+      const role = edge?.role ?? '';
+      const dedupeKey = `${characterId ?? 'unknown'}:${role}`;
+      if (seenCharacterKeys.has(dedupeKey)) {
+        continue;
+      }
+      seenCharacterKeys.add(dedupeKey);
+      aggregatedEdges.push(edge);
+    }
+
+    if (currentPage === 1) {
+      staffEdges = media.staff?.edges || [];
+    }
+
+    if (options.targetCharacterCount > 0) {
+      const filteredKeys = new Set(
+        aggregatedEdges.map((edge) => getAniListCharacterEdgeKey(edge)),
+      );
+      for (const existingKey of options.existingCharacterKeys || []) {
+        filteredKeys.add(existingKey);
+      }
+      if (filteredKeys.size >= options.targetCharacterCount) {
+        partialCharacterSync = Boolean(media.characters?.pageInfo?.hasNextPage);
+        break;
+      }
+    }
+
+    if (!media.characters?.pageInfo?.hasNextPage || !(media.characters?.edges || []).length) {
+      break;
+    }
+
+    currentPage += 1;
+    await sleep(500);
+  }
+
+  return {
+    ...lastMedia,
+    characters: {
+      ...lastMedia?.characters,
+      edges: aggregatedEdges,
+    },
+    staff: {
+      ...lastMedia?.staff,
+      edges: staffEdges,
+    },
+    syncMeta: {
+      partialCharacterSync,
+    },
+  };
+}
+
+function filterAniListCharacterEdges(edges, options = {}) {
+  const allowedRoles = new Set((options.allowedRoles || ANILIST_CHARACTER_ROLE_OPTIONS).map((role) => String(role || '').toUpperCase()));
+  let filtered = (edges || []).filter((edge) => allowedRoles.has(String(edge?.role || '').toUpperCase()));
+
+  if (options.imageOnly) {
+    filtered = filtered.filter((edge) => edge?.node?.image?.medium);
+  }
+
+  if (options.maxCharactersPerTitle > 0) {
+    filtered = filtered.slice(0, options.maxCharactersPerTitle);
+  }
+
+  return filtered;
+}
+
+function buildFilteredAniListCharStaffMedia(media, options = {}) {
+  if (!media) return media;
+  return {
+    ...media,
+    characters: {
+      ...media.characters,
+      edges: filterAniListCharacterEdges(media.characters?.edges || [], options),
+    },
+    syncMeta: media.syncMeta,
+  };
+}
+
+function countStoredCharacters(rows) {
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
+function getCharStaffTitleSortValue(ref, sortKey) {
+  const titleRecord = Array.isArray(ref?.canonical_titles) ? ref.canonical_titles[0] : ref?.canonical_titles;
+  switch (sortKey) {
+    case 'rated':
+      return Number(titleRecord?.avg_score || 0);
+    case 'popular':
+      return Number(titleRecord?.popularity_score || 0);
+    case 'latest':
+      return Number(titleRecord?.release_year || 0);
+    case 'az':
+      return String(titleRecord?.canonical_title || '').toLowerCase();
+    case 'id':
+    default:
+      return Number(ref?.canonical_title_id || 0);
+  }
 }
 
 async function fetchAniListTrailerById(anilistId, signal) {
@@ -737,9 +898,7 @@ async function upsertTitle(norm, skipDuplicates) {
   return wasExisting ? 'updated' : 'imported';
 }
 
-async function upsertCharStaff(titleId, media) {
-  const { error: delCharErr } = await supabase.from('title_characters').delete().eq('canonical_title_id', titleId);
-  if (delCharErr) throw delCharErr;
+async function upsertCharStaff(titleId, media, options = {}) {
   const { error: delStaffErr } = await supabase.from('title_staff').delete().eq('canonical_title_id', titleId);
   if (delStaffErr) throw delStaffErr;
 
@@ -755,6 +914,15 @@ async function upsertCharStaff(titleId, media) {
     sort_order: i,
   }));
 
+  const dedupedChars = [];
+  const seenAniListIds = new Set();
+  for (const character of chars) {
+    const dedupeKey = character.anilist_id ?? `fallback:${character.name_full ?? ''}:${character.role ?? ''}:${character.sort_order}`;
+    if (seenAniListIds.has(dedupeKey)) continue;
+    seenAniListIds.add(dedupeKey);
+    dedupedChars.push(character);
+  }
+
   const staff = (media?.staff?.edges || []).map((edge, i) => ({
     canonical_title_id: titleId,
     anilist_id: edge.node?.id ?? null,
@@ -765,9 +933,66 @@ async function upsertCharStaff(titleId, media) {
     sort_order: i,
   }));
 
-  if (chars.length) { const { error } = await supabase.from('title_characters').insert(chars); if (error) throw error; }
+  const { data: existingChars, error: existingCharsErr } = await supabase
+    .from('title_characters')
+    .select('id, anilist_id')
+    .eq('canonical_title_id', titleId);
+  if (existingCharsErr) throw existingCharsErr;
+
+  const existingByAniListId = new Map(
+    (existingChars || [])
+      .filter((row) => row.anilist_id != null)
+      .map((row) => [row.anilist_id, row]),
+  );
+
+  const incomingAniListIds = new Set(dedupedChars.map((row) => row.anilist_id).filter((value) => value != null));
+
+  for (const character of dedupedChars) {
+    const existingRow = character.anilist_id != null ? existingByAniListId.get(character.anilist_id) : null;
+    if (existingRow?.id) {
+      const { error } = await supabase
+        .from('title_characters')
+        .update({
+          name_full: character.name_full,
+          name_native: character.name_native,
+          image_url: character.image_url,
+          role: character.role,
+          voice_actor_name: character.voice_actor_name,
+          voice_actor_image: character.voice_actor_image,
+          sort_order: character.sort_order,
+        })
+        .eq('id', existingRow.id);
+      if (error) throw error;
+      continue;
+    }
+
+    const { error } = await supabase.from('title_characters').insert(character);
+    if (error) throw error;
+  }
+
+  if (options.pruneStaleCharacters !== false) {
+    const staleCharIds = (existingChars || [])
+      .filter((row) => row.anilist_id == null || !incomingAniListIds.has(row.anilist_id))
+      .map((row) => row.id);
+
+    if (staleCharIds.length) {
+      const { data: referencedClues, error: referencedCluesErr } = await supabase
+        .from('party_title_guess_clues')
+        .select('character_id')
+        .in('character_id', staleCharIds);
+      if (referencedCluesErr && referencedCluesErr.code !== 'PGRST205') throw referencedCluesErr;
+
+      const referencedIds = new Set((referencedClues || []).map((row) => row.character_id));
+      const deletableCharIds = staleCharIds.filter((id) => !referencedIds.has(id));
+      if (deletableCharIds.length) {
+        const { error } = await supabase.from('title_characters').delete().in('id', deletableCharIds);
+        if (error) throw error;
+      }
+    }
+  }
+
   if (staff.length) { const { error } = await supabase.from('title_staff').insert(staff); if (error) throw error; }
-  return { chars: chars.length, staff: staff.length };
+  return { chars: dedupedChars.length, staff: staff.length };
 }
 
 async function upsertJikanTitle(norm, skipDuplicates) {
@@ -841,8 +1066,6 @@ async function fetchPornhwaDbCharactersViaProxy(slug, apiKey, signal) {
 }
 
 async function upsertPornhwaDbCharacters(titleId, characters) {
-  const { error: delErr } = await supabase.from('title_characters').delete().eq('canonical_title_id', titleId);
-  if (delErr) throw delErr;
   const rows = (characters || []).map((char, i) => ({
     canonical_title_id: titleId,
     anilist_id: null,
@@ -852,9 +1075,56 @@ async function upsertPornhwaDbCharacters(titleId, characters) {
     role: char.role ? char.role.toUpperCase() : null,
     sort_order: i,
   }));
-  if (rows.length) {
-    const { error } = await supabase.from('title_characters').insert(rows);
+
+  const { data: existingChars, error: existingCharsErr } = await supabase
+    .from('title_characters')
+    .select('id, name_full, role')
+    .eq('canonical_title_id', titleId);
+  if (existingCharsErr) throw existingCharsErr;
+
+  const existingByKey = new Map(
+    (existingChars || []).map((row) => [`${row.name_full ?? 'unknown'}:${row.role ?? ''}`, row]),
+  );
+  const incomingKeys = new Set();
+
+  for (const row of rows) {
+    const rowKey = `${row.name_full ?? 'unknown'}:${row.role ?? ''}`;
+    incomingKeys.add(rowKey);
+    const existingRow = existingByKey.get(rowKey);
+    if (existingRow?.id) {
+      const { error } = await supabase
+        .from('title_characters')
+        .update({
+          name_native: row.name_native,
+          image_url: row.image_url,
+          sort_order: row.sort_order,
+        })
+        .eq('id', existingRow.id);
+      if (error) throw error;
+      continue;
+    }
+
+    const { error } = await supabase.from('title_characters').insert(row);
     if (error) throw error;
+  }
+
+  const staleCharIds = (existingChars || [])
+    .filter((row) => !incomingKeys.has(`${row.name_full ?? 'unknown'}:${row.role ?? ''}`))
+    .map((row) => row.id);
+
+  if (staleCharIds.length) {
+    const { data: referencedClues, error: referencedCluesErr } = await supabase
+      .from('party_title_guess_clues')
+      .select('character_id')
+      .in('character_id', staleCharIds);
+    if (referencedCluesErr && referencedCluesErr.code !== 'PGRST205') throw referencedCluesErr;
+
+    const referencedIds = new Set((referencedClues || []).map((row) => row.character_id));
+    const deletableCharIds = staleCharIds.filter((id) => !referencedIds.has(id));
+    if (deletableCharIds.length) {
+      const { error } = await supabase.from('title_characters').delete().in('id', deletableCharIds);
+      if (error) throw error;
+    }
   }
   return rows.length;
 }
@@ -1127,7 +1397,16 @@ export function AdminFetch() {
   const [progress, setProgress] = useState(null);
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('titles');
-  const [csConfig, setCsConfig] = useState({ onlyMissing: true, limit: 50 });
+  const [csConfig, setCsConfig] = useState({
+    onlyMissing: true,
+    limit: 50,
+    titleSort: 'popular',
+    allowedRoles: [...ANILIST_CHARACTER_ROLE_OPTIONS],
+    imageOnly: false,
+    maxCharactersPerTitle: 0,
+    delayMs: 1200,
+    skipSatisfied: true,
+  });
   const [jikanConfig, setJikanConfig] = useState({ sort: 'score', pages: 3, perPage: 25 });
   const [pornhwaConfig, setPornhwaConfig] = useState({
     sort: 'updated_at',
@@ -1281,7 +1560,16 @@ export function AdminFetch() {
 
       const { data: refs, error: refsError } = await supabase
         .from('title_source_refs')
-        .select('canonical_title_id, external_id')
+        .select(`
+          canonical_title_id,
+          external_id,
+          canonical_titles!inner(
+            canonical_title,
+            avg_score,
+            popularity_score,
+            release_year
+          )
+        `)
         .eq('provider', 'anilist');
       if (refsError) throw refsError;
 
@@ -1293,24 +1581,98 @@ export function AdminFetch() {
         targets = targets.filter((r) => !existingSet.has(r.canonical_title_id));
       }
 
+      const sortedTargets = [...targets].sort((a, b) => {
+        if (csConfig.titleSort === 'az') {
+          return String(getCharStaffTitleSortValue(a, 'az')).localeCompare(String(getCharStaffTitleSortValue(b, 'az')));
+        }
+        return Number(getCharStaffTitleSortValue(b, csConfig.titleSort)) - Number(getCharStaffTitleSortValue(a, csConfig.titleSort));
+      });
+      targets = sortedTargets;
+
       if (csConfig.limit > 0) targets = targets.slice(0, csConfig.limit);
 
       addLog('info', t('admin.fetch.cs.logTotal', { count: targets.length }));
-      setProgress({ total: targets.length, done: 0, chars: 0, staff: 0, errors: 0 });
+      setProgress({ total: targets.length, done: 0, chars: 0, staff: 0, skipped: 0, errors: 0 });
+      let rateLimitCooldownMs = 0;
 
       for (const ref of targets) {
         if (abortRef.current.signal.aborted) break;
         try {
-          const media = await fetchAniListCharStaff(Number(ref.external_id), abortRef.current.signal);
-          const result = await upsertCharStaff(ref.canonical_title_id, media);
+          const titleName = (Array.isArray(ref.canonical_titles)
+            ? ref.canonical_titles[0]
+            : ref.canonical_titles)?.canonical_title || `#${ref.canonical_title_id}`;
+          const { data: charRows } = await supabase
+            .from('title_characters')
+            .select('canonical_title_id, anilist_id, name_full, role, image_url, sort_order')
+            .eq('canonical_title_id', ref.canonical_title_id)
+            .order('sort_order', { ascending: true });
+          const existingRows = charRows || [];
+          const totalExistingCount = existingRows.length;
+          const targetCharacterCount = csConfig.maxCharactersPerTitle > 0 ? csConfig.maxCharactersPerTitle : 0;
+          if (rateLimitCooldownMs > 0) {
+            addLog('info', `พัก ${rateLimitCooldownMs}ms หลังเจอ rate limit ก่อนดึง ${titleName}`);
+            await sleep(rateLimitCooldownMs);
+            rateLimitCooldownMs = 0;
+          }
+          if (csConfig.skipSatisfied) {
+            const skipThreshold = csConfig.maxCharactersPerTitle > 0
+              ? csConfig.maxCharactersPerTitle
+              : totalExistingCount;
+            const charsSatisfied = skipThreshold > 0 && totalExistingCount >= skipThreshold;
+            const { count: existingStaffCount } = await supabase
+              .from('title_staff')
+              .select('*', { count: 'exact', head: true })
+              .eq('canonical_title_id', ref.canonical_title_id);
+            const staffSatisfied = (existingStaffCount || 0) >= 25;
+
+            if (charsSatisfied && staffSatisfied) {
+              setProgress((p) => ({ ...p, done: p.done + 1, skipped: (p.skipped || 0) + 1 }));
+              addLog(
+                'skipped',
+                `[${ref.canonical_title_id}] ${titleName} — skip (chars ${totalExistingCount}/${skipThreshold}, staff ${existingStaffCount}/25)`,
+              );
+              continue;
+            }
+          }
+          const missingCount = targetCharacterCount > 0
+            ? Math.max(0, targetCharacterCount - totalExistingCount)
+            : null;
+          addLog(
+            'info',
+            targetCharacterCount > 0
+              ? `กำลังดึงตัวละคร: ${titleName} (have ${totalExistingCount}/${targetCharacterCount}, missing ${missingCount})`
+              : `กำลังดึงตัวละคร: ${titleName}`,
+          );
+          const media = await fetchAniListCharStaff(Number(ref.external_id), abortRef.current.signal, {
+            ...csConfig,
+            targetCharacterCount,
+            existingCharacterKeys: buildStoredCharacterKeySet(existingRows, {
+              allowedRoles: ANILIST_CHARACTER_ROLE_OPTIONS,
+              imageOnly: false,
+            }),
+          });
+          const rawCount = media?.characters?.edges?.length || 0;
+          const filteredMedia = buildFilteredAniListCharStaffMedia(media, csConfig);
+          const filteredCount = filteredMedia?.characters?.edges?.length || 0;
+          const result = await upsertCharStaff(ref.canonical_title_id, filteredMedia, {
+            pruneStaleCharacters: !filteredMedia?.syncMeta?.partialCharacterSync,
+          });
           setProgress((p) => ({ ...p, done: p.done + 1, chars: p.chars + result.chars, staff: p.staff + result.staff }));
-          addLog('imported', `[${ref.canonical_title_id}] chars:${result.chars} staff:${result.staff}`);
+          const filterNote = filteredCount !== rawCount ? ` (filtered ${rawCount} -> ${filteredCount})` : '';
+          const partialNote = filteredMedia?.syncMeta?.partialCharacterSync ? ' [partial top-up]' : '';
+          addLog('imported', `[${ref.canonical_title_id}] ${titleName} — chars:${result.chars} staff:${result.staff}${filterNote}${partialNote}`);
+          rateLimitCooldownMs = 0;
         } catch (err) {
           if (err.name === 'AbortError') break;
           setProgress((p) => ({ ...p, done: p.done + 1, errors: p.errors + 1 }));
           addLog('error', `[${ref.canonical_title_id}] ${err.message}`);
+          if (isAniListRateLimitError(err)) {
+            rateLimitCooldownMs = Math.max(rateLimitCooldownMs, ANILIST_RATE_LIMIT_TITLE_COOLDOWN_MS);
+          }
         }
-        if (!abortRef.current.signal.aborted) await new Promise((r) => setTimeout(r, 750));
+        if (!abortRef.current.signal.aborted && csConfig.delayMs > 0) {
+          await new Promise((r) => setTimeout(r, csConfig.delayMs));
+        }
       }
 
       if (!abortRef.current.signal.aborted) {
@@ -2530,11 +2892,19 @@ export function AdminFetch() {
           ) : (
             <>
               {/* Characters & Staff — Mode */}
-              <Section title={t('admin.fetch.cs.modeLabel')}>
+              <Section title="วิธีอัปเดตตัวละคร">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {[
-                    { key: true, label: t('admin.fetch.cs.onlyMissing'), hint: t('admin.fetch.cs.onlyMissingHint') },
-                    { key: false, label: t('admin.fetch.cs.refetchAll'), hint: t('admin.fetch.cs.refetchAllHint') },
+                    {
+                      key: true,
+                      label: 'ดึงเฉพาะเรื่องที่ยังไม่มีตัวละคร',
+                      hint: 'เร็วที่สุด เหมาะกับเติมฐานครั้งแรก ข้ามเรื่องที่มีตัวละครอยู่แล้วทั้งหมด',
+                    },
+                    {
+                      key: false,
+                      label: 'รีเช็กทุกเรื่องตามกติกาปัจจุบัน',
+                      hint: 'ใช้ตอนต้องการเติมให้ครบตาม filter / max per title หรืออัปเดตข้อมูลเดิม',
+                    },
                   ].map(({ key, label, hint }) => (
                     <button
                       key={String(key)}
@@ -2560,7 +2930,7 @@ export function AdminFetch() {
               </Section>
 
               {/* Characters & Staff — Limit */}
-              <Section title={t('admin.fetch.cs.limitLabel')}>
+              <Section title="จำนวนเรื่องสูงสุดต่อรอบ">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   <Stepper
                     value={csConfig.limit}
@@ -2568,7 +2938,167 @@ export function AdminFetch() {
                     min={0} max={500} disabled={running}
                   />
                   <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
-                    {t('admin.fetch.cs.limitHint')}
+                    0 = ไม่จำกัด แต่แนะนำแบ่งรันเป็นล็อตเล็กๆ เวลาทดสอบหรือเจอ rate limit
+                  </p>
+                </div>
+              </Section>
+
+              <Section title="ลำดับเรื่องที่จะวิ่งก่อน">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    { value: 'popular', label: 'Popular' },
+                    { value: 'rated', label: 'Rated' },
+                    { value: 'latest', label: 'Latest' },
+                    { value: 'az', label: 'A-Z' },
+                    { value: 'id', label: 'ID' },
+                  ].map(({ value, label }) => (
+                    <Chip
+                      key={value}
+                      active={csConfig.titleSort === value}
+                      disabled={running}
+                      onClick={() => setCsConfig((p) => ({ ...p, titleSort: value }))}
+                    >
+                      {label}
+                    </Chip>
+                  ))}
+                </div>
+                <p style={{ margin: 'var(--space-3) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                  ใช้กำหนดคิวเริ่มต้นของงาน เช่นอยากเก็บเรื่องดัง เรื่องคะแนนสูง หรือไล่ตามชื่อก่อน
+                </p>
+              </Section>
+
+              <Section title="ชุดตั้งค่าสำเร็จรูป">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {[
+                    {
+                      label: 'เก็บให้ครบที่สุด',
+                      apply: () => setCsConfig((p) => ({
+                        ...p,
+                        allowedRoles: [...ANILIST_CHARACTER_ROLE_OPTIONS],
+                        imageOnly: false,
+                        maxCharactersPerTitle: 0,
+                        delayMs: 1200,
+                      })),
+                    },
+                    {
+                      label: 'เติมให้พร้อมทำเกม',
+                      apply: () => setCsConfig((p) => ({
+                        ...p,
+                        allowedRoles: ['MAIN', 'SUPPORTING'],
+                        imageOnly: true,
+                        maxCharactersPerTitle: 24,
+                        delayMs: 1200,
+                      })),
+                    },
+                    {
+                      label: 'เน้นตัวรองสำหรับเกมยาก',
+                      apply: () => setCsConfig((p) => ({
+                        ...p,
+                        allowedRoles: ['SUPPORTING', 'BACKGROUND'],
+                        imageOnly: true,
+                        maxCharactersPerTitle: 20,
+                        delayMs: 1200,
+                      })),
+                    },
+                  ].map(({ label, apply }) => (
+                    <Chip key={label} disabled={running} onClick={apply}>
+                      {label}
+                    </Chip>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="เลือกชนิดตัวละครที่จะเก็บ">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {ANILIST_CHARACTER_ROLE_OPTIONS.map((role) => {
+                    const active = csConfig.allowedRoles.includes(role);
+                    return (
+                      <Chip
+                        key={role}
+                        active={active}
+                        disabled={running}
+                        onClick={() => setCsConfig((p) => {
+                          const nextRoles = active
+                            ? p.allowedRoles.filter((item) => item !== role)
+                            : [...p.allowedRoles, role];
+                          return {
+                            ...p,
+                            allowedRoles: nextRoles.length ? nextRoles : [role],
+                          };
+                        })}
+                      >
+                        {role}
+                      </Chip>
+                    );
+                  })}
+                </div>
+                <p style={{ margin: 'var(--space-3) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                  ใช้คุมว่ารอบนี้จะเก็บตัวหลัก ตัวรอง หรือตัวประกอบระดับไหนลงฐาน
+                </p>
+              </Section>
+
+              <Section title="กติกาการเติมข้อมูล">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>ข้ามเรื่องที่มีครบตามเป้าแล้ว</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        ถ้ามีตัวละครครบตาม role / รูป / จำนวนที่ตั้งไว้แล้ว จะไม่ยิง AniList ซ้ำ
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={csConfig.skipSatisfied}
+                      onChange={(value) => setCsConfig((p) => ({ ...p, skipSatisfied: value }))}
+                      disabled={running}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>เก็บเฉพาะตัวละครที่มีรูป</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        เหมาะกับงานที่ต้องใช้ภาพจริง เช่น Title Guess หรือหน้าเลือกตัวละคร
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={csConfig.imageOnly}
+                      onChange={(value) => setCsConfig((p) => ({ ...p, imageOnly: value }))}
+                      disabled={running}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">เป้าหมายจำนวนตัวละครต่อเรื่อง</label>
+                    <Stepper
+                      value={csConfig.maxCharactersPerTitle}
+                      onChange={(v) => setCsConfig((p) => ({ ...p, maxCharactersPerTitle: v }))}
+                      min={0}
+                      max={300}
+                      disabled={running}
+                    />
+                    <p style={{ margin: 'var(--space-2) 0 0', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                      0 = ไม่ตั้งเป้า ถ้าตั้งเลขไว้ ระบบจะพยายามเติมให้ถึงเลขนี้แล้วหยุด
+                    </p>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="พักระหว่างแต่ละเรื่อง">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                    {[0, 500, 1200, 2000, 3000].map((ms) => (
+                      <Chip
+                        key={ms}
+                        active={csConfig.delayMs === ms}
+                        disabled={running}
+                        onClick={() => setCsConfig((p) => ({ ...p, delayMs: ms }))}
+                      >
+                        {ms === 0 ? 'No delay' : `${ms}ms`}
+                      </Chip>
+                    ))}
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+                    ใช้คุมความเร็วของ batch เพื่อลดโอกาสโดน rate limit แนะนำ 1200ms+ ถ้าดึงล็อตใหญ่
                   </p>
                 </div>
               </Section>
@@ -2819,6 +3349,7 @@ export function AdminFetch() {
                           { label: t('admin.fetch.cs.statDone'), value: progress.done, color: '#2563eb' },
                           { label: t('admin.fetch.cs.statChars'), value: progress.chars, color: '#16a34a' },
                           { label: t('admin.fetch.cs.statStaff'), value: progress.staff, color: '#7c3aed' },
+                          { label: 'Skipped', value: progress.skipped, color: '#a16207' },
                           { label: t('admin.fetch.cs.statErrors'), value: progress.errors, color: '#dc2626' },
                         ]
                 ).map((stat) => (

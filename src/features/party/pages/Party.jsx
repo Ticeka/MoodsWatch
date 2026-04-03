@@ -39,6 +39,7 @@ import {
   fetchPartyTemplateDetail,
   fetchPartyTemplateSongPool,
   fetchPublishedPartySongPresets,
+  fetchPartyTitleGuessSets,
   getPartyBackendHint,
   getPartyGuestToken,
   joinPartyRoom,
@@ -55,6 +56,11 @@ import {
   analyzePartyTemplateCompatibility,
   getTemplateCoverUrl,
 } from '@/features/party/lib/partyTemplateUtils';
+import {
+  getPartyRoomSettingsDraftKey,
+  readPartyDraft,
+  writePartyDraft,
+} from '@/features/party/lib/partyDraftStorage';
 import { useCurrentPartyMember } from '@/features/party/lib/usePartyRoomSelectors';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { PartyFinalView } from './PartyFinal';
@@ -77,7 +83,6 @@ import {
   readPartyAudioVolume,
 } from './partyRoomUtils';
 import './Party.css';
-import './PartyHub.css';
 
 const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 900;
 
@@ -147,11 +152,7 @@ export function PartyHubPage() {
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
-      if (silent) {
-        isAutosavingRef.current = false;
-      } else {
-        setBusyAction('');
-      }
+      setBusyAction('');
     }
   };
 
@@ -171,7 +172,7 @@ export function PartyHubPage() {
 
   const lobbyFeatures = [
     { emoji: '🎵', label: pick('โหมดเล่น', 'Game Mode') },
-    { emoji: '📚', label: pick('เทมเพลต', 'Template') },
+    { emoji: '📚', label: pick('ชุดเพลง', 'Song set') },
     { emoji: '⏱', label: pick('เวลา', 'Timing') },
     { emoji: '🔒', label: pick('สิทธิ์ห้อง', 'Room Access') },
     { emoji: '✅', label: pick('พร้อม / เริ่มเกม', 'Ready / Start') },
@@ -183,15 +184,15 @@ export function PartyHubPage() {
 
         {/* ── Hero ── */}
         <header className="pgw-hero">
-          <div className="pgw-kicker"><Radio size={11} />Template Party</div>
+          <div className="pgw-kicker"><Radio size={11} />{pick('ห้องปาร์ตี้เพลง', 'Party Room')}</div>
           <h1 className="pgw-title">PARTY</h1>
           <p className="pgw-tagline">
             {pick('เปิดห้องแล้วชวนเพื่อนเข้า', 'Open a room and invite your friends')}
           </p>
           <p className="pgw-sub">
             {pick(
-              'สร้างห้องก่อน แล้วค่อยเลือกกติกา เทมเพลต และรายละเอียดใน lobby',
-              'Create the room first — pick rules, template, and settings in the lobby',
+              'สร้างห้องก่อน แล้วค่อยเลือกกติกา ชุดเพลง และรายละเอียดต่าง ๆ ในล็อบบี้',
+              'Create the room first, then choose the rules, song set, and other settings in the lobby.',
             )}
           </p>
         </header>
@@ -350,9 +351,12 @@ export function PartyRoomPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const [roomSettingsDraft, setRoomSettingsDraft] = useState(() => createPartySettings({}));
+  const roomSettingsDraftStorageKey = useMemo(() => getPartyRoomSettingsDraftKey(roomCode), [roomCode]);
   const [selectedTemplateIntent, setSelectedTemplateIntent] = useState(null);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [templateOptions, setTemplateOptions] = useState([]);
+  const [titleGuessSetOptions, setTitleGuessSetOptions] = useState([]);
+  const [titleGuessSetsLoading, setTitleGuessSetsLoading] = useState(false);
   const [draftTemplatePlayablePool, setDraftTemplatePlayablePool] = useState([]);
   const [draftTemplatePoolLoaded, setDraftTemplatePoolLoaded] = useState(false);
   const [playbackEndedAtMs, setPlaybackEndedAtMs] = useState(null);
@@ -372,6 +376,7 @@ export function PartyRoomPage() {
   const pageUnloadRef = useRef(false);
   const lastAppliedRoomSettingsSnapshotRef = useRef('');
   const isAutosavingRef = useRef(false);
+  const roomSettingsDraftHydratedKeyRef = useRef('');
 
   const pendingTemplateSelection = useMemo(() => {
     const templateId = searchParams.get('templateId');
@@ -398,9 +403,54 @@ export function PartyRoomPage() {
     };
   }, [searchParams]);
 
+  const pendingTitleGuessSelection = useMemo(() => {
+    const titleGuessSetId = searchParams.get('titleGuessSetId');
+    if (!titleGuessSetId) {
+      return null;
+    }
+
+    return {
+      titleGuessSetId: String(titleGuessSetId).trim(),
+      modeType: 'title-guess',
+    };
+  }, [searchParams]);
+
   useEffect(() => {
     activeRoomCodeRef.current = roomCode;
   }, [roomCode]);
+
+  useEffect(() => {
+    roomSettingsDraftHydratedKeyRef.current = '';
+    lastAppliedRoomSettingsSnapshotRef.current = '';
+  }, [roomSettingsDraftStorageKey]);
+
+  useEffect(() => {
+    if (!roomSettingsDraftStorageKey || roomSettingsDraftHydratedKeyRef.current === roomSettingsDraftStorageKey) {
+      return;
+    }
+
+    const storedDraft = readPartyDraft(roomSettingsDraftStorageKey);
+    if (storedDraft?.settings) {
+      setRoomSettingsDraft(createPartySettings(storedDraft.settings));
+    }
+    if (typeof storedDraft?.appliedSnapshot === 'string') {
+      lastAppliedRoomSettingsSnapshotRef.current = storedDraft.appliedSnapshot;
+    }
+
+    roomSettingsDraftHydratedKeyRef.current = roomSettingsDraftStorageKey;
+  }, [roomSettingsDraftStorageKey]);
+
+  useEffect(() => {
+    if (!roomSettingsDraftStorageKey || roomSettingsDraftHydratedKeyRef.current !== roomSettingsDraftStorageKey) {
+      return;
+    }
+
+    writePartyDraft(roomSettingsDraftStorageKey, {
+      settings: roomSettingsDraft,
+      appliedSnapshot: lastAppliedRoomSettingsSnapshotRef.current
+        || (room?.settings ? serializePartySettingsSnapshot(room.settings) : ''),
+    });
+  }, [room?.settings, roomSettingsDraft, roomSettingsDraftStorageKey]);
 
   useEffect(() => {
     activeRoomIdRef.current = room?.id || null;
@@ -426,6 +476,25 @@ export function PartyRoomPage() {
 
     navigate(`/party/room/${roomCode}`, { replace: true });
   }, [navigate, pendingTemplateSelection, roomCode]);
+
+  useEffect(() => {
+    if (!pendingTitleGuessSelection?.titleGuessSetId) {
+      return;
+    }
+
+    setRoomSettingsDraft((current) => createPartySettings({
+      ...current,
+      modeType: 'title-guess',
+      templateId: '',
+      templateName: '',
+      templateCoverUrl: '',
+      templatePlayableCount: 0,
+      modeScope: 'all',
+      titleGuessSetId: pendingTitleGuessSelection.titleGuessSetId,
+    }));
+
+    navigate(`/party/room/${roomCode}`, { replace: true });
+  }, [navigate, pendingTitleGuessSelection, roomCode]);
 
   const loadBundle = React.useCallback(async ({ silent = false, force = false } = {}) => {
     if (loadPromiseRef.current && !force) {
@@ -601,13 +670,33 @@ export function PartyRoomPage() {
   const currentRound = getPartyCurrentRound(currentMatch);
   const currentPreset = getPartyPresetById(currentMatch?.presetId || room?.settings?.presetId);
   const draftPreset = getPartyPresetById(roomSettingsDraft?.presetId || room?.settings?.presetId);
+  const isDraftTitleGuessMode = roomSettingsDraft.modeType === 'title-guess';
   const draftSupportsLongClipTime = roomSettingsDraft.modeType === 'vote';
-  const draftClipTimeOptions = draftSupportsLongClipTime
-    ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
-    : [8, 10, 12, 15, 20];
+  const draftClipTimeOptions = isDraftTitleGuessMode
+    ? [4, 5, 6, 7, 8, 10, 12, 15]
+    : draftSupportsLongClipTime
+      ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
+      : [8, 10, 12, 15, 20];
   const draftSongPoolSelectValue = roomSettingsDraft.songPresetId
     ? `preset:${roomSettingsDraft.songPresetId}`
     : roomSettingsDraft.categoryId;
+  const draftSelectedTitleGuessSet = useMemo(
+    () => titleGuessSetOptions.find((option) => String(option.id || '') === String(roomSettingsDraft.titleGuessSetId || '')) || null,
+    [roomSettingsDraft.titleGuessSetId, titleGuessSetOptions]
+  );
+  const draftTitleGuessMaxRounds = useMemo(() => {
+    if (!isDraftTitleGuessMode) {
+      return 0;
+    }
+
+    const selectedSetCount = Math.max(0, Number(draftSelectedTitleGuessSet?.questionCount || 0));
+    const storedCount = Math.max(0, Number(roomSettingsDraft.titleGuessQuestionCount || 0));
+    return selectedSetCount || storedCount || 20;
+  }, [
+    draftSelectedTitleGuessSet?.questionCount,
+    isDraftTitleGuessMode,
+    roomSettingsDraft.titleGuessQuestionCount,
+  ]);
   const draftTemplatePlayableCount = Math.max(0, Number(roomSettingsDraft.templatePlayableCount || 0));
   const draftTemplateCompatibility = useMemo(() => {
     if (!roomSettingsDraft.templateId || !draftTemplatePoolLoaded) {
@@ -649,6 +738,25 @@ export function PartyRoomPage() {
     }
     return [...new Set(options)].sort((a, b) => a - b);
   }, [draftTemplatePlayableCount, draftTemplatePresetMaxRounds, roomSettingsDraft.modeType, roomSettingsDraft.presetId, roomSettingsDraft.templateId]);
+  const draftTitleGuessRoundOptions = useMemo(() => {
+    if (!isDraftTitleGuessMode) {
+      return [];
+    }
+
+    const maxRounds = Math.max(1, draftTitleGuessMaxRounds || 20);
+    const options = [3, 5, 8, 10, 12, 15, 20].filter((count) => count <= maxRounds);
+    const currentRoundCount = Math.max(1, Number(roomSettingsDraft.roundCount || 10));
+
+    if (!options.includes(currentRoundCount) && currentRoundCount <= maxRounds) {
+      options.push(currentRoundCount);
+    }
+
+    if (!options.includes(maxRounds)) {
+      options.push(maxRounds);
+    }
+
+    return [...new Set(options)].sort((a, b) => a - b);
+  }, [draftTitleGuessMaxRounds, isDraftTitleGuessMode, roomSettingsDraft.roundCount]);
   const draftVoteEntrantOptions = useMemo(() => {
     if (!roomSettingsDraft.templateId || roomSettingsDraft.modeType !== 'vote' || draftTemplatePlayableCount <= 0) {
       return [2, 4, 8, 16];
@@ -679,14 +787,18 @@ export function PartyRoomPage() {
     () => getPartyPrefetchRound(currentMatch, { revealPrefetchReady }),
     [currentMatch, revealPrefetchReady]
   );
-  const selectedPoolName = room?.settings?.templateName
-    || room?.settings?.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.label
-    || PARTY_CATEGORY_OPTIONS[0].label;
-  const selectedPoolNameTh = room?.settings?.templateName
-    || room?.settings?.songPresetName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.labelTh
-    || PARTY_CATEGORY_OPTIONS[0].labelTh;
+  const selectedPoolName = room?.settings?.modeType === 'title-guess'
+    ? (room?.settings?.titleGuessSetName || 'Guess the Title set')
+    : room?.settings?.templateName
+      || room?.settings?.songPresetName
+      || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.label
+      || PARTY_CATEGORY_OPTIONS[0].label;
+  const selectedPoolNameTh = room?.settings?.modeType === 'title-guess'
+    ? (room?.settings?.titleGuessSetName || 'ชุดทายชื่อเรื่อง')
+    : room?.settings?.templateName
+      || room?.settings?.songPresetName
+      || PARTY_CATEGORY_OPTIONS.find((option) => option.id === room?.settings?.categoryId)?.labelTh
+      || PARTY_CATEGORY_OPTIONS[0].labelTh;
   const phaseEndsAtMs = currentMatch?.phaseEndsAt ? new Date(currentMatch.phaseEndsAt).getTime() : 0;
   const answerGraceMs = Number(currentMatch?.answerGraceSec || 0) * 1000;
   const answerGraceEndsAtMs = playbackEndedAtMs ? playbackEndedAtMs + answerGraceMs : 0;
@@ -709,7 +821,10 @@ export function PartyRoomPage() {
     const selfToken = String(guestToken || '');
     const selfMember = activeMembers.find((member) => String(member?.member_token || '') === selfToken);
 
-    if (pageUnloadRef.current || !activeRoom?.id || activeRoom?.status === 'closed' || !selfMember) {
+    // Keep room membership when navigating within the SPA (for example
+    // opening templates/builders from the lobby). Only leave on actual
+    // page unload/refresh/tab close.
+    if (!pageUnloadRef.current || !activeRoom?.id || activeRoom?.status === 'closed' || !selfMember) {
       return;
     }
 
@@ -784,6 +899,46 @@ export function PartyRoomPage() {
       return undefined;
     }
 
+    const shouldLoadTitleGuessSets = isHost || roomSettingsDraft.modeType === 'title-guess';
+    if (!shouldLoadTitleGuessSets) {
+      return undefined;
+    }
+
+    let ignore = false;
+    setTitleGuessSetsLoading(true);
+    fetchPartyTitleGuessSets()
+      .then((sets) => {
+        if (!ignore) {
+          setTitleGuessSetOptions(sets);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load title guess sets', error);
+        if (!ignore) {
+          setTitleGuessSetOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setTitleGuessSetsLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [isHost, room?.status, roomSettingsDraft.modeType]);
+
+  useEffect(() => {
+    if (room?.status !== 'lobby') {
+      return undefined;
+    }
+
+    if (roomSettingsDraft.modeType === 'title-guess') {
+      setTemplateOptions([]);
+      return undefined;
+    }
+
     let ignore = false;
     fetchPartyTemplates({
       tab: 'all',
@@ -804,6 +959,38 @@ export function PartyRoomPage() {
       ignore = true;
     };
   }, [room?.status, roomSettingsDraft.modeType]);
+
+  useEffect(() => {
+    if (!isDraftTitleGuessMode || !draftSelectedTitleGuessSet) {
+      return;
+    }
+
+    const maxQuestions = Math.max(1, Number(draftSelectedTitleGuessSet.questionCount || 1));
+    setRoomSettingsDraft((current) => {
+      if (
+        current.modeType !== 'title-guess'
+        || String(current.titleGuessSetId || '') !== String(draftSelectedTitleGuessSet.id || '')
+      ) {
+        return current;
+      }
+
+      const nextRoundCount = Math.min(Math.max(1, Number(current.roundCount || 10)), maxQuestions);
+      if (
+        current.titleGuessSetName === draftSelectedTitleGuessSet.name
+        && Number(current.titleGuessQuestionCount || 0) === maxQuestions
+        && Number(current.roundCount || 0) === nextRoundCount
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        titleGuessSetName: draftSelectedTitleGuessSet.name,
+        titleGuessQuestionCount: maxQuestions,
+        roundCount: nextRoundCount,
+      };
+    });
+  }, [draftSelectedTitleGuessSet, isDraftTitleGuessMode]);
 
   useEffect(() => {
     if (!roomSettingsDraft.templateId) {
@@ -894,6 +1081,24 @@ export function PartyRoomPage() {
       return nextEntrantCount === current.entrantCount ? current : { ...current, entrantCount: nextEntrantCount };
     });
   }, [draftTemplatePlayableCount, draftTemplatePresetMaxRounds, roomSettingsDraft.templateId]);
+
+  useEffect(() => {
+    if (!isDraftTitleGuessMode) {
+      return;
+    }
+
+    const maxQuestions = Math.max(1, draftTitleGuessMaxRounds || 1);
+    setRoomSettingsDraft((current) => {
+      if (current.modeType !== 'title-guess') {
+        return current;
+      }
+
+      const nextRoundCount = Math.min(Math.max(1, Number(current.roundCount || 10)), maxQuestions);
+      return nextRoundCount === Number(current.roundCount || 0)
+        ? current
+        : { ...current, roundCount: nextRoundCount };
+    });
+  }, [draftTitleGuessMaxRounds, isDraftTitleGuessMode]);
 
   useEffect(() => {
     if (!roomSettingsDraft.templateId || roomSettingsDraft.modeType !== 'quiz' || !draftTemplatePoolLoaded) {
@@ -1185,6 +1390,29 @@ export function PartyRoomPage() {
       } else {
         setBusyAction('save-settings');
       }
+      if (roomSettingsDraft.modeType === 'title-guess') {
+        const selectedSetId = String(roomSettingsDraft.titleGuessSetId || '').trim();
+        const maxQuestionCount = Math.max(
+          0,
+          Number(draftSelectedTitleGuessSet?.questionCount || roomSettingsDraft.titleGuessQuestionCount || 0)
+        );
+
+        if (!selectedSetId) {
+          toast.error(pick('เลือกชุดทายชื่อเรื่องก่อนบันทึก', 'Choose a Guess the Title set before saving'));
+          return;
+        }
+
+        if (maxQuestionCount > 0 && Number(roomSettingsDraft.roundCount || 0) > maxQuestionCount) {
+          toast.error(
+            pick(
+              `จำนวนรอบต้องไม่เกิน ${maxQuestionCount} จากชุดที่เลือก`,
+              `Rounds cannot exceed ${maxQuestionCount} for the selected set`,
+            )
+          );
+          return;
+        }
+      }
+
       if (roomSettingsDraft.templateId) {
         const pool = draftTemplatePlayablePool.length > 0 || draftTemplatePoolLoaded
           ? draftTemplatePlayablePool
@@ -1213,12 +1441,17 @@ export function PartyRoomPage() {
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
-      setBusyAction('');
+      if (silent) {
+        isAutosavingRef.current = false;
+      } else {
+        setBusyAction('');
+      }
     }
   }, [
     applyEvent,
     draftTemplatePlayablePool,
     draftTemplatePoolLoaded,
+    draftSelectedTitleGuessSet?.questionCount,
     isHost,
     pick,
     room,
@@ -1238,6 +1471,10 @@ export function PartyRoomPage() {
       return undefined;
     }
 
+    if (roomSettingsDraft.modeType === 'title-guess' && !String(roomSettingsDraft.titleGuessSetId || '').trim()) {
+      return undefined;
+    }
+
     const timeoutId = window.setTimeout(() => {
       void handleSaveRoomSettings({ silent: true });
     }, PARTY_LOBBY_AUTOSAVE_DELAY_MS);
@@ -1254,7 +1491,9 @@ export function PartyRoomPage() {
     isHost,
     room,
     room?.status,
+    roomSettingsDraft.modeType,
     roomSettingsDraft.templateId,
+    roomSettingsDraft.titleGuessSetId,
   ]);
 
   const handleStartMatch = async () => {
@@ -1393,9 +1632,13 @@ export function PartyRoomPage() {
       templatePresetAvailability: draftTemplatePresetAvailability,
       suggestedTemplatePresetId: draftSuggestedTemplatePresetId,
       quizRoundOptions: draftQuizRoundOptions,
+      titleGuessRoundOptions: draftTitleGuessRoundOptions,
       voteEntrantOptions: draftVoteEntrantOptions,
       clipTimeOptions: draftClipTimeOptions,
       songPoolSelectValue: draftSongPoolSelectValue,
+      titleGuessSetOptions,
+      titleGuessSetsLoading,
+      selectedTitleGuessSet: draftSelectedTitleGuessSet,
       hasPendingChanges: hasPendingRoomSettings,
       isSaving: busyAction === 'save-settings',
       onChange: handleRoomSettingsChange,

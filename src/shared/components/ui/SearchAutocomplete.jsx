@@ -46,6 +46,78 @@ export function SearchAutocomplete({
     return null;
   }
 
+  const renderActionItem = (item, group, isHighlighted) => {
+    const isRecent = item.kind === 'recent';
+    const actionOnly = Boolean(item?.selectOnly || !item?.href);
+
+    const content = (
+      <>
+        {item.thumbnailUrl ? (
+          <span className="search-autocomplete-media">
+            <img src={item.thumbnailUrl} alt="" className="search-autocomplete-thumb" loading="lazy" />
+          </span>
+        ) : (
+          <span className={`search-autocomplete-kind search-autocomplete-kind-${group.id}`}>
+            <SuggestionIcon groupId={group.id} />
+          </span>
+        )}
+        <span className="search-autocomplete-copy">
+          <strong><SearchHighlightText text={item.title} query={query} className="search-autocomplete-highlight" /></strong>
+          {item.meta ? <span><SearchHighlightText text={item.meta} query={query} className="search-autocomplete-highlight" /></span> : null}
+          {item.description ? (
+            <span className="search-autocomplete-description">
+              <SearchHighlightText text={item.description} query={query} className="search-autocomplete-highlight" />
+            </span>
+          ) : null}
+        </span>
+      </>
+    );
+
+    return (
+      <div
+        key={item.id}
+        id={item.id}
+        className={`search-autocomplete-item ${isHighlighted ? 'is-highlighted' : ''} ${isRecent ? 'search-autocomplete-item-recent' : ''}`}
+        role="option"
+        aria-selected={isHighlighted}
+      >
+        {actionOnly ? (
+          <button
+            type="button"
+            className="search-autocomplete-item-button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onSelect?.(item)}
+            tabIndex={-1}
+          >
+            {content}
+          </button>
+        ) : (
+          <Link
+            to={item.href}
+            state={item.navigateState}
+            className="search-autocomplete-item-link"
+            onClick={() => onSelect?.(item)}
+            tabIndex={-1}
+          >
+            {content}
+          </Link>
+        )}
+        {isRecent && onRemoveRecent ? (
+          <button
+            type="button"
+            className="search-autocomplete-remove"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onRemoveRecent(item.entityId)}
+            aria-label={t('discover.removeRecentSearch')}
+            tabIndex={-1}
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div
       id={listboxId}
@@ -108,55 +180,7 @@ export function SearchAutocomplete({
                 <div className="search-autocomplete-group-items" role="group" aria-labelledby={`sac-group-${group.id}`}>
                   {group.items.map((item) => {
                     const isHighlighted = highlightedIndex === item.flatIndex;
-                    const isRecent = item.kind === 'recent';
-                    return (
-                      <div
-                        key={item.id}
-                        id={item.id}
-                        className={`search-autocomplete-item ${isHighlighted ? 'is-highlighted' : ''} ${isRecent ? 'search-autocomplete-item-recent' : ''}`}
-                        role="option"
-                        aria-selected={isHighlighted}
-                      >
-                        <Link
-                          to={item.href}
-                          state={item.navigateState}
-                          className="search-autocomplete-item-link"
-                          onClick={() => onSelect?.(item)}
-                          tabIndex={-1}
-                        >
-                          {item.thumbnailUrl ? (
-                            <span className="search-autocomplete-media">
-                              <img src={item.thumbnailUrl} alt="" className="search-autocomplete-thumb" loading="lazy" />
-                            </span>
-                          ) : (
-                            <span className={`search-autocomplete-kind search-autocomplete-kind-${group.id}`}>
-                              <SuggestionIcon groupId={group.id} />
-                            </span>
-                          )}
-                          <span className="search-autocomplete-copy">
-                            <strong><SearchHighlightText text={item.title} query={query} className="search-autocomplete-highlight" /></strong>
-                            {item.meta ? <span><SearchHighlightText text={item.meta} query={query} className="search-autocomplete-highlight" /></span> : null}
-                            {item.description ? (
-                              <span className="search-autocomplete-description">
-                                <SearchHighlightText text={item.description} query={query} className="search-autocomplete-highlight" />
-                              </span>
-                            ) : null}
-                          </span>
-                        </Link>
-                        {isRecent && onRemoveRecent ? (
-                          <button
-                            type="button"
-                            className="search-autocomplete-remove"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => onRemoveRecent(item.entityId)}
-                            aria-label={t('discover.removeRecentSearch')}
-                            tabIndex={-1}
-                          >
-                            <X size={12} aria-hidden="true" />
-                          </button>
-                        ) : null}
-                      </div>
-                    );
+                    return renderActionItem(item, group, isHighlighted);
                   })}
                 </div>
               )}

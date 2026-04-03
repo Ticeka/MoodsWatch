@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useCurrentPartyRoundAnswers, usePartyLeaderboard } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyAnswerPanel } from './PartyRoomShared';
+import { PartyTitleGuessQuestionStage } from '../components/PartyTitleGuessView';
 
 export const PartyQuestionView = React.memo(function PartyQuestionView({
   room,
@@ -23,21 +24,37 @@ export const PartyQuestionView = React.memo(function PartyQuestionView({
   );
 
   return (
-    <PartyAnswerPanel
-      key={currentRound?.id || room?.current_match?.id || 'answer-panel'}
-      room={room}
-      member={currentMember}
-      round={currentRound}
-      answer={currentAnswer}
-      answerCount={answerCount}
-      leaderboard={room?.settings?.showLiveScores ? leaderboard : []}
-      phaseEndsAtMs={phaseEndsAtMs}
-      answerGraceEndsAtMs={answerGraceEndsAtMs}
-      onPlaybackStarted={onPlaybackStarted}
-      onPlaybackComplete={onPlaybackComplete}
-      onSubmit={onSubmit}
-      submitting={busyAction === 'answer'}
-      pick={pick}
-    />
+    currentRound?.kind === 'title-guess' ? (
+      <PartyTitleGuessQuestionStage
+        key={currentRound?.id || room?.current_match?.id || 'title-guess-answer-panel'}
+        room={room}
+        member={currentMember}
+        round={currentRound}
+        answer={currentAnswer}
+        answerCount={answerCount}
+        leaderboard={leaderboard}
+        phaseEndsAtMs={phaseEndsAtMs}
+        onSubmit={onSubmit}
+        submitting={busyAction === 'answer'}
+        pick={pick}
+      />
+    ) : (
+      <PartyAnswerPanel
+        key={currentRound?.id || room?.current_match?.id || 'answer-panel'}
+        room={room}
+        member={currentMember}
+        round={currentRound}
+        answer={currentAnswer}
+        answerCount={answerCount}
+        leaderboard={room?.settings?.showLiveScores ? leaderboard : []}
+        phaseEndsAtMs={phaseEndsAtMs}
+        answerGraceEndsAtMs={answerGraceEndsAtMs}
+        onPlaybackStarted={onPlaybackStarted}
+        onPlaybackComplete={onPlaybackComplete}
+        onSubmit={onSubmit}
+        submitting={busyAction === 'answer'}
+        pick={pick}
+      />
+    )
   );
 });

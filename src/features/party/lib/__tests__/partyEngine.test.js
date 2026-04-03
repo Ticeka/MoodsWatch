@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   advancePartyMatch,
   buildPartyMatchSnapshot,
+  buildPartyTitleGuessSnapshot,
   buildUniquePartyAliases,
   createPartySettings,
   getPartyRequiredReadyCount,
@@ -70,6 +71,33 @@ const SONGS = [
     sourceTitleAliases: ['Demon Slayer', 'Kimetsu no Yaiba'],
     mediaUrl: 'https://cdn.example.com/5.mp4',
     coverUrl: 'https://cdn.example.com/5.jpg',
+  },
+];
+
+const TITLE_GUESS_QUESTIONS = [
+  {
+    id: 'tg-1',
+    answerTitleId: 201,
+    answerTitle: 'Haikyuu!!',
+    answerTitleAliases: ['Haikyuu!!', 'Haikyu'],
+    clues: [
+      { id: 'tg-1-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Yamaguchi Tadashi', characterImageUrl: 'https://cdn.example.com/tg1-1.jpg' },
+      { id: 'tg-1-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Tsukishima Kei', characterImageUrl: 'https://cdn.example.com/tg1-2.jpg' },
+      { id: 'tg-1-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Kageyama Tobio', characterImageUrl: 'https://cdn.example.com/tg1-3.jpg' },
+      { id: 'tg-1-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Nishinoya Yuu', characterImageUrl: 'https://cdn.example.com/tg1-4.jpg' },
+    ],
+  },
+  {
+    id: 'tg-2',
+    answerTitleId: 202,
+    answerTitle: 'Gintama',
+    answerTitleAliases: ['Gintama'],
+    clues: [
+      { id: 'tg-2-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Sarutobi Ayame', characterImageUrl: 'https://cdn.example.com/tg2-1.jpg' },
+      { id: 'tg-2-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Katsura Kotaro', characterImageUrl: 'https://cdn.example.com/tg2-2.jpg' },
+      { id: 'tg-2-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Kagura', characterImageUrl: 'https://cdn.example.com/tg2-3.jpg' },
+      { id: 'tg-2-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Hijikata Toshiro', characterImageUrl: 'https://cdn.example.com/tg2-4.jpg' },
+    ],
   },
 ];
 
@@ -211,6 +239,91 @@ describe('partyEngine', () => {
     expect(settings.templateName).toBe('Anime Classics');
     expect(settings.templateCoverUrl).toBe('https://cdn.example.com/template.jpg');
     expect(settings.templatePlayableCount).toBe(6);
+  });
+
+  it('normalizes title-guess settings without carrying song-specific fields', () => {
+    const settings = createPartySettings({
+      modeType: 'title-guess',
+      titleGuessSetId: '55',
+      titleGuessSetName: 'Side Cast Legends',
+      titleGuessQuestionCount: 48,
+      templateId: 'old-song-template',
+      songPresetId: 'legacy-preset',
+      timePerRoundSec: 6,
+    });
+
+    expect(settings.modeType).toBe('title-guess');
+    expect(settings.presetId).toBe('title-guess');
+    expect(settings.titleGuessSetId).toBe('55');
+    expect(settings.titleGuessSetName).toBe('Side Cast Legends');
+    expect(settings.titleGuessQuestionCount).toBe(48);
+    expect(settings.templateId).toBe('');
+    expect(settings.songPresetId).toBe('');
+    expect(settings.timePerRoundSec).toBe(6);
+  });
+
+  it('builds a title-guess match with 4 ordered clues per round', () => {
+    const match = buildPartyTitleGuessSnapshot(TITLE_GUESS_QUESTIONS, {
+      modeType: 'title-guess',
+      roundCount: 2,
+      randomOrder: false,
+      titleGuessSetId: 'set-1',
+      titleGuessSetName: 'Anime Side Cast',
+    });
+
+    expect(match.modeType).toBe('title-guess');
+    expect(match.rounds).toHaveLength(2);
+    expect(match.rounds[0].clues).toHaveLength(4);
+    expect(match.revealedClueCount).toBe(0);
+    expect(match.rounds[0].sourceTitleAliases).toContain('Haikyuu!!');
+  });
+
+  it('advances title-guess rounds by revealing one clue at a time before reveal', () => {
+    const initial = buildPartyTitleGuessSnapshot(TITLE_GUESS_QUESTIONS, {
+      modeType: 'title-guess',
+      roundCount: 2,
+      randomOrder: false,
+    });
+
+    const clue1 = advancePartyMatch(initial);
+    const clue2 = advancePartyMatch(clue1);
+    const clue3 = advancePartyMatch(clue2);
+    const clue4 = advancePartyMatch(clue3);
+    const reveal = advancePartyMatch(clue4);
+
+    expect(clue1.phase).toBe('question');
+    expect(clue1.revealedClueCount).toBe(1);
+    expect(clue4.phase).toBe('question');
+    expect(clue4.revealedClueCount).toBe(4);
+    expect(reveal.phase).toBe('reveal');
+  });
+
+  it('scores title-guess answers with higher points for earlier clues', () => {
+    const round = {
+      kind: 'title-guess',
+      sourceTitleAliases: ['Haikyuu!!', 'Haikyu'],
+      revealedClueCount: 1,
+    };
+
+    const earlyScore = scorePartyAnswer({
+      presetId: 'title-guess',
+      round,
+      typedTitle: 'Haikyu',
+      elapsedMs: 800,
+      timeLimitMs: 7000,
+    });
+
+    const lateScore = scorePartyAnswer({
+      presetId: 'title-guess',
+      round: { ...round, revealedClueCount: 4 },
+      typedTitle: 'Haikyuu!!',
+      elapsedMs: 800,
+      timeLimitMs: 7000,
+    });
+
+    expect(earlyScore.titleCorrect).toBe(true);
+    expect(earlyScore.points).toBeGreaterThan(lateScore.points);
+    expect(lateScore.titleCorrect).toBe(true);
   });
 
   it('builds distinct runtime song keys for YouTube rounds', () => {

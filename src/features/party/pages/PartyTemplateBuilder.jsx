@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Save, Search, Plus, Trash2, GripVertical, Settings, ListPlus,
-  Music, LayoutGrid, Info, Image as ImageIcon, Loader2, Youtube,
+  Music, LayoutGrid, Info, Image as ImageIcon, Loader2, Youtube, Layers3,
   CheckCircle, AlertTriangle, XCircle, Play,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -34,6 +34,12 @@ import {
   youtubePlaylistItemsToTemplateItems,
 } from '@/features/party/lib/partyTemplateUtils';
 import {
+  clearPartyDraft,
+  getPartyTemplateBuilderDraftKey,
+  readPartyDraft,
+  writePartyDraft,
+} from '@/features/party/lib/partyDraftStorage';
+import {
   applyYoutubeSourceSuggestion,
 		normalizeYoutubeVideoPayload,
 		normalizeYoutubePlaylistPayload,
@@ -41,7 +47,8 @@ import {
 	getYoutubePlaybackLabel,
 	  getYoutubePlaybackStatusClass,
 	  isYoutubeTemplateItem,
-	} from '@/features/party/lib/partyYoutube';
+} from '@/features/party/lib/partyYoutube';
+import { PartyTitleGuessBuilderPage } from './PartyTitleGuessBuilder';
 import {
   PARTY_TEMPLATE_SOURCE_MATCH_CONFIDENCE,
   PARTY_TEMPLATE_SOURCE_MATCH_METHOD,
@@ -88,15 +95,46 @@ function getTemplateCompatibilityCopy(reason) {
   return reason.message;
 }
 
+function buildPartyBuilderCreateUrl(params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      query.set(key, String(value));
+    }
+  });
+
+  const serialized = query.toString();
+  return serialized ? `/party/templates/create?${serialized}` : '/party/templates/create';
+}
+
+function restoreTemplateBuilderItems(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item, index) => mapTemplateItemFromDb({
+    ...item,
+    position: index,
+  }, index));
+}
+
 export function PartyTemplateBuilderPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { pick } = useLanguage();
   const { user } = useAuth();
 
+  const returnTo = searchParams.get('returnTo') || '/party/templates';
   const baseTemplateId = searchParams.get('base') || null;
   const editTemplateId = searchParams.get('edit') || null;
   const sourceId = editTemplateId || baseTemplateId;
+  const requestedMode = String(searchParams.get('mode') || '').trim().toLowerCase();
+  const builderMode = !sourceId && requestedMode === 'title-guess' ? 'title-guess' : 'template';
+  const templateDraftStorageKey = useMemo(
+    () => getPartyTemplateBuilderDraftKey({ editTemplateId, baseTemplateId }),
+    [baseTemplateId, editTemplateId],
+  );
 
   const [meta, setMeta] = useState({
     name: pick('เพลย์ลิสต์ใหม่', 'New Playlist'),
@@ -130,8 +168,13 @@ export function PartyTemplateBuilderPage() {
   const [sourceSearchQuery, setSourceSearchQuery] = useState('');
   const [sourceSearchResults, setSourceSearchResults] = useState([]);
   const [sourceSearchLoading, setSourceSearchLoading] = useState(false);
+  const draftHydratedKeyRef = useRef('');
 
   const debouncedSearch = useDebounce(searchQuery, 400);
+
+  useEffect(() => {
+    draftHydratedKeyRef.current = '';
+  }, [templateDraftStorageKey]);
 
   // Load base/edit template on mount
   useEffect(() => {
@@ -182,6 +225,59 @@ export function PartyTemplateBuilderPage() {
       }
     };
   }, [coverPreviewUrl]);
+
+  useEffect(() => {
+    if (builderMode !== 'template' || loadingBase) {
+      return;
+    }
+
+    if (draftHydratedKeyRef.current === templateDraftStorageKey) {
+      return;
+    }
+
+    const draft = readPartyDraft(templateDraftStorageKey);
+    if (draft) {
+      setMeta((current) => ({
+        ...current,
+        ...draft.meta,
+        presetId: draft?.meta?.presetId || current.presetId,
+        modeScope: draft?.meta?.modeScope || current.modeScope,
+        visibility: draft?.meta?.visibility || current.visibility,
+      }));
+      setItems(restoreTemplateBuilderItems(draft.items));
+      setActiveTab(String(draft.activeTab || 'add'));
+      setSearchQuery(String(draft.searchQuery || ''));
+      setYtInput(String(draft.ytInput || ''));
+      setItemFilter(String(draft.itemFilter || 'all'));
+    }
+
+    draftHydratedKeyRef.current = templateDraftStorageKey;
+  }, [builderMode, loadingBase, templateDraftStorageKey]);
+
+  useEffect(() => {
+    if (builderMode !== 'template' || loadingBase || draftHydratedKeyRef.current !== templateDraftStorageKey) {
+      return;
+    }
+
+    writePartyDraft(templateDraftStorageKey, {
+      meta,
+      items,
+      activeTab,
+      searchQuery,
+      ytInput,
+      itemFilter,
+    });
+  }, [
+    activeTab,
+    builderMode,
+    itemFilter,
+    items,
+    loadingBase,
+    meta,
+    searchQuery,
+    templateDraftStorageKey,
+    ytInput,
+  ]);
 
   // Catalog search - runs on mount (empty query = popular songs) and on every debounced change
   useEffect(() => {
@@ -535,6 +631,7 @@ export function PartyTemplateBuilderPage() {
           sourceType,
         });
         await replacePartyTemplateItems(editTemplateId, dbItems);
+        clearPartyDraft(templateDraftStorageKey);
         toast.success(pick('บันทึกเทมเพลตแล้ว!', 'Template saved!'));
         navigate(`/party/templates/${editTemplateId}`);
       } else {
@@ -562,6 +659,7 @@ export function PartyTemplateBuilderPage() {
           displayName,
         );
         toast.success(pick('สร้างเทมเพลตแล้ว!', 'Template created!'));
+        clearPartyDraft(templateDraftStorageKey);
         navigate(`/party/templates/${created.id}`);
       }
     } catch (err) {
@@ -600,13 +698,17 @@ export function PartyTemplateBuilderPage() {
     );
   }
 
+  if (builderMode === 'title-guess') {
+    return <PartyTitleGuessBuilderPage />;
+  }
+
   return (
     <div className="party-page pt-template-builder-bg">
       <div className="pt-builder-container">
         {/* Header Bar */}
         <header className="pt-builder-header">
           <div className="pt-builder-title-group">
-            <button className="pt-btn-back" onClick={() => navigate('/party/templates')}>
+            <button className="pt-btn-back" onClick={() => navigate(returnTo, { replace: true })}>
               &larr; {pick('Back', 'Back')}
             </button>
             <div className="pt-builder-title-text">
@@ -622,6 +724,33 @@ export function PartyTemplateBuilderPage() {
             </div>
           </div>
         </header>
+
+        {!sourceId ? (
+          <section className="party-builder-mode-switch" aria-label={pick('เลือกรูปแบบการสร้าง', 'Choose what to create')}>
+            <button
+              type="button"
+              className="party-builder-mode-switch-card is-active"
+              onClick={() => navigate(buildPartyBuilderCreateUrl({ returnTo }))}
+            >
+              <span className="party-builder-mode-switch-icon"><LayoutGrid size={18} /></span>
+              <span className="party-builder-mode-switch-copy">
+                <strong>{pick('ชุดเพลง', 'Song set')}</strong>
+                <span>{pick('รวมเพลงสำหรับเล่น Music Quiz และ Vote Battle จากคลังเพลงหรือ YouTube', 'Build a song set for Music Quiz and Vote Battle using the catalog or YouTube')}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="party-builder-mode-switch-card"
+              onClick={() => navigate(buildPartyBuilderCreateUrl({ mode: 'title-guess', returnTo }))}
+            >
+              <span className="party-builder-mode-switch-icon"><Layers3 size={18} /></span>
+              <span className="party-builder-mode-switch-copy">
+                <strong>{pick('ชุดทายชื่อเรื่อง', 'Guess the Title set')}</strong>
+                <span>{pick('จัดชุดคำถามจากตัวละครสำหรับเล่นโหมดทายชื่อเรื่อง', 'Create a character-based question set for Guess the Title')}</span>
+              </span>
+            </button>
+          </section>
+        ) : null}
 
         <div className="pt-builder-layout">
           {/* Left Panel */}

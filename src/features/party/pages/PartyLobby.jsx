@@ -12,6 +12,26 @@ import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelect
 import { PartyJoinRequestsPanel } from '@/features/party/components/PartyJoinRequestsPanel';
 import { PartyPlayerList } from './PartyRoomShared';
 
+function getResolvedPoolCopy({
+  isTitleGuessMode,
+  templateName,
+  selectedPoolName,
+  selectedPoolNameTh,
+  pick,
+}) {
+  if (isTitleGuessMode) {
+    return {
+      name: pick(selectedPoolNameTh, selectedPoolName),
+      label: pick('ชุดคำถาม', 'Set'),
+    };
+  }
+
+  return {
+    name: templateName || pick(selectedPoolNameTh, selectedPoolName),
+    label: templateName ? pick('ชุดเพลง', 'Song set') : pick('คลังเพลง', 'Song pool'),
+  };
+}
+
 export const PartyLobbyView = React.memo(function PartyLobbyView({
   room,
   guestToken,
@@ -32,12 +52,31 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const roomId = room?.id;
   const members = useHydratedPartyMembers(guestToken, partyProfile);
   const isVoteMode = room?.settings?.modeType === 'vote';
+  const isTitleGuessMode = room?.settings?.modeType === 'title-guess';
   const templateName = room?.settings?.templateName || '';
   const templateCoverUrl = room?.settings?.templateCoverUrl || '';
-  const resolvedPoolName = templateName || pick(selectedPoolNameTh, selectedPoolName);
+  const titleGuessSetName = room?.settings?.titleGuessSetName || '';
+  const titleGuessQuestionCount = Math.max(0, Number(room?.settings?.titleGuessQuestionCount || 0));
+  const resolvedPool = getResolvedPoolCopy({
+    isTitleGuessMode,
+    templateName,
+    selectedPoolName,
+    selectedPoolNameTh,
+    pick,
+  });
   const readyCount = useMemo(() => members.filter((member) => member.is_ready).length, [members]);
   const requiredReadyCount = useMemo(() => getPartyRequiredReadyCount(members.length), [members.length]);
   const editorIsVote = hostEditor?.settings?.modeType === 'vote';
+  const editorIsTitleGuess = hostEditor?.settings?.modeType === 'title-guess';
+  const editorTemplateName = hostEditor?.settings?.templateName || '';
+  const selectedTitleGuessSet = hostEditor?.selectedTitleGuessSet || null;
+  const selectedTitleGuessSetName = selectedTitleGuessSet?.name || hostEditor?.settings?.titleGuessSetName || '';
+  const selectedTitleGuessQuestionCount = Math.max(
+    0,
+    Number(selectedTitleGuessSet?.questionCount || hostEditor?.settings?.titleGuessQuestionCount || 0),
+  );
+  const titleGuessStartBlocked = editorIsTitleGuess && (!String(hostEditor?.settings?.titleGuessSetId || '').trim() || selectedTitleGuessQuestionCount <= 0);
+  const hostStartDisabled = busyAction === 'start' || readyCount < requiredReadyCount || titleGuessStartBlocked;
 
   const playerBlock = (
     <div className="party-lobby-block">
@@ -63,29 +102,35 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
     <div className="party-settings-summary">
       <article className="party-stat-pill">
         <strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong>
-        <span>{pick('โหมด', 'preset')}</span>
+        <span>{pick('โหมด', 'Mode')}</span>
       </article>
       <article className="party-stat-pill">
-        <strong>{resolvedPoolName}</strong>
-        <span>{templateName ? pick('เทมเพลต', 'template') : pick('คลังเพลง', 'pool')}</span>
+        <strong>{resolvedPool.name}</strong>
+        <span>{resolvedPool.label}</span>
       </article>
       <article className="party-stat-pill">
         <strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong>
-        <span>{isVoteMode ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</span>
+        <span>{isVoteMode ? pick('เพลง', 'Songs') : pick('รอบ', 'Rounds')}</span>
       </article>
       <article className="party-stat-pill">
         <strong>{room?.settings?.timePerRoundSec || 12}</strong>
-        <span>{pick('วิ คลิป', 'clip')}</span>
+        <span>{isTitleGuessMode ? pick('วิ ต่อใบ', 'Sec / clue') : pick('วิ คลิป', 'Clip')}</span>
       </article>
       {isVoteMode ? (
         <article className="party-stat-pill">
           <strong>{room?.settings?.voteSec || 10}</strong>
-          <span>{pick('วิ โหวต', 'vote')}</span>
+          <span>{pick('วิ โหวต', 'Vote')}</span>
+        </article>
+      ) : null}
+      {isTitleGuessMode && titleGuessQuestionCount > 0 ? (
+        <article className="party-stat-pill">
+          <strong>{titleGuessQuestionCount}</strong>
+          <span>{pick('ข้อในชุด', 'Pool size')}</span>
         </article>
       ) : null}
       <article className="party-stat-pill">
         <strong>{room?.settings?.revealSec || 12}</strong>
-        <span>{pick('วิ เฉลย', 'reveal')}</span>
+        <span>{pick('วิ เฉลย', 'Reveal')}</span>
       </article>
     </div>
   );
@@ -100,40 +145,80 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
             </div>
 
             <div className="party-host-settings-editor">
-              <div className="party-host-template-hero">
-                <div className="party-host-template-hero-copy">
-                  <span className="party-host-template-hero-kicker">{pick('เทมเพลต', 'Template')}</span>
-                  <strong>
-                    {hostEditor.settings.templateId
-                      ? (hostEditor.settings.templateName || pick('เลือกแล้ว', 'Selected'))
-                      : pick('ยังไม่ได้เลือก', 'Not selected')}
-                  </strong>
+              {editorIsTitleGuess ? (
+                <div className="party-host-template-hero party-host-template-hero--title-guess">
+                  <div className="party-host-template-hero-copy">
+                    <span className="party-host-template-hero-kicker">{pick('ชุดคำถาม', 'Question set')}</span>
+                    <strong>
+                      {selectedTitleGuessSetName || pick('ยังไม่ได้เลือก', 'Not selected')}
+                    </strong>
+                    <span className="party-host-template-hero-meta">
+                      {selectedTitleGuessQuestionCount > 0
+                        ? pick(`${selectedTitleGuessQuestionCount} ข้อพร้อมเล่น`, `${selectedTitleGuessQuestionCount} ready questions`)
+                        : pick('เลือกชุดเพื่อเริ่มจัดห้อง', 'Pick a set before starting the room')}
+                    </span>
+                  </div>
+                  <div className="party-host-title-guess-side">
+                    {selectedTitleGuessSet ? (
+                      <div className="party-host-title-guess-stats" aria-label={pick('ข้อมูลชุดคำถาม', 'Question set metadata')}>
+                        <span>{selectedTitleGuessSet.isOfficial ? pick('ชุดทางการ', 'Official set') : (selectedTitleGuessSet.creatorName || pick('ชุดคอมมูนิตี้', 'Community set'))}</span>
+                        <span>{pick(`${selectedTitleGuessSet.playCount || 0} ครั้ง`, `${selectedTitleGuessSet.playCount || 0} plays`)}</span>
+                        <span>{pick(`${selectedTitleGuessSet.likeCount || 0} ถูกใจ`, `${selectedTitleGuessSet.likeCount || 0} likes`)}</span>
+                      </div>
+                    ) : null}
+                    <div className="party-host-template-hero-actions party-host-template-hero-actions--title-guess">
+                      <Button
+                        variant="primary"
+                        className="party-gradient-action party-host-template-hero-btn"
+                        onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=title-guess`)}
+                      >
+                        {selectedTitleGuessSet ? pick('เปลี่ยนชุด', 'Change set') : pick('เลือกชุด', 'Browse sets')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate(`/party/templates/create?mode=title-guess&returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}`)}
+                      >
+                        {pick('สร้างชุดใหม่', 'Create new set')}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="party-host-template-hero-actions">
-                  <Button
-                    variant="primary"
-                    className="party-gradient-action party-host-template-hero-btn"
-                    onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
-                  >
-                    {hostEditor.settings.templateId ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
-                  </Button>
-                  {hostEditor.settings.templateId ? (
+              ) : (
+                <div className="party-host-template-hero">
+                  <div className="party-host-template-hero-copy">
+                    <span className="party-host-template-hero-kicker">{pick('ชุดเพลง', 'Song set')}</span>
+                    <strong>
+                      {hostEditor.settings.templateId
+                        ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
+                        : pick('ยังไม่ได้เลือก', 'Not selected')}
+                    </strong>
+                  </div>
+                  <div className="party-host-template-hero-actions">
                     <Button
-                      variant="outline"
-                      onClick={() => hostEditor.onChange((current) => ({
-                        ...current,
-                        templateId: '',
-                        templateName: '',
-                        templateCoverUrl: '',
-                        templatePlayableCount: 0,
-                        modeScope: 'all',
-                      }))}
+                      variant="primary"
+                      className="party-gradient-action party-host-template-hero-btn"
+                      onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
                     >
-                      {pick('ล้าง', 'Clear')}
+                      {hostEditor.settings.templateId ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
                     </Button>
-                  ) : null}
+                    {hostEditor.settings.templateId ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => hostEditor.onChange((current) => ({
+                          ...current,
+                          templateId: '',
+                          templateName: '',
+                          templateCoverUrl: '',
+                          templatePlayableCount: 0,
+                          modeScope: 'all',
+                        }))}
+                      >
+                        {pick('ล้าง', 'Clear')}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="party-host-mode-row">
                 <button
@@ -157,6 +242,19 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 >
                   <span className="party-lobby-mode-card-vs">VS</span>
                   <span className="party-lobby-mode-card-name">Vote Battle</span>
+                </button>
+                <button
+                  type="button"
+                  className={`party-lobby-mode-card is-title-guess${editorIsTitleGuess ? ' is-active' : ''}`}
+                  onClick={() => hostEditor.onChange((current) => ({
+                    ...current,
+                    modeType: 'title-guess',
+                    timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
+                    revealSec: Math.max(8, Number(current.revealSec || 12)),
+                  }))}
+                >
+                  <span className="party-lobby-mode-card-emoji">🃏</span>
+                  <span className="party-lobby-mode-card-name">{pick('ทายชื่อเรื่อง', 'Guess the Title')}</span>
                 </button>
               </div>
 
@@ -191,7 +289,42 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   </label>
                 ) : null}
 
-                {hostEditor.settings.templateId ? (
+                {editorIsTitleGuess ? (
+                  <label className="pgc-select-field pgc-select-field--wide">
+                    <span className="pgc-label">{pick('ชุดคำถาม', 'Question set')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.titleGuessSetId || ''}
+                      disabled={hostEditor.titleGuessSetsLoading}
+                      onChange={(event) => {
+                        const nextId = String(event.target.value || '').trim();
+                        const selectedSet = hostEditor.titleGuessSetOptions.find((item) => String(item.id || '') === nextId);
+                        hostEditor.onChange((current) => ({
+                          ...current,
+                          titleGuessSetId: nextId,
+                          titleGuessSetName: selectedSet?.name || '',
+                          titleGuessQuestionCount: Number(selectedSet?.questionCount || 0),
+                          roundCount: selectedSet
+                            ? Math.min(Math.max(1, Number(current.roundCount || 10)), Math.max(1, Number(selectedSet.questionCount || 1)))
+                            : current.roundCount,
+                        }));
+                      }}
+                    >
+                      <option value="">
+                        {hostEditor.titleGuessSetsLoading
+                          ? pick('กำลังโหลดชุดทายชื่อเรื่อง...', 'Loading Guess the Title sets...')
+                          : pick('เลือกชุดทายชื่อเรื่อง', 'Choose a Guess the Title set')}
+                      </option>
+                      {hostEditor.titleGuessSetOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.questionCount > 0
+                            ? `${option.name} (${option.questionCount})`
+                            : `${option.name} (${pick('ยังไม่มีข้อ', 'no questions yet')})`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : hostEditor.settings.templateId ? (
                   <div className="pgc-select-field">
                     <span className="pgc-label">{pick('คลังเพลง', 'Song pool')}</span>
                     <div className="party-host-pill-muted">{pick('จากเทมเพลต', 'From template')}</div>
@@ -243,7 +376,9 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 )}
 
                 <label className="pgc-select-field">
-                  <span className="pgc-label">{editorIsVote ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}</span>
+                  <span className="pgc-label">
+                    {editorIsVote ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}
+                  </span>
                   <select
                     className="pgc-select"
                     value={editorIsVote ? hostEditor.settings.entrantCount : hostEditor.settings.roundCount}
@@ -253,7 +388,12 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                         : { ...current, roundCount: Number(event.target.value) }
                     ))}
                   >
-                    {(editorIsVote ? hostEditor.voteEntrantOptions : hostEditor.quizRoundOptions).map((value) => (
+                    {(editorIsVote
+                      ? hostEditor.voteEntrantOptions
+                      : editorIsTitleGuess
+                        ? hostEditor.titleGuessRoundOptions
+                        : hostEditor.quizRoundOptions
+                    ).map((value) => (
                       <option key={value} value={value}>
                         {value}
                       </option>
@@ -262,7 +402,13 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 </label>
 
                 <label className="pgc-select-field">
-                  <span className="pgc-label">{editorIsVote ? pick('เวลาเพลง', 'Song time') : pick('เวลาคลิป', 'Clip')}</span>
+                  <span className="pgc-label">
+                    {editorIsVote
+                      ? pick('เวลาเพลง', 'Song time')
+                      : editorIsTitleGuess
+                        ? pick('เวลาแต่ละใบ', 'Clue time')
+                        : pick('เวลาคลิป', 'Clip')}
+                  </span>
                   <select
                     className="pgc-select"
                     value={hostEditor.settings.timePerRoundSec}
@@ -324,6 +470,31 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 </div>
               ) : null}
 
+              {editorIsTitleGuess && selectedTitleGuessSet ? (
+                <div className="party-host-settings-alert is-info">
+                  {selectedTitleGuessSet.description
+                    || pick(
+                      `${selectedTitleGuessQuestionCount} ข้อในชุดนี้ พร้อมเล่นใน lobby เดียวกับ party`,
+                      `${selectedTitleGuessQuestionCount} questions ready to use in this room`,
+                    )}
+                </div>
+              ) : null}
+
+              {editorIsTitleGuess && hostEditor.titleGuessSetsLoading ? (
+                <div className="party-host-settings-alert is-info">
+                  {pick('กำลังโหลดชุดทายชื่อเรื่อง...', 'Loading Guess the Title sets...')}
+                </div>
+              ) : null}
+
+              {editorIsTitleGuess && !hostEditor.titleGuessSetsLoading && hostEditor.titleGuessSetOptions.length === 0 ? (
+                <div className="party-host-settings-alert is-info">
+                  {pick(
+                    'ยังไม่มีชุดทายชื่อเรื่องให้เลือก ลองกด "สร้างชุดใหม่" ด้านบนเพื่อเพิ่มชุดแรกของห้องนี้',
+                    'No Guess the Title sets are available yet. Use "Create new set" above to add the first one.',
+                  )}
+                </div>
+              ) : null}
+
               <div className="party-host-toggle-grid">
                 {editorIsVote ? (
                   <label className="pgc-toggle-item">
@@ -363,7 +534,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                     }))}
                   />
                   <div className="pgc-toggle-text">
-                    <strong>{pick('สุ่มเพลง', 'Shuffle')}</strong>
+                    <strong>{editorIsTitleGuess ? pick('สุ่มลำดับคำถาม', 'Shuffle question order') : pick('สุ่มเพลง', 'Shuffle songs')}</strong>
                   </div>
                 </label>
               </div>
@@ -372,7 +543,12 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 <Button
                   variant="primary"
                   onClick={hostEditor.onSave}
-                  disabled={!hostEditor.hasPendingChanges || hostEditor.isSaving || (hostEditor.settings.templateId && !hostEditor.templateValidation.ok)}
+                  disabled={
+                    !hostEditor.hasPendingChanges
+                    || hostEditor.isSaving
+                    || (hostEditor.settings.templateId && !hostEditor.templateValidation.ok)
+                    || (editorIsTitleGuess && !String(hostEditor.settings.titleGuessSetId || '').trim())
+                  }
                 >
                   {hostEditor.isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
                 </Button>
@@ -402,7 +578,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                     variant="primary"
                     className="party-start-btn party-start-btn--compact"
                     onClick={onStartMatch}
-                    disabled={busyAction === 'start' || readyCount < requiredReadyCount}
+                    disabled={hostStartDisabled}
                   >
                     {busyAction === 'start' ? pick('กำลังเตรียม...', 'Starting...') : pick('เริ่มเกม', 'Start Game')}
                   </Button>
@@ -416,6 +592,11 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   </Button>
                 </div>
               </div>
+              {titleGuessStartBlocked ? (
+                <span className="party-host-start-note">
+                  {pick('เลือกชุดทายชื่อเรื่องก่อนเริ่มเกม', 'Choose a Guess the Title set before starting')}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -439,7 +620,17 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
           <div className="party-lobby-block-head">
             <strong>{pick('การตั้งค่าห้อง', 'Room settings')}</strong>
           </div>
-          {templateName ? (
+          {isTitleGuessMode && titleGuessSetName ? (
+            <div className="party-lobby-template-banner party-lobby-template-banner--title-guess">
+              <div className="party-lobby-template-cover party-lobby-template-cover--title-guess" aria-hidden="true">
+                <span>🃏</span>
+              </div>
+              <div>
+                <strong>{titleGuessSetName}</strong>
+                <span>{pick('ชุดทายชื่อเรื่อง', 'Guess the Title set')}</span>
+              </div>
+            </div>
+          ) : templateName ? (
             <div className="party-lobby-template-banner">
               <div
                 className="party-lobby-template-cover"
@@ -448,7 +639,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
               />
               <div>
                 <strong>{templateName}</strong>
-                <span>{pick('เทมเพลต', 'Template')}</span>
+                <span>{pick('ชุดเพลง', 'Song set')}</span>
               </div>
             </div>
           ) : null}

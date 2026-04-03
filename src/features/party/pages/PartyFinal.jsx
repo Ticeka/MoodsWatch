@@ -5,6 +5,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { usePartyLeaderboard } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyLeaderboard } from './PartyRoomShared';
 import { formatFastest } from './partyRoomUtils';
+import { PartyTitleGuessFinalStage } from '../components/PartyTitleGuessView';
 
 export const PartyFinalView = React.memo(function PartyFinalView({
   guestToken,
@@ -16,6 +17,20 @@ export const PartyFinalView = React.memo(function PartyFinalView({
   pick,
 }) {
   const leaderboard = usePartyLeaderboard(guestToken, partyProfile);
+
+  if (currentMatch?.modeType === 'title-guess') {
+    return (
+      <PartyTitleGuessFinalStage
+        leaderboard={leaderboard}
+        currentMatch={currentMatch}
+        guestToken={guestToken}
+        isHost={isHost}
+        busyAction={busyAction}
+        onRematch={onRematch}
+        pick={pick}
+      />
+    );
+  }
 
   return (
     <div className="party-final-layout">

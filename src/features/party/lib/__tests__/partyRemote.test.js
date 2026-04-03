@@ -189,6 +189,7 @@ import {
   createPartyTemplate,
   extendPartyQuestionPhase,
   fetchPartySongPool,
+  fetchPartyTitleGuessSets,
   fetchPartyTemplateDetail,
   fetchPartyTemplates,
   getPartyGuestToken,
@@ -1394,6 +1395,501 @@ describe('partyRemote template CRUD', () => {
 
     const result = await fetchPartyTemplates();
     expect(result).toEqual({ templates: [], total: 0 });
+  });
+
+  it('fetchPartyTitleGuessSets returns an empty list when the schema is not deployed yet', async () => {
+    const missingRelationError = {
+      status: 404,
+      message: 'Could not find the table public.party_title_guess_sets in the schema cache',
+    };
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_title_guess_sets') {
+        return {
+          select: vi.fn(() => ({
+            gt() {
+              return this;
+            },
+            order() {
+              return this;
+            },
+            limit: vi.fn(async () => ({
+              data: null,
+              error: missingRelationError,
+            })),
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const result = await fetchPartyTitleGuessSets();
+    expect(result).toEqual([]);
+  });
+
+  it('startPartyMatch falls back to a friendly title guess error when question tables are unavailable', async () => {
+    const hostToken = getPartyGuestToken();
+    const missingRelationError = {
+      status: 404,
+      message: 'relation "public.party_title_guess_questions" does not exist',
+    };
+
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: hostToken,
+      status: 'lobby',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: {
+        modeType: 'title-guess',
+        titleGuessSetId: '12',
+        titleGuessSetName: 'Anime Side Cast',
+        roundCount: 5,
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [{
+      room_id: 'room-1',
+      member_token: hostToken,
+      is_ready: true,
+      joined_at: '2026-03-29T10:00:00.000Z',
+    }];
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_rooms') {
+        return {
+          select: vi.fn(() => createPartyRoomsSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_room_members') {
+        return {
+          select: vi.fn(() => createPartyRoomMembersSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_title_guess_questions') {
+        return {
+          select: vi.fn(() => ({
+            eq() {
+              return this;
+            },
+            order() {
+              this._orderCount = (this._orderCount || 0) + 1;
+              if (this._orderCount >= 2) {
+                return Promise.resolve({
+                  data: null,
+                  error: missingRelationError,
+                });
+              }
+              return this;
+            },
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await expect(startPartyMatch({ id: 'room-1' })).rejects.toMatchObject({
+      message: 'Not enough ready Title Guess questions to start this room.',
+    });
+  });
+
+  it('startPartyMatch tolerates Supabase RPC builders that do not expose .catch()', async () => {
+    const hostToken = getPartyGuestToken();
+
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'lobby',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: {
+        modeType: 'title-guess',
+        titleGuessSetId: '1200',
+        titleGuessSetName: 'Anime Side Cast',
+        titleGuessQuestionCount: 2,
+        roundCount: 2,
+        timePerRoundSec: 7,
+        revealSec: 10,
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [{
+      room_id: 'room-1',
+      member_token: hostToken,
+      is_ready: true,
+      joined_at: '2026-03-29T10:00:00.000Z',
+    }];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: {
+        modeType: 'title-guess',
+        titleGuessSetId: '1200',
+        titleGuessSetName: 'Anime Side Cast',
+        titleGuessQuestionCount: 2,
+        roundCount: 2,
+        timePerRoundSec: 7,
+        revealSec: 10,
+      },
+      current_match: {
+        id: 'title-guess-match-1',
+        modeType: 'title-guess',
+        phase: 'countdown',
+      },
+    }];
+
+    mockState.rpc.mockImplementation((fn, params = {}) => {
+      mockState.rpcCalls.push({ fn, params });
+
+      if (fn === 'increment_party_title_guess_play_count') {
+        return {
+          then(onFulfilled, onRejected) {
+            return Promise.resolve({ data: null, error: null }).then(onFulfilled, onRejected);
+          },
+        };
+      }
+
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_rooms') {
+        return {
+          update: vi.fn((payload) => createPartyRoomsUpdateBuilder(payload)),
+          select: vi.fn(() => createPartyRoomsSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_room_members') {
+        return {
+          select: vi.fn(() => createPartyRoomMembersSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_title_guess_questions') {
+        return {
+          select: vi.fn(() => ({
+            eq() {
+              return this;
+            },
+            order() {
+              this._orderCount = (this._orderCount || 0) + 1;
+              if (this._orderCount >= 2) {
+                return Promise.resolve({
+                  data: [
+                    {
+                      id: 401,
+                      answer_title_id: 77,
+                      answer_aliases: ['Haikyuu!!', 'Haikyu!!'],
+                      difficulty_tier: 2,
+                      sort_order: 0,
+                      party_title_guess_clues: [
+                        {
+                          id: 1,
+                          clue_order: 1,
+                          clue_role_bucket: 'supporting',
+                          character_id: 1001,
+                          character_name_snapshot: 'Clue A',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-a.jpg',
+                        },
+                        {
+                          id: 2,
+                          clue_order: 2,
+                          clue_role_bucket: 'supporting',
+                          character_id: 1002,
+                          character_name_snapshot: 'Clue B',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-b.jpg',
+                        },
+                        {
+                          id: 3,
+                          clue_order: 3,
+                          clue_role_bucket: 'main-side',
+                          character_id: 1003,
+                          character_name_snapshot: 'Clue C',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-c.jpg',
+                        },
+                        {
+                          id: 4,
+                          clue_order: 4,
+                          clue_role_bucket: 'main-side',
+                          character_id: 1004,
+                          character_name_snapshot: 'Clue D',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-d.jpg',
+                        },
+                      ],
+                    },
+                    {
+                      id: 402,
+                      answer_title_id: 78,
+                      answer_aliases: ['Kuroko no Basket', 'Kuroko’s Basketball'],
+                      difficulty_tier: 2,
+                      sort_order: 1,
+                      party_title_guess_clues: [
+                        {
+                          id: 5,
+                          clue_order: 1,
+                          clue_role_bucket: 'supporting',
+                          character_id: 2001,
+                          character_name_snapshot: 'Clue E',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-e.jpg',
+                        },
+                        {
+                          id: 6,
+                          clue_order: 2,
+                          clue_role_bucket: 'supporting',
+                          character_id: 2002,
+                          character_name_snapshot: 'Clue F',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-f.jpg',
+                        },
+                        {
+                          id: 7,
+                          clue_order: 3,
+                          clue_role_bucket: 'main-side',
+                          character_id: 2003,
+                          character_name_snapshot: 'Clue G',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-g.jpg',
+                        },
+                        {
+                          id: 8,
+                          clue_order: 4,
+                          clue_role_bucket: 'main-side',
+                          character_id: 2004,
+                          character_name_snapshot: 'Clue H',
+                          character_image_url_snapshot: 'https://cdn.example.com/clue-h.jpg',
+                        },
+                      ],
+                    },
+                  ],
+                  error: null,
+                });
+              }
+              return this;
+            },
+          })),
+        };
+      }
+
+      if (table === 'canonical_titles') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({
+              data: [{
+                id: 77,
+                canonical_title: 'Haikyuu!!',
+                aliases_cache: [{ alias: 'Haikyu!!' }],
+              }, {
+                id: 78,
+                canonical_title: 'Kuroko no Basket',
+                aliases_cache: [{ alias: 'Kuroko’s Basketball' }],
+              }],
+              error: null,
+            })),
+          })),
+        };
+      }
+
+      if (table === 'title_characters') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({
+              data: [
+                { id: 1001, canonical_title_id: 77, name_full: 'Clue A', image_url: 'https://cdn.example.com/clue-a.jpg' },
+                { id: 1002, canonical_title_id: 77, name_full: 'Clue B', image_url: 'https://cdn.example.com/clue-b.jpg' },
+                { id: 1003, canonical_title_id: 77, name_full: 'Clue C', image_url: 'https://cdn.example.com/clue-c.jpg' },
+                { id: 1004, canonical_title_id: 77, name_full: 'Clue D', image_url: 'https://cdn.example.com/clue-d.jpg' },
+                { id: 2001, canonical_title_id: 78, name_full: 'Clue E', image_url: 'https://cdn.example.com/clue-e.jpg' },
+                { id: 2002, canonical_title_id: 78, name_full: 'Clue F', image_url: 'https://cdn.example.com/clue-f.jpg' },
+                { id: 2003, canonical_title_id: 78, name_full: 'Clue G', image_url: 'https://cdn.example.com/clue-g.jpg' },
+                { id: 2004, canonical_title_id: 78, name_full: 'Clue H', image_url: 'https://cdn.example.com/clue-h.jpg' },
+              ],
+              error: null,
+            })),
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const nextRoom = await startPartyMatch({ id: 'room-1' });
+
+    expect(nextRoom?.status).toBe('live');
+    expect(mockState.rpcCalls.some((call) => call.fn === 'increment_party_title_guess_play_count')).toBe(true);
+  });
+
+  it('startPartyMatch filters out title guess questions whose clues do not match the answer title', async () => {
+    const hostToken = getPartyGuestToken();
+
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'lobby',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: {
+        modeType: 'title-guess',
+        titleGuessSetId: '1200',
+        titleGuessSetName: 'Anime Side Cast',
+        titleGuessQuestionCount: 2,
+        roundCount: 2,
+        timePerRoundSec: 7,
+        revealSec: 10,
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [{
+      room_id: 'room-1',
+      member_token: hostToken,
+      is_ready: true,
+      joined_at: '2026-03-29T10:00:00.000Z',
+    }];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: {
+        modeType: 'title-guess',
+        titleGuessSetId: '1200',
+        titleGuessSetName: 'Anime Side Cast',
+        titleGuessQuestionCount: 2,
+        roundCount: 2,
+        timePerRoundSec: 7,
+        revealSec: 10,
+      },
+      current_match: {
+        id: 'title-guess-match-1',
+        modeType: 'title-guess',
+        phase: 'countdown',
+      },
+    }];
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_rooms') {
+        return {
+          update: vi.fn((payload) => createPartyRoomsUpdateBuilder(payload)),
+          select: vi.fn(() => createPartyRoomsSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_room_members') {
+        return {
+          select: vi.fn(() => createPartyRoomMembersSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_title_guess_questions') {
+        return {
+          select: vi.fn(() => ({
+            eq() {
+              return this;
+            },
+            order() {
+              this._orderCount = (this._orderCount || 0) + 1;
+              if (this._orderCount >= 2) {
+                return Promise.resolve({
+                  data: [
+                    {
+                      id: 401,
+                      answer_title_id: 77,
+                      answer_aliases: ['Haikyuu!!'],
+                      difficulty_tier: 2,
+                      sort_order: 0,
+                      party_title_guess_clues: [
+                        { id: 1, clue_order: 1, clue_role_bucket: 'supporting', character_id: 1001, character_name_snapshot: 'Clue A' },
+                        { id: 2, clue_order: 2, clue_role_bucket: 'supporting', character_id: 1002, character_name_snapshot: 'Clue B' },
+                        { id: 3, clue_order: 3, clue_role_bucket: 'main-side', character_id: 1003, character_name_snapshot: 'Clue C' },
+                        { id: 4, clue_order: 4, clue_role_bucket: 'main-side', character_id: 1004, character_name_snapshot: 'Clue D' },
+                      ],
+                    },
+                    {
+                      id: 402,
+                      answer_title_id: 78,
+                      answer_aliases: ['Kuroko no Basket'],
+                      difficulty_tier: 2,
+                      sort_order: 1,
+                      party_title_guess_clues: [
+                        { id: 5, clue_order: 1, clue_role_bucket: 'supporting', character_id: 2001, character_name_snapshot: 'Clue E' },
+                        { id: 6, clue_order: 2, clue_role_bucket: 'supporting', character_id: 2002, character_name_snapshot: 'Clue F' },
+                        { id: 7, clue_order: 3, clue_role_bucket: 'main-side', character_id: 2003, character_name_snapshot: 'Clue G' },
+                        { id: 8, clue_order: 4, clue_role_bucket: 'main-side', character_id: 2004, character_name_snapshot: 'Clue H' },
+                      ],
+                    },
+                    {
+                      id: 403,
+                      answer_title_id: 79,
+                      answer_aliases: ['Blue Lock'],
+                      difficulty_tier: 2,
+                      sort_order: 2,
+                      party_title_guess_clues: [
+                        { id: 9, clue_order: 1, clue_role_bucket: 'supporting', character_id: 3001, character_name_snapshot: 'Wrong A' },
+                        { id: 10, clue_order: 2, clue_role_bucket: 'supporting', character_id: 3002, character_name_snapshot: 'Wrong B' },
+                        { id: 11, clue_order: 3, clue_role_bucket: 'main-side', character_id: 3003, character_name_snapshot: 'Wrong C' },
+                        { id: 12, clue_order: 4, clue_role_bucket: 'main-side', character_id: 3004, character_name_snapshot: 'Wrong D' },
+                      ],
+                    },
+                  ],
+                  error: null,
+                });
+              }
+              return this;
+            },
+          })),
+        };
+      }
+
+      if (table === 'canonical_titles') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({
+              data: [
+                { id: 77, canonical_title: 'Haikyuu!!', aliases_cache: [] },
+                { id: 78, canonical_title: 'Kuroko no Basket', aliases_cache: [] },
+                { id: 79, canonical_title: 'Blue Lock', aliases_cache: [] },
+              ],
+              error: null,
+            })),
+          })),
+        };
+      }
+
+      if (table === 'title_characters') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({
+              data: [
+                { id: 1001, canonical_title_id: 77, name_full: 'Clue A', image_url: 'https://cdn.example.com/clue-a.jpg' },
+                { id: 1002, canonical_title_id: 77, name_full: 'Clue B', image_url: 'https://cdn.example.com/clue-b.jpg' },
+                { id: 1003, canonical_title_id: 77, name_full: 'Clue C', image_url: 'https://cdn.example.com/clue-c.jpg' },
+                { id: 1004, canonical_title_id: 77, name_full: 'Clue D', image_url: 'https://cdn.example.com/clue-d.jpg' },
+                { id: 2001, canonical_title_id: 78, name_full: 'Clue E', image_url: 'https://cdn.example.com/clue-e.jpg' },
+                { id: 2002, canonical_title_id: 78, name_full: 'Clue F', image_url: 'https://cdn.example.com/clue-f.jpg' },
+                { id: 2003, canonical_title_id: 78, name_full: 'Clue G', image_url: 'https://cdn.example.com/clue-g.jpg' },
+                { id: 2004, canonical_title_id: 78, name_full: 'Clue H', image_url: 'https://cdn.example.com/clue-h.jpg' },
+                { id: 3001, canonical_title_id: 80, name_full: 'Wrong A', image_url: 'https://cdn.example.com/wrong-a.jpg' },
+                { id: 3002, canonical_title_id: 80, name_full: 'Wrong B', image_url: 'https://cdn.example.com/wrong-b.jpg' },
+                { id: 3003, canonical_title_id: 80, name_full: 'Wrong C', image_url: 'https://cdn.example.com/wrong-c.jpg' },
+                { id: 3004, canonical_title_id: 80, name_full: 'Wrong D', image_url: 'https://cdn.example.com/wrong-d.jpg' },
+              ],
+              error: null,
+            })),
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const nextRoom = await startPartyMatch({ id: 'room-1' });
+    const updateOperation = mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update');
+
+    expect(nextRoom?.status).toBe('live');
+    expect(updateOperation?.payload?.current_match?.rounds).toHaveLength(2);
+    expect(updateOperation?.payload?.current_match?.rounds?.some((round) => round.answerTitleId === 79)).toBe(false);
   });
 
   it('fetchPartyTemplateDetail throws with kind=not_found when row is missing', async () => {

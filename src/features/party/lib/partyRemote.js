@@ -2,6 +2,7 @@ import { supabase } from '@/shared/lib/supabase';
 import {
   PARTY_AVATAR_OPTIONS,
   buildPartyMatchSnapshot,
+  buildPartyTitleGuessSnapshot,
   buildUniquePartyAliases,
   createPartySettings,
   generatePartyRoomCode,
@@ -54,6 +55,9 @@ const partyRoomRealtimeRegistry = new Map();
 const partySongPoolCache = new Map();
 const partyPresetSongPoolCache = new Map();
 const partyTemplateSongPoolCache = new Map();
+const partyTitleGuessSetCache = new Map();
+const partyTitleGuessListingCache = new Map();
+const partyTitleGuessCharacterCache = new Map();
 const partySourceSuggestionCache = new Map();
 
 function getSourceConfidenceRank(value = '') {
@@ -212,6 +216,10 @@ export function __resetPartyRoomRealtimeRegistryForTests() {
 export function __resetPartySongPoolCachesForTests() {
   partySongPoolCache.clear();
   partyPresetSongPoolCache.clear();
+  partyTemplateSongPoolCache.clear();
+  partyTitleGuessSetCache.clear();
+  partyTitleGuessListingCache.clear();
+  partyTitleGuessCharacterCache.clear();
 }
 
 async function waitForRegisteredPartyRoomChannel(roomId, timeoutMs = PARTY_ROOM_CHANNEL_READY_TIMEOUT_MS) {
@@ -344,8 +352,27 @@ function makeId(prefix = 'party') {
 }
 
 function getMissingRelation(error, relationName) {
-  const message = String(error?.message || '');
-  return Number(error?.status || 0) === 404 || message.includes(`"${relationName}"`) || message.includes(`'${relationName}'`);
+  const normalizedRelation = String(relationName || '').trim().toLowerCase();
+  const statusCode = Number(error?.status ?? error?.statusCode ?? error?.response?.status ?? 0);
+  const haystack = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.code,
+    error?.error_description,
+    error?.response?.statusText,
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  return (
+    statusCode === 404
+    || haystack.includes(`"${normalizedRelation}"`)
+    || haystack.includes(`'${normalizedRelation}'`)
+    || haystack.includes(`public.${normalizedRelation}`)
+    || (haystack.includes('schema cache') && haystack.includes(normalizedRelation))
+    || (haystack.includes('relation') && haystack.includes(normalizedRelation) && haystack.includes('does not exist'))
+  );
 }
 
 function hasMissingColumn(error, columnName) {
@@ -968,6 +995,581 @@ function canBuildPartySnapshotFromPool(playablePool = [], settings = {}) {
   } catch {
     return false;
   }
+}
+
+function extractCanonicalAliasValues(record = {}) {
+  const aliases = Array.isArray(record?.aliases_cache)
+    ? record.aliases_cache
+    : (Array.isArray(record?.aliases) ? record.aliases : []);
+
+  return aliases
+    .map((alias) => String(alias?.alias || alias?.value || '').trim())
+    .filter(Boolean);
+}
+
+function mapPartyTitleGuessQuestionRow(
+  row,
+  titleMap = new Map(),
+  characterMap = new Map(),
+  strictCharacterValidation = false,
+) {
+  const titleId = Number(row?.answer_title_id ?? row?.answerTitleId ?? 0) || 0;
+  const titleRecord = titleMap.get(titleId) || null;
+  const answerTitle = String(titleRecord?.canonical_title || row?.answer_title || '').trim();
+  const answerTitleAliases = buildUniquePartyAliases([
+    answerTitle,
+    ...(Array.isArray(row?.answer_aliases) ? row.answer_aliases : []),
+    ...extractCanonicalAliasValues(titleRecord),
+  ]);
+  const clues = (Array.isArray(row?.party_title_guess_clues) ? row.party_title_guess_clues : [])
+    .map((clue) => {
+      const characterId = Number(clue?.character_id || 0) || 0;
+      const characterRecord = characterMap.get(characterId) || null;
+      const characterTitleId = Number(characterRecord?.canonical_title_id || 0) || 0;
+
+      return {
+        id: clue?.id,
+        clue_order: clue?.clue_order,
+        clue_role_bucket: clue?.clue_role_bucket,
+        character_id: characterId || null,
+        character_title_id: characterTitleId || null,
+        character_name_snapshot: String(clue?.character_name_snapshot || characterRecord?.name_full || '').trim(),
+        character_name_native_snapshot: clue?.character_name_native_snapshot,
+        character_image_url_snapshot: String(clue?.character_image_url_snapshot || characterRecord?.image_url || '').trim(),
+        is_manual_override: clue?.is_manual_override,
+      };
+    })
+    .filter((clue) => {
+      if (!strictCharacterValidation) {
+        return true;
+      }
+      if (!titleId) {
+        return true;
+      }
+      if (!clue?.character_id) {
+        return false;
+      }
+      if (!clue?.character_title_id) {
+        return false;
+      }
+      return clue.character_title_id === titleId;
+    })
+    .sort((left, right) => Number(left?.clue_order || 0) - Number(right?.clue_order || 0));
+
+  return {
+    id: String(row?.id || '').trim(),
+    answerTitleId: titleId,
+    answerTitle,
+    answerTitleAliases,
+    difficultyTier: Number(row?.difficulty_tier || 2),
+    sortOrder: Number(row?.sort_order || 0),
+    clues,
+  };
+}
+
+function mapPartyTitleGuessSetRow(row) {
+  return {
+    id: String(row?.id || '').trim(),
+    name: String(row?.name || '').trim(),
+    description: String(row?.description || '').trim(),
+    coverUrl: String(row?.cover_url || '').trim(),
+    ownerUserId: String(row?.owner_user_id || '').trim(),
+    creatorName: String(row?.creator_name || '').trim(),
+    questionCount: Math.max(0, Number(row?.question_count || 0)),
+    likeCount: Math.max(0, Number(row?.like_count || 0)),
+    playCount: Math.max(0, Number(row?.play_count || 0)),
+    isOfficial: Boolean(row?.is_official),
+    visibility: String(row?.visibility || 'public').trim(),
+    updatedAt: row?.updated_at || null,
+  };
+}
+
+function mapPartyTitleGuessCharacterRow(row = {}) {
+  return {
+    id: Number(row?.id || 0) || null,
+    titleId: Number(row?.canonical_title_id || 0) || null,
+    name: String(row?.name_full || '').trim(),
+    nativeName: String(row?.name_native || '').trim(),
+    imageUrl: String(row?.image_url || '').trim(),
+    role: String(row?.role || '').trim().toUpperCase(),
+    sortOrder: Number(row?.sort_order || 0),
+    isPrimaryProtagonist: Boolean(row?.is_primary_protagonist),
+    isGuessDisabled: Boolean(row?.is_guess_disabled),
+    guessPriority: Number(row?.guess_priority || 0),
+    guessNote: String(row?.guess_note || '').trim(),
+  };
+}
+
+function getPartyTitleGuessDifficultyWeight(clue = {}) {
+  const role = String(clue?.role || '').trim().toUpperCase();
+  switch (role) {
+    case 'BACKGROUND':
+      return 5;
+    case 'SUPPORTING':
+      return 4;
+    case 'MAIN':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function inferPartyTitleGuessDifficultyTier(clues = []) {
+  const slotWeights = [1.7, 1.35, 1, 0.8];
+  const normalizedClues = Array.isArray(clues) ? clues.filter(Boolean).slice(0, 4) : [];
+  if (normalizedClues.length === 0) {
+    return 2;
+  }
+
+  const totalWeight = normalizedClues.reduce((sum, _, index) => sum + (slotWeights[index] || 1), 0);
+  const weightedScore = normalizedClues.reduce((sum, clue, index) => (
+    sum + getPartyTitleGuessDifficultyWeight(clue) * (slotWeights[index] || 1)
+  ), 0);
+  const averageScore = totalWeight > 0 ? weightedScore / totalWeight : 0;
+
+  if (averageScore >= 4.4) return 5;
+  if (averageScore >= 3.7) return 4;
+  if (averageScore >= 3.0) return 3;
+  if (averageScore >= 2.2) return 2;
+  return 1;
+}
+
+function getPartyTitleGuessClueRoleBucket(clue = {}) {
+  const role = String(clue?.role || '').trim().toUpperCase();
+  switch (role) {
+    case 'BACKGROUND':
+      return 'background';
+    case 'SUPPORTING':
+      return 'supporting';
+    case 'MAIN':
+      return 'main-side';
+    default:
+      return 'wildcard';
+  }
+}
+
+export async function fetchPartyTitleGuessCharacters(titleId) {
+  if (!supabase) {
+    return [];
+  }
+
+  const normalizedTitleId = Number(titleId || 0);
+  if (!normalizedTitleId) {
+    return [];
+  }
+
+  const cacheKey = `title-guess-characters:${normalizedTitleId}`;
+  return getOrCreatePartySongPoolCacheValue(partyTitleGuessCharacterCache, cacheKey, async () => {
+    const baseSelect = `
+      id,
+      canonical_title_id,
+      name_full,
+      name_native,
+      image_url,
+      role,
+      sort_order
+    `;
+    const extendedSelect = `
+      ${baseSelect},
+      is_primary_protagonist,
+      is_guess_disabled,
+      guess_priority,
+      guess_note
+    `;
+
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await supabase
+      .from('title_characters')
+      .select(extendedSelect)
+      .eq('canonical_title_id', normalizedTitleId)
+      .order('sort_order', { ascending: true })
+      .order('id', { ascending: true }));
+
+    if (
+      error
+      && (
+        hasMissingColumn(error, 'is_primary_protagonist')
+        || hasMissingColumn(error, 'is_guess_disabled')
+        || hasMissingColumn(error, 'guess_priority')
+        || hasMissingColumn(error, 'guess_note')
+      )
+    ) {
+      ({ data, error } = await supabase
+        .from('title_characters')
+        .select(baseSelect)
+        .eq('canonical_title_id', normalizedTitleId)
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true }));
+    }
+
+    if (error) {
+      if (getMissingRelation(error, 'title_characters')) {
+        return [];
+      }
+      throw error;
+    }
+
+    return (data || [])
+      .map(mapPartyTitleGuessCharacterRow)
+      .filter((character) => character.id && character.titleId === normalizedTitleId);
+  });
+}
+
+export async function createPartyTitleGuessSet(setData = {}, questions = [], creatorName = '') {
+  if (!supabase) {
+    throw new Error('No database connection');
+  }
+
+  const normalizedQuestions = (Array.isArray(questions) ? questions : [])
+    .map((question, index) => {
+      const normalizedClues = (Array.isArray(question?.clues) ? question.clues : [])
+        .slice(0, 4)
+        .map((clue, clueIndex) => ({
+          id: Number(clue?.id ?? clue?.characterId ?? 0) || null,
+          name: String(clue?.name ?? clue?.characterName ?? '').trim(),
+          nativeName: String(clue?.nativeName ?? clue?.characterNativeName ?? '').trim(),
+          imageUrl: String(clue?.imageUrl ?? clue?.characterImageUrl ?? '').trim(),
+          role: String(clue?.role || '').trim().toUpperCase(),
+          clueOrder: Math.max(1, Math.min(4, Number(clue?.clueOrder || clueIndex + 1))),
+        }))
+        .filter((clue) => clue.id);
+
+      return {
+        answerTitleId: Number(question?.answerTitleId || 0) || null,
+        answerTitle: String(question?.answerTitle || question?.title || '').trim(),
+        answerAliases: buildUniquePartyAliases([
+          String(question?.answerTitle || question?.title || '').trim(),
+          ...(Array.isArray(question?.answerAliases) ? question.answerAliases : []),
+        ]),
+        coverUrl: String(question?.coverUrl || '').trim(),
+        difficultyTier: Math.max(
+          1,
+          Math.min(5, Number(question?.difficultyTier || inferPartyTitleGuessDifficultyTier(normalizedClues) || 2)),
+        ),
+        note: String(question?.note || '').trim(),
+        sortOrder: Number(question?.sortOrder ?? index) || index,
+        clues: normalizedClues.sort((left, right) => left.clueOrder - right.clueOrder),
+      };
+    })
+    .filter((question) => question.answerTitleId && question.answerAliases.length > 0 && question.clues.length === 4);
+
+  if (normalizedQuestions.length === 0) {
+    throw new Error('Add at least one complete Guess the Title question before saving.');
+  }
+
+  const fallbackCoverUrl = normalizedQuestions.find((question) => question.coverUrl)?.coverUrl || '';
+  const { data: createdSetRow, error: setError } = await supabase
+    .from('party_title_guess_sets')
+    .insert({
+      owner_user_id: setData.ownerUserId || null,
+      creator_name: String(creatorName || '').trim(),
+      name: String(setData.name || '').trim(),
+      description: String(setData.description || '').trim(),
+      cover_url: String(setData.coverUrl || fallbackCoverUrl || '').trim(),
+      visibility: String(setData.visibility || 'public').trim() || 'public',
+      is_official: false,
+    })
+    .select(`
+      id,
+      name,
+      description,
+      cover_url,
+      creator_name,
+      question_count,
+      like_count,
+      play_count,
+      is_official,
+      visibility,
+      updated_at
+    `)
+    .single();
+
+  if (setError) {
+    throw setError;
+  }
+
+  const createdSetId = Number(createdSetRow?.id || 0) || 0;
+  if (!createdSetId) {
+    throw new Error('Created set did not return a valid id.');
+  }
+
+  try {
+    const { data: createdQuestionRows, error: questionError } = await supabase
+      .from('party_title_guess_questions')
+      .insert(normalizedQuestions.map((question, index) => ({
+        set_id: createdSetId,
+        answer_title_id: question.answerTitleId,
+        answer_aliases: question.answerAliases,
+        difficulty_tier: question.difficultyTier,
+        status: 'ready',
+        sort_order: Number.isFinite(question.sortOrder) ? question.sortOrder : index,
+        source_strategy: 'manual',
+        note: question.note || null,
+      })))
+      .select('id, answer_title_id');
+
+    if (questionError) {
+      throw questionError;
+    }
+
+    const questionIdByTitleId = new Map(
+      (createdQuestionRows || [])
+        .map((row) => [Number(row?.answer_title_id || 0), Number(row?.id || 0)])
+        .filter(([, questionId]) => questionId > 0),
+    );
+
+    const clueRows = normalizedQuestions.flatMap((question) => {
+      const questionId = questionIdByTitleId.get(question.answerTitleId);
+      if (!questionId) {
+        return [];
+      }
+
+      return question.clues.map((clue, clueIndex) => ({
+        question_id: questionId,
+        character_id: clue.id,
+        clue_order: Math.max(1, Math.min(4, Number(clue.clueOrder || clueIndex + 1))),
+        clue_role_bucket: getPartyTitleGuessClueRoleBucket(clue),
+        character_name_snapshot: clue.name || '',
+        character_name_native_snapshot: clue.nativeName || null,
+        character_image_url_snapshot: clue.imageUrl || null,
+        is_manual_override: true,
+      }));
+    });
+
+    if (clueRows.length > 0) {
+      const { error: clueError } = await supabase
+        .from('party_title_guess_clues')
+        .insert(clueRows);
+
+      if (clueError) {
+        throw clueError;
+      }
+    }
+
+    partyTitleGuessListingCache.clear();
+    partyTitleGuessSetCache.delete(String(createdSetId));
+
+    const { data: refreshedSetRow, error: refreshedSetError } = await supabase
+      .from('party_title_guess_sets')
+      .select(`
+        id,
+        name,
+        description,
+        cover_url,
+        creator_name,
+        question_count,
+        like_count,
+        play_count,
+        is_official,
+        visibility,
+        updated_at
+      `)
+      .eq('id', createdSetId)
+      .maybeSingle();
+
+    if (!refreshedSetError && refreshedSetRow) {
+      return mapPartyTitleGuessSetRow(refreshedSetRow);
+    }
+
+    return {
+      ...mapPartyTitleGuessSetRow(createdSetRow),
+      questionCount: normalizedQuestions.length,
+    };
+  } catch (error) {
+    try {
+      await supabase
+        .from('party_title_guess_sets')
+        .delete()
+        .eq('id', createdSetId);
+    } catch {
+      // Ignore rollback noise so the original error still surfaces.
+    }
+
+    throw error;
+  }
+}
+
+export async function fetchPartyTitleGuessSets({ tab = 'all', search = '', userId = null, limit = 200 } = {}) {
+  if (!supabase) {
+    return [];
+  }
+
+  const normalizedTab = String(tab || 'all').trim().toLowerCase();
+  const normalizedSearch = String(search || '').trim();
+  const normalizedUserId = String(userId || '').trim();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
+  const cacheKey = JSON.stringify({
+    tab: normalizedTab,
+    search: normalizedSearch.toLowerCase(),
+    userId: normalizedUserId,
+    limit: safeLimit,
+  });
+
+  return getOrCreatePartySongPoolCacheValue(partyTitleGuessListingCache, cacheKey, async () => {
+    try {
+      let query = supabase
+        .from('party_title_guess_sets')
+        .select(`
+          id,
+          name,
+          description,
+          cover_url,
+          owner_user_id,
+          creator_name,
+          question_count,
+          like_count,
+          play_count,
+          is_official,
+          visibility,
+          updated_at
+        `)
+        .order('is_official', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(safeLimit);
+
+      if (normalizedTab === 'official') {
+        query = query.eq('is_official', true);
+      } else if (normalizedTab === 'mine' && normalizedUserId) {
+        query = query.eq('owner_user_id', normalizedUserId);
+      } else {
+        query = query.in('visibility', ['public', 'unlisted']);
+      }
+
+      if (normalizedSearch) {
+        query = query.ilike('name', `%${normalizedSearch}%`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        if (getMissingRelation(error, 'party_title_guess_sets')) {
+          return [];
+        }
+        throw error;
+      }
+
+      return (data || [])
+        .map(mapPartyTitleGuessSetRow)
+        .filter((row) => row.id && row.name);
+    } catch (error) {
+      if (getMissingRelation(error, 'party_title_guess_sets')) {
+        return [];
+      }
+      throw error;
+    }
+  });
+}
+
+async function fetchPartyTitleGuessQuestionPool(settings = {}) {
+  if (!supabase) {
+    return [];
+  }
+
+  const normalizedSettings = createPartySettings({ ...settings, modeType: 'title-guess' });
+  const setId = String(normalizedSettings.titleGuessSetId || '').trim();
+  if (!setId) {
+    return [];
+  }
+
+  return getOrCreatePartySongPoolCacheValue(partyTitleGuessSetCache, setId, async () => {
+    try {
+      const { data, error } = await supabase
+        .from('party_title_guess_questions')
+        .select(`
+          id,
+          answer_title_id,
+          answer_aliases,
+          difficulty_tier,
+          sort_order,
+          party_title_guess_clues(
+            id,
+            clue_order,
+            clue_role_bucket,
+            character_id,
+            character_name_snapshot,
+            character_name_native_snapshot,
+            character_image_url_snapshot,
+            is_manual_override
+          )
+        `)
+        .eq('set_id', setId)
+        .eq('status', 'ready')
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true });
+
+      if (error) {
+        if (
+          getMissingRelation(error, 'party_title_guess_questions')
+          || getMissingRelation(error, 'party_title_guess_clues')
+        ) {
+          return [];
+        }
+        throw error;
+      }
+
+      const titleIds = [...new Set(
+        (data || [])
+          .map((row) => Number(row?.answer_title_id || 0))
+          .filter((value) => value > 0)
+      )];
+
+      const titleMap = new Map();
+      if (titleIds.length > 0) {
+        const { data: titleRows, error: titleError } = await supabase
+          .from('canonical_titles')
+          .select('id, canonical_title, aliases_cache')
+          .in('id', titleIds);
+
+        if (titleError) {
+          throw titleError;
+        }
+
+        (titleRows || []).forEach((row) => {
+          titleMap.set(Number(row?.id || 0), row);
+        });
+      }
+
+      const characterIds = [...new Set(
+        (data || [])
+          .flatMap((row) => (Array.isArray(row?.party_title_guess_clues) ? row.party_title_guess_clues : []))
+          .map((clue) => Number(clue?.character_id || 0))
+          .filter((value) => value > 0)
+      )];
+      const characterMap = new Map();
+      let strictCharacterValidation = false;
+      if (characterIds.length > 0) {
+        const { data: characterRows, error: characterError } = await supabase
+          .from('title_characters')
+          .select('id, canonical_title_id, name_full, image_url')
+          .in('id', characterIds);
+
+        if (characterError) {
+          if (!getMissingRelation(characterError, 'title_characters')) {
+            throw characterError;
+          }
+        } else {
+          strictCharacterValidation = true;
+          (characterRows || []).forEach((row) => {
+            characterMap.set(Number(row?.id || 0), row);
+          });
+        }
+      }
+
+      return (data || [])
+        .map((row) => mapPartyTitleGuessQuestionRow(row, titleMap, characterMap, strictCharacterValidation))
+        .filter((row) => row.id && row.answerTitleAliases.length > 0 && row.clues.length >= 4);
+    } catch (error) {
+      if (
+        getMissingRelation(error, 'party_title_guess_questions')
+        || getMissingRelation(error, 'party_title_guess_clues')
+      ) {
+        return [];
+      }
+      throw error;
+    }
+  });
 }
 
 export async function fetchPartyTemplateSongPool(templateId) {
@@ -2044,6 +2646,9 @@ export async function fetchPartySongPool(settings = {}) {
   }
 
   const normalizedSettings = createPartySettings(settings);
+  if (normalizedSettings.modeType === 'title-guess') {
+    return [];
+  }
   if (normalizedSettings.templateId) {
     return fetchPartyTemplateSongPool(normalizedSettings.templateId);
   }
@@ -2450,20 +3055,27 @@ export async function startPartyMatch(room) {
   }
 
   const settings = createPartySettings(freshRoom.settings || {});
-  const pool = await fetchPartySongPool(settings);
-  if (settings.templateId) {
-    const compatibility = analyzePartyTemplateCompatibility(pool, settings);
-    if (!compatibility.targetResult?.compatible) {
-      throw new Error(
-        compatibility.targetResult?.blockingReasons?.[0]?.message
-        || 'This template is not ready for the selected mode yet.'
-      );
+  let snapshot = null;
+
+  if (settings.modeType === 'title-guess') {
+    const questionPool = await fetchPartyTitleGuessQuestionPool(settings);
+    snapshot = buildPartyTitleGuessSnapshot(questionPool, settings);
+  } else {
+    const pool = await fetchPartySongPool(settings);
+    if (settings.templateId) {
+      const compatibility = analyzePartyTemplateCompatibility(pool, settings);
+      if (!compatibility.targetResult?.compatible) {
+        throw new Error(
+          compatibility.targetResult?.blockingReasons?.[0]?.message
+          || 'This template is not ready for the selected mode yet.'
+        );
+      }
     }
+
+    snapshot = settings.modeType === 'vote'
+      ? buildPartyVoteSnapshot(pool, settings)
+      : buildPartyMatchSnapshot(pool, settings);
   }
-  
-  const snapshot = settings.modeType === 'vote'
-    ? buildPartyVoteSnapshot(pool, settings)
-    : buildPartyMatchSnapshot(pool, settings);
 
   const { data, error } = await supabase
     .from('party_rooms')
@@ -2522,6 +3134,19 @@ export async function startPartyMatch(room) {
         patch: { is_ready: false },
       },
     });
+  }
+
+  if (settings.modeType === 'title-guess') {
+    const setId = Number(settings.titleGuessSetId || 0);
+    if (setId > 0) {
+      void (async () => {
+        try {
+          await supabase.rpc('increment_party_title_guess_play_count', { p_set_id: setId });
+        } catch (error) {
+          console.warn('Failed to increment title guess play count', error);
+        }
+      })();
+    }
   }
 
   return nextRoom;
@@ -2614,14 +3239,15 @@ export async function advancePartyRoom(room) {
     return room;
   }
 
-  const isVotePlaybackPhase = room.settings?.modeType === 'vote'
+  const activeModeType = room.current_match?.modeType || room.settings?.modeType;
+  const isVotePlaybackPhase = activeModeType === 'vote'
     && (room.current_match?.phase === 'play-a' || room.current_match?.phase === 'play-b');
 
   if (!isVotePlaybackPhase && (!getPartyPhaseEndsAtMs(room.current_match) || !isPartyPhaseExpired(room.current_match))) {
     return room;
   }
 
-  const isVoteMode = room.settings?.modeType === 'vote';
+  const isVoteMode = activeModeType === 'vote';
   const needsVoteTally = isVoteMode && room.current_match?.phase === 'vote';
 
   // For vote->reveal transition we MUST read DB before writing, so skip optimistic path.
@@ -2662,7 +3288,8 @@ export async function advancePartyRoom(room) {
     return freshRoom || room;
   }
 
-  const isFreshVotePlaybackPhase = freshRoom.settings?.modeType === 'vote'
+  const freshModeType = freshRoom.current_match?.modeType || freshRoom.settings?.modeType;
+  const isFreshVotePlaybackPhase = freshModeType === 'vote'
     && (freshRoom.current_match?.phase === 'play-a' || freshRoom.current_match?.phase === 'play-b');
 
   if (!isFreshVotePlaybackPhase && (!getPartyPhaseEndsAtMs(freshRoom.current_match) || !isPartyPhaseExpired(freshRoom.current_match))) {
@@ -2670,7 +3297,7 @@ export async function advancePartyRoom(room) {
   }
 
   // Authoritative vote tally from DB before advancing to reveal.
-  if (freshRoom.settings?.modeType === 'vote' && freshRoom.current_match?.phase === 'vote') {
+  if (freshModeType === 'vote' && freshRoom.current_match?.phase === 'vote') {
     const battleId = freshRoom.current_match.currentBattle.id;
     const songA = freshRoom.current_match.currentBattle.songA;
     const songB = freshRoom.current_match.currentBattle.songB;
@@ -2714,7 +3341,7 @@ export async function advancePartyRoom(room) {
     freshRoom.current_match.currentBattle.winnerSongId = winning_song_id;
   }
 
-  const nextMatch = freshRoom.settings?.modeType === 'vote'
+  const nextMatch = freshModeType === 'vote'
     ? advancePartyVoteMatch(freshRoom.current_match)
     : advancePartyMatch(freshRoom.current_match);
   const nextStatus = nextMatch?.phase === 'final' ? 'finished' : 'live';
@@ -2888,6 +3515,30 @@ export async function submitPartyAnswer({
     throw new Error('This round is already closed.');
   }
 
+  const { data: existingAnswer, error: existingAnswerError } = await supabase
+    .from('party_room_answers')
+    .select('*')
+    .eq('room_id', freshRoom.id)
+    .eq('match_id', freshRoom.current_match.id)
+    .eq('round_id', round.id)
+    .eq('member_token', member.member_token)
+    .maybeSingle();
+
+  if (existingAnswerError) {
+    throw existingAnswerError;
+  }
+
+  if (
+    existingAnswer
+    && (
+      existingAnswer.selected_option_id
+      || String(existingAnswer.typed_title || '').trim()
+      || String(existingAnswer.typed_song || '').trim()
+    )
+  ) {
+    return existingAnswer;
+  }
+
   const now = Date.now();
   const phaseStartedAt = new Date(freshRoom.current_match.phaseStartedAt || now).getTime();
   const elapsedMs = Math.max(0, now - phaseStartedAt);
@@ -2897,7 +3548,10 @@ export async function submitPartyAnswer({
   ) * 1000;
   const score = scorePartyAnswer({
     presetId: preset.id,
-    round,
+    round: {
+      ...round,
+      revealedClueCount: Number(freshRoom.current_match.revealedClueCount || 0) || 1,
+    },
     selectedOptionId: payload.selectedOptionId,
     typedTitle: payload.typedTitle,
     typedSong: payload.typedSong,
