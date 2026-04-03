@@ -1021,6 +1021,18 @@ function mapPartyTitleGuessQuestionRow(
     ...(Array.isArray(row?.answer_aliases) ? row.answer_aliases : []),
     ...extractCanonicalAliasValues(titleRecord),
   ]);
+  const franchiseName = String(
+    row?.franchise_name
+    ?? row?.answer_franchise_name
+    ?? titleRecord?.franchise_name
+    ?? titleRecord?.series_name
+    ?? ''
+  ).trim();
+  const franchiseAliases = buildUniquePartyAliases([
+    franchiseName,
+    ...(Array.isArray(row?.franchise_aliases) ? row.franchise_aliases : []),
+    ...(Array.isArray(row?.answer_franchise_aliases) ? row.answer_franchise_aliases : []),
+  ]);
   const clues = (Array.isArray(row?.party_title_guess_clues) ? row.party_title_guess_clues : [])
     .map((clue) => {
       const characterId = Number(clue?.character_id || 0) || 0;
@@ -1061,6 +1073,9 @@ function mapPartyTitleGuessQuestionRow(
     answerTitleId: titleId,
     answerTitle,
     answerTitleAliases,
+    franchiseId: Number(row?.franchise_id ?? row?.answer_franchise_id ?? titleRecord?.franchise_id ?? 0) || null,
+    franchiseName,
+    franchiseAliases,
     difficultyTier: Number(row?.difficulty_tier || 2),
     sortOrder: Number(row?.sort_order || 0),
     clues,
@@ -1243,6 +1258,12 @@ export async function createPartyTitleGuessSet(setData = {}, questions = [], cre
           String(question?.answerTitle || question?.title || '').trim(),
           ...(Array.isArray(question?.answerAliases) ? question.answerAliases : []),
         ]),
+        franchiseId: Number(question?.franchiseId || 0) || null,
+        franchiseName: String(question?.franchiseName || '').trim(),
+        franchiseAliases: buildUniquePartyAliases([
+          String(question?.franchiseName || '').trim(),
+          ...(Array.isArray(question?.franchiseAliases) ? question.franchiseAliases : []),
+        ]),
         coverUrl: String(question?.coverUrl || '').trim(),
         difficultyTier: Math.max(
           1,
@@ -1302,6 +1323,9 @@ export async function createPartyTitleGuessSet(setData = {}, questions = [], cre
         set_id: createdSetId,
         answer_title_id: question.answerTitleId,
         answer_aliases: question.answerAliases,
+        franchise_id: question.franchiseId,
+        franchise_name: question.franchiseName || null,
+        franchise_aliases: question.franchiseAliases,
         difficulty_tier: question.difficultyTier,
         status: 'ready',
         sort_order: Number.isFinite(question.sortOrder) ? question.sortOrder : index,
@@ -1481,6 +1505,9 @@ async function fetchPartyTitleGuessQuestionPool(settings = {}) {
           id,
           answer_title_id,
           answer_aliases,
+          franchise_id,
+          franchise_name,
+          franchise_aliases,
           difficulty_tier,
           sort_order,
           party_title_guess_clues(

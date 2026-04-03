@@ -80,6 +80,9 @@ const TITLE_GUESS_QUESTIONS = [
     answerTitleId: 201,
     answerTitle: 'Haikyuu!!',
     answerTitleAliases: ['Haikyuu!!', 'Haikyu'],
+    franchiseId: 9001,
+    franchiseName: 'Haikyuu!',
+    franchiseAliases: ['Haikyuu!', 'Haikyuu Season Series'],
     clues: [
       { id: 'tg-1-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Yamaguchi Tadashi', characterImageUrl: 'https://cdn.example.com/tg1-1.jpg' },
       { id: 'tg-1-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Tsukishima Kei', characterImageUrl: 'https://cdn.example.com/tg1-2.jpg' },
@@ -92,6 +95,9 @@ const TITLE_GUESS_QUESTIONS = [
     answerTitleId: 202,
     answerTitle: 'Gintama',
     answerTitleAliases: ['Gintama'],
+    franchiseId: 9002,
+    franchiseName: 'Gintama',
+    franchiseAliases: ['Gintama'],
     clues: [
       { id: 'tg-2-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Sarutobi Ayame', characterImageUrl: 'https://cdn.example.com/tg2-1.jpg' },
       { id: 'tg-2-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Katsura Kotaro', characterImageUrl: 'https://cdn.example.com/tg2-2.jpg' },
@@ -108,6 +114,9 @@ const TITLE_GUESS_CHOICE_QUESTIONS = [
     answerTitleId: 203,
     answerTitle: 'Kuroko no Basket',
     answerTitleAliases: ['Kuroko no Basket', 'Kuroko Basketball'],
+    franchiseId: 9003,
+    franchiseName: 'Kuroko no Basket',
+    franchiseAliases: ['Kuroko no Basket'],
     clues: [
       { id: 'tg-3-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Hyuga Junpei', characterImageUrl: 'https://cdn.example.com/tg3-1.jpg' },
       { id: 'tg-3-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Izuki Shun', characterImageUrl: 'https://cdn.example.com/tg3-2.jpg' },
@@ -120,6 +129,9 @@ const TITLE_GUESS_CHOICE_QUESTIONS = [
     answerTitleId: 204,
     answerTitle: 'Free!',
     answerTitleAliases: ['Free!', 'Free Iwatobi Swim Club'],
+    franchiseId: 9004,
+    franchiseName: 'Free!',
+    franchiseAliases: ['Free!', 'Free Series'],
     clues: [
       { id: 'tg-4-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Ryuugazaki Rei', characterImageUrl: 'https://cdn.example.com/tg4-1.jpg' },
       { id: 'tg-4-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Nagisa Hazuki', characterImageUrl: 'https://cdn.example.com/tg4-2.jpg' },
@@ -368,6 +380,26 @@ describe('partyEngine', () => {
     expect(lateScore.titleCorrect).toBe(true);
   });
 
+  it('accepts franchise aliases for title-guess typing answers', () => {
+    const round = {
+      kind: 'title-guess',
+      sourceTitleAliases: ['Attack on Titan Season 2'],
+      franchiseAliases: ['Attack on Titan', 'Shingeki no Kyojin'],
+      revealedClueCount: 2,
+    };
+
+    const score = scorePartyAnswer({
+      presetId: 'title-guess',
+      round,
+      typedTitle: 'Attack on Titan',
+      elapsedMs: 900,
+      timeLimitMs: 7000,
+    });
+
+    expect(score.titleCorrect).toBe(true);
+    expect(score.points).toBeGreaterThan(0);
+  });
+
   it('scores title-guess choice answers from selected option ids', () => {
     const match = buildPartyTitleGuessSnapshot(TITLE_GUESS_CHOICE_QUESTIONS, {
       modeType: 'title-guess',
@@ -389,6 +421,39 @@ describe('partyEngine', () => {
     expect(score.titleCorrect).toBe(true);
     expect(score.songCorrect).toBe(false);
     expect(score.points).toBeGreaterThan(400);
+  });
+
+  it('accepts same-franchise options for title-guess choice answers', () => {
+    const round = {
+      kind: 'title-guess',
+      revealedClueCount: 2,
+      franchiseAnswerKey: 'franchise:attack on titan',
+      options: [
+        {
+          id: 'opt-correct',
+          label: 'Attack on Titan Season 2',
+          isCorrect: true,
+          franchiseAnswerKey: 'franchise:attack on titan',
+        },
+        {
+          id: 'opt-family',
+          label: 'Attack on Titan Final Season',
+          isCorrect: false,
+          franchiseAnswerKey: 'franchise:attack on titan',
+        },
+      ],
+    };
+
+    const score = scorePartyAnswer({
+      presetId: 'title-guess-choice',
+      round,
+      selectedOptionId: 'opt-family',
+      elapsedMs: 500,
+      timeLimitMs: 7000,
+    });
+
+    expect(score.titleCorrect).toBe(true);
+    expect(score.points).toBeGreaterThan(0);
   });
 
   it('builds distinct runtime song keys for YouTube rounds', () => {
