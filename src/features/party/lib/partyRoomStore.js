@@ -107,6 +107,15 @@ function upsertByKey(items = [], nextItem, key) {
   return nextItems;
 }
 
+function removeByKey(items = [], targetValue, key) {
+  const normalizedTarget = String(targetValue || '');
+  if (!normalizedTarget) {
+    return items;
+  }
+
+  return items.filter((item) => String(item?.[key] || '') !== normalizedTarget);
+}
+
 function upsertAnswerRecord(items = [], nextAnswer) {
   if (!nextAnswer) {
     return items;
@@ -257,6 +266,11 @@ export const usePartyRoomStore = create((set) => ({
       case 'MEMBER_UPSERTED':
         return {
           members: upsertByKey(state.members, payload.member, 'member_token'),
+          ...realtimeMeta,
+        };
+      case 'MEMBER_REMOVED':
+        return {
+          members: removeByKey(state.members, payload.memberToken, 'member_token'),
           ...realtimeMeta,
         };
       case 'MEMBERS_PATCHED':

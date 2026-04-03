@@ -51,6 +51,18 @@
   letter-spacing: 0.05em;
   color: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.14), 0 4px 14px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.plc-msg-avatar.has-image {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.plc-msg-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .plc-msg-avatar.is-rose {

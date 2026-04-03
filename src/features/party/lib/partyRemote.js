@@ -100,6 +100,7 @@ function createPartyRoomReadyPromise() {
     resolve = nextResolve;
     reject = nextReject;
   });
+  promise.catch(() => null);
 
   return { promise, resolve, reject };
 }
@@ -174,8 +175,31 @@ function unregisterPartyRoomRealtimeChannel(roomId, channel) {
     return;
   }
 
-  entry.rejectReady?.(new Error('Party room channel was removed.'));
+  entry.resolveReady?.(null);
+  entry.resolveReady = null;
+  entry.rejectReady = null;
   partyRoomRealtimeRegistry.delete(key);
+}
+
+async function disposePartyRealtimeChannel(channel, status = '') {
+  if (!channel) {
+    return;
+  }
+
+  const normalizedStatus = String(status || '').trim().toUpperCase();
+
+  try {
+    if (normalizedStatus === 'SUBSCRIBED' || normalizedStatus === 'CHANNEL_ERROR' || normalizedStatus === 'TIMED_OUT') {
+      await supabase?.removeChannel?.(channel);
+      return;
+    }
+
+    if (typeof channel.unsubscribe === 'function') {
+      await channel.unsubscribe();
+    }
+  } catch {
+    // Ignore cleanup noise during fast remounts in development.
+  }
 }
 
 export function __resetPartyRoomRealtimeRegistryForTests() {
@@ -2329,6 +2353,79 @@ export async function togglePartyMemberReady(roomId, memberToken, isReady) {
   return data;
 }
 
+export async function leavePartyRoom({ room, memberToken } = {}) {
+  if (!supabase || !room?.id || !memberToken) {
+    return { room: room || null, roomClosed: false, memberRemoved: false };
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom) {
+    return { room: null, roomClosed: true, memberRemoved: false };
+  }
+
+  const normalizedMemberToken = String(memberToken || '').trim();
+  if (!normalizedMemberToken) {
+    return { room: freshRoom, roomClosed: false, memberRemoved: false };
+  }
+
+  const { error: deleteError } = await supabase
+    .from('party_room_members')
+    .delete()
+    .eq('room_id', freshRoom.id)
+    .eq('member_token', normalizedMemberToken);
+
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'MEMBER_REMOVED',
+    payload: {
+      memberToken: normalizedMemberToken,
+    },
+  });
+
+  const remainingMembers = await fetchPartyRoomMembers(freshRoom.id);
+  const shouldCloseRoom = remainingMembers.length === 0
+    || String(freshRoom.host_member_token || '') === normalizedMemberToken;
+
+  if (!shouldCloseRoom || freshRoom.status === 'closed') {
+    return {
+      room: freshRoom,
+      roomClosed: false,
+      memberRemoved: true,
+      remainingMembers,
+    };
+  }
+
+  const { data: closedRows, error: closeError } = await supabase
+    .from('party_rooms')
+    .update({ status: 'closed' })
+    .eq('id', freshRoom.id)
+    .neq('status', 'closed')
+    .select('*');
+
+  if (closeError) {
+    throw closeError;
+  }
+
+  const closedRoom = takeFirstRecord(closedRows) || (await fetchPartyRoomRecordById(freshRoom.id)) || freshRoom;
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'ROOM_CLOSED',
+    payload: {
+      room: closedRoom,
+    },
+  });
+
+  return {
+    room: closedRoom,
+    roomClosed: true,
+    memberRemoved: true,
+    remainingMembers,
+  };
+}
+
 export async function startPartyMatch(room) {
   if (!supabase || !room?.id) {
     return null;
@@ -3049,6 +3146,8 @@ export async function submitPartyLiveChatMessage({
     scopeKey: `${normalizedBattleId}:${normalizedPhase}`,
     memberToken: String(member.member_token || ''),
     memberName: String(member.display_name || member.memberName || 'Player').trim() || 'Player',
+    avatarKey: String(member.avatar_key || member.avatarKey || 'rose').trim() || 'rose',
+    avatarUrl: String(member.avatar_url || member.avatarUrl || '').trim(),
     text: normalizedText,
     sentAt: new Date().toISOString(),
   };
@@ -3079,9 +3178,19 @@ function mapPartyRoomRealtimePayload(payload) {
 }
 
 function mapPartyMemberRealtimePayload(payload) {
-  const member = payload?.new || null;
+  const member = payload?.new || payload?.old || null;
   if (!member) {
     return null;
+  }
+
+  if (payload?.eventType === 'DELETE') {
+    return {
+      type: 'MEMBER_REMOVED',
+      sentAt: payload?.commit_timestamp || new Date().toISOString(),
+      payload: {
+        memberToken: member.member_token,
+      },
+    };
   }
 
   return {
@@ -3112,6 +3221,8 @@ export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   if (!supabase || !roomId) {
     return () => { };
   }
+
+  let latestStatus = 'JOINING';
 
   const channel = supabase
     .channel(getPartyRoomChannelName(roomId))
@@ -3157,13 +3268,14 @@ export function subscribeToPartyRoom(roomId, onEvent, onStatusChange) {
   registerPartyRoomRealtimeChannel(roomId, channel);
 
   channel.subscribe((status) => {
+    latestStatus = status;
     updatePartyRoomRealtimeChannelStatus(roomId, channel, status);
     onStatusChange?.(status);
   });
 
   return () => {
     unregisterPartyRoomRealtimeChannel(roomId, channel);
-    void supabase.removeChannel(channel);
+    void disposePartyRealtimeChannel(channel, latestStatus);
   };
 }
 
@@ -3200,7 +3312,38 @@ export async function searchPublicPartyRooms({ query = '', mode = '', page = 0, 
     throw error;
   }
 
-  return data || [];
+  const rooms = Array.isArray(data) ? data : [];
+  if (rooms.length === 0) {
+    return [];
+  }
+
+  const roomIds = rooms
+    .map((room) => room?.id)
+    .filter(Boolean);
+
+  if (roomIds.length === 0) {
+    return [];
+  }
+
+  const { data: members, error: membersError } = await supabase
+    .from('party_room_members')
+    .select('room_id')
+    .in('room_id', roomIds);
+
+  if (membersError) {
+    throw membersError;
+  }
+
+  const memberCountByRoomId = new Map();
+  (members || []).forEach((member) => {
+    const key = String(member?.room_id || '');
+    if (!key) {
+      return;
+    }
+    memberCountByRoomId.set(key, (memberCountByRoomId.get(key) || 0) + 1);
+  });
+
+  return rooms.filter((room) => (memberCountByRoomId.get(String(room?.id || '')) || 0) > 0);
 }
 
 export async function updatePartyRoomAccess(roomId, { roomName, visibility } = {}) {
@@ -3359,6 +3502,7 @@ export function subscribeToPartyRoomJoinRequests(roomId, onEvent) {
     return () => {};
   }
 
+  let latestStatus = 'JOINING';
   const channel = supabase
     .channel(`party-join-requests-${roomId}`)
     .on(
@@ -3369,9 +3513,11 @@ export function subscribeToPartyRoomJoinRequests(roomId, onEvent) {
       },
     );
 
-  channel.subscribe();
+  channel.subscribe((status) => {
+    latestStatus = status;
+  });
 
   return () => {
-    void supabase.removeChannel(channel);
+    void disposePartyRealtimeChannel(channel, latestStatus);
   };
 }

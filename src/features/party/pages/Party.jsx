@@ -42,6 +42,7 @@ import {
   getPartyBackendHint,
   getPartyGuestToken,
   joinPartyRoom,
+  leavePartyRoom,
   readPartyProfile,
   resetPartyRoom,
   startPartyMatch,
@@ -78,6 +79,12 @@ import {
 import './Party.css';
 import './PartyHub.css';
 
+const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 900;
+
+function serializePartySettingsSnapshot(settings) {
+  return JSON.stringify(createPartySettings(settings || {}));
+}
+
 function getPartyTemplateReasonText(reason) {
   if (!reason) {
     return '';
@@ -110,290 +117,41 @@ export function PartyHubPage() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
   const partyProfile = useMemo(() => buildPartyProfile(user, readPartyProfile()), [user]);
-  const [songPresetOptions, setSongPresetOptions] = useState([]);
-  const [templatePlayablePool, setTemplatePlayablePool] = useState([]);
-  const [templatePoolLoaded, setTemplatePoolLoaded] = useState(false);
-  const [settings, setSettings] = useState(createPartySettings({
-    modeType: 'quiz',
-    presetId: PARTY_PRESETS[0].id,
-    roundCount: 10,
-    entrantCount: 8,
-    clipPlaybackMode: 'preview',
-    timePerRoundSec: 12,
-    voteSec: 10,
-    revealSec: 12,
-    categoryId: 'all',
-    keyword: '',
-    showLiveScores: true,
-    randomOrder: true,
-  }));
   const [roomName, setRoomName] = useState('');
   const [visibility, setVisibility] = useState('public');
   const [joinCode, setJoinCode] = useState('');
   const [busyAction, setBusyAction] = useState('');
-  const selectedPreset = getPartyPresetById(settings.presetId);
-  const supportsLongClipTime = settings.modeType === 'vote';
-  const clipTimeOptions = supportsLongClipTime
-    ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
-    : [8, 10, 12, 15, 20];
-  const selectedPoolLabel = settings.songPresetName
-    || settings.templateName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.label
-    || PARTY_CATEGORY_OPTIONS[0].label;
-  const selectedPoolLabelTh = settings.songPresetName
-    || settings.templateName
-    || PARTY_CATEGORY_OPTIONS.find((option) => option.id === settings.categoryId)?.labelTh
-    || PARTY_CATEGORY_OPTIONS[0].labelTh;
-  const songPoolSelectValue = settings.songPresetId ? `preset:${settings.songPresetId}` : settings.categoryId;
-  const templatePlayableCount = Math.max(0, Number(settings.templatePlayableCount || 0));
-  const templateCompatibility = useMemo(() => {
-    if (!settings.templateId || !templatePoolLoaded) {
-      return null;
-    }
+  const [delightIndex, setDelightIndex] = useState(0);
 
-    return analyzePartyTemplateCompatibility(templatePlayablePool, settings);
-  }, [settings, templatePlayablePool, templatePoolLoaded]);
-  const templatePresetAvailability = useMemo(
-    () => templateCompatibility?.presetResults || {},
-    [templateCompatibility],
-  );
-  const templatePresetMaxRounds = useMemo(() => {
-    if (!settings.templateId || !templatePoolLoaded || !templateCompatibility) {
-      return {};
-    }
-
-    return {
-      'party-classic': templateCompatibility.distinctChoiceAnswerCount >= 4
-        ? templateCompatibility.choiceEligibleCount
-        : 0,
-      'song-typing': templateCompatibility.songTypingEligibleCount,
-    };
-  }, [settings.templateId, templateCompatibility, templatePoolLoaded]);
-  const quizRoundOptions = useMemo(() => {
-    if (!settings.templateId || settings.modeType !== 'quiz') {
-      return [2, 5, 10, 15, 20];
-    }
-
-    const presetCap = Number(templatePresetMaxRounds[settings.presetId] || 0);
-    const maxRounds = Math.max(2, presetCap || templatePlayableCount);
-    const options = [2, 5, 10, 15, 20].filter((count) => count <= maxRounds);
-    if (!options.includes(maxRounds)) {
-      options.push(maxRounds);
-    }
-    return [...new Set(options)].sort((a, b) => a - b);
-  }, [settings.modeType, settings.presetId, settings.templateId, templatePlayableCount, templatePresetMaxRounds]);
-  const voteEntrantOptions = useMemo(() => {
-    if (!settings.templateId || settings.modeType !== 'vote' || templatePlayableCount <= 0) {
-      return [2, 4, 8, 16];
-    }
-
-    const options = [2, 4, 8, 16].filter((count) => count <= templatePlayableCount);
-    return options.length > 0 ? options : [2];
-  }, [settings.modeType, settings.templateId, templatePlayableCount]);
-  const suggestedTemplatePresetId = useMemo(
-    () => PARTY_PRESETS.find((preset) => templatePresetAvailability[preset.id]?.compatible)?.id || null,
-    [templatePresetAvailability],
-  );
-  const templateValidation = useMemo(() => {
-    const targetResult = templateCompatibility?.targetResult;
-    if (!settings.templateId || !templatePoolLoaded || !targetResult) {
-      return { ok: true, message: '' };
-    }
-
-    return {
-      ok: targetResult.compatible,
-      message: getPartyTemplateReasonText(targetResult.blockingReasons?.[0], pick),
-    };
-  }, [pick, settings.templateId, templateCompatibility, templatePoolLoaded]);
+  const delightTexts = [
+    pick('เหมาะกับห้องดูอนิเมะ 🎌', 'Perfect for anime watch parties 🎌'),
+    pick('ใช้ได้กับเทมเพลตหลายแบบ 🎵', 'Works with any community template 🎵'),
+    pick('ตั้งค่าทีหลังใน lobby ได้หมด ✅', 'Configure everything in the lobby ✅'),
+  ];
 
   useEffect(() => {
-    const templateId = searchParams.get('templateId');
-    const templateName = searchParams.get('templateName');
-    const modeType = searchParams.get('modeType');
-    const modeScope = searchParams.get('modeScope') || 'all';
-    const presetId = searchParams.get('presetId');
-
-    if (!templateId) {
-      return;
-    }
-
-    const resolvedMode = (modeType === 'vote' || modeType === 'quiz')
-      ? modeType
-      : modeScope === 'vote'
-        ? 'vote'
-        : 'quiz';
-
-    setSettings((current) => ({
-      ...current,
-      templateId,
-      templateName: templateName ? decodeURIComponent(templateName) : '',
-      modeType: resolvedMode,
-      modeScope,
-      presetId: presetId || current.presetId,
-    }));
+    const id = setInterval(() => setDelightIndex((i) => (i + 1) % delightTexts.length), 3200);
+    return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    let ignore = false;
-
-    fetchPublishedPartySongPresets()
-      .then((presets) => {
-        if (!ignore) {
-          setSongPresetOptions(presets);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load published party song presets', error);
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!settings.templateId) {
-      setTemplatePlayablePool([]);
-      setTemplatePoolLoaded(false);
-      return undefined;
-    }
-
-    let ignore = false;
-    setTemplatePoolLoaded(false);
-
-    Promise.all([
-      fetchPartyTemplateDetail(settings.templateId).catch(() => null),
-      fetchPartyTemplateSongPool(settings.templateId).catch(() => []),
-    ]).then(([templateDetail, playablePool]) => {
-      if (ignore) {
-        return;
-      }
-
-      const playableCount = Array.isArray(playablePool) ? playablePool.length : 0;
-      setTemplatePlayablePool(Array.isArray(playablePool) ? playablePool : []);
-      setTemplatePoolLoaded(true);
-      setSettings((current) => {
-        if (String(current.templateId || '') !== String(settings.templateId || '')) {
-          return current;
-        }
-
-        const next = {
-          ...current,
-          templateName: templateDetail?.name || current.templateName,
-          templateCoverUrl: templateDetail?.coverUrl || current.templateCoverUrl || '',
-          templatePlayableCount: playableCount,
-          presetId: current.modeType === 'vote'
-            ? current.presetId
-            : (templateDetail?.presetId || current.presetId),
-        };
-
-        if (next.modeType === 'quiz' && playableCount > 0) {
-          const maxRounds = Math.max(2, playableCount);
-          next.roundCount = Math.min(Number(next.roundCount || 10), maxRounds);
-        }
-
-        if (next.modeType === 'vote' && playableCount > 0) {
-          const allowedEntrants = [2, 4, 8, 16].filter((count) => count <= playableCount);
-          if (allowedEntrants.length > 0) {
-            next.entrantCount = allowedEntrants.includes(Number(next.entrantCount || 0))
-              ? Number(next.entrantCount || 0)
-              : allowedEntrants[allowedEntrants.length - 1];
-          }
-        }
-
-        return next;
-      });
-    });
-
-    return () => {
-      ignore = true;
-    };
-  }, [settings.templateId]);
-
-  useEffect(() => {
-    if (!settings.templateId || templatePlayableCount <= 0) {
-      return;
-    }
-
-    setSettings((current) => {
-      if (!current.templateId) {
-        return current;
-      }
-
-      if (current.modeType === 'quiz') {
-        const presetCap = Number(templatePresetMaxRounds[current.presetId] || 0);
-        const maxRounds = Math.max(2, presetCap || templatePlayableCount);
-        const nextRoundCount = Math.min(Number(current.roundCount || 10), maxRounds);
-        return nextRoundCount === current.roundCount ? current : { ...current, roundCount: nextRoundCount };
-      }
-
-      const allowedEntrants = [2, 4, 8, 16].filter((count) => count <= templatePlayableCount);
-      if (allowedEntrants.length === 0) {
-        return current;
-      }
-
-      const nextEntrantCount = allowedEntrants.includes(Number(current.entrantCount || 0))
-        ? Number(current.entrantCount || 0)
-        : allowedEntrants[allowedEntrants.length - 1];
-
-      return nextEntrantCount === current.entrantCount ? current : { ...current, entrantCount: nextEntrantCount };
-    });
-  }, [settings.templateId, settings.modeType, templatePlayableCount, templatePresetMaxRounds]);
-
-  useEffect(() => {
-    if (!settings.templateId || settings.modeType !== 'quiz' || !templatePoolLoaded) {
-      return;
-    }
-
-    const currentPresetAvailability = templatePresetAvailability[settings.presetId];
-    if (currentPresetAvailability?.compatible) {
-      return;
-    }
-
-    const fallbackPreset = PARTY_PRESETS.find((preset) => templatePresetAvailability[preset.id]?.compatible);
-    if (!fallbackPreset || fallbackPreset.id === settings.presetId) {
-      return;
-    }
-
-    setSettings((current) => {
-      if (!current.templateId || current.modeType !== 'quiz' || current.presetId !== settings.presetId) {
-        return current;
-      }
-      return { ...current, presetId: fallbackPreset.id };
-    });
-  }, [
-    settings.modeType,
-    settings.presetId,
-    settings.templateId,
-    templatePoolLoaded,
-    templatePresetAvailability,
-  ]);
 
   const handleCreate = async (event) => {
     event.preventDefault();
     try {
       setBusyAction('create');
-      if (settings.templateId) {
-        const pool = await fetchPartyTemplateSongPool(settings.templateId).catch(() => null);
-        if (pool !== null) {
-          const compatibility = analyzePartyTemplateCompatibility(pool, settings);
-          if (!compatibility.targetResult?.compatible) {
-            toast.error(getPartyTemplateReasonText(compatibility.targetResult?.blockingReasons?.[0], pick));
-            return;
-          }
-        }
-      }
-
-      const room = await createPartyRoom({ profile: partyProfile, settings, roomName, visibility });
+      const defaultSettings = createPartySettings({ modeType: 'quiz', presetId: PARTY_PRESETS[0].id });
+      const room = await createPartyRoom({ profile: partyProfile, settings: defaultSettings, roomName, visibility });
       toast.success(pick('สร้างห้องสำเร็จ', 'Room created'));
       navigate(`/party/room/${room.room_code}`);
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
-      setBusyAction('');
+      if (silent) {
+        isAutosavingRef.current = false;
+      } else {
+        setBusyAction('');
+      }
     }
   };
 
@@ -411,25 +169,89 @@ export function PartyHubPage() {
     }
   };
 
+  const lobbyFeatures = [
+    { emoji: '🎵', label: pick('โหมดเล่น', 'Game Mode') },
+    { emoji: '📚', label: pick('เทมเพลต', 'Template') },
+    { emoji: '⏱', label: pick('เวลา', 'Timing') },
+    { emoji: '🔒', label: pick('สิทธิ์ห้อง', 'Room Access') },
+    { emoji: '✅', label: pick('พร้อม / เริ่มเกม', 'Ready / Start') },
+  ];
+
   return (
-    <div className="pgh-page">
-      <div className="pgh-shell">
+    <div className="pgw-page">
+      <div className="pgw-shell">
 
         {/* ── Hero ── */}
-        <div className="pgh-hero">
-          <div className="pgh-kicker"><Radio size={11} />Template Party</div>
-          <h1 className="pgh-title">PARTY</h1>
-          <p className="pgh-sub">{pick('สร้างห้องแล้วเล่นกับเพื่อนจากเทมเพลตแบบไหนก็ได้', 'Create a room and play together from any template.')}</p>
-        </div>
+        <header className="pgw-hero">
+          <div className="pgw-kicker"><Radio size={11} />Template Party</div>
+          <h1 className="pgw-title">PARTY</h1>
+          <p className="pgw-tagline">
+            {pick('เปิดห้องแล้วชวนเพื่อนเข้า', 'Open a room and invite your friends')}
+          </p>
+          <p className="pgw-sub">
+            {pick(
+              'สร้างห้องก่อน แล้วค่อยเลือกกติกา เทมเพลต และรายละเอียดใน lobby',
+              'Create the room first — pick rules, template, and settings in the lobby',
+            )}
+          </p>
+        </header>
 
-        {/* ── Quick Actions ── */}
-        <div className="pgh-quick">
-          <form className="pgh-join-card" onSubmit={handleJoin}>
-            <div className="pgh-join-label">{pick('เข้าด้วย Code', 'Enter a Code')}</div>
-            <div className="pgh-join-row">
+        {/* ── CTA Area ── */}
+        <div className="pgw-cta-area">
+
+          {/* Create card */}
+          <form className="pgw-create-card" onSubmit={handleCreate}>
+            <div className="pgw-card-eyebrow">{pick('สร้างห้องใหม่', 'New Room')}</div>
+            <input
+              type="text"
+              className="pgw-name-input"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              placeholder={pick('ชื่อห้อง (ไม่บังคับ)', 'Room name (optional)')}
+              maxLength={60}
+            />
+            <div className="pgw-vis-row">
+              <button
+                type="button"
+                className={`pgw-vis-btn${visibility === 'public' ? ' is-active' : ''}`}
+                onClick={() => setVisibility('public')}
+              >
+                <Globe size={13} />
+                {pick('สาธารณะ', 'Public')}
+              </button>
+              <button
+                type="button"
+                className={`pgw-vis-btn${visibility === 'private' ? ' is-active' : ''}`}
+                onClick={() => setVisibility('private')}
+              >
+                <Lock size={13} />
+                {pick('ส่วนตัว', 'Private')}
+              </button>
+            </div>
+            <Button
+              className="party-gradient-action"
+              size="lg"
+              type="submit"
+              fullWidth
+              disabled={busyAction === 'create'}
+            >
+              {busyAction === 'create'
+                ? <><Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite', marginRight: '0.4rem' }} />{pick('กำลังสร้าง…', 'Creating…')}</>
+                : pick('🎮  สร้างห้อง', '🎮  Create Room')}
+            </Button>
+            <p className="pgw-create-hint">
+              <Sparkles size={12} style={{ flexShrink: 0 }} />
+              {pick('ตั้งค่าทั้งหมดได้ใน lobby — สร้างแล้วไปต่อได้เลย', 'All settings are in the lobby — just create and go')}
+            </p>
+          </form>
+
+          {/* Join + Find side */}
+          <div className="pgw-join-side">
+            <form className="pgw-join-card" onSubmit={handleJoin}>
+              <div className="pgw-card-eyebrow">{pick('เข้าห้องด้วยโค้ด', 'Join with Code')}</div>
               <input
                 type="text"
-                className="pgh-code-input"
+                className="pgw-code-input"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 placeholder="XXXXXX"
@@ -440,424 +262,67 @@ export function PartyHubPage() {
                 size="md"
                 variant="primary"
                 type="submit"
+                fullWidth
                 disabled={busyAction === 'join' || joinCode.trim().length < 6}
               >
                 {busyAction === 'join'
                   ? <Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite' }} />
-                  : pick('เข้า', 'Join')}
+                  : pick('เข้าห้อง', 'Join Room')}
               </Button>
-            </div>
-          </form>
+              <p className="pgw-join-hint">
+                {pick('มีโค้ดอยู่แล้ว? เข้าได้ทันที', 'Already have a code? Jump right in')}
+              </p>
+            </form>
+            <Link to="/party/rooms" className="pgw-find-link">
+              <Search size={14} />
+              {pick('ดูห้องสาธารณะ', 'Browse Public Rooms')}
+            </Link>
+          </div>
 
-          <Link to="/party/rooms" className="pgh-find-card">
-            <Search size={20} className="pgh-find-card-icon" />
-            <span>{pick('หาห้อง', 'Find Rooms')}</span>
-          </Link>
         </div>
 
-        {/* ── Create Form ── */}
-        <form onSubmit={handleCreate}>
-          <div className="pgc-form">
-
-            <div className="pgc-form-header">
-              <div className="pgc-form-header-main">
-                <div>
-                  <p className="pgc-form-title">{pick('สร้างห้องใหม่', 'New Room')}</p>
-                  <p className="pgc-form-desc">{pick('ตั้งค่าห้องของคุณ', 'Set up your room')}</p>
-                </div>
-                <div className="pgc-form-header-note">
-                  <strong>{pick('\u0e1e\u0e23\u0e49\u0e2d\u0e21\u0e40\u0e1b\u0e34\u0e14\u0e2b\u0e49\u0e2d\u0e07', 'Ready to host')}</strong>
-                  <span>{pick('\u0e14\u0e39\u0e20\u0e32\u0e1e\u0e23\u0e27\u0e21\u0e02\u0e2d\u0e07\u0e2b\u0e49\u0e2d\u0e07\u0e44\u0e14\u0e49\u0e17\u0e31\u0e19\u0e17\u0e35\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e04\u0e48\u0e32\u0e04\u0e23\u0e31\u0e49\u0e07\u0e2a\u0e38\u0e14\u0e17\u0e49\u0e32\u0e22', 'See a live summary of your room before you create it.')}</span>
-                </div>
-              </div>
+        {/* ── 3-Step Guide ── */}
+        <section className="pgw-steps-section">
+          <div className="pgw-section-label">{pick('วิธีเล่น 3 ขั้นตอน', 'How it works')}</div>
+          <div className="pgw-steps">
+            <div className="pgw-step-card" data-step="1">
+              <div className="pgw-step-num">1</div>
+              <strong className="pgw-step-title">{pick('สร้างห้อง', 'Create a Room')}</strong>
+              <p className="pgw-step-desc">{pick('กด "สร้างห้อง" ด้านบน ใช้เวลาไม่ถึง 10 วิ', 'Tap Create Room above — takes under 10 seconds')}</p>
             </div>
-
-	            <div className="pgc-body">
-	              <div className="pgc-layout">
-	                <div className="pgc-column pgc-column--basics">
-
-              {/* Room name */}
-              <div>
-                <label className="pgc-label" htmlFor="pgc-room-name">
-                  {pick('ชื่อห้อง', 'Room Name')}
-                </label>
-                <input
-                  id="pgc-room-name"
-                  type="text"
-                  className="pgc-name-input"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  placeholder={pick('ตั้งชื่อห้อง... (ไม่บังคับ)', 'Name your room… (optional)')}
-                  maxLength={60}
-                />
-              </div>
-
-              {/* Visibility */}
-              <div>
-                <span className="pgc-label">{pick('การมองเห็น', 'Visibility')}</span>
-                <div className="pgc-vis-row">
-                  <button type="button" className={`pgc-vis-card${visibility === 'public' ? ' is-active' : ''}`} onClick={() => setVisibility('public')}>
-                    <div className="pgc-vis-icon"><Globe size={16} /></div>
-                    <span className="pgc-vis-name">{pick('สาธารณะ', 'Public')}</span>
-                    <span className="pgc-vis-desc">{pick('ค้นหาได้ · host อนุมัติก่อนเข้า', 'Discoverable · host approves')}</span>
-                  </button>
-                  <button type="button" className={`pgc-vis-card${visibility === 'private' ? ' is-active' : ''}`} onClick={() => setVisibility('private')}>
-                    <div className="pgc-vis-icon"><Lock size={16} /></div>
-                    <span className="pgc-vis-name">{pick('ส่วนตัว', 'Private')}</span>
-                    <span className="pgc-vis-desc">{pick('เข้าได้ด้วย code เท่านั้น', 'Code-only access')}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Template */}
-              {settings.templateId ? (
-                <div className="pgc-template-selected">
-                  <div
-                    className="pgc-template-cover"
-                    style={{ backgroundImage: `url(${getTemplateCoverUrl(settings.templateCoverUrl)})` }}
-                    aria-hidden="true"
-                  />
-                  <div className="pgc-template-name">
-                    <strong>{settings.templateName || settings.templateId}</strong>
-                    <small>{pick('เทมเพลต', 'Template')}</small>
-                  </div>
-                  <div className="pgc-template-actions">
-                    <button type="button" className="pgc-template-btn" onClick={() => navigate('/party/templates')}>
-                      {pick('เปลี่ยน', 'Change')}
-                    </button>
-                    <button
-                      type="button"
-                      className="pgc-template-btn"
-                      onClick={() => setSettings((c) => ({ ...c, templateId: '', templateName: '', templateCoverUrl: '', templatePlayableCount: 0 }))}
-                      title={pick('ล้าง', 'Clear')}
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button type="button" className="pgc-template-picker" onClick={() => navigate('/party/templates')}>
-                  <div className="pgc-template-picker-icon"><LibrarySquare size={18} /></div>
-                  <div className="pgc-template-picker-text">
-                    <strong>{pick('เลือกเทมเพลตจากชุมชน', 'Browse Community Templates')}</strong>
-                    <small>{pick('เซ็ตที่คนอื่นจัดไว้ให้แล้ว', 'Ready-made community sets')}</small>
-                  </div>
-                  <ChevronRight size={15} style={{ marginLeft: 'auto', color: 'var(--text-tertiary)' }} />
-                </button>
-              )}
-
-              {/* Template alerts */}
-              {settings.templateId && templatePoolLoaded && !templateValidation.ok ? (
-                <div className="pgc-alert is-warn">
-                  <TimerReset size={14} style={{ flexShrink: 0, marginTop: '0.05rem' }} />
-                  {templateValidation.message}
-                </div>
-              ) : null}
-              {settings.templateId && templatePoolLoaded && templateValidation.ok && templateCompatibility?.warnings?.[0] ? (
-                <div className="pgc-alert is-warn">
-                  <TimerReset size={14} style={{ flexShrink: 0, marginTop: '0.05rem' }} />
-                  {getPartyTemplateReasonText(templateCompatibility.warnings[0], pick)}
-                </div>
-              ) : null}
-              {settings.templateId && templatePoolLoaded && templateCompatibility ? (
-                <div className="pgc-alert is-info">
-                  {`${templateCompatibility.playableSongCount} playable entries · ${templateCompatibility.choiceEligibleCount} choice-ready · ${templateCompatibility.distinctChoiceAnswerCount} distinct answers`}
-                  {templateCompatibility.unresolvedSourceCount > 0
-                    ? ` · ${templateCompatibility.unresolvedSourceCount} missing source`
-                    : null}
-                </div>
-              ) : null}
-
-              {/* ─── Game Settings divider ─── */}
-              <div className="pgc-divider">{pick('การตั้งค่าเกม', 'Game Settings')}</div>
-
-	                </div>
-	                <div className="pgc-column pgc-column--game">
-                  <section className="pgc-preview-card">
-                    <div className="pgc-preview-head">
-                      <div className={`pgc-preview-mode-mark is-${settings.modeType}`} aria-hidden="true">
-                        {settings.modeType === 'vote' ? (
-                          <span className="pgc-preview-mode-mark-vs">VS</span>
-                        ) : (
-                          <span className="pgc-preview-mode-mark-emoji">{'\u{1F3B5}'}</span>
-                        )}
-                      </div>
-                      <div className="pgc-preview-copy">
-                        <span className="pgc-preview-kicker">{pick('\u0e20\u0e32\u0e1e\u0e23\u0e27\u0e21\u0e2b\u0e49\u0e2d\u0e07', 'Room preview')}</span>
-                        <strong>{roomName.trim() || pick('\u0e2b\u0e49\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13', 'Your new room')}</strong>
-                      </div>
-                      <span className={`pgc-preview-badge${visibility === 'public' ? ' is-public' : ''}`}>
-                        {visibility === 'public'
-                          ? pick('\u0e2a\u0e32\u0e18\u0e32\u0e23\u0e13\u0e30', 'Public')
-                          : pick('\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e31\u0e27', 'Private')}
-                      </span>
-                    </div>
-                    <div className="pgc-summary pgc-summary--preview">
-                      <div className="pgc-pill">
-                        <strong>{pick(selectedPreset.labelTh, selectedPreset.label)}</strong>
-                        <span>{pick('โหมด', 'mode')}</span>
-                      </div>
-                      {settings.templateId ? (
-                        <div className="pgc-pill">
-                          <strong style={{ maxWidth: '11rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{settings.templateName || '-'}</strong>
-                          <span>{pick('เทมเพลต', 'template')}</span>
-                        </div>
-                      ) : (
-                        <div className="pgc-pill">
-                          <strong>{pick(selectedPoolLabelTh, selectedPoolLabel)}</strong>
-                          <span>{pick('คลัง', 'pool')}</span>
-                        </div>
-                      )}
-                      <div className="pgc-pill">
-                        <strong>{settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}</strong>
-                        <span>{settings.modeType === 'vote' ? pick('รายการ', 'entries') : pick('รอบ', 'rounds')}</span>
-                      </div>
-                      <div className="pgc-pill">
-                        <strong>{settings.timePerRoundSec}{pick('วิ', 's')}</strong>
-                        <span>{pick('คลิป', 'clip')}</span>
-                      </div>
-                      <div className="pgc-pill">
-                        <strong>{settings.revealSec}{pick('วิ', 's')}</strong>
-                        <span>{pick('เฉลย', 'reveal')}</span>
-                      </div>
-                      {settings.modeType === 'vote' ? (
-                        <div className="pgc-pill">
-                          <strong>{settings.voteSec}{pick('วิ', 's')}</strong>
-                          <span>{pick('โหวต', 'vote')}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                    <p className="pgc-preview-caption">
-                      {pick('\u0e1b\u0e23\u0e31\u0e1a\u0e04\u0e48\u0e32\u0e14\u0e49\u0e32\u0e19\u0e0b\u0e49\u0e32\u0e22 \u0e41\u0e25\u0e49\u0e27\u0e14\u0e39\u0e1c\u0e25\u0e2a\u0e23\u0e38\u0e1b\u0e44\u0e14\u0e49\u0e17\u0e31\u0e19\u0e17\u0e35\u0e17\u0e32\u0e07\u0e19\u0e35\u0e49', 'Tune the settings on the left, then use this snapshot as your final check.')}
-                    </p>
-                  </section>
-	              {/* Match type */}
-              <div>
-                <span className="pgc-label">{pick('ประเภทเกม', 'Match Type')}</span>
-                <div className="pgc-mode-row">
-                  <button
-                    type="button"
-                    className={`pgc-mode-card is-quiz${settings.modeType === 'quiz' ? ' is-active' : ''}${settings.templateId && settings.modeScope === 'vote' ? ' is-disabled' : ''}`}
-                    onClick={() => setSettings((c) => ({ ...c, modeType: 'quiz', timePerRoundSec: Math.min(20, Number(c.timePerRoundSec || 12)) }))}
-                  >
-                    <div className="pgc-mode-badge is-quiz" aria-hidden="true">
-                      <span className="pgc-mode-badge-emoji">{'\u{1F3B5}'}</span>
-                    </div>
-                    <div className="pgc-mode-copy">
-                      <span className="pgc-mode-name">{pick('โหมดทาย', 'Quiz Mode')}</span>
-                      <span className="pgc-mode-sub">{pick('จับโจทย์แล้วตอบให้ไว', 'Catch the prompt and answer fast')}</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className={`pgc-mode-card is-vote${settings.modeType === 'vote' ? ' is-active' : ''}${settings.templateId && settings.modeScope === 'quiz' ? ' is-disabled' : ''}`}
-                    onClick={() => setSettings((c) => ({ ...c, modeType: 'vote' }))}
-                  >
-                    <div className="pgc-mode-badge is-vote" aria-hidden="true">
-                      <span className="pgc-mode-badge-vs">VS</span>
-                    </div>
-                    <div className="pgc-mode-copy">
-                      <span className="pgc-mode-name">{pick('โหมดโหวต', 'Vote Mode')}</span>
-                      <span className="pgc-mode-sub">{pick('จับคู่แล้วโหวตรายการที่ชอบ', 'Face off and vote for the entry you like')}</span>
-                    </div>
-                  </button>
-                </div>
-                {settings.templateId && settings.modeScope !== 'all' ? (
-                  <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginTop: '0.4rem', display: 'block' }}>
-                    {pick(`Template รองรับเฉพาะ ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'}`, `Template only supports ${settings.modeScope === 'quiz' ? 'Music Quiz' : 'Vote Battle'}.`)}
-                  </small>
-                ) : null}
-              </div>
-
-              {/* Game mode presets (quiz only) */}
-              {settings.modeType === 'quiz' && (
-                <div>
-                  <span className="pgc-label">{pick('โหมดเกม', 'Game Mode')}</span>
-                  <div className="party-preset-showcase pgc-preset-grid">
-                    {PARTY_PRESETS.map((preset) => {
-                      const availability = templatePresetAvailability[preset.id];
-                      const isTemplateBound = settings.templateId && templatePoolLoaded;
-                      const helperText = !isTemplateBound
-                        ? ''
-                        : availability?.compatible
-                          ? suggestedTemplatePresetId === preset.id ? pick('แนะนำ', 'Recommended') : ''
-                          : getPartyTemplateReasonText(availability?.blockingReasons?.[0], pick);
-                      return (
-                        <PresetCard
-                          key={preset.id}
-                          preset={preset}
-                          selected={settings.presetId === preset.id}
-                          disabled={Boolean(isTemplateBound && availability && !availability.compatible)}
-                          helperText={helperText}
-                          pick={pick}
-                          onSelect={(presetId) => setSettings((c) => ({ ...c, presetId, timePerRoundSec: Math.min(20, Number(c.timePerRoundSec || 12)) }))}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Settings grid */}
-              <div className="pgc-settings-grid">
-                {/* Song pool */}
-                {settings.templateId ? (
-                  <div className="pgc-select-field">
-                    <span className="pgc-label">{pick('ชุดเนื้อหา', 'Content set')}</span>
-                    <div style={{ height: '40px', display: 'flex', alignItems: 'center', padding: '0 0.75rem', background: 'var(--bg-secondary)', border: '1.5px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', color: 'var(--text-tertiary)', gap: '0.4rem' }}>
-                      <LibrarySquare size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                      {pick('จากเทมเพลต', 'From template')}
-                    </div>
-                  </div>
-                ) : (
-                  <label className="pgc-select-field">
-                    <span className="pgc-label">{pick('ชุดเนื้อหา', 'Content set')}</span>
-                    <select
-                      className="pgc-select"
-                      value={songPoolSelectValue}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v.startsWith('preset:')) {
-                          const pid = Number(v.replace('preset:', '')) || 0;
-                          const p = songPresetOptions.find((x) => x.id === pid);
-                          setSettings((c) => ({ ...c, categoryId: 'all', songPresetId: p ? String(p.id) : '', songPresetName: p?.name || '' }));
-                        } else {
-                          setSettings((c) => ({ ...c, categoryId: v, songPresetId: '', songPresetName: '' }));
-                        }
-                      }}
-                    >
-                      {PARTY_CATEGORY_OPTIONS.map((o) => (
-                        <option key={o.id} value={o.id}>{pick(o.labelTh, o.label)}</option>
-                      ))}
-                      {songPresetOptions.length > 0 ? (
-                        <optgroup label={pick('เซ็ตที่บันทึกไว้', 'Saved sets')}>
-                          {songPresetOptions.map((o) => (
-                            <option key={o.id} value={`preset:${o.id}`}>{o.name}</option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                    </select>
-                  </label>
-                )}
-
-                {/* Rounds / songs */}
-                <label className="pgc-select-field">
-                  <span className="pgc-label">{settings.modeType === 'vote' ? pick('จำนวนรายการ', 'Entries') : pick('รอบ', 'Rounds')}</span>
-                  <select
-                    className="pgc-select"
-                    value={settings.modeType === 'vote' ? settings.entrantCount : settings.roundCount}
-                    onChange={(e) => setSettings((c) => c.modeType === 'vote' ? { ...c, entrantCount: Number(e.target.value) } : { ...c, roundCount: Number(e.target.value) })}
-                  >
-                    {(settings.modeType === 'vote' ? voteEntrantOptions : quizRoundOptions).map((n) => (
-                      <option key={n} value={n}>{n} {settings.modeType === 'vote' ? pick('รายการ', 'entries') : pick('รอบ', 'rounds')}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Clip time */}
-                <label className="pgc-select-field">
-                  <span className="pgc-label">{supportsLongClipTime ? pick('เวลาเล่น', 'Play time') : pick('เวลาคลิป', 'Clip')}</span>
-                  <select
-                    className="pgc-select"
-                    value={settings.timePerRoundSec}
-                    onChange={(e) => setSettings((c) => ({ ...c, timePerRoundSec: Number(e.target.value) }))}
-                  >
-                    {clipTimeOptions.map((s) => (
-                      <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Reveal time */}
-                <label className="pgc-select-field">
-                  <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal')}</span>
-                  <select
-                    className="pgc-select"
-                    value={settings.revealSec}
-                    onChange={(e) => setSettings((c) => ({ ...c, revealSec: Number(e.target.value) }))}
-                  >
-                    {[6, 8, 10, 12, 15, 20].map((s) => (
-                      <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Vote time */}
-                {settings.modeType === 'vote' ? (
-                  <label className="pgc-select-field">
-                    <span className="pgc-label">{pick('เวลาโหวต', 'Vote time')}</span>
-                    <select
-                      className="pgc-select"
-                      value={settings.voteSec}
-                      onChange={(e) => setSettings((c) => ({ ...c, voteSec: Number(e.target.value) }))}
-                    >
-                      {[5, 8, 10, 12, 15, 20].map((s) => (
-                        <option key={s} value={s}>{s} {pick('วิ', 'sec')}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-              </div>
-
-              {/* Toggles */}
-              <div className="pgc-toggles">
-                {settings.modeType === 'vote' ? (
-                  <label className="pgc-toggle-item">
-                    <input
-                      type="checkbox"
-                      checked={settings.clipPlaybackMode === 'full'}
-                      onChange={(e) => setSettings((c) => ({ ...c, clipPlaybackMode: e.target.checked ? 'full' : 'preview' }))}
-                    />
-                    <div className="pgc-toggle-text">
-                      <strong>{pick('เล่นเต็มคลิป', 'Play full clip')}</strong>
-                      <small>{pick('เล่นจนจบแทนที่จะเล่นแค่ตัวอย่าง', 'Play until end instead of preview')}</small>
-                    </div>
-                  </label>
-                ) : null}
-                <label className="pgc-toggle-item">
-                  <input
-                    type="checkbox"
-                    checked={settings.showLiveScores}
-                    onChange={(e) => setSettings((c) => ({ ...c, showLiveScores: e.target.checked }))}
-                  />
-                  <div className="pgc-toggle-text">
-                    <strong>{pick('คะแนนเรียลไทม์', 'Live scores')}</strong>
-                    <small>{pick('แสดงอันดับหลังแต่ละรอบ', 'Show standings after each round')}</small>
-                  </div>
-                </label>
-                <label className="pgc-toggle-item">
-                  <input
-                    type="checkbox"
-                    checked={settings.randomOrder}
-                    onChange={(e) => setSettings((c) => ({ ...c, randomOrder: e.target.checked }))}
-                  />
-                  <div className="pgc-toggle-text">
-                    <strong>{pick('สุ่มลำดับรายการ', 'Shuffle entries')}</strong>
-                    <small>{pick('สุ่มลำดับเนื้อหาก่อนเริ่ม', 'Randomize the order before the match')}</small>
-                  </div>
-                </label>
-              </div>
-
-	                </div>
-	              </div>
-	            </div>{/* /pgc-body */}
-
-            <div className="pgc-footer">
-              <Button
-                className="party-gradient-action"
-                size="lg"
-                type="submit"
-                fullWidth
-                disabled={busyAction === 'create'}
-              >
-                {busyAction === 'create'
-                  ? <><Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite', marginRight: '0.4rem' }} />{pick('กำลังสร้าง…', 'Creating…')}</>
-                  : pick('🎮  สร้างห้อง', '🎮  Create Room')}
-              </Button>
+            <div className="pgw-step-arrow" aria-hidden="true"><ChevronRight size={20} /></div>
+            <div className="pgw-step-card" data-step="2">
+              <div className="pgw-step-num">2</div>
+              <strong className="pgw-step-title">{pick('ตั้งค่าใน Lobby', 'Set Up in Lobby')}</strong>
+              <p className="pgw-step-desc">{pick('เลือกโหมด เทมเพลต และรายละเอียดการเล่น', 'Pick mode, template, and play settings')}</p>
             </div>
+            <div className="pgw-step-arrow" aria-hidden="true"><ChevronRight size={20} /></div>
+            <div className="pgw-step-card" data-step="3">
+              <div className="pgw-step-num">3</div>
+              <strong className="pgw-step-title">{pick('แชร์โค้ดแล้วเริ่ม', 'Share & Start')}</strong>
+              <p className="pgw-step-desc">{pick('ส่งโค้ดให้เพื่อน แล้วกด Start ได้เลย', 'Send the code, then press Start')}</p>
+            </div>
+          </div>
+        </section>
 
-          </div>{/* /pgc-form */}
-        </form>
+        {/* ── Lobby features ── */}
+        <section className="pgw-lobby-section">
+          <div className="pgw-section-label">{pick('ตั้งค่าได้ทั้งหมดใน Lobby', 'Everything configurable in Lobby')}</div>
+          <div className="pgw-chips">
+            {lobbyFeatures.map((f) => (
+              <span key={f.label} className="pgw-chip">
+                {f.emoji} {f.label}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Delight strip ── */}
+        <div className="pgw-delight" aria-live="polite">
+          <p className="pgw-delight-text" key={delightIndex}>
+            {delightTexts[delightIndex]}
+          </p>
+        </div>
 
       </div>
     </div>
@@ -885,6 +350,7 @@ export function PartyRoomPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const [roomSettingsDraft, setRoomSettingsDraft] = useState(() => createPartySettings({}));
+  const [selectedTemplateIntent, setSelectedTemplateIntent] = useState(null);
   const [songPresetOptions, setSongPresetOptions] = useState([]);
   const [templateOptions, setTemplateOptions] = useState([]);
   const [draftTemplatePlayablePool, setDraftTemplatePlayablePool] = useState([]);
@@ -897,47 +363,69 @@ export function PartyRoomPage() {
   const questionPlaybackAdjustedRef = useRef(false);
   const loadPromiseRef = useRef(null);
   const activeRoomCodeRef = useRef(roomCode);
+  const activeRoomIdRef = useRef(null);
   const activePhaseRef = useRef(null);
   const hasRealtimeSubscriptionRef = useRef(false);
   const shouldResyncOnSubscribeRef = useRef(false);
   const lastResyncAtRef = useRef(0);
   const hiddenAtRef = useRef(0);
+  const pageUnloadRef = useRef(false);
+  const lastAppliedRoomSettingsSnapshotRef = useRef('');
+  const isAutosavingRef = useRef(false);
 
-  useEffect(() => {
-    activeRoomCodeRef.current = roomCode;
-  }, [roomCode]);
-
-  useEffect(() => {
+  const pendingTemplateSelection = useMemo(() => {
     const templateId = searchParams.get('templateId');
+    if (!templateId) {
+      return null;
+    }
+
     const templateName = searchParams.get('templateName');
     const modeType = searchParams.get('modeType');
     const modeScope = searchParams.get('modeScope') || 'all';
     const presetId = searchParams.get('presetId');
-
-    if (!templateId) {
-      return;
-    }
-
     const resolvedMode = (modeType === 'vote' || modeType === 'quiz')
       ? modeType
       : modeScope === 'vote'
         ? 'vote'
         : 'quiz';
 
-    setRoomSettingsDraft((current) => createPartySettings({
-      ...current,
+    return {
       templateId,
-      templateName: templateName ? decodeURIComponent(templateName) : current.templateName,
+      templateName: templateName ? decodeURIComponent(templateName) : '',
       modeType: resolvedMode,
       modeScope,
-      presetId: presetId || current.presetId,
+      presetId: presetId || '',
+    };
+  }, [searchParams]);
+
+  useEffect(() => {
+    activeRoomCodeRef.current = roomCode;
+  }, [roomCode]);
+
+  useEffect(() => {
+    activeRoomIdRef.current = room?.id || null;
+  }, [room?.id]);
+
+  useEffect(() => {
+    if (!pendingTemplateSelection) {
+      return;
+    }
+
+    setSelectedTemplateIntent(pendingTemplateSelection);
+    setRoomSettingsDraft((current) => createPartySettings({
+      ...current,
+      templateId: pendingTemplateSelection.templateId,
+      templateName: pendingTemplateSelection.templateName || current.templateName,
+      modeType: pendingTemplateSelection.modeType,
+      modeScope: pendingTemplateSelection.modeScope,
+      presetId: pendingTemplateSelection.presetId || current.presetId,
       categoryId: 'all',
       songPresetId: '',
       songPresetName: '',
     }));
 
     navigate(`/party/room/${roomCode}`, { replace: true });
-  }, [navigate, roomCode, searchParams]);
+  }, [navigate, pendingTemplateSelection, roomCode]);
 
   const loadBundle = React.useCallback(async ({ silent = false, force = false } = {}) => {
     if (loadPromiseRef.current && !force) {
@@ -1065,6 +553,24 @@ export function PartyRoomPage() {
   }, [pick, requestRoomResync, room?.id, setSyncState]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handlePageHide = () => {
+      pageUnloadRef.current = true;
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof document === 'undefined' || !room?.id) {
       return undefined;
     }
@@ -1167,7 +673,7 @@ export function PartyRoomPage() {
       return false;
     }
 
-    return JSON.stringify(createPartySettings(room.settings || {})) !== JSON.stringify(createPartySettings(roomSettingsDraft || {}));
+    return serializePartySettingsSnapshot(room.settings) !== serializePartySettingsSnapshot(roomSettingsDraft);
   }, [room?.settings, roomSettingsDraft]);
   const prefetchedRound = useMemo(
     () => getPartyPrefetchRound(currentMatch, { revealPrefetchReady }),
@@ -1197,13 +703,63 @@ export function PartyRoomPage() {
     }).format(lastSyncedAt);
   }, [lastSyncedAt]);
 
+  useEffect(() => () => {
+    const activeRoom = usePartyRoomStore.getState().room;
+    const activeMembers = usePartyRoomStore.getState().members || [];
+    const selfToken = String(guestToken || '');
+    const selfMember = activeMembers.find((member) => String(member?.member_token || '') === selfToken);
+
+    if (pageUnloadRef.current || !activeRoom?.id || activeRoom?.status === 'closed' || !selfMember) {
+      return;
+    }
+
+    void leavePartyRoom({
+      room: activeRoom,
+      memberToken: selfMember.member_token,
+    }).catch(() => null);
+  }, [guestToken]);
+
   useEffect(() => {
     if (!room?.settings) {
       return;
     }
 
-    setRoomSettingsDraft(createPartySettings(room.settings));
-  }, [room?.id, room?.settings]);
+    const nextSettings = createPartySettings(room.settings);
+    const nextSnapshot = serializePartySettingsSnapshot(nextSettings);
+
+    setRoomSettingsDraft((current) => {
+      const currentSnapshot = serializePartySettingsSnapshot(current);
+      const appliedSnapshot = lastAppliedRoomSettingsSnapshotRef.current;
+      const shouldForceApply = !appliedSnapshot || room?.id !== activeRoomIdRef.current;
+      const hasLocalEdits = Boolean(appliedSnapshot) && currentSnapshot !== appliedSnapshot;
+
+      if (!shouldForceApply && hasLocalEdits) {
+        return current;
+      }
+
+      if (!selectedTemplateIntent) {
+        lastAppliedRoomSettingsSnapshotRef.current = nextSnapshot;
+        return nextSettings;
+      }
+
+      const mergedSettings = createPartySettings({
+        ...nextSettings,
+        templateId: selectedTemplateIntent.templateId,
+        templateName: selectedTemplateIntent.templateName || current.templateName || nextSettings.templateName,
+        templateCoverUrl: current.templateCoverUrl || nextSettings.templateCoverUrl,
+        templatePlayableCount: current.templatePlayableCount || nextSettings.templatePlayableCount,
+        modeType: selectedTemplateIntent.modeType,
+        modeScope: selectedTemplateIntent.modeScope,
+        presetId: selectedTemplateIntent.presetId || current.presetId || nextSettings.presetId,
+        categoryId: 'all',
+        songPresetId: '',
+        songPresetName: '',
+      });
+
+      lastAppliedRoomSettingsSnapshotRef.current = nextSnapshot;
+      return mergedSettings;
+    });
+  }, [room?.id, room?.settings, selectedTemplateIntent]);
 
   useEffect(() => {
     let ignore = false;
@@ -1598,24 +1154,37 @@ export function PartyRoomPage() {
   };
 
   const handleRoomSettingsChange = React.useCallback((updater) => {
-    setRoomSettingsDraft((current) => createPartySettings(typeof updater === 'function' ? updater(current) : updater));
-  }, []);
+    setRoomSettingsDraft((current) => {
+      const nextSettings = createPartySettings(typeof updater === 'function' ? updater(current) : updater);
+      if (selectedTemplateIntent && String(nextSettings.templateId || '') !== String(selectedTemplateIntent.templateId || '')) {
+        setSelectedTemplateIntent(null);
+      }
+      return nextSettings;
+    });
+  }, [selectedTemplateIntent]);
 
   const handleResetRoomSettingsDraft = React.useCallback(() => {
     if (!room?.settings) {
       return;
     }
 
-    setRoomSettingsDraft(createPartySettings(room.settings));
+    const nextSettings = createPartySettings(room.settings);
+    setSelectedTemplateIntent(null);
+    lastAppliedRoomSettingsSnapshotRef.current = serializePartySettingsSnapshot(nextSettings);
+    setRoomSettingsDraft(nextSettings);
   }, [room?.settings]);
 
-  const handleSaveRoomSettings = async () => {
+  const handleSaveRoomSettings = React.useCallback(async ({ silent = false } = {}) => {
     if (!room || !isHost || room.status !== 'lobby') {
       return;
     }
 
     try {
-      setBusyAction('save-settings');
+      if (silent) {
+        isAutosavingRef.current = true;
+      } else {
+        setBusyAction('save-settings');
+      }
       if (roomSettingsDraft.templateId) {
         const pool = draftTemplatePlayablePool.length > 0 || draftTemplatePoolLoaded
           ? draftTemplatePlayablePool
@@ -1630,19 +1199,63 @@ export function PartyRoomPage() {
       }
 
       const nextRoom = await updatePartyRoomSettings(room, roomSettingsDraft);
+      lastAppliedRoomSettingsSnapshotRef.current = serializePartySettingsSnapshot(nextRoom?.settings || roomSettingsDraft);
       applyEvent({
         type: 'ROOM_UPDATED',
         payload: {
           room: nextRoom,
         },
       });
+      setSelectedTemplateIntent(null);
+      if (!silent) {
       toast.success(pick('บันทึกการตั้งค่าห้องแล้ว', 'Room settings saved'));
+      }
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
       setBusyAction('');
     }
-  };
+  }, [
+    applyEvent,
+    draftTemplatePlayablePool,
+    draftTemplatePoolLoaded,
+    isHost,
+    pick,
+    room,
+    roomSettingsDraft,
+  ]);
+
+  useEffect(() => {
+    if (!room || !isHost || room.status !== 'lobby') {
+      return undefined;
+    }
+
+    if (!hasPendingRoomSettings || busyAction === 'save-settings' || isAutosavingRef.current) {
+      return undefined;
+    }
+
+    if (roomSettingsDraft.templateId && (!draftTemplatePoolLoaded || !draftTemplateValidation.ok)) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void handleSaveRoomSettings({ silent: true });
+    }, PARTY_LOBBY_AUTOSAVE_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    busyAction,
+    draftTemplatePoolLoaded,
+    draftTemplateValidation.ok,
+    handleSaveRoomSettings,
+    hasPendingRoomSettings,
+    isHost,
+    room,
+    room?.status,
+    roomSettingsDraft.templateId,
+  ]);
 
   const handleStartMatch = async () => {
     if (!room || !isHost) {

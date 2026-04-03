@@ -238,6 +238,8 @@ export function PartyVoteRoomView({
       scopeKey: `${battle.id}:${phase}`,
       memberToken: String(currentMember.member_token || ''),
       memberName: String(currentMember.display_name || currentMember.memberName || 'You'),
+      avatarKey: String(currentMember.avatar_key || currentMember.avatarKey || 'rose'),
+      avatarUrl: String(currentMember.avatar_url || currentMember.avatarUrl || ''),
       text: normalizedText,
       sentAt: new Date().toISOString(),
     };

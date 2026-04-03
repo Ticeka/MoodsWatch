@@ -27,6 +27,29 @@ function getAvatarBadge(name = '') {
   return { text, tone };
 }
 
+function getChatAvatarTone(avatarKey = '', fallbackTone = 'neutral') {
+  const normalizedKey = String(avatarKey || '').trim().toLowerCase();
+  if (normalizedKey === 'rose' || normalizedKey === 'blue' || normalizedKey === 'gold' || normalizedKey === 'mint' || normalizedKey === 'neutral') {
+    return normalizedKey;
+  }
+  return fallbackTone;
+}
+
+function getMessageProfile(message = {}) {
+  const name = String(
+    message.name
+    || message.memberName
+    || message.displayName
+    || 'Player'
+  ).trim() || 'Player';
+
+  return {
+    name,
+    avatarKey: String(message.avatarKey || message.avatar_key || 'rose').trim() || 'rose',
+    avatarUrl: String(message.avatarUrl || message.avatar_url || '').trim(),
+  };
+}
+
 function QuickReactions({ onReact }) {
   return (
     <div className="plc-reactions" role="group" aria-label="Quick reactions">
@@ -50,12 +73,19 @@ function MessageList({ messages, scrollRef, onScroll }) {
   return (
     <ul className="plc-msg-list" ref={scrollRef} onScroll={onScroll} aria-live="polite" aria-label="Live room chat">
       {messages.map((message) => {
-        const avatar = getAvatarBadge(message.name);
+        const profile = getMessageProfile(message);
+        const avatar = getAvatarBadge(profile.name);
         return (
           <li key={message.id} className="plc-msg-item">
-            <span className={`plc-msg-avatar is-${avatar.tone}`} aria-hidden="true">{avatar.text}</span>
+            {profile.avatarUrl ? (
+              <span className="plc-msg-avatar has-image" aria-hidden="true">
+                <img src={profile.avatarUrl} alt="" className="plc-msg-avatar-image" />
+              </span>
+            ) : (
+              <span className={`plc-msg-avatar is-${getChatAvatarTone(profile.avatarKey, avatar.tone)}`} aria-hidden="true">{avatar.text}</span>
+            )}
             <div className="plc-msg-copy">
-              <span className="plc-msg-name">{message.name}</span>
+              <span className="plc-msg-name">{profile.name}</span>
               <span className="plc-msg-text">{message.text}</span>
             </div>
           </li>

@@ -1957,8 +1957,12 @@
 .party-reveal-video-wrap {
   position: relative;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
   aspect-ratio: 16 / 9;
   margin-inline: auto;
+  box-sizing: border-box;
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: #000;
@@ -1967,7 +1971,8 @@
 
 .party-reveal-video-wrap .party-yt-player-wrapper,
 .party-reveal-video-wrap .party-yt-player-container,
-.party-reveal-video-wrap .party-yt-player-container iframe {
+.party-reveal-video-wrap .party-yt-player-container iframe,
+.party-reveal-video-wrap iframe.party-yt-player-container {
   width: 100%;
   height: 100%;
   max-width: 100%;
@@ -1985,7 +1990,8 @@
 }
 
 .party-reveal-video-wrap .party-yt-player-container,
-.party-reveal-video-wrap .party-yt-player-container iframe {
+.party-reveal-video-wrap .party-yt-player-container iframe,
+.party-reveal-video-wrap iframe.party-yt-player-container {
   position: absolute;
   inset: 0;
 }
@@ -1994,6 +2000,11 @@
   display: block;
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   object-fit: contain;
 }
 
