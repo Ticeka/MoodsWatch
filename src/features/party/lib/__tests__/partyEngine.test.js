@@ -101,6 +101,34 @@ const TITLE_GUESS_QUESTIONS = [
   },
 ];
 
+const TITLE_GUESS_CHOICE_QUESTIONS = [
+  ...TITLE_GUESS_QUESTIONS,
+  {
+    id: 'tg-3',
+    answerTitleId: 203,
+    answerTitle: 'Kuroko no Basket',
+    answerTitleAliases: ['Kuroko no Basket', 'Kuroko Basketball'],
+    clues: [
+      { id: 'tg-3-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Hyuga Junpei', characterImageUrl: 'https://cdn.example.com/tg3-1.jpg' },
+      { id: 'tg-3-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Izuki Shun', characterImageUrl: 'https://cdn.example.com/tg3-2.jpg' },
+      { id: 'tg-3-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Kagami Taiga', characterImageUrl: 'https://cdn.example.com/tg3-3.jpg' },
+      { id: 'tg-3-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Kuroko Tetsuya', characterImageUrl: 'https://cdn.example.com/tg3-4.jpg' },
+    ],
+  },
+  {
+    id: 'tg-4',
+    answerTitleId: 204,
+    answerTitle: 'Free!',
+    answerTitleAliases: ['Free!', 'Free Iwatobi Swim Club'],
+    clues: [
+      { id: 'tg-4-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Ryuugazaki Rei', characterImageUrl: 'https://cdn.example.com/tg4-1.jpg' },
+      { id: 'tg-4-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Nagisa Hazuki', characterImageUrl: 'https://cdn.example.com/tg4-2.jpg' },
+      { id: 'tg-4-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Tachibana Makoto', characterImageUrl: 'https://cdn.example.com/tg4-3.jpg' },
+      { id: 'tg-4-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Nanase Haruka', characterImageUrl: 'https://cdn.example.com/tg4-4.jpg' },
+    ],
+  },
+];
+
 describe('partyEngine', () => {
   it('normalizes free-text answers consistently', () => {
     expect(normalizePartyText('  Fullmetal Alchemist: Brotherhood!! ')).toBe('fullmetal alchemist brotherhood');
@@ -244,6 +272,7 @@ describe('partyEngine', () => {
   it('normalizes title-guess settings without carrying song-specific fields', () => {
     const settings = createPartySettings({
       modeType: 'title-guess',
+      presetId: 'title-guess-choice',
       titleGuessSetId: '55',
       titleGuessSetName: 'Side Cast Legends',
       titleGuessQuestionCount: 48,
@@ -253,7 +282,7 @@ describe('partyEngine', () => {
     });
 
     expect(settings.modeType).toBe('title-guess');
-    expect(settings.presetId).toBe('title-guess');
+    expect(settings.presetId).toBe('title-guess-choice');
     expect(settings.titleGuessSetId).toBe('55');
     expect(settings.titleGuessSetName).toBe('Side Cast Legends');
     expect(settings.titleGuessQuestionCount).toBe(48);
@@ -276,6 +305,19 @@ describe('partyEngine', () => {
     expect(match.rounds[0].clues).toHaveLength(4);
     expect(match.revealedClueCount).toBe(0);
     expect(match.rounds[0].sourceTitleAliases).toContain('Haikyuu!!');
+  });
+
+  it('builds a title-guess choice match with 4 answer options per round', () => {
+    const match = buildPartyTitleGuessSnapshot(TITLE_GUESS_CHOICE_QUESTIONS, {
+      modeType: 'title-guess',
+      presetId: 'title-guess-choice',
+      roundCount: 2,
+      randomOrder: false,
+    });
+
+    expect(match.presetId).toBe('title-guess-choice');
+    expect(match.rounds[0].options).toHaveLength(4);
+    expect(match.rounds[0].options.filter((option) => option.isCorrect)).toHaveLength(1);
   });
 
   it('advances title-guess rounds by revealing one clue at a time before reveal', () => {
@@ -324,6 +366,29 @@ describe('partyEngine', () => {
     expect(earlyScore.titleCorrect).toBe(true);
     expect(earlyScore.points).toBeGreaterThan(lateScore.points);
     expect(lateScore.titleCorrect).toBe(true);
+  });
+
+  it('scores title-guess choice answers from selected option ids', () => {
+    const match = buildPartyTitleGuessSnapshot(TITLE_GUESS_CHOICE_QUESTIONS, {
+      modeType: 'title-guess',
+      presetId: 'title-guess-choice',
+      roundCount: 1,
+      randomOrder: false,
+    });
+    const round = match.rounds[0];
+    const correctOption = round.options.find((option) => option.isCorrect);
+
+    const score = scorePartyAnswer({
+      presetId: 'title-guess-choice',
+      round,
+      selectedOptionId: correctOption?.id,
+      elapsedMs: 500,
+      timeLimitMs: 7000,
+    });
+
+    expect(score.titleCorrect).toBe(true);
+    expect(score.songCorrect).toBe(false);
+    expect(score.points).toBeGreaterThan(400);
   });
 
   it('builds distinct runtime song keys for YouTube rounds', () => {

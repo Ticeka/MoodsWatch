@@ -5,6 +5,7 @@ import { Button } from '@/shared/components/ui/Button';
 import {
   PARTY_CATEGORY_OPTIONS,
   PARTY_PRESETS,
+  PARTY_TITLE_GUESS_PRESETS,
   getPartyRequiredReadyCount,
 } from '@/features/party/lib/partyEngine';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
@@ -282,6 +283,26 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                             && !hostEditor.templatePresetAvailability[preset.id]?.compatible
                           )}
                         >
+                          {pick(preset.labelTh, preset.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {editorIsTitleGuess ? (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('เนเธซเธกเธ”เน€เธเธก', 'Game mode')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.presetId || 'title-guess'}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        presetId: event.target.value === 'title-guess-choice' ? 'title-guess-choice' : 'title-guess',
+                      }))}
+                    >
+                      {PARTY_TITLE_GUESS_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
                           {pick(preset.labelTh, preset.label)}
                         </option>
                       ))}

@@ -16,7 +16,20 @@ const PARTY_VIRTUAL_PRESETS = [
     basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
     speedBonus: 40,
   },
+  {
+    id: 'title-guess-choice',
+    label: 'Guess the Title Choice',
+    labelTh: 'ทายชื่อเรื่อง 4 ตัวเลือก',
+    description: 'Guess the title from 4 choices while character clues are revealed.',
+    descriptionTh: 'ทายชื่อเรื่องจาก 4 ตัวเลือกขณะการ์ดตัวละครค่อย ๆ เปิดทีละใบ',
+    answerMode: 'choice',
+    target: 'title',
+    basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
+    speedBonus: 40,
+  },
 ];
+
+export const PARTY_TITLE_GUESS_PRESETS = PARTY_VIRTUAL_PRESETS.filter((preset) => preset.target === 'title');
 
 function resolvePartyTemplateSourceIdentity(song = {}) {
   const provider = String(song?.provider || '').trim().toLowerCase();
@@ -307,8 +320,9 @@ export function createPartySettings(input = {}) {
   const modeType = input.modeType === 'vote'
     ? 'vote'
     : (input.modeType === 'title-guess' ? 'title-guess' : 'quiz');
+  const requestedTitleGuessPresetId = String(input.presetId || '').trim();
   const preset = modeType === 'title-guess'
-    ? getPartyPresetById('title-guess')
+    ? getPartyPresetById(requestedTitleGuessPresetId === 'title-guess-choice' ? 'title-guess-choice' : 'title-guess')
     : getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
@@ -438,6 +452,8 @@ function buildTitleGuessRound(question = {}) {
     answerTitleId: Number(question?.answerTitleId ?? question?.answer_title_id ?? 0) || null,
     sourceTitleName: answerTitle || answerTitleAliases[0],
     sourceTitleAliases: answerTitleAliases,
+    choiceAnswerKey: `title:${normalizePartyText(answerTitleAliases[0])}`,
+    choiceAnswerLabel: answerTitle || answerTitleAliases[0],
     choiceTarget: 'source',
     choiceTargetLabel: 'Title',
     choiceTargetLabelTh: 'ชื่อเรื่อง',
@@ -447,9 +463,47 @@ function buildTitleGuessRound(question = {}) {
   };
 }
 
+function buildTitleGuessChoiceOptions(correctRound, titlePool = []) {
+  const correctAnswerKey = String(correctRound?.choiceAnswerKey || '').trim();
+  const correctAnswerLabel = String(correctRound?.choiceAnswerLabel || '').trim();
+  if (!correctAnswerKey || !correctAnswerLabel) {
+    return [];
+  }
+
+  const distractors = shufflePartyItems(
+    titlePool.filter((entry) => entry.answerKey !== correctAnswerKey)
+  ).slice(0, 3);
+
+  if (distractors.length < 3) {
+    return [];
+  }
+
+  return shufflePartyItems([
+    {
+      id: makeId('party-option'),
+      label: correctAnswerLabel,
+      value: correctAnswerLabel,
+      answerKey: correctAnswerKey,
+      sourceKey: correctAnswerKey,
+      sourceTitleId: Number(correctRound?.answerTitleId || 0) || null,
+      isCorrect: true,
+    },
+    ...distractors.map((entry) => ({
+      id: makeId('party-option'),
+      label: entry.answerLabel,
+      value: entry.answerLabel,
+      answerKey: entry.answerKey,
+      sourceKey: entry.answerKey,
+      sourceTitleId: Number(entry.sourceTitleId || 0) || null,
+      isCorrect: false,
+    })),
+  ]);
+}
+
 export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
   const normalizedSettings = createPartySettings({ ...settings, modeType: 'title-guess' });
   const roundLimit = normalizedSettings.roundCount;
+  const preset = getPartyPresetById(normalizedSettings.presetId);
   const eligibleQuestions = (Array.isArray(questions) ? questions : [])
     .map(buildTitleGuessRound)
     .filter(Boolean);
@@ -461,10 +515,26 @@ export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
   const orderedQuestions = normalizedSettings.randomOrder
     ? shufflePartyItems(eligibleQuestions)
     : [...eligibleQuestions];
-  const rounds = orderedQuestions.slice(0, roundLimit);
+  const titlePool = eligibleQuestions.map((entry) => ({
+    answerKey: entry.choiceAnswerKey,
+    answerLabel: entry.choiceAnswerLabel,
+    sourceTitleId: entry.answerTitleId,
+  }));
+  const rounds = orderedQuestions
+    .slice(0, roundLimit)
+    .map((entry) => ({
+      ...entry,
+      options: preset.answerMode === 'choice'
+        ? buildTitleGuessChoiceOptions(entry, titlePool)
+        : [],
+    }));
 
   if (rounds.length < roundLimit) {
     throw new Error('Not enough ready Guess the Title questions to start this room.');
+  }
+
+  if (preset.answerMode === 'choice' && rounds.some((entry) => entry.options.length < 4)) {
+    throw new Error('Not enough distinct title choices to start this room.');
   }
 
   const now = Date.now();
@@ -473,7 +543,7 @@ export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
   return {
     id: makeId('title-guess-match'),
     modeType: 'title-guess',
-    presetId: 'title-guess',
+    presetId: preset.id,
     phase: 'countdown',
     roundIndex: 0,
     totalRounds: rounds.length,

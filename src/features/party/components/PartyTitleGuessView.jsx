@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  CheckCircle2,
   Clock3,
   Crown,
   Layers3,
@@ -259,9 +260,12 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
   const revealedCards = Array.isArray(round?.clues) ? round.clues.slice(0, 4) : [];
   const currentPoints = getTitleGuessPointsForStep(revealedClueCount);
   const lockedAnswer = String(answer?.typed_title || '').trim();
+  const lockedSelectedOptionId = String(answer?.selected_option_id || '').trim();
+  const selectedOption = (round?.options || []).find((option) => option.id === lockedSelectedOptionId) || null;
+  const isChoiceMode = Boolean(round?.options?.length);
   const isAnswered = Boolean(lockedAnswer);
   const normalizedTypedTitle = String(typedTitle || '').trim();
-  const shouldShowSuggestions = !isAnswered && normalizedTypedTitle.length >= 2;
+  const shouldShowSuggestions = !isChoiceMode && !isAnswered && normalizedTypedTitle.length >= 2;
   const rawSuggestionItems = useMemo(
     () => (Array.isArray(titleSuggestions) ? titleSuggestions.slice(0, TITLE_GUESS_SUGGESTION_LIMIT) : []),
     [titleSuggestions]
@@ -572,7 +576,46 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
               <span>{isAnswered ? pick('ล็อกคำตอบแล้ว', 'Answer locked in') : pick('ตอบได้ครั้งเดียวต่อข้อ', 'One answer per question')}</span>
             </div>
 
-            {isAnswered ? (
+            {isChoiceMode ? (
+              <>
+                {lockedSelectedOptionId ? (
+                  <div className="party-title-guess-locked-answer">
+                    <div className="party-title-guess-locked-icon">
+                      <Lock size={18} />
+                    </div>
+                    <div>
+                      <strong>{pick('เธฅเนเธญเธเธเธณเธ•เธญเธเนเธฅเนเธง', 'Locked In')}</strong>
+                      <p>{selectedOption?.label || pick('เธ€เธฅเธทเธญเธเธเธณเธ•เธญเธเนเธฅเนเธง', 'Choice selected')}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="party-choice-grid">
+                    {(round?.options || []).map((option, index) => {
+                      const label = ['A', 'B', 'C', 'D'][index] || String(index + 1);
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={`party-choice-btn ${lockedSelectedOptionId === option.id ? 'is-selected' : ''}`}
+                          onClick={() => onSubmit({ selectedOptionId: option.id })}
+                          disabled={submitting || Boolean(lockedSelectedOptionId)}
+                        >
+                          <span className="party-choice-label" aria-hidden="true">{label}</span>
+                          <span>{option.label}</span>
+                          {lockedSelectedOptionId === option.id ? <CheckCircle2 size={16} /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="party-title-guess-answer-hint">
+                  {pick(
+                    'เธ€เธฅเธทเธญเธเนเธ”เนเธเธฃเธฑเนเธเน€เธ”เธตเธขเธงเธ•เนเธญเธเนเธญ เธขเธดเนเธเธ•เธญเธเธเนเธญเธเน€เธเธดเธ”เธเธฃเธเธขเธดเนเธเนเธ”เนเนเธ•เนเธกเน€เธขเธญเธฐ',
+                    'One pick per round. Earlier clues are worth more points.',
+                  )}
+                </p>
+              </>
+            ) : isAnswered ? (
               <div className="party-title-guess-locked-answer">
                 <div className="party-title-guess-locked-icon">
                   <Lock size={18} />
