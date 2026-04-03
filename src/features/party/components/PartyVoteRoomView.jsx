@@ -6,7 +6,7 @@ import {
   startPartyVoteAmbient,
   stopPartyVoteAmbient,
 } from '@/features/party/lib/partyAudio';
-import { submitPartySkipVote, submitPartyVote } from '@/features/party/lib/partyRemote';
+import { submitPartyLiveChatMessage, submitPartySkipVote, submitPartyVote } from '@/features/party/lib/partyRemote';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { usePartyVoteStore } from '@/features/party/stores/partyVoteStore';
 import { getCountdownSeconds, readPartyAudioVolume } from '../pages/partyRoomUtils';
@@ -19,6 +19,7 @@ import {
   TrackPlayback,
   VoteFaceoff,
 } from './PartyVoteComponents';
+import { PartyLiveChat } from './PartyLiveChat';
 import './PartyVoteRoom.css';
 
 function getVoteChampionId(match) {
@@ -38,6 +39,7 @@ export function PartyVoteRoomView({
   onCloseRoom,
   onRematch,
   onStartMatch,
+  hostEditor,
   onPlaybackComplete,
 }) {
   const match = room?.current_match || null;
@@ -59,6 +61,18 @@ export function PartyVoteRoomView({
   const { selectedSongId, hasVoted, setBattleContext, castVote, resetVoteMatch } = usePartyVoteStore();
   const answers = usePartyRoomStore((state) => state.answers);
   const members = usePartyRoomStore((state) => state.members);
+  const chatMessages = usePartyRoomStore((state) => state.chatMessages);
+  const applyRoomEvent = usePartyRoomStore((state) => state.applyEvent);
+  const removeChatMessage = usePartyRoomStore((state) => state.removeChatMessage);
+  const shouldShowLiveChat = phase === 'play-a' || phase === 'play-b';
+  const chatScopeKey = battle?.id ? `${battle.id}:${phase}` : '';
+  const visibleChatMessages = useMemo(() => (
+    chatScopeKey
+      ? chatMessages
+        .filter((message) => String(message?.scopeKey || '') === chatScopeKey)
+        .slice(-40)
+      : []
+  ), [chatMessages, chatScopeKey]);
 
   const myExistingVote = useMemo(() => {
     if (!battle?.id || !guestToken) return null;
@@ -205,6 +219,52 @@ export function PartyVoteRoomView({
     }
   }, [battle?.id, currentMember, hasSkipVoted, isSubmittingSkipVote, phase, pick, room]);
 
+  const handleSendChatMessage = useCallback(async (text) => {
+    if (!room?.id || !currentMember || !battle?.id || !shouldShowLiveChat) {
+      return;
+    }
+
+    const normalizedText = String(text || '').trim();
+    if (!normalizedText) {
+      return;
+    }
+
+    const messageId = `party-chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const optimisticMessage = {
+      id: messageId,
+      roomId: String(room.id || ''),
+      battleId: String(battle.id || ''),
+      phase,
+      scopeKey: `${battle.id}:${phase}`,
+      memberToken: String(currentMember.member_token || ''),
+      memberName: String(currentMember.display_name || currentMember.memberName || 'You'),
+      text: normalizedText,
+      sentAt: new Date().toISOString(),
+    };
+
+    applyRoomEvent({
+      type: 'CHAT_MESSAGE',
+      payload: {
+        message: optimisticMessage,
+      },
+    });
+
+    try {
+      await submitPartyLiveChatMessage({
+        room,
+        member: currentMember,
+        battleId: battle.id,
+        phase,
+        text: normalizedText,
+        messageId,
+      });
+    } catch (error) {
+      removeChatMessage(messageId);
+      console.error('[PartyVoteRoomView] submitPartyLiveChatMessage error:', error);
+      toast.error(error?.message || pick('ส่งข้อความไม่สำเร็จ', 'Could not send the chat message.'));
+    }
+  }, [applyRoomEvent, battle?.id, currentMember, phase, pick, removeChatMessage, room, shouldShowLiveChat]);
+
   let content = null;
 
   if (room?.status === 'lobby' || !match) {
@@ -222,6 +282,7 @@ export function PartyVoteRoomView({
         onToggleReady={onToggleReady}
         onStartMatch={onStartMatch}
         onCloseRoom={onCloseRoom}
+        hostEditor={hostEditor}
         pick={pick}
       />
     );
@@ -312,7 +373,21 @@ export function PartyVoteRoomView({
 
   return (
     <div className="party-vote-room anime-theme">
-      {content}
+      {shouldShowLiveChat ? (
+        <div className="party-vote-live-shell">
+          <div className="party-vote-live-layout">
+            <div className="party-vote-main-panel">
+              {content}
+            </div>
+            <div className="party-vote-chat-panel">
+              <PartyLiveChat
+                messages={visibleChatMessages}
+                onSendMessage={handleSendChatMessage}
+              />
+            </div>
+          </div>
+        </div>
+      ) : content}
     </div>
   );
 }

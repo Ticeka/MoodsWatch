@@ -80,8 +80,8 @@ export const PresetCard = React.memo(function PresetCard({
       <p>{pick(preset.descriptionTh, preset.description)}</p>
       <span className="party-preset-tag">
         {preset.answerMode === 'choice'
-          ? pick('4 ตัวเลือก', '4 choices')
-          : pick('พิมพ์ชื่อเพลง', 'Type song title')}
+          ? pick('\u0034 \u0e15\u0e31\u0e27\u0e40\u0e25\u0e37\u0e2d\u0e01', '4 choices')
+          : pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Type song title')}
       </span>
       {helperText ? <span className="party-preset-helper">{helperText}</span> : null}
     </button>
@@ -89,13 +89,14 @@ export const PresetCard = React.memo(function PresetCard({
 });
 
 export const PartyPlayerList = React.memo(function PartyPlayerList({ members = [], hostToken = '', currentToken = '', pick }) {
+  const many = members.length > 4;
   return (
-    <div className="party-player-list">
+    <div className={`party-player-list${many ? ' party-player-list--many' : ''}`}>
       {members.map((member) => {
         const isHost = String(member.member_token || '') === String(hostToken || '');
         const isCurrent = String(member.member_token || '') === String(currentToken || '');
         return (
-          <article key={member.id || member.member_token} className="party-player-card">
+          <article key={member.id || member.member_token} className={`party-player-card${member.is_ready ? ' is-ready' : ''}`}>
             <PartyIdentityAvatar
               profile={{
                 displayName: member.display_name,
@@ -106,19 +107,12 @@ export const PartyPlayerList = React.memo(function PartyPlayerList({ members = [
             <div className="party-player-copy">
               <strong>
                 {member.display_name}
-                {isCurrent ? ` ${pick('(You)', '(You)')}` : ''}
+                {isCurrent ? ` ${pick('(\u0e04\u0e38\u0e13)', '(You)')}` : ''}
               </strong>
-              <span>
-                {isHost
-                  ? pick('เจ้าของห้อง', 'Room host')
-                  : member.is_ready
-                    ? pick('พร้อม', 'Ready')
-                    : pick('Waiting...', 'Waiting')}
-              </span>
             </div>
             <div className="party-player-badges">
-              {isHost ? <span className="party-mini-pill"><Crown size={12} />{pick('โฮสต์', 'Host')}</span> : null}
-              {member.is_ready ? <span className="party-mini-pill success"><CheckCircle2 size={12} />{pick('พร้อม', 'Ready')}</span> : null}
+              {isHost ? <span className="party-mini-pill"><Crown size={12} />{pick('\u0e42\u0e2e\u0e2a\u0e15\u0e4c', 'Host')}</span> : null}
+              {member.is_ready ? <span className="party-mini-pill success"><CheckCircle2 size={12} />{pick('\u0e1e\u0e23\u0e49\u0e2d\u0e21', 'Ready')}</span> : null}
             </div>
           </article>
         );
@@ -211,8 +205,8 @@ export const PartyLeaderboard = React.memo(function PartyLeaderboard({ leaderboa
     return (
       <EmptyState
         icon={<Disc3 size={22} />}
-        title={pick('ยังไม่มีคะแนน', 'No scores yet')}
-        message={pick('คะแนนจะแสดงหลังเริ่มรอบ', 'Scores will show up here once the round starts.')}
+        title={pick('\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e04\u0e30\u0e41\u0e19\u0e19', 'No scores yet')}
+        message={pick('\u0e04\u0e30\u0e41\u0e19\u0e19\u0e08\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e2b\u0e25\u0e31\u0e07\u0e40\u0e23\u0e34\u0e48\u0e21\u0e23\u0e2d\u0e1a', 'Scores will show up here once the round starts.')}
         className="party-empty-card"
       />
     );
@@ -293,7 +287,7 @@ export const PartyCountdownDisplay = React.memo(function PartyCountdownDisplay({
 });
 
 /**
- * Shows a big glowing number (3 → 2 → 1) centered on screen
+ * Shows a big glowing number (3 -> 2 -> 1) centered on screen
  * for the last 3 seconds of a phase. pointer-events: none so
  * buttons underneath stay fully clickable.
  */
@@ -304,7 +298,7 @@ export const PartyEndCountdownOverlay = React.memo(function PartyEndCountdownOve
         if (msLeft <= 0 || secondsLeft > 3) return null;
         return (
           <div className="party-end-countdown-overlay" aria-hidden="true">
-            {/* ring expands and fades — key forces re-mount per second for animation */}
+            {/* ring expands and fades - key forces re-mount per second for animation */}
             <div key={`ring-${secondsLeft}`} className="party-end-countdown-ring" />
             <div key={`num-${secondsLeft}`}  className="party-end-countdown-number">
               {secondsLeft}
@@ -472,13 +466,13 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
         <div className="party-question-header">
           <span className="party-chip subtle party-question-kicker">
             <Headphones size={14} />
-            {pick('กำลังเล่นเพลงปริศนา', 'Mystery audio playing')}
+            {pick('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e40\u0e25\u0e48\u0e19\u0e40\u0e1e\u0e25\u0e07\u0e1b\u0e23\u0e34\u0e28\u0e19\u0e32', 'Mystery audio playing')}
           </span>
-          <h2>{pick('ฟังให้ดี แล้วรีบตอบก่อนหมดเวลา', 'Listen closely, answer before time runs out')}</h2>
+          <h2>{pick('\u0e1f\u0e31\u0e07\u0e43\u0e2b\u0e49\u0e14\u0e35 \u0e41\u0e25\u0e49\u0e27\u0e23\u0e35\u0e1a\u0e15\u0e2d\u0e1a\u0e01\u0e48\u0e2d\u0e19\u0e2b\u0e21\u0e14\u0e40\u0e27\u0e25\u0e32', 'Listen closely, answer before time runs out')}</h2>
           <p>
             {isGracePeriod
-              ? pick('เพลงจบแล้ว เหลือเวลาอีกนิดสำหรับล็อกคำตอบสุดท้าย', 'Audio ended. Final seconds to lock in your answer.')
-              : pick('ชื่อเรื่องและชื่อเพลงถูกซ่อนไว้จนกว่าจะหมดเวลา', 'Title and song are hidden until the reveal.')}
+              ? pick('\u0e40\u0e1e\u0e25\u0e07\u0e08\u0e1a\u0e41\u0e25\u0e49\u0e27 \u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e40\u0e27\u0e25\u0e32\u0e2d\u0e35\u0e01\u0e19\u0e34\u0e14\u0e2a\u0e33\u0e2b\u0e23\u0e31\u0e1a\u0e25\u0e47\u0e2d\u0e01\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e2a\u0e38\u0e14\u0e17\u0e49\u0e32\u0e22', 'Audio ended. Final seconds to lock in your answer.')
+              : pick('\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e41\u0e25\u0e30\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07\u0e16\u0e39\u0e01\u0e0b\u0e48\u0e2d\u0e19\u0e44\u0e27\u0e49\u0e08\u0e19\u0e01\u0e27\u0e48\u0e32\u0e08\u0e30\u0e2b\u0e21\u0e14\u0e40\u0e27\u0e25\u0e32', 'Title and song are hidden until the reveal.')}
           </p>
         </div>
 
@@ -499,7 +493,7 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
           {!ytReady && !playbackBlocked && (
             <span className="party-buffering-badge">
               <Loader2 size={12} className="party-spin" />
-              {pick('กำลังโหลด...', 'Loading...')}
+              {pick('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e42\u0e2b\u0e25\u0e14...', 'Loading...')}
             </span>
           )}
           <div className="party-volume-control">
@@ -507,7 +501,7 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
               type="button"
               className="party-volume-toggle"
               onClick={() => setVolume((v) => (Number(v || 0) > 0 ? 0 : 85))}
-              aria-label={pick(isMuted ? 'เปิดเสียง' : 'ปิดเสียง', isMuted ? 'Unmute' : 'Mute')}
+              aria-label={pick(isMuted ? '\u0e40\u0e1b\u0e34\u0e14\u0e40\u0e2a\u0e35\u0e22\u0e07' : '\u0e1b\u0e34\u0e14\u0e40\u0e2a\u0e35\u0e22\u0e07', isMuted ? 'Unmute' : 'Mute')}
             >
               {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
@@ -515,7 +509,7 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
               type="range" min="0" max="100" step="1"
               value={normalizedVolume}
               onChange={(e) => setVolume(Number(e.target.value))}
-              aria-label={pick('ระดับเสียง', 'Volume')}
+              aria-label={pick('\u0e23\u0e30\u0e14\u0e31\u0e1a\u0e40\u0e2a\u0e35\u0e22\u0e07', 'Volume')}
               className="party-volume-slider"
             />
             <span className="party-volume-value">{normalizedVolume}%</span>
@@ -533,7 +527,7 @@ function PartyYouTubeQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEn
             }}
           >
             <Play size={16} />
-            {pick('กดเล่นเพลงอีกครั้ง', 'Tap to play audio')}
+            {pick('\u0e01\u0e14\u0e40\u0e25\u0e48\u0e19\u0e40\u0e1e\u0e25\u0e07\u0e2d\u0e35\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07', 'Tap to play audio')}
           </button>
         )}
 
@@ -793,17 +787,17 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
         <div className="party-question-header">
           <span className="party-chip subtle party-question-kicker">
             <Headphones size={14} />
-            {pick('กำลังเล่นเพลงปริศนา', 'Mystery audio playing')}
+            {pick('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e40\u0e25\u0e48\u0e19\u0e40\u0e1e\u0e25\u0e07\u0e1b\u0e23\u0e34\u0e28\u0e19\u0e32', 'Mystery audio playing')}
           </span>
-          <h2>{pick('ฟังให้ดี แล้วรีบตอบก่อนหมดเวลา', 'Listen closely, answer before time runs out')}</h2>
+          <h2>{pick('\u0e1f\u0e31\u0e07\u0e43\u0e2b\u0e49\u0e14\u0e35 \u0e41\u0e25\u0e49\u0e27\u0e23\u0e35\u0e1a\u0e15\u0e2d\u0e1a\u0e01\u0e48\u0e2d\u0e19\u0e2b\u0e21\u0e14\u0e40\u0e27\u0e25\u0e32', 'Listen closely, answer before time runs out')}</h2>
           <p>
             {isGracePeriod
-              ? pick('เพลงจบแล้ว เหลือเวลาอีกนิดสำหรับล็อกคำตอบสุดท้าย', 'Audio ended. Final seconds to lock in your answer.')
-              : pick('ชื่อเรื่องและชื่อเพลงถูกซ่อนไว้จนกว่าจะหมดเวลา', 'Title and song are hidden until the reveal.')}
+              ? pick('\u0e40\u0e1e\u0e25\u0e07\u0e08\u0e1a\u0e41\u0e25\u0e49\u0e27 \u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e40\u0e27\u0e25\u0e32\u0e2d\u0e35\u0e01\u0e19\u0e34\u0e14\u0e2a\u0e33\u0e2b\u0e23\u0e31\u0e1a\u0e25\u0e47\u0e2d\u0e01\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e2a\u0e38\u0e14\u0e17\u0e49\u0e32\u0e22', 'Audio ended. Final seconds to lock in your answer.')
+              : pick('\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e41\u0e25\u0e30\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07\u0e16\u0e39\u0e01\u0e0b\u0e48\u0e2d\u0e19\u0e44\u0e27\u0e49\u0e08\u0e19\u0e01\u0e27\u0e48\u0e32\u0e08\u0e30\u0e2b\u0e21\u0e14\u0e40\u0e27\u0e25\u0e32', 'Title and song are hidden until the reveal.')}
           </p>
         </div>
 
-        {/* EQ waveform visualizer — pure CSS, decorative */}
+        {/* EQ waveform visualizer - pure CSS, decorative */}
         <div className="party-waveform" aria-hidden="true">
           {Array.from({ length: 22 }, (_, i) => (
             <span key={i} className="party-waveform-bar" style={{ '--wi': i }} />
@@ -823,7 +817,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
           {bufferingPlayback ? (
             <span className="party-buffering-badge">
               <Loader2 size={12} className="party-spin" />
-              {pick('บัฟเฟอร์...', 'Buffering...')}
+              {pick('\u0e1a\u0e31\u0e1f\u0e40\u0e1f\u0e2d\u0e23\u0e4c...', 'Buffering...')}
             </span>
           ) : null}
           <div className="party-volume-control">
@@ -831,7 +825,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
               type="button"
               className="party-volume-toggle"
               onClick={() => setVolume((current) => (Number(current || 0) > 0 ? 0 : 85))}
-              aria-label={pick(isMuted ? 'เปิดเสียง' : 'ปิดเสียง', isMuted ? 'Unmute' : 'Mute')}
+              aria-label={pick(isMuted ? '\u0e40\u0e1b\u0e34\u0e14\u0e40\u0e2a\u0e35\u0e22\u0e07' : '\u0e1b\u0e34\u0e14\u0e40\u0e2a\u0e35\u0e22\u0e07', isMuted ? 'Unmute' : 'Mute')}
             >
               {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
@@ -839,7 +833,7 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
               type="range" min="0" max="100" step="1"
               value={normalizedVolume}
               onChange={(event) => setVolume(Number(event.target.value))}
-              aria-label={pick('ระดับเสียง', 'Volume')}
+              aria-label={pick('\u0e23\u0e30\u0e14\u0e31\u0e1a\u0e40\u0e2a\u0e35\u0e22\u0e07', 'Volume')}
               className="party-volume-slider"
             />
             <span className="party-volume-value">{normalizedVolume}%</span>
@@ -859,14 +853,14 @@ function PartyQuestionPlayer({ match, round, answerGraceEndsAtMs, phaseEndsAtMs,
             }}
           >
             <Play size={16} />
-            {pick('กดเล่นเพลงอีกครั้ง', 'Tap to play audio')}
+            {pick('\u0e01\u0e14\u0e40\u0e25\u0e48\u0e19\u0e40\u0e1e\u0e25\u0e07\u0e2d\u0e35\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07', 'Tap to play audio')}
           </button>
         ) : null}
 
         <video ref={mediaRef} src={round?.mediaUrl || ''} playsInline preload="metadata" className="party-hidden-media" />
       </div>
 
-      {/* Last-3s overlay — sits on the question card, pointer-events: none */}
+      {/* Last-3s overlay - sits on the question card, pointer-events: none */}
       <PartyEndCountdownOverlay targetTimeMs={phaseEndsAtMs} />
     </section>
   );
@@ -893,7 +887,7 @@ export function PartyAnswerPanel({
   const [typedTitle, setTypedTitle] = useState(() => answer?.typed_title || '');
   const [typedSong, setTypedSong] = useState(() => answer?.typed_song || '');
 
-  // ── Frozen leaderboard ──────────────────────────────────────────
+  // -- Frozen leaderboard ------------------------------------------
   // Snapshot the board when a new round starts.
   // During the question phase we deliberately do NOT follow live
   // updates so players can't see real-time score shifts as others answer.
@@ -905,7 +899,7 @@ export function PartyAnswerPanel({
       lastRoundIdRef.current = round?.id;
       setFrozenLeaderboard(leaderboard);
     }
-    // intentionally exclude `leaderboard` — we only want to refresh on round change
+    // intentionally exclude `leaderboard` - we only want to refresh on round change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round?.id]);
 
@@ -920,7 +914,7 @@ export function PartyAnswerPanel({
           {({ msLeft }) => (
             <span className="party-chip">
               <Clock3 size={14} />
-              {pick('เหลือเวลา', 'Time left')} {formatCountdown(msLeft, pick)}
+              {pick('\u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e40\u0e27\u0e25\u0e32', 'Time left')} {formatCountdown(msLeft, pick)}
             </span>
           )}
         </PartyCountdownDisplay>
@@ -930,7 +924,7 @@ export function PartyAnswerPanel({
               msLeft > 0 ? (
                 <span className="party-chip subtle">
                   <TimerReset size={14} />
-                  {pick('เพลงจบแล้ว กำลังนับถอยหลังเฉลย', 'Audio ended, reveal countdown running')}
+                  {pick('\u0e40\u0e1e\u0e25\u0e07\u0e08\u0e1a\u0e41\u0e25\u0e49\u0e27 \u0e01\u0e33\u0e25\u0e31\u0e07\u0e19\u0e31\u0e1a\u0e16\u0e2d\u0e22\u0e2b\u0e25\u0e31\u0e07\u0e40\u0e09\u0e25\u0e22', 'Audio ended, reveal countdown running')}
                 </span>
               ) : null
             )}
@@ -938,15 +932,15 @@ export function PartyAnswerPanel({
         ) : null}
         <span className="party-chip subtle">
           <Users2 size={14} />
-          {pick('ตอบแล้ว', 'Answered')} {answerCount}
+          {pick('\u0e15\u0e2d\u0e1a\u0e41\u0e25\u0e49\u0e27', 'Answered')} {answerCount}
         </span>
         <span className="party-chip subtle">
           <Sparkles size={14} />
-          {pick('รอบที่', 'Round')} {Number(room?.current_match?.roundIndex || 0) + 1}/{room?.current_match?.totalRounds || 0}
+          {pick('\u0e23\u0e2d\u0e1a', 'Round')} {Number(room?.current_match?.roundIndex || 0) + 1}/{room?.current_match?.totalRounds || 0}
         </span>
       </div>
 
-      {/* Two columns: question left, leaderboard right — both start at top */}
+      {/* Two columns: question left, leaderboard right - both start at top */}
       <div className="party-game-grid">
         <div className="party-game-main">
           {round?.provider === 'youtube' ? (
@@ -977,9 +971,9 @@ export function PartyAnswerPanel({
             <section className="party-answer-card">
               <div className="party-answer-head">
                 <strong>{round?.choiceTarget === 'song'
-                  ? pick('เลือกชื่อเพลงที่คิดว่าใช่', 'Choose the song title you think matches')
-                  : pick('เลือกชื่อเรื่องที่คิดว่าใช่', 'Choose the title you think matches')}</strong>
-                <span>{answer?.selected_option_id ? pick('คุณล็อกคำตอบแล้ว', 'Your answer is locked in') : pick('กดได้ครั้งเดียวต่อรอบ', 'One tap per round')}</span>
+                  ? pick('\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07\u0e17\u0e35\u0e48\u0e04\u0e34\u0e14\u0e27\u0e48\u0e32\u0e43\u0e0a\u0e48', 'Choose the song title you think matches')
+                  : pick('\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e17\u0e35\u0e48\u0e04\u0e34\u0e14\u0e27\u0e48\u0e32\u0e43\u0e0a\u0e48', 'Choose the title you think matches')}</strong>
+                <span>{answer?.selected_option_id ? pick('\u0e04\u0e38\u0e13\u0e25\u0e47\u0e2d\u0e01\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e41\u0e25\u0e49\u0e27', 'Your answer is locked in') : pick('\u0e01\u0e14\u0e44\u0e14\u0e49\u0e04\u0e23\u0e31\u0e49\u0e07\u0e40\u0e14\u0e35\u0e22\u0e27\u0e15\u0e48\u0e2d\u0e23\u0e2d\u0e1a', 'One tap per round')}</span>
               </div>
               <div className="party-choice-grid">
                 {(round?.options || []).map((option, index) => {
@@ -1006,42 +1000,42 @@ export function PartyAnswerPanel({
               <div className="party-answer-head">
                 <strong>
                   {preset.answerMode === 'typing'
-                    ? pick('พิมพ์ชื่อเพลงให้ตรงที่สุด', 'Type the exact song title')
-                    : pick('พิมพ์คำตอบทั้งสองช่อง', 'Type both answers')}
+                    ? pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07\u0e43\u0e2b\u0e49\u0e15\u0e23\u0e07\u0e17\u0e35\u0e48\u0e2a\u0e38\u0e14', 'Type the exact song title')
+                    : pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e17\u0e31\u0e49\u0e07\u0e2a\u0e2d\u0e07\u0e0a\u0e48\u0e2d\u0e07', 'Type both answers')}
                 </strong>
-                <span>{pick('คุณกดส่งซ้ำได้จนกว่าจะหมดเวลา', 'You can resubmit until the timer ends')}</span>
+                <span>{pick('\u0e04\u0e38\u0e13\u0e01\u0e14\u0e2a\u0e48\u0e07\u0e0b\u0e49\u0e33\u0e44\u0e14\u0e49\u0e08\u0e19\u0e01\u0e27\u0e48\u0e32\u0e08\u0e30\u0e2b\u0e21\u0e14\u0e40\u0e27\u0e25\u0e32', 'You can resubmit until the timer ends')}</span>
               </div>
               {preset.answerMode === 'dual' ? (
                 <div className="party-input-stack">
                   <label className="party-field">
-                    <span>{pick('ชื่อเรื่อง', 'Source title')}</span>
+                    <span>{pick('\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07', 'Source title')}</span>
                     <input
                       type="text"
                       value={typedTitle}
                       onChange={(event) => setTypedTitle(event.target.value)}
-                      placeholder={pick('พิมพ์ชื่อเรื่องที่คิดว่าใช่', 'Type the anime title')}
+                      placeholder={pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e17\u0e35\u0e48\u0e04\u0e34\u0e14\u0e27\u0e48\u0e32\u0e43\u0e0a\u0e48', 'Type the anime title')}
                       disabled={!canSubmitTyping || submitting}
                     />
                   </label>
                   <label className="party-field">
-                    <span>{pick('ชื่อเพลง', 'Song title')}</span>
+                    <span>{pick('\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Song title')}</span>
                     <input
                       type="text"
                       value={typedSong}
                       onChange={(event) => setTypedSong(event.target.value)}
-                      placeholder={pick('พิมพ์ชื่อเพลง', 'Type the song title')}
+                      placeholder={pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Type the song title')}
                       disabled={!canSubmitTyping || submitting}
                     />
                   </label>
                 </div>
               ) : (
                 <label className="party-field">
-                  <span>{pick('ชื่อเพลง', 'Song title')}</span>
+                  <span>{pick('\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Song title')}</span>
                   <input
                     type="text"
                     value={typedSong}
                     onChange={(event) => setTypedSong(event.target.value)}
-                    placeholder={pick('พิมพ์ชื่อเพลงที่คิดว่าใช่', 'Type the song title')}
+                    placeholder={pick('\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07\u0e17\u0e35\u0e48\u0e04\u0e34\u0e14\u0e27\u0e48\u0e32\u0e43\u0e0a\u0e48', 'Type the song title')}
                     disabled={!canSubmitTyping || submitting}
                   />
                 </label>
@@ -1058,12 +1052,12 @@ export function PartyAnswerPanel({
                       : !typedSong.trim())
                   }
                 >
-                  {submitting ? pick('กำลังส่ง...', 'Saving...') : pick('ส่งคำตอบ', 'Submit answer')}
+                  {submitting ? pick('\u0e01\u0e33\u0e25\u0e31\u0e07\u0e2a\u0e48\u0e07...', 'Saving...') : pick('\u0e2a\u0e48\u0e07\u0e04\u0e33\u0e15\u0e2d\u0e1a', 'Submit answer')}
                 </Button>
                 {answer ? (
                   <span className="party-answer-note">
                     <CheckCircle2 size={14} />
-                    {pick('บันทึกคำตอบล่าสุดแล้ว', 'Latest answer saved')}
+                    {pick('\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14\u0e41\u0e25\u0e49\u0e27', 'Latest answer saved')}
                   </span>
                 ) : null}
               </div>
@@ -1075,8 +1069,8 @@ export function PartyAnswerPanel({
           <section className="party-side-panel">
             <div className="party-side-panel-inner">
               <div className="party-side-head">
-                <strong>{pick('ตารางคะแนนสด', 'Live leaderboard')}</strong>
-                <span>{pick('อัปเดตทุกครั้งที่มีคนตอบ', 'Updates as answers come in')}</span>
+                <strong>{pick('\u0e15\u0e32\u0e23\u0e32\u0e07\u0e04\u0e30\u0e41\u0e19\u0e19\u0e2a\u0e14', 'Live leaderboard')}</strong>
+                <span>{pick('\u0e2d\u0e31\u0e1b\u0e40\u0e14\u0e15\u0e17\u0e38\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07\u0e17\u0e35\u0e48\u0e21\u0e35\u0e04\u0e19\u0e15\u0e2d\u0e1a', 'Updates as answers come in')}</span>
               </div>
               <PartyLeaderboard leaderboard={frozenLeaderboard} currentToken={member?.member_token} pick={pick} compact />
             </div>
@@ -1092,16 +1086,16 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
   const revealVideoRef = useRef(null);
   const currentAnswer = answers.find((entry) => String(entry.member_token || '') === String(memberToken || ''));
   const revealState = !currentAnswer
-    ? pick('ไม่ได้ตอบ', 'No answer')
+    ? pick('\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49\u0e15\u0e2d\u0e1a', 'No answer')
     : currentAnswer.title_correct || currentAnswer.song_correct
-      ? pick('ถูก', 'Correct')
-      : pick('ผิด', 'Incorrect');
+      ? pick('\u0e16\u0e39\u0e01', 'Correct')
+      : pick('\u0e1c\u0e34\u0e14', 'Incorrect');
   const revealHeading = round?.choiceTarget === 'song'
-    ? (round?.songTitle || pick('ไม่พบชื่อเพลง', 'Song unknown'))
-    : (round?.sourceTitleName || pick('ไม่พบชื่อเรื่อง', 'Title unknown'));
+    ? (round?.songTitle || pick('\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Song unknown'))
+    : (round?.sourceTitleName || pick('\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07', 'Title unknown'));
   const revealSubheading = round?.choiceTarget === 'song'
     ? (round?.sourceTitleName || '')
-    : (round?.songTitle || pick('ไม่พบชื่อเพลง', 'Song unknown'));
+    : (round?.songTitle || pick('\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e37\u0e48\u0e2d\u0e40\u0e1e\u0e25\u0e07', 'Song unknown'));
 
   const isYouTubeRound = round?.provider === 'youtube' && Boolean(round?.providerMediaId);
 
@@ -1175,7 +1169,7 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
               : 'is-wrong'
             }`}>
               <span className="party-reveal-outcome-emoji">
-                {!currentAnswer ? '⏭️' : currentAnswer.title_correct || currentAnswer.song_correct ? '✅' : '❌'}
+                {!currentAnswer ? '\u2754' : currentAnswer.title_correct || currentAnswer.song_correct ? '\u2705' : '\u274c'}
               </span>
               <span>{revealState}</span>
             </div>
@@ -1184,7 +1178,7 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
             <div className="party-reveal-identity">
               <span className="party-chip subtle">
                 <Sparkles size={14} />
-                {pick('เฉลยรอบนี้', 'Round reveal')}
+                {pick('\u0e40\u0e09\u0e25\u0e22\u0e23\u0e2d\u0e1a\u0e19\u0e35\u0e49', 'Round reveal')}
               </span>
               <h2 className="party-reveal-title">{revealHeading}</h2>
               <p className="party-reveal-song">{revealSubheading}</p>
@@ -1229,8 +1223,8 @@ export function PartyRevealPanel({ round, answers, leaderboard, memberToken, pic
         <section className="party-side-panel">
           <div className="party-side-panel-inner">
             <div className="party-side-head">
-              <strong>{pick('อันดับล่าสุด', 'Current standing')}</strong>
-              <span>{pick('หลังเฉลยรอบนี้', 'Updated after reveal')}</span>
+              <strong>{pick('\u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a\u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14', 'Current standing')}</strong>
+              <span>{pick('\u0e2d\u0e31\u0e1b\u0e40\u0e14\u0e15\u0e2b\u0e25\u0e31\u0e07\u0e40\u0e09\u0e25\u0e22', 'Updated after reveal')}</span>
             </div>
             <PartyLeaderboard leaderboard={leaderboard} currentToken={memberToken} pick={pick} compact />
           </div>

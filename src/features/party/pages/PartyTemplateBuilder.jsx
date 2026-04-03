@@ -489,7 +489,7 @@ export function PartyTemplateBuilderPage() {
     }
 
     if (!meta.name.trim()) {
-      toast.error(pick('��س����������ŵ', 'Please enter a name.'));
+      toast.error(pick('กรุณาใส่ชื่อเทมเพลต', 'Please enter a name.'));
       return;
     }
 
@@ -535,7 +535,7 @@ export function PartyTemplateBuilderPage() {
           sourceType,
         });
         await replacePartyTemplateItems(editTemplateId, dbItems);
-        toast.success(pick('�ѹ�֡���ŵ����!', 'Template saved!'));
+        toast.success(pick('บันทึกเทมเพลตแล้ว!', 'Template saved!'));
         navigate(`/party/templates/${editTemplateId}`);
       } else {
         const displayName = user.profile?.name
@@ -1224,11 +1224,11 @@ export function PartyTemplateBuilderPage() {
 	                                className="pt-input"
 	                                value={resolvedSourceTitleName}
 	                                onChange={(event) => handleUpdateItemSourceTitle(index, event.target.value)}
-	                                placeholder={pick('ข้อความสำรองสำหรับ �ӵͺ', 'Fallback answer text')}
+	                                placeholder={pick('ข้อความสำรองสำหรับคำตอบ', 'Fallback answer text')}
 	                              />
 	                              <small>
 	                                {resolvedSource.isClassicResolved
-	                                  ? pick(`Classic ?? ${resolvedSource.resolvedSourceTitleName}`, `Classic uses ${resolvedSource.resolvedSourceTitleName}`)
+	                                  ? pick(`Classic \u0e43\u0e0a\u0e49 ${resolvedSource.resolvedSourceTitleName}`, `Classic uses ${resolvedSource.resolvedSourceTitleName}`)
 	                                  : resolvedSource.sourceResolutionStatus === PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS.SUGGESTED && resolvedSource.resolvedSourceTitleName
 	                                    ? pick(`คำแนะนำ: ${resolvedSource.resolvedSourceTitleName}`, `Suggestion: ${resolvedSource.resolvedSourceTitleName}`)
                                     : pick('ยังไม่ลิงก์แหล่งที่มา ระบบจะใช้ชื่อเพลงเป็นคำตอบชั่วคราว', 'Not linked yet. The game will use song title as a temporary fallback answer.')}

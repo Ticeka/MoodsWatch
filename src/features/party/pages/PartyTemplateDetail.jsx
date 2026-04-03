@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Copy, ListEnd, Music, Loader2, Star, Heart, Eye, Pencil, Video, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -55,8 +55,11 @@ function getTemplateCompatibilityCopy(reason, pick) {
 export function PartyTemplateDetailPage() {
   const { templateId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const returnTo = searchParams.get('returnTo') || '';
+  const returnMode = searchParams.get('mode') || 'all';
 
   const [template, setTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -102,8 +105,10 @@ export function PartyTemplateDetailPage() {
   const handlePlayNow = () => {
     const mode = template.modeScope === 'vote' ? 'vote' : 'quiz';
     const preset = getPartyPresetById(playNowPresetId);
+    const destinationBase = returnTo || '/party';
+    const separator = destinationBase.includes('?') ? '&' : '?';
     navigate(
-      `/party?templateId=${template.id}` +
+      `${destinationBase}${separator}templateId=${template.id}` +
       `&templateName=${encodeURIComponent(template.name)}` +
       `&modeType=${mode}` +
       `&modeScope=${template.modeScope}` +
@@ -185,7 +190,7 @@ export function PartyTemplateDetailPage() {
           <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
             {pick('อาจถูกลบหรือเป็นแบบส่วนตัว', 'It may have been deleted or is private.')}
           </p>
-          <button className="btn-secondary" onClick={() => navigate('/party/templates')}>
+          <button className="btn-secondary" onClick={() => navigate(returnTo ? `/party/templates?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(returnMode)}` : '/party/templates')}>
             &larr; {pick('กลับหน้าเทมเพลต', 'Back to Templates')}
           </button>
         </div>
@@ -213,7 +218,7 @@ export function PartyTemplateDetailPage() {
         <button
           className="btn-secondary"
           style={{ display: 'inline-flex', padding: '0.5rem 1rem', marginBottom: '1rem' }}
-          onClick={() => navigate('/party/templates')}
+          onClick={() => navigate(returnTo ? `/party/templates?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(returnMode)}` : '/party/templates')}
         >
           &larr; {pick('กลับ', 'Back')}
         </button>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Music, LibrarySquare, LayoutGrid, Loader2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -22,12 +22,15 @@ function useDebounce(value, delay = 500) {
 
 export function PartyTemplatesPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const returnTo = searchParams.get('returnTo') || '';
+  const requestedMode = searchParams.get('mode') || 'all';
 
   const [currentTab, setCurrentTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState('all');
+  const [filterMode, setFilterMode] = useState(requestedMode === 'quiz' || requestedMode === 'vote' ? requestedMode : 'all');
   const [templates, setTemplates] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -83,6 +86,14 @@ export function PartyTemplatesPage() {
   return (
     <div className="party-page is-hub">
       <div className="party-templates-page">
+        {returnTo ? (
+          <div style={{ marginBottom: '1rem' }}>
+            <button className="party-back-btn" onClick={() => navigate(returnTo)}>
+              <ChevronLeft size={18} />
+              {pick('กลับไปห้อง', 'Back to room')}
+            </button>
+          </div>
+        ) : null}
         <header className="party-templates-header">
           <div>
             <button className="party-back-btn" onClick={() => navigate('/party')} aria-label={pick('ย้อนกลับ', 'Back')}>
@@ -133,7 +144,7 @@ export function PartyTemplatesPage() {
                   key={template.id}
                   template={template}
                   pick={pick}
-                  onClick={() => navigate(`/party/templates/${template.id}`)}
+                  onClick={() => navigate(`/party/templates/${template.id}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(filterMode)}` : ''}`)}
                 />
               ))}
             </div>

@@ -4,13 +4,114 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 60vh;
   width: 100%;
   padding: 2rem;
   color: #fff;
   font-family: 'Inter', sans-serif;
   text-transform: uppercase;
+}
+
+.party-vote-live-layout {
+  width: 100%;
+  max-width: 1760px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24rem;
+  gap: 0.25rem;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.party-vote-live-layout.is-detached {
+  max-width: 1760px;
+  gap: 1rem;
+}
+
+.party-vote-live-shell {
+  width: 100%;
+  max-width: 1760px;
+  background: rgba(10, 10, 15, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 0;
+  border-radius: 12px;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.68);
+  overflow: hidden;
+}
+
+.party-vote-live-shell .vote-phase-playback,
+.party-vote-live-shell .vote-phase-faceoff,
+.party-vote-live-shell .vote-phase-countdown,
+.party-vote-live-shell .vote-phase-reveal,
+.party-vote-live-shell .vote-phase-intro {
+  max-width: none;
+}
+
+.party-vote-live-shell .track-playback-card,
+.party-vote-live-shell .faceoff-card,
+.party-vote-live-shell .track-intro-card {
+  background: transparent;
+  border: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.party-vote-live-shell .vote-start-btn,
+.party-vote-live-shell .rematch-btn {
+  border: 0;
+  box-shadow: none;
+}
+
+.party-vote-live-shell .track-playback-card {
+  padding: 1rem 1rem 0.8rem;
+}
+
+.party-vote-live-shell .track-intro-card {
+  padding: 1rem 1rem 0.8rem;
+  max-width: 100%;
+}
+
+.party-vote-live-shell .faceoff-card {
+  padding: 0.6rem;
+}
+
+.party-vote-live-shell .vote-phase-countdown {
+  padding: 1rem 0.5rem 0.8rem;
+}
+
+.party-vote-live-shell .vote-phase-reveal,
+.party-vote-live-shell .vote-phase-faceoff,
+.party-vote-live-shell .vote-phase-intro,
+.party-vote-live-shell .vote-phase-playback {
+  padding: 0.4rem 0.2rem 0.2rem;
+}
+
+.party-vote-main-panel {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0.35rem 1rem 1rem;
+}
+
+.party-vote-main-panel.is-detached {
+  padding: 0;
+}
+
+.party-vote-chat-panel {
+  min-width: 0;
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-self: stretch;
+  padding: 0.9rem 1rem 0.9rem 0.45rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.party-vote-chat-panel.is-detached {
+  padding: 0;
+  border-left: 0;
+  align-self: start;
 }
 
 /* Phase: Countdown */
@@ -20,6 +121,7 @@
   align-items: center;
   text-align: center;
   animation: fadeScaleIn 0.5s ease-out;
+  width: 100%;
 }
 .vote-countdown-topbar {
   display: flex;
@@ -225,17 +327,29 @@
   border: 2px solid rgba(255,255,255,0.1);
   transition: box-shadow 0.3s ease;
   position: relative;
+  isolation: isolate;
 }
 .track-playback-video-wrapper .party-yt-player-wrapper,
 .track-playback-video-wrapper .party-yt-player-container,
 .track-playback-video-wrapper .party-yt-player-container iframe {
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: block;
 }
 .track-playback-video-wrapper .party-yt-player-wrapper {
+  position: relative;
   aspect-ratio: auto;
   border-radius: 0;
+  overflow: hidden;
+}
+.track-playback-video-wrapper .party-yt-player-container,
+.track-playback-video-wrapper .party-yt-player-container iframe {
+  position: absolute;
+  inset: 0;
 }
 .track-playback-video-wrapper .party-yt-player-wrapper.is-noninteractive,
 .track-playback-video-wrapper .party-yt-player-wrapper.is-noninteractive iframe {
@@ -295,6 +409,9 @@
 .track-playback-video {
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
   object-fit: cover;
 }
 .track-playback-video-overlay {
@@ -598,6 +715,12 @@
   width: 100%;
   overflow: hidden;
 }
+
+.vote-phase-reveal .faceoff-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
 .vote-phase-reveal.frozen {
   min-height: 20rem;
   justify-content: center;
@@ -675,6 +798,9 @@
 .winner-scale {
   transform: scale(1.1);
   z-index: 10;
+}
+
+.winner-scale .faceoff-card {
   animation: winnerTriumph 0.5s ease-out forwards;
 }
 .loser-dim {
@@ -995,6 +1121,31 @@
   .party-vote-room.anime-theme {
     padding: 1rem;
   }
+  .party-vote-live-shell {
+    border-radius: 12px;
+  }
+  .party-vote-live-layout {
+    grid-template-columns: 1fr;
+  }
+  .party-vote-live-layout.is-detached {
+    gap: 0.75rem;
+  }
+  .party-vote-chat-panel {
+    position: static;
+    padding: 0 0.8rem 0.8rem;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .party-vote-chat-panel.is-detached {
+    padding: 0;
+    border-top: 0;
+  }
+  .party-vote-main-panel {
+    padding: 0.8rem;
+  }
+  .party-vote-main-panel.is-detached {
+    padding: 0;
+  }
   .faceoff-arena {
     flex-direction: column;
     align-items: center;
@@ -1043,6 +1194,28 @@
   }
   .track-playback-status-card {
     max-width: 100%;
+  }
+}
+
+@media (max-width: 1180px) {
+  .party-vote-live-layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+}
+
+@media (max-width: 960px) {
+  .party-vote-live-layout {
+    grid-template-columns: 1fr;
+  }
+  .party-vote-live-layout.is-detached {
+    gap: 0.75rem;
+  }
+  .party-vote-chat-panel {
+    position: static;
+  }
+  .party-vote-chat-panel.is-detached {
+    padding: 0;
+    border-top: 0;
   }
 }
 

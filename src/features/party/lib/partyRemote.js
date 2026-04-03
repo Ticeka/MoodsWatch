@@ -2185,6 +2185,59 @@ export async function createPartyRoom({ profile = {}, settings = {}, roomName = 
   throw new Error('Could not generate a unique room code.');
 }
 
+export async function updatePartyRoomSettings(room, settings = {}) {
+  if (!supabase || !room?.id) {
+    throw new Error('Invalid arguments.');
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom) {
+    throw new Error('Room not found.');
+  }
+
+  if (freshRoom.status !== 'lobby') {
+    throw new Error('Room settings can only be changed in the lobby.');
+  }
+
+  if (String(freshRoom.host_member_token || '') !== String(getPartyGuestToken() || '')) {
+    throw new Error('Only the host can change room settings.');
+  }
+
+  const normalizedSettings = createPartySettings(settings);
+  const { data, error } = await supabase
+    .from('party_rooms')
+    .update({
+      settings: normalizedSettings,
+    })
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('status', 'lobby')
+    .eq('updated_at', freshRoom.updated_at)
+    .select('*');
+
+  if (error) {
+    throw error;
+  }
+
+  const nextRoom = takeFirstRecord(data);
+  if (!nextRoom) {
+    const latestRoom = await fetchPartyRoomRecordById(room.id);
+    if (latestRoom?.status === 'lobby') {
+      return latestRoom;
+    }
+    throw new Error('The room changed while saving settings. Please try again.');
+  }
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'ROOM_UPDATED',
+    payload: {
+      room: nextRoom,
+    },
+  });
+
+  return nextRoom;
+}
+
 export async function joinPartyRoom(roomCode, profile = {}) {
   if (!supabase) {
     throw new Error('Supabase is unavailable.');
@@ -2944,6 +2997,70 @@ export async function submitPartySkipVote({
   }
 
   throw new Error('This battle changed while recording the skip vote. Please try again.');
+}
+
+export async function submitPartyLiveChatMessage({
+  room,
+  member,
+  battleId,
+  phase,
+  text,
+  messageId,
+} = {}) {
+  if (!supabase || !room?.id || !member?.member_token) {
+    return null;
+  }
+
+  const normalizedText = String(text || '').trim();
+  const normalizedPhase = String(phase || '').trim();
+  const normalizedBattleId = String(battleId || '').trim();
+  const normalizedMessageId = String(messageId || makeId('party-chat')).trim();
+
+  if (!normalizedText || !normalizedBattleId || !normalizedPhase || !normalizedMessageId) {
+    return null;
+  }
+
+  if (normalizedPhase !== 'play-a' && normalizedPhase !== 'play-b') {
+    throw new Error('Live chat is only available while media is playing.');
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  const currentMatch = freshRoom?.current_match || null;
+  const currentBattle = currentMatch?.currentBattle || null;
+  const currentPhase = String(currentMatch?.phase || '').trim();
+
+  if (!currentMatch || freshRoom.settings?.modeType !== 'vote') {
+    throw new Error('This room is not in an active vote battle.');
+  }
+
+  if (currentPhase !== normalizedPhase) {
+    throw new Error('This chat moment has already moved on.');
+  }
+
+  if (!currentBattle || String(currentBattle.id || '') !== normalizedBattleId) {
+    throw new Error('This battle has already advanced.');
+  }
+
+  const message = {
+    id: normalizedMessageId,
+    roomId: String(freshRoom.id || ''),
+    battleId: normalizedBattleId,
+    phase: normalizedPhase,
+    scopeKey: `${normalizedBattleId}:${normalizedPhase}`,
+    memberToken: String(member.member_token || ''),
+    memberName: String(member.display_name || member.memberName || 'Player').trim() || 'Player',
+    text: normalizedText,
+    sentAt: new Date().toISOString(),
+  };
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'CHAT_MESSAGE',
+    payload: {
+      message,
+    },
+  });
+
+  return message;
 }
 
 function mapPartyRoomRealtimePayload(payload) {

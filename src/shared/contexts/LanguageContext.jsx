@@ -9,6 +9,15 @@ const translationLoaders = {
 };
 const loadedTranslations = new Map();
 const translationRequests = new Map();
+const SUSPICIOUS_FRAGMENTS = [
+  '\u0e40\u0e18',
+  '\u0e40\u0e19\u20ac',
+  '\u0e42\u20ac\u201d',
+  '\u0e42\u20ac\u00a6',
+  '\u0e22\u0e17',
+  '\u0e23\u0082',
+  '\u0e23\u0083',
+];
 
 loadedTranslations.set('th', thaiTranslations);
 
@@ -17,7 +26,11 @@ function looksLikeMojibake(value) {
     return false;
   }
 
-  return /[\u0080-\u009F\uFFFD]|(?:เน€|โ€|Â|Ã)/u.test(value);
+  if (/[\u0080-\u009F\uFFFD]/u.test(value)) {
+    return true;
+  }
+
+  return SUSPICIOUS_FRAGMENTS.some((fragment) => value.includes(fragment));
 }
 
 function pickLocalizedValue(preferredValue, fallbackValue) {
@@ -185,7 +198,7 @@ export function LanguageProvider({ children }) {
   const value = useMemo(() => ({
     language,
     setLanguage,
-    toggleLanguage: () => setLanguage((current) => (current === 'th' ? 'en' : 'th')),
+    toggleLanguage: () => setLanguage((current) => (current === 'th' ? 'th' : 'en')),
     t: (key, values) => {
       const resolved = resolveTranslation(translationMaps[language], key)
         ?? resolveTranslation(translationMaps.en, key)

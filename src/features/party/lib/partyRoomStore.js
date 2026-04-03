@@ -15,20 +15,69 @@ function parseEventTimestamp(value) {
   return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
 }
 
-function sanitizeBundle(bundle = null, syncMeta = {}) {
+function getRoomUpdatedAtMs(room = null) {
+  const timestamp = new Date(room?.updated_at || 0).getTime();
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+}
+
+function isIncomingRoomNewer(currentRoom = null, nextRoom = null) {
+  const currentUpdatedAtMs = getRoomUpdatedAtMs(currentRoom);
+  const nextUpdatedAtMs = getRoomUpdatedAtMs(nextRoom);
+
+  if (!nextRoom) {
+    return false;
+  }
+
+  if (!currentRoom) {
+    return true;
+  }
+
+  if (!nextUpdatedAtMs) {
+    return true;
+  }
+
+  if (!currentUpdatedAtMs) {
+    return true;
+  }
+
+  return nextUpdatedAtMs >= currentUpdatedAtMs;
+}
+
+function sanitizeBundle(bundle = null, syncMeta = {}, currentState = null) {
   if (!bundle) {
     return {
       room: null,
       members: [],
       answers: [],
+      chatMessages: [],
       ...createSyncMeta(syncMeta),
     };
   }
 
+  const nextRoom = bundle.room || null;
+  const currentRoom = currentState?.room || null;
+  const shouldAdoptBundle = isIncomingRoomNewer(currentRoom, nextRoom);
+  if (!shouldAdoptBundle && currentRoom) {
+      return {
+        room: currentRoom,
+        members: currentState?.members || [],
+        answers: currentState?.answers || [],
+        chatMessages: currentState?.chatMessages || [],
+        joinRequests: currentState?.joinRequests || [],
+        ...createSyncMeta({
+          syncState: 'live',
+        lastSyncedAt: Date.now(),
+        ...syncMeta,
+      }),
+    };
+  }
+
   return {
-    room: bundle.room || null,
+    room: nextRoom,
     members: Array.isArray(bundle.members) ? bundle.members : [],
     answers: Array.isArray(bundle.answers) ? bundle.answers : [],
+    chatMessages: currentState?.chatMessages || [],
+    joinRequests: currentState?.joinRequests || [],
     ...createSyncMeta({
       syncState: 'live',
       lastSyncedAt: Date.now(),
@@ -84,17 +133,57 @@ function upsertAnswerRecord(items = [], nextAnswer) {
   return nextItems;
 }
 
+function upsertChatMessage(items = [], nextMessage) {
+  if (!nextMessage) {
+    return items;
+  }
+
+  const messageId = String(nextMessage?.id || '').trim();
+  if (!messageId) {
+    return items;
+  }
+
+  const nextItems = [...items];
+  const existingIndex = nextItems.findIndex((item) => String(item?.id || '').trim() === messageId);
+
+  if (existingIndex >= 0) {
+    nextItems[existingIndex] = {
+      ...nextItems[existingIndex],
+      ...nextMessage,
+    };
+    return nextItems.slice(-200);
+  }
+
+  nextItems.push(nextMessage);
+  nextItems.sort((left, right) => {
+    const leftTime = parseEventTimestamp(left?.sentAt || left?.ts || 0);
+    const rightTime = parseEventTimestamp(right?.sentAt || right?.ts || 0);
+    return leftTime - rightTime;
+  });
+  return nextItems.slice(-200);
+}
+
+function removeChatMessage(items = [], messageId) {
+  const targetId = String(messageId || '').trim();
+  if (!targetId) {
+    return items;
+  }
+  return items.filter((item) => String(item?.id || '').trim() !== targetId);
+}
+
 export const usePartyRoomStore = create((set) => ({
   room: null,
   members: [],
   answers: [],
+  chatMessages: [],
   joinRequests: [],
   ...createSyncMeta(),
-  setBundle: (bundle, syncMeta = {}) => set(sanitizeBundle(bundle, syncMeta)),
+  setBundle: (bundle, syncMeta = {}) => set((state) => sanitizeBundle(bundle, syncMeta, state)),
   clearBundle: () => set({
     room: null,
     members: [],
     answers: [],
+    chatMessages: [],
     joinRequests: [],
     ...createSyncMeta(),
   }),
@@ -127,10 +216,18 @@ export const usePartyRoomStore = create((set) => ({
   upsertAnswer: (answer) => set((state) => ({
     answers: upsertAnswerRecord(state.answers, answer),
   })),
+  upsertChatMessage: (message) => set((state) => ({
+    chatMessages: upsertChatMessage(state.chatMessages, message),
+  })),
+  removeChatMessage: (messageId) => set((state) => ({
+    chatMessages: removeChatMessage(state.chatMessages, messageId),
+  })),
+  clearChatMessages: () => set({ chatMessages: [] }),
   clearAnswers: () => set({ answers: [] }),
   applyEvent: (event) => set((state) => {
     const payload = event?.payload || {};
     const nextEventAt = parseEventTimestamp(event?.sentAt);
+    const canApplyRoomUpdate = !payload.room || isIncomingRoomNewer(state.room, payload.room);
 
     const realtimeMeta = {
       syncState: 'live',
@@ -144,10 +241,15 @@ export const usePartyRoomStore = create((set) => ({
         return sanitizeBundle(payload.bundle, {
           lastEventAt: state.lastEventAt,
           lastSyncedAt: Date.now(),
-        });
+        }, state);
       case 'ROOM_UPDATED':
       case 'ROOM_CLOSED':
       case 'MATCH_ADVANCED':
+        if (!canApplyRoomUpdate) {
+          return {
+            ...realtimeMeta,
+          };
+        }
         return {
           room: payload.room ? { ...(state.room || {}), ...payload.room } : state.room,
           ...realtimeMeta,
@@ -171,13 +273,24 @@ export const usePartyRoomStore = create((set) => ({
           answers: upsertAnswerRecord(state.answers, payload.answer),
           ...realtimeMeta,
         };
+      case 'CHAT_MESSAGE':
+        return {
+          chatMessages: upsertChatMessage(state.chatMessages, payload.message),
+          ...realtimeMeta,
+        };
       case 'ROOM_RESET':
+        if (!canApplyRoomUpdate) {
+          return {
+            ...realtimeMeta,
+          };
+        }
         return {
           room: payload.room ? { ...(state.room || {}), ...payload.room } : state.room,
           members: Array.isArray(payload.members)
             ? payload.members
             : state.members.map((member) => ({ ...member, is_ready: false })),
           answers: [],
+          chatMessages: [],
           ...realtimeMeta,
         };
       default:

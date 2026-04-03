@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, CheckCircle2, Loader2, UserX, XCircle } from 'lucide-react';
+import { Bell, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import {
   approvePartyRoomJoin,
@@ -48,7 +48,7 @@ function JoinRequestCard({ request, onApprove, onReject, busyId, pick }) {
           fontSize: '1.1rem',
         }}
       >
-        🎵
+        ♪
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <strong
@@ -95,7 +95,6 @@ export function PartyJoinRequestsPanel({ roomId, pick }) {
   const [busyId, setBusyId] = useState('');
   const loadedRef = useRef(false);
 
-  // Initial load
   useEffect(() => {
     if (!roomId) {
       return undefined;
@@ -115,7 +114,6 @@ export function PartyJoinRequestsPanel({ roomId, pick }) {
     return () => { cancelled = true; };
   }, [roomId, setJoinRequests]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!roomId) {
       return undefined;
@@ -169,16 +167,14 @@ export function PartyJoinRequestsPanel({ roomId, pick }) {
     }
   };
 
-  if (!joinRequests.length) {
-    return null;
-  }
-
   return (
-    <div className="party-lobby-block">
+    <div className={`party-lobby-block party-join-requests-card${!joinRequests.length ? ' is-empty' : ''}`}>
       <div className="party-lobby-block-head">
         <strong style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <Bell size={15} />
-          {pick('คำขอเข้าห้อง', 'Join Requests')}
+          {pick('คำขอเข้าห้อง', 'Join requests')}
+        </strong>
+        {joinRequests.length > 0 ? (
           <span
             style={{
               background: 'var(--color-primary)',
@@ -186,27 +182,33 @@ export function PartyJoinRequestsPanel({ roomId, pick }) {
               borderRadius: '999px',
               fontSize: '0.72rem',
               fontWeight: 700,
-              padding: '0.1rem 0.45rem',
+              padding: '0.1rem 0.5rem',
               lineHeight: 1.4,
+              flexShrink: 0,
             }}
           >
             {joinRequests.length}
           </span>
-        </strong>
-        <span>{pick('อนุมัติหรือปฏิเสธผู้ขอเข้าห้อง', 'Approve or reject incoming requests')}</span>
+        ) : null}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {joinRequests.map((req) => (
-          <JoinRequestCard
-            key={req.id}
-            request={req}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            busyId={busyId}
-            pick={pick}
-          />
-        ))}
-      </div>
+      {joinRequests.length ? (
+        <div className="party-join-requests-list">
+          {joinRequests.map((req) => (
+            <JoinRequestCard
+              key={req.id}
+              request={req}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              busyId={busyId}
+              pick={pick}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="party-join-requests-empty">
+          <span>{pick('ยังไม่มีคำขอ', 'No requests yet')}</span>
+        </div>
+      )}
     </div>
   );
 }

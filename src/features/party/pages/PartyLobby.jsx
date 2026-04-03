@@ -1,7 +1,12 @@
 import React, { useMemo } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
-import { getPartyRequiredReadyCount } from '@/features/party/lib/partyEngine';
+import {
+  PARTY_CATEGORY_OPTIONS,
+  PARTY_PRESETS,
+  getPartyRequiredReadyCount,
+} from '@/features/party/lib/partyEngine';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyJoinRequestsPanel } from '@/features/party/components/PartyJoinRequestsPanel';
@@ -20,127 +25,453 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   onToggleReady,
   onStartMatch,
   onCloseRoom,
+  hostEditor,
   pick,
 }) {
+  const navigate = useNavigate();
   const roomId = room?.id;
   const members = useHydratedPartyMembers(guestToken, partyProfile);
   const isVoteMode = room?.settings?.modeType === 'vote';
   const templateName = room?.settings?.templateName || '';
   const templateCoverUrl = room?.settings?.templateCoverUrl || '';
   const resolvedPoolName = templateName || pick(selectedPoolNameTh, selectedPoolName);
-  const readyCount = useMemo(
-    () => members.filter((member) => member.is_ready).length,
-    [members]
-  );
-  const requiredReadyCount = useMemo(
-    () => getPartyRequiredReadyCount(members.length),
-    [members.length]
+  const readyCount = useMemo(() => members.filter((member) => member.is_ready).length, [members]);
+  const requiredReadyCount = useMemo(() => getPartyRequiredReadyCount(members.length), [members.length]);
+  const editorIsVote = hostEditor?.settings?.modeType === 'vote';
+
+  const playerBlock = (
+    <div className="party-lobby-block">
+      <div className="party-lobby-block-head">
+        <strong>{pick('ผู้เล่นในห้อง', 'Players')}</strong>
+        {members.length > 0 ? (
+          <span className="party-ready-count">
+            <CheckCircle2 size={12} />
+            {readyCount}/{members.length} {pick('พร้อม', 'ready')}
+          </span>
+        ) : null}
+      </div>
+      <PartyPlayerList
+        members={members}
+        hostToken={room?.host_member_token}
+        currentToken={guestToken}
+        pick={pick}
+      />
+    </div>
   );
 
-  return (
-    <div className="party-lobby-layout">
-      {isHost && roomId ? (
-        <div className="party-lobby-section">
-          <PartyJoinRequestsPanel roomId={roomId} pick={pick} />
-        </div>
+  const settingsSummary = (
+    <div className="party-settings-summary">
+      <article className="party-stat-pill">
+        <strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong>
+        <span>{pick('โหมด', 'preset')}</span>
+      </article>
+      <article className="party-stat-pill">
+        <strong>{resolvedPoolName}</strong>
+        <span>{templateName ? pick('เทมเพลต', 'template') : pick('คลังเพลง', 'pool')}</span>
+      </article>
+      <article className="party-stat-pill">
+        <strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong>
+        <span>{isVoteMode ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</span>
+      </article>
+      <article className="party-stat-pill">
+        <strong>{room?.settings?.timePerRoundSec || 12}</strong>
+        <span>{pick('วิ คลิป', 'clip')}</span>
+      </article>
+      {isVoteMode ? (
+        <article className="party-stat-pill">
+          <strong>{room?.settings?.voteSec || 10}</strong>
+          <span>{pick('วิ โหวต', 'vote')}</span>
+        </article>
       ) : null}
-      <div className="party-lobby-section">
-        <div className="party-lobby-block">
-          <div className="party-lobby-block-head">
-            <strong>{pick('ผู้เล่นในห้อง', 'Players')}</strong>
-            <span>{pick('ทุกคนกด Ready ก่อน แล้ว host ค่อยเริ่ม', 'Everyone hits Ready, then the host starts.')}</span>
+      <article className="party-stat-pill">
+        <strong>{room?.settings?.revealSec || 12}</strong>
+        <span>{pick('วิ เฉลย', 'reveal')}</span>
+      </article>
+    </div>
+  );
+
+  if (isHost && hostEditor) {
+    return (
+      <div className="party-lobby-layout--host">
+        <div className="party-lobby-section party-lobby-section--settings">
+          <div className="party-lobby-block">
+            <div className="party-lobby-block-head">
+              <strong>{pick('การตั้งค่าห้อง', 'Room settings')}</strong>
+            </div>
+
+            <div className="party-host-settings-editor">
+              <div className="party-host-template-hero">
+                <div className="party-host-template-hero-copy">
+                  <span className="party-host-template-hero-kicker">{pick('เทมเพลต', 'Template')}</span>
+                  <strong>
+                    {hostEditor.settings.templateId
+                      ? (hostEditor.settings.templateName || pick('เลือกแล้ว', 'Selected'))
+                      : pick('ยังไม่ได้เลือก', 'Not selected')}
+                  </strong>
+                </div>
+                <div className="party-host-template-hero-actions">
+                  <Button
+                    variant="primary"
+                    className="party-gradient-action party-host-template-hero-btn"
+                    onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
+                  >
+                    {hostEditor.settings.templateId ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
+                  </Button>
+                  {hostEditor.settings.templateId ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => hostEditor.onChange((current) => ({
+                        ...current,
+                        templateId: '',
+                        templateName: '',
+                        templateCoverUrl: '',
+                        templatePlayableCount: 0,
+                        modeScope: 'all',
+                      }))}
+                    >
+                      {pick('ล้าง', 'Clear')}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="party-host-mode-row">
+                <button
+                  type="button"
+                  className={`party-lobby-mode-card is-quiz${hostEditor.settings.modeType === 'quiz' ? ' is-active' : ''}${hostEditor.settings.templateId && hostEditor.settings.modeScope === 'vote' ? ' is-disabled' : ''}`}
+                  onClick={() => hostEditor.onChange((current) => ({
+                    ...current,
+                    modeType: 'quiz',
+                    timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
+                  }))}
+                  disabled={hostEditor.settings.templateId && hostEditor.settings.modeScope === 'vote'}
+                >
+                  <span className="party-lobby-mode-card-emoji">🎵</span>
+                  <span className="party-lobby-mode-card-name">Music Quiz</span>
+                </button>
+                <button
+                  type="button"
+                  className={`party-lobby-mode-card is-vote${hostEditor.settings.modeType === 'vote' ? ' is-active' : ''}${hostEditor.settings.templateId && hostEditor.settings.modeScope === 'quiz' ? ' is-disabled' : ''}`}
+                  onClick={() => hostEditor.onChange((current) => ({ ...current, modeType: 'vote' }))}
+                  disabled={hostEditor.settings.templateId && hostEditor.settings.modeScope === 'quiz'}
+                >
+                  <span className="party-lobby-mode-card-vs">VS</span>
+                  <span className="party-lobby-mode-card-name">Vote Battle</span>
+                </button>
+              </div>
+
+              <div className="party-host-settings-grid">
+                {hostEditor.settings.modeType === 'quiz' ? (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('โหมดเกม', 'Game mode')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.presetId}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        presetId: event.target.value,
+                        timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
+                      }))}
+                    >
+                      {PARTY_PRESETS.map((preset) => (
+                        <option
+                          key={preset.id}
+                          value={preset.id}
+                          disabled={Boolean(
+                            hostEditor.settings.templateId
+                            && hostEditor.templatePoolLoaded
+                            && hostEditor.templatePresetAvailability[preset.id]
+                            && !hostEditor.templatePresetAvailability[preset.id]?.compatible
+                          )}
+                        >
+                          {pick(preset.labelTh, preset.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {hostEditor.settings.templateId ? (
+                  <div className="pgc-select-field">
+                    <span className="pgc-label">{pick('คลังเพลง', 'Song pool')}</span>
+                    <div className="party-host-pill-muted">{pick('จากเทมเพลต', 'From template')}</div>
+                  </div>
+                ) : (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('คลังเพลง', 'Song pool')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.songPoolSelectValue}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value.startsWith('preset:')) {
+                          const presetId = Number(value.replace('preset:', '')) || 0;
+                          const preset = hostEditor.songPresetOptions.find((item) => item.id === presetId);
+                          hostEditor.onChange((current) => ({
+                            ...current,
+                            categoryId: 'all',
+                            songPresetId: preset ? String(preset.id) : '',
+                            songPresetName: preset?.name || '',
+                          }));
+                          return;
+                        }
+
+                        hostEditor.onChange((current) => ({
+                          ...current,
+                          categoryId: value,
+                          songPresetId: '',
+                          songPresetName: '',
+                        }));
+                      }}
+                    >
+                      {PARTY_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {pick(option.labelTh, option.label)}
+                        </option>
+                      ))}
+                      {hostEditor.songPresetOptions.length > 0 ? (
+                        <optgroup label={pick('ชุดเพลง', 'Song presets')}>
+                          {hostEditor.songPresetOptions.map((option) => (
+                            <option key={option.id} value={`preset:${option.id}`}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                    </select>
+                  </label>
+                )}
+
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{editorIsVote ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}</span>
+                  <select
+                    className="pgc-select"
+                    value={editorIsVote ? hostEditor.settings.entrantCount : hostEditor.settings.roundCount}
+                    onChange={(event) => hostEditor.onChange((current) => (
+                      editorIsVote
+                        ? { ...current, entrantCount: Number(event.target.value) }
+                        : { ...current, roundCount: Number(event.target.value) }
+                    ))}
+                  >
+                    {(editorIsVote ? hostEditor.voteEntrantOptions : hostEditor.quizRoundOptions).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{editorIsVote ? pick('เวลาเพลง', 'Song time') : pick('เวลาคลิป', 'Clip')}</span>
+                  <select
+                    className="pgc-select"
+                    value={hostEditor.settings.timePerRoundSec}
+                    onChange={(event) => hostEditor.onChange((current) => ({
+                      ...current,
+                      timePerRoundSec: Number(event.target.value),
+                    }))}
+                  >
+                    {hostEditor.clipTimeOptions.map((seconds) => (
+                      <option key={seconds} value={seconds}>
+                        {seconds} {pick('วิ', 'sec')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="pgc-select-field">
+                  <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal')}</span>
+                  <select
+                    className="pgc-select"
+                    value={hostEditor.settings.revealSec}
+                    onChange={(event) => hostEditor.onChange((current) => ({
+                      ...current,
+                      revealSec: Number(event.target.value),
+                    }))}
+                  >
+                    {[6, 8, 10, 12, 15, 20].map((seconds) => (
+                      <option key={seconds} value={seconds}>
+                        {seconds} {pick('วิ', 'sec')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {editorIsVote ? (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('เวลาโหวต', 'Vote time')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.voteSec}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        voteSec: Number(event.target.value),
+                      }))}
+                    >
+                      {[5, 8, 10, 12, 15, 20].map((seconds) => (
+                        <option key={seconds} value={seconds}>
+                          {seconds} {pick('วิ', 'sec')}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              {hostEditor.settings.templateId && hostEditor.templateCompatibility ? (
+                <div className="party-host-settings-alert is-info">
+                  {`${hostEditor.templateCompatibility.playableSongCount} playable | ${hostEditor.templateCompatibility.choiceEligibleCount} choice-ready`}
+                </div>
+              ) : null}
+
+              <div className="party-host-toggle-grid">
+                {editorIsVote ? (
+                  <label className="pgc-toggle-item">
+                    <input
+                      type="checkbox"
+                      checked={hostEditor.settings.clipPlaybackMode === 'full'}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        clipPlaybackMode: event.target.checked ? 'full' : 'preview',
+                      }))}
+                    />
+                    <div className="pgc-toggle-text">
+                      <strong>{pick('เล่นเต็มคลิป', 'Full clip')}</strong>
+                    </div>
+                  </label>
+                ) : null}
+                <label className="pgc-toggle-item">
+                  <input
+                    type="checkbox"
+                    checked={hostEditor.settings.showLiveScores}
+                    onChange={(event) => hostEditor.onChange((current) => ({
+                      ...current,
+                      showLiveScores: event.target.checked,
+                    }))}
+                  />
+                  <div className="pgc-toggle-text">
+                    <strong>{pick('คะแนนเรียลไทม์', 'Live scores')}</strong>
+                  </div>
+                </label>
+                <label className="pgc-toggle-item">
+                  <input
+                    type="checkbox"
+                    checked={hostEditor.settings.randomOrder}
+                    onChange={(event) => hostEditor.onChange((current) => ({
+                      ...current,
+                      randomOrder: event.target.checked,
+                    }))}
+                  />
+                  <div className="pgc-toggle-text">
+                    <strong>{pick('สุ่มเพลง', 'Shuffle')}</strong>
+                  </div>
+                </label>
+              </div>
+
+              <div className="party-host-settings-actions">
+                <Button
+                  variant="primary"
+                  onClick={hostEditor.onSave}
+                  disabled={!hostEditor.hasPendingChanges || hostEditor.isSaving || (hostEditor.settings.templateId && !hostEditor.templateValidation.ok)}
+                >
+                  {hostEditor.isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={hostEditor.onReset}
+                  disabled={!hostEditor.hasPendingChanges || hostEditor.isSaving}
+                >
+                  {pick('ยกเลิก', 'Reset')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="party-lobby-start-panel party-lobby-start-panel--embedded">
+              <div className="party-lobby-start-panel-row">
+                <div className="party-lobby-start-panel-summary">
+                  {settingsSummary}
+                  {room?.name ? (
+                    <div className="party-lobby-start-panel-head">
+                      <strong>{room.name}</strong>
+                      <span>{readyCount}/{members.length} {pick('พร้อมแล้ว', 'ready')}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="party-lobby-start-actions">
+                  <Button
+                    variant="primary"
+                    className="party-start-btn party-start-btn--compact"
+                    onClick={onStartMatch}
+                    disabled={busyAction === 'start' || readyCount < requiredReadyCount}
+                  >
+                    {busyAction === 'start' ? pick('กำลังเตรียม...', 'Starting...') : pick('เริ่มเกม', 'Start Game')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="party-start-btn party-start-btn--compact party-start-btn--secondary"
+                    onClick={onCloseRoom}
+                    disabled={busyAction === 'close'}
+                  >
+                    {pick('ปิดห้อง', 'Close room')}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
-          <PartyPlayerList members={members} hostToken={room?.host_member_token} currentToken={guestToken} pick={pick} />
         </div>
+
+        <div className="party-lobby-section party-lobby-section--side">
+          {roomId ? <PartyJoinRequestsPanel roomId={roomId} pick={pick} /> : null}
+          {playerBlock}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="party-lobby-layout--guest">
+      <div className="party-lobby-section">
+        {playerBlock}
       </div>
 
       <div className="party-lobby-section">
         <div className="party-lobby-block">
           <div className="party-lobby-block-head">
             <strong>{pick('การตั้งค่าห้อง', 'Room settings')}</strong>
-            <span>
-              {isVoteMode
-                ? pick('ฟังสองเพลงแล้วโหวต เพลงแพ้จะตกรอบทันที', 'Listen to both tracks, vote, and eliminate the loser.')
-                : pick('กติกาในแมตช์นี้', 'Rules for this match')}
-            </span>
           </div>
           {templateName ? (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.85rem 1rem',
-                marginBottom: '1rem',
-                borderRadius: '1rem',
-                background: 'rgba(var(--color-primary-rgb), 0.08)',
-                border: '1px solid rgba(var(--color-primary-rgb), 0.22)',
-              }}
-            >
+            <div className="party-lobby-template-banner">
               <div
+                className="party-lobby-template-cover"
                 aria-hidden="true"
-                style={{
-                  width: '3rem',
-                  height: '3rem',
-                  borderRadius: '0.85rem',
-                  backgroundImage: `url(${getTemplateCoverUrl(templateCoverUrl)})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundColor: 'rgba(var(--color-primary-rgb), 0.12)',
-                  border: '1px solid rgba(var(--color-primary-rgb), 0.25)',
-                  flexShrink: 0,
-                }}
+                style={{ backgroundImage: `url(${getTemplateCoverUrl(templateCoverUrl)})` }}
               />
-              <div style={{ minWidth: 0 }}>
-                <strong style={{ display: 'block' }}>{templateName}</strong>
-                <span style={{ color: 'var(--color-text-muted)' }}>{pick('Template ที่เลือกสำหรับห้องนี้', 'Selected template for this room')}</span>
+              <div>
+                <strong>{templateName}</strong>
+                <span>{pick('เทมเพลต', 'Template')}</span>
               </div>
             </div>
           ) : null}
-          <div className="party-settings-summary">
-            <article className="party-stat-pill"><strong>{pick(currentPreset.labelTh, currentPreset.label)}</strong><span>{pick('โหมด', 'preset')}</span></article>
-            <article className="party-stat-pill"><strong>{resolvedPoolName}</strong><span>{templateName ? pick('เทมเพลต', 'template') : pick('คลังเพลง', 'pool')}</span></article>
-            <article className="party-stat-pill"><strong>{isVoteMode ? room?.settings?.entrantCount || 8 : room?.settings?.roundCount || 10}</strong><span>{isVoteMode ? pick('เพลง', 'songs') : pick('รอบ', 'rounds')}</span></article>
-            <article className="party-stat-pill"><strong>{room?.settings?.timePerRoundSec || 12}</strong><span>{pick('วิ คลิป', 'clip sec')}</span></article>
-            {isVoteMode ? (
-              <article className="party-stat-pill">
-                <strong>{room?.settings?.clipPlaybackMode === 'full' ? pick('เล่นเต็ม', 'Full clip') : pick('คลิปตัวอย่าง', 'Preview clip')}</strong>
-                <span>{pick('โหมดเล่น', 'playback')}</span>
-              </article>
-            ) : null}
-            {isVoteMode ? (
-              <article className="party-stat-pill"><strong>{room?.current_match?.settings?.voteSec || room?.settings?.voteSec || 10}</strong><span>{pick('วิ โหวต', 'vote sec')}</span></article>
-            ) : null}
-            <article className="party-stat-pill"><strong>{room?.settings?.revealSec || 12}</strong><span>{pick('วิ เฉลย', 'reveal sec')}</span></article>
-            <article className="party-stat-pill"><strong>{readyCount}/{members.length}</strong><span>{pick('พร้อม', 'ready')}</span></article>
-          </div>
-          <div className="party-lobby-actions">
-            {!isHost ? (
-              <Button variant={currentMember?.is_ready ? 'outline' : 'primary'} onClick={onToggleReady} disabled={busyAction === 'ready'}>
-                {pick('พร้อม', 'Ready')}
-              </Button>
-            ) : (
-              <Button variant="primary" onClick={onStartMatch} disabled={busyAction === 'start' || readyCount < requiredReadyCount}>
-                {busyAction === 'start' ? pick('กำลังเตรียมแมตช์...', 'Building the match...') : pick('เริ่มเกม', 'Start Game')}
-              </Button>
-            )}
-            {isHost ? (
-              <Button variant="outline" onClick={onCloseRoom} disabled={busyAction === 'close'}>
-                {pick('ปิดห้อง', 'Close room')}
-              </Button>
-            ) : null}
-            {!isHost && currentMember?.is_ready ? (
-              <span className="party-answer-note">
-                <CheckCircle2 size={14} />
-                {pick('พร้อมแล้ว รอ host เริ่มเกม', 'Ready. Waiting for host to start.')}
-              </span>
-            ) : null}
-          </div>
+          {settingsSummary}
+        </div>
+
+        <div className="party-lobby-start-panel">
+          <Button
+            variant={currentMember?.is_ready ? 'outline' : 'primary'}
+            className={!currentMember?.is_ready ? 'party-start-btn' : ''}
+            onClick={onToggleReady}
+            disabled={busyAction === 'ready'}
+          >
+            {pick('พร้อม', 'Ready')}
+          </Button>
+          {currentMember?.is_ready ? (
+            <span className="party-answer-note">
+              <CheckCircle2 size={14} />
+              {pick('พร้อมแล้ว รอโฮสต์เริ่มเกม', 'Ready. Waiting for host.')}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
   );
 });
-
-
-

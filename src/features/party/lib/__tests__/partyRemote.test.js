@@ -191,6 +191,7 @@ import {
   fetchPartySongPool,
   fetchPartyTemplateDetail,
   fetchPartyTemplates,
+  getPartyGuestToken,
   replacePartyTemplateItems,
 	  resolvePartyYoutubeUrl,
 	  syncPartyTemplateYoutubePlaylist,
@@ -198,6 +199,7 @@ import {
 	  submitPartySkipVote,
   subscribeToPartyRoom,
   togglePartyMemberReady,
+  updatePartyRoomSettings,
   uploadPartyTemplateCover,
 } from '../partyRemote.js';
 
@@ -317,6 +319,55 @@ describe('partyRemote realtime optimizations', () => {
     }));
 
     unsubscribe();
+  });
+
+  it('updates room settings for the host while the room is still in the lobby', async () => {
+    const originalWindow = global.window;
+    const storage = new Map();
+    global.window = {
+      localStorage: {
+        getItem: (key) => storage.get(key) ?? null,
+        setItem: (key, value) => {
+          storage.set(key, String(value));
+        },
+      },
+    };
+    try {
+      const hostToken = getPartyGuestToken();
+      mockState.partyRoomsSelectResponse = [{
+        id: 'room-1',
+        host_member_token: hostToken,
+        status: 'lobby',
+        updated_at: '2026-03-29T10:00:01.000Z',
+        settings: { modeType: 'quiz', roundCount: 10 },
+      }];
+      mockState.partyRoomsUpdateResponse = [{
+        id: 'room-1',
+        host_member_token: hostToken,
+        status: 'lobby',
+        updated_at: '2026-03-29T10:00:02.000Z',
+        settings: { modeType: 'vote', entrantCount: 8, templateId: '42', templateName: 'Anime Night' },
+      }];
+
+      const nextRoom = await updatePartyRoomSettings(
+        { id: 'room-1' },
+        { modeType: 'vote', entrantCount: 8, templateId: '42', templateName: 'Anime Night' },
+      );
+
+      expect(nextRoom?.settings).toEqual(expect.objectContaining({
+        modeType: 'vote',
+        entrantCount: 8,
+        templateId: '42',
+        templateName: 'Anime Night',
+      }));
+      expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.filters).toEqual(expect.arrayContaining([
+        { type: 'eq', column: 'id', value: 'room-1' },
+        { type: 'eq', column: 'status', value: 'lobby' },
+        { type: 'eq', column: 'updated_at', value: '2026-03-29T10:00:01.000Z' },
+      ]));
+    } finally {
+      global.window = originalWindow;
+    }
   });
 
   it('advances from the local room snapshot before falling back to a refetch', async () => {
@@ -1001,6 +1052,7 @@ function makeTemplateQueryBuilder({ selectData = null, selectError = null, inser
       return this;
     }),
     order: vi.fn(function order() { return this; }),
+    range: vi.fn(function range() { return this; }),
     in: vi.fn(function inFn() { return this; }),
     ilike: vi.fn(function ilike() { return this; }),
     maybeSingle: vi.fn(async () => ({ data: selectData, error: selectError })),
@@ -1081,6 +1133,12 @@ describe('partyRemote template CRUD', () => {
           mockState.operations.push({ table, action: 'delete' });
           return { eq: vi.fn(() => Promise.resolve({ error: null })) };
         });
+        return b;
+      }
+
+      if (table === 'user_profiles') {
+        const b = makeTemplateQueryBuilder({ selectData: [] });
+        b._table = table;
         return b;
       }
 
@@ -1210,6 +1268,13 @@ describe('partyRemote template CRUD', () => {
         };
       }
 
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn(function select() { return this; }),
+          in: vi.fn(async () => ({ data: [], error: null })),
+        };
+      }
+
       throw new Error(`Unexpected table: ${table}`);
     });
 
@@ -1301,6 +1366,12 @@ describe('partyRemote template CRUD', () => {
       if (table === 'party_song_templates') {
         return makeTemplateQueryBuilder({ selectData: null, selectError: { message: 'relation does not exist', code: '42P01' } });
       }
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn(function select() { return this; }),
+          in: vi.fn(async () => ({ data: [], error: null })),
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     });
 
@@ -1312,11 +1383,17 @@ describe('partyRemote template CRUD', () => {
       if (table === 'party_song_templates') {
         return makeTemplateQueryBuilder({ selectData: [] });
       }
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn(function select() { return this; }),
+          in: vi.fn(async () => ({ data: [], error: null })),
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     });
 
     const result = await fetchPartyTemplates();
-    expect(result).toEqual([]);
+    expect(result).toEqual({ templates: [], total: 0 });
   });
 
   it('fetchPartyTemplateDetail throws with kind=not_found when row is missing', async () => {
@@ -1352,6 +1429,12 @@ describe('partyRemote template CRUD', () => {
       }
       if (table === 'party_song_template_items') {
         return makeTemplateQueryBuilder({ selectData: SAMPLE_ITEM_ROWS });
+      }
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn(function select() { return this; }),
+          in: vi.fn(async () => ({ data: [], error: null })),
+        };
       }
       throw new Error(`Unexpected table: ${table}`);
     });
