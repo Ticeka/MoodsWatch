@@ -13,7 +13,6 @@ import {
   GripVertical,
   Layers,
   Loader2,
-  MessageSquare,
   Medal,
   Monitor,
   Music,
@@ -28,28 +27,33 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { Button } from '@/shared/components/ui/Button';
-import { EmptyState } from '@/shared/components/ui/EmptyState';
-import { ErrorState } from '@/shared/components/ui/ErrorState';
-import { SortSelect } from '@/shared/components/ui/SortSelect';
-import { BRAND_NAME } from '@/shared/config/brand';
-import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getCharactersPage, getTitleBySlug, getTitlePreviewByIds, getTitlesByIds, getTitlesPage } from '@/features/discover/lib/recommend';
-import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
-  CHARACTER_ENTITY_TYPE,
-  THEME_SONG_ENTITY_TYPE,
-  TITLE_ENTITY_TYPE,
-  buildCharacterEntity,
-  buildThemeSongEntity,
-  getCatalogEntities,
-  getCatalogEntityMeta,
-  getCatalogEntityName,
-  isCharacterEntity,
-  isThemeSongEntity,
-  normalizeCatalogEntityType,
-} from '@/shared/lib/catalogEntities';
+  getTierItemTitleFromFilename,
+  uploadTierlistImage,
+} from '@/features/tierlist/api';
+import {
+  TierListArtworkImage as ArtworkImage,
+  TierListCommentSection,
+  TierListCommunityCard,
+  TierListEmptyPanel,
+  TierListErrorPanel,
+} from '@/features/tierlist/components';
+import {
+  BROWSE_ENTITY_ID_LIMIT,
+  BROWSE_ENTITY_IDS_PER_LIST,
+  BROWSE_ENTITY_IDS_PER_TEMPLATE,
+  BROWSE_ENTITY_LIST_LIMIT,
+  BROWSE_PAGE_SIZE,
+  CREATE_CATEGORY_OPTIONS,
+  CREATE_SORT_OPTIONS,
+  CREATE_STATUS_OPTIONS,
+  ENTITY_TYPE_OPTIONS,
+  ENTITY_VISIBILITY_CHUNK_SIZE,
+  MANAGE_LISTS_PAGE_SIZE,
+  TIER_COLORS,
+} from '@/features/tierlist/constants';
 import {
   addTierRow,
   buildTierListFromTemplate,
@@ -74,223 +78,64 @@ import {
   removeTierRow,
   saveTierList,
   saveTierTemplate,
-  seedPoolFromCatalog,
   saveTierListDraftLocal,
+  seedPoolFromCatalog,
 } from '@/features/tierlist/lib/tierlistStore';
-import { getTitleArtwork } from '@/shared/lib/titleArtwork';
-import { CANONICAL_TITLE_PREVIEW_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
-import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { supabase } from '@/shared/lib/supabase';
+import {
+  getCatalogTypeChipLabel,
+  getCreateSortLabel,
+  getDisplayName,
+  getEntityModeSummary,
+  getEntityTypeLabel,
+  getMediaTypeLabel,
+  getMetaLine,
+  getOwnerDisplayName,
+  getStatusLabel,
+  getTemplateExplorerSummary,
+  getThemeSongSummary,
+  getTierCategoryLabel,
+  getTierRowFallbackLabel,
+  matchesCharacterName,
+  matchesSongQuery,
+  matchesStatusFilter,
+} from '@/features/tierlist/lib/tierlistLabels';
+import {
+  buildRemixedTierList,
+  formatTierDate,
+  getCurrentUsername,
+  getTierListPodium,
+  hasMeaningfulTierRanking,
+  hasTierListStructureChanged,
+  hasVisibleTierListTitles,
+  isOwnedListByUser,
+  isOwnedTemplateByUser,
+  paginate,
+  sortListsByRecentAndPopularity,
+  sortTemplates,
+} from '@/features/tierlist/lib/tierlistPageUtils';
+import { Button } from '@/shared/components/ui/Button';
+import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
+import { BRAND_NAME } from '@/shared/config/brand';
+import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { CANONICAL_TITLE_PREVIEW_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
+import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
+import {
+  CHARACTER_ENTITY_TYPE,
+  THEME_SONG_ENTITY_TYPE,
+  TITLE_ENTITY_TYPE,
+  buildCharacterEntity,
+  buildThemeSongEntity,
+  getCatalogEntities,
+  getCatalogEntityName,
+  isCharacterEntity,
+  isThemeSongEntity,
+  normalizeCatalogEntityType,
+} from '@/shared/lib/catalogEntities';
+import { supabase } from '@/shared/lib/supabase';
+import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import './TierList.css';
-
-const BROWSE_PAGE_SIZE = 9;
-const MANAGE_LISTS_PAGE_SIZE = 12;
-const BROWSE_ENTITY_LIST_LIMIT = 8;
-const BROWSE_ENTITY_ID_LIMIT = 320;
-const BROWSE_ENTITY_IDS_PER_TEMPLATE = 8;
-const BROWSE_ENTITY_IDS_PER_LIST = 18;
-const ENTITY_VISIBILITY_CHUNK_SIZE = 200;
-const TIER_COLORS = ['#ff7f7f', '#ffbf7f', '#ffdf7f', '#ffff7f', '#bfff7f', '#7fffff', '#7fbfff', '#7f7fff'];
-const ENTITY_TYPE_OPTIONS = [
-  { value: TITLE_ENTITY_TYPE, label: 'Titles' },
-  { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
-  { value: THEME_SONG_ENTITY_TYPE, label: 'Theme Songs' },
-];
-const CREATE_SORT_OPTIONS = [
-  { value: 'popularity', label: 'Popular' },
-  { value: 'score', label: 'Score' },
-  { value: 'year', label: 'Newest' },
-  { value: 'title', label: 'A-Z' },
-];
-const CREATE_CATEGORY_OPTIONS = [
-  { value: 'anime', label: 'Anime' },
-  { value: 'manga', label: 'Manga' },
-  { value: 'manhwa', label: 'Manhwa' },
-  { value: 'romance', label: 'Romance' },
-  { value: 'action', label: 'Action' },
-  { value: 'comedy', label: 'Comedy' },
-  { value: 'fantasy', label: 'Fantasy' },
-  { value: 'drama', label: 'Drama' },
-  { value: 'characters', label: 'Characters' },
-];
-const CREATE_STATUS_OPTIONS = ['all', 'ongoing', 'completed', 'upcoming', 'hiatus', 'cancelled'];
-
-function humanizeTierToken(value = '') {
-  return String(value || '')
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function getMediaTypeLabel(type, pick) {
-  const normalized = String(type || '').toLowerCase();
-  const labels = {
-    all: pick('ทุกประเภท', 'All Types'),
-    anime: pick('อนิเมะ', 'Anime'),
-    manga: pick('มังงะ', 'Manga'),
-    manhwa: pick('มันฮวา', 'Manhwa'),
-  };
-
-  return labels[normalized] || humanizeTierToken(type);
-}
-
-function getEntityTypeLabel(entityType, pick) {
-  const normalized = normalizeCatalogEntityType(entityType);
-  const labels = {
-    [TITLE_ENTITY_TYPE]: pick('เรื่อง', 'Titles'),
-    [CHARACTER_ENTITY_TYPE]: pick('ตัวละคร', 'Characters'),
-    [THEME_SONG_ENTITY_TYPE]: pick('เพลงประกอบ', 'Theme Songs'),
-  };
-
-  return labels[normalized] || pick('เรื่อง', 'Titles');
-}
-
-function getCreateSortLabel(sortValue, pick) {
-  const labels = {
-    popularity: pick('ยอดนิยม', 'Popular'),
-    score: pick('คะแนน', 'Score'),
-    year: pick('ใหม่สุด', 'Newest'),
-    title: pick('ก-ฮ', 'A-Z'),
-  };
-
-  return labels[sortValue] || humanizeTierToken(sortValue);
-}
-
-function getTierCategoryLabel(category, pick) {
-  const normalized = String(category || '').toLowerCase();
-  const labels = {
-    anime: pick('อนิเมะ', 'Anime'),
-    manga: pick('มังงะ', 'Manga'),
-    manhwa: pick('มันฮวา', 'Manhwa'),
-    romance: pick('โรแมนซ์', 'Romance'),
-    action: pick('แอ็กชัน', 'Action'),
-    comedy: pick('คอเมดี้', 'Comedy'),
-    fantasy: pick('แฟนตาซี', 'Fantasy'),
-    drama: pick('ดราม่า', 'Drama'),
-    characters: pick('ตัวละคร', 'Characters'),
-    songs: pick('เพลง', 'Songs'),
-  };
-
-  return labels[normalized] || humanizeTierToken(category);
-}
-
-function getTierRowFallbackLabel(index, pick) {
-  return pick(`ชั้น ${index + 1}`, `Tier ${index + 1}`);
-}
-
-function getOwnerDisplayName(ownerName, ownerUsername, pick) {
-  if (!ownerUsername && ownerName === 'You') {
-    return pick('คุณ', 'You');
-  }
-
-  return ownerName || ownerUsername || pick('ผู้ใช้', 'User');
-}
-
-function getDisplayName(title) {
-  if (title?.isCustomTierItem) {
-    return title.title || title.title_en || title.title_th || 'Custom item';
-  }
-  return getCatalogEntityName(title);
-}
-
-function getMetaLine(title) {
-  if (title?.isCustomTierItem) {
-    return title.subtitle || title.sourceTitleName || '';
-  }
-  return getCatalogEntityMeta(title);
-}
-
-function getThemeSongSummary(song) {
-  return [
-    song?.theme_label || song?.role,
-    song?.artist_name,
-    song?.episodes_text,
-  ].filter(Boolean);
-}
-
-function getTemplateExplorerSummary(template, pick) {
-  const entityLabel = getEntityTypeLabel(template?.entityType, pick);
-  const categoryLabel = template?.category ? getTierCategoryLabel(template.category, pick) : pick('ทั่วไป', 'General');
-  const rowCount = Array.isArray(template?.defaultRows) ? template.defaultRows.length : 0;
-  const plays = Number(template?.plays || 0);
-  const playsLabel = pick(`${plays} ครั้งเล่น`, `${plays} plays`);
-
-  return {
-    categoryLabel,
-    statLine: [
-      entityLabel,
-      rowCount > 0 ? pick(`${rowCount} tier`, `${rowCount} tiers`) : '',
-      plays > 0 ? playsLabel : '',
-    ].filter(Boolean).join(' • '),
-    playsLabel,
-  };
-}
-
-const TIERLIST_IMAGE_BUCKET = 'tierlist-images';
-
-function buildTierlistImagePath(userId, file, prefix = 'image') {
-  const ext = String(file?.name || 'jpg').split('.').pop() || 'jpg';
-  const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-  return `${userId}/${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
-}
-
-async function uploadTierlistImage(file, userId, prefix = 'image') {
-  if (!supabase || !userId || !file) {
-    throw new Error('Invalid image upload request');
-  }
-
-  const path = buildTierlistImagePath(userId, file, prefix);
-  const { error } = await supabase.storage
-    .from(TIERLIST_IMAGE_BUCKET)
-    .upload(path, file, { cacheControl: '31536000', upsert: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const { data } = supabase.storage.from(TIERLIST_IMAGE_BUCKET).getPublicUrl(path);
-  if (!data?.publicUrl) {
-    throw new Error('Image upload did not return a public URL');
-  }
-
-  return `${data.publicUrl}?t=${Date.now()}`;
-}
-
-function getTierItemTitleFromFilename(fileName, pick) {
-  const rawName = String(fileName || '').replace(/\.[^.]+$/, '').trim();
-  if (!rawName) {
-    return pick('รูปที่อัปโหลด', 'Uploaded image');
-  }
-
-  return rawName.replace(/[_-]+/g, ' ').trim() || pick('รูปที่อัปโหลด', 'Uploaded image');
-}
-
-function ArtworkImage({ entity, alt = '', className = '', loading = 'lazy', fetchPriority = 'auto' }) {
-  const [src, setSrc] = useState(() => getTitleArtwork(entity));
-
-  useEffect(() => {
-    setSrc(getTitleArtwork(entity));
-  }, [entity]);
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className={className}
-      loading={loading}
-      decoding="async"
-      fetchPriority={fetchPriority}
-      draggable={false}
-      onError={() => {
-        if (src !== '/battle-placeholder.svg') {
-          setSrc('/battle-placeholder.svg');
-        }
-      }}
-    />
-  );
-}
 
 function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
   return {
@@ -998,219 +843,6 @@ async function resolveTierBrowseEntitiesForEntries(entries = [], options = {}) {
   return resolveTierBrowseEntitiesForIds(entityIds, options);
 }
 
-function getCurrentUsername(user) {
-  return user?.profile?.username || user?.user_metadata?.username || null;
-}
-
-function isOwnedTemplateByUser(template, user) {
-  if (!template) {
-    return false;
-  }
-
-  if (user?.id && template?.ownerUserId) {
-    return String(template.ownerUserId) === String(user.id);
-  }
-
-  return !template?.ownerUserId && !template?.isPublic;
-}
-
-function isOwnedListByUser(list, user) {
-  if (!list) {
-    return false;
-  }
-
-  if (user?.id && list?.ownerUserId) {
-    return String(list.ownerUserId) === String(user.id);
-  }
-
-  return !list?.ownerUserId && String(list?.ownerName || '').trim().toLowerCase() === 'you';
-}
-
-function formatTierDate(value, locale) {
-  if (!value) {
-    return '';
-  }
-
-  try {
-    return new Intl.DateTimeFormat(locale || undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(value));
-  } catch {
-    return '';
-  }
-}
-
-function buildRemixedTierList(list, user) {
-  const ownerUsername = getCurrentUsername(user);
-  return {
-    ...list,
-    id: undefined,
-    ownerName: ownerUsername || 'You',
-    ownerUsername,
-    ownerUserId: user?.id || null,
-    isPublic: false,
-    title: `${list.title} (Remix)`,
-    playCount: 0,
-  };
-}
-
-function TierListEmptyPanel({ icon, title, message, action }) {
-  return (
-    <div className="glass-heavy tierlist-empty-state">
-      <EmptyState
-        className="empty-state"
-        icon={icon}
-        title={title}
-        message={message}
-        action={action}
-      />
-    </div>
-  );
-}
-
-function TierListErrorPanel({ message, onRetry, backLabel, backTo }) {
-  return (
-    <div className="glass-heavy tierlist-empty-state">
-      <ErrorState message={message} onRetry={onRetry} />
-      {backLabel && backTo ? (
-        <div className="tierlist-template-actions">
-          <Link className="btn btn-ghost btn-sm" to={backTo}>
-            {backLabel}
-          </Link>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function sortTemplates(templates, sortBy) {
-  if (sortBy === 'newest') {
-    return [...templates].sort(
-      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-    );
-  }
-  if (sortBy === 'alphabet') {
-    return [...templates].sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
-  }
-  return [...templates].sort((a, b) => Number(b.plays || 0) - Number(a.plays || 0));
-}
-
-function paginate(items, page, pageSize) {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const clampedPage = Math.min(Math.max(1, page), totalPages);
-  const start = (clampedPage - 1) * pageSize;
-  return {
-    items: items.slice(start, start + pageSize),
-    page: clampedPage,
-    totalPages,
-  };
-}
-
-function getEntityModeSummary(entityType, pick) {
-  if (normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE) {
-    return {
-      title: pick('จัด Tier จากตัวละคร', 'Build a character tier'),
-      description: pick('ค้นหาจากชื่อเรื่องต้นทาง แล้วค่อยกรองชื่อตัวละครให้ละเอียดต่อได้', 'Browse by source title first, then refine by character name.'),
-    };
-  }
-
-  if (normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE) {
-    return {
-      title: pick('จัด Tier จากเพลง OP/ED', 'Build a theme-song tier'),
-      description: pick('เลือกเรื่องก่อน แล้วคัดเฉพาะเพลงที่อยากหยิบมาเทียบกัน', 'Choose a title first, then pick the OP/ED tracks you want to compare.'),
-    };
-  }
-
-  return {
-    title: pick('จัด Tier จากชื่อเรื่อง', 'Build a title tier'),
-    description: pick('คัดรายการจากแคตตาล็อกด้วยตัวกรองละเอียด แล้วเริ่มเล่นได้ทันที', 'Use richer catalog filters to curate the exact set you want before playing.'),
-  };
-}
-
-function getCatalogTypeChipLabel(entity, pick) {
-  if (isThemeSongEntity(entity)) {
-    return pick('เพลง', 'Song');
-  }
-
-  if (entity?.subtype === 'manhwa' || entity?.type === 'manhwa') {
-    return getMediaTypeLabel('manhwa', pick);
-  }
-
-  if (entity?.type === 'manga') {
-    return getMediaTypeLabel('manga', pick);
-  }
-
-  if (isCharacterEntity(entity)) {
-    return pick('ตัวละคร', 'Character');
-  }
-
-  return getMediaTypeLabel('anime', pick);
-}
-
-function getStatusLabel(status, pick) {
-  const normalized = String(status || '').toLowerCase();
-  const labels = {
-    all: pick('ทุกสถานะ', 'All status'),
-    ongoing: pick('กำลังฉาย/อัปเดต', 'Ongoing'),
-    completed: pick('จบแล้ว', 'Completed'),
-    upcoming: pick('กำลังมา', 'Upcoming'),
-    hiatus: pick('พักชั่วคราว', 'Hiatus'),
-    cancelled: pick('ยกเลิก', 'Cancelled'),
-  };
-
-  return labels[normalized] || status || pick('ไม่ระบุ', 'Unknown');
-}
-
-function matchesStatusFilter(entity, statusFilter) {
-  if (!statusFilter || statusFilter === 'all') {
-    return true;
-  }
-
-  return String(entity?.status || '').toLowerCase() === String(statusFilter).toLowerCase();
-}
-
-function matchesCharacterName(entity, query = '') {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const haystack = [
-    entity?.title_en,
-    entity?.title_th,
-    entity?.title_native,
-    entity?.sourceTitleName,
-    entity?.voice_actor_name,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return haystack.includes(normalizedQuery);
-}
-
-function matchesSongQuery(entity, query = '') {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const haystack = [
-    entity?.song_title,
-    entity?.artist_name,
-    entity?.theme_label,
-    entity?.episodes_text,
-    entity?.sourceTitleName,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return haystack.includes(normalizedQuery);
-}
-
 function matchesTierEntryAgeGate(entry, entityMaps, showAdult = false, visibility = null) {
   if (!entry) {
     return false;
@@ -1288,193 +920,6 @@ function splitByAdultFlag(items = []) {
     }
     return groups;
   }, { safe: [], adult: [] });
-}
-
-function normalizeTierListIdentityText(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function getTierListCommunityIdentityKey(list) {
-  if (!list) {
-    return '';
-  }
-
-  return JSON.stringify({
-    owner: normalizeTierListIdentityText(list.ownerUserId || list.ownerUsername || list.ownerName || ''),
-    templateId: String(list.templateId || ''),
-    entityType: normalizeCatalogEntityType(list.entityType),
-    title: normalizeTierListIdentityText(list.title),
-    description: normalizeTierListIdentityText(list.description),
-    rows: (list.rows || []).map((row) => ({
-      label: normalizeTierListIdentityText(row?.label),
-      color: String(row?.color || ''),
-      titleIds: (row?.titleIds || []).map(Number).filter(Boolean),
-    })),
-    poolTitleIds: (list.poolTitleIds || []).map(Number).filter(Boolean),
-  });
-}
-
-function dedupeTierListsByIdentity(lists = []) {
-  const seen = new Set();
-  return [...lists]
-    .sort((a, b) => {
-      const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
-      if (updatedDelta !== 0) return updatedDelta;
-      return Number(b.playCount || 0) - Number(a.playCount || 0);
-    })
-    .filter((list) => {
-    const identityKey = getTierListCommunityIdentityKey(list);
-    if (!identityKey || seen.has(identityKey)) {
-      return false;
-    }
-    seen.add(identityKey);
-    return true;
-    });
-}
-
-function sortListsByRecentAndPopularity(lists = []) {
-  return dedupeTierListsByIdentity(lists).sort((a, b) => {
-    const updatedDelta = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
-    if (updatedDelta !== 0) return updatedDelta;
-    return Number(b.playCount || 0) - Number(a.playCount || 0);
-  });
-}
-
-function getTierListPodium(list, entityById) {
-  if (!list || !entityById) {
-    return [];
-  }
-
-  return list.rows
-    .flatMap((row) => row.titleIds || [])
-    .map((id) => entityById.get(Number(id)))
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function getTierListPreviewTitles(list, titleById, limit = 4) {
-  const ids = [
-    ...list.rows.flatMap((row) => row.titleIds),
-    ...list.poolTitleIds,
-  ];
-
-  return ids
-    .map((id) => titleById.get(Number(id)))
-    .filter(Boolean)
-    .slice(0, limit);
-}
-
-function _hasVisibleTemplateTitles(template, titleById) {
-  return (template?.titleIds || []).some((id) => titleById.has(Number(id)));
-}
-
-function hasVisibleTierListTitles(list, titleById) {
-  const ids = [
-    ...(list?.rows || []).flatMap((row) => row.titleIds || []),
-    ...(list?.poolTitleIds || []),
-  ];
-
-  return ids.some((id) => titleById.has(Number(id)));
-}
-
-function hasMeaningfulTierRanking(list) {
-  return (list?.rows || []).some((row) => Array.isArray(row?.titleIds) && row.titleIds.length > 0);
-}
-
-function hasTierListStructureChanged(left, right) {
-  if (!left || !right) {
-    return false;
-  }
-
-  return JSON.stringify({
-    rows: left.rows?.map((row) => ({
-      id: row.id,
-      titleIds: row.titleIds,
-    })),
-    poolTitleIds: left.poolTitleIds,
-  }) !== JSON.stringify({
-    rows: right.rows?.map((row) => ({
-      id: row.id,
-      titleIds: row.titleIds,
-    })),
-    poolTitleIds: right.poolTitleIds,
-  });
-}
-
-function TierListCommunityCard({ list, titleById, pick, primaryLabel, primaryTo, onPrimaryClick, secondaryLabel, onSecondaryClick }) {
-  const coverTitles = getTierListPreviewTitles(list, titleById);
-  const previewRows = list.rows
-    .map((row, index) => ({
-      id: row.id,
-      label: row.label || getTierRowFallbackLabel(index, pick),
-      color: row.color || TIER_COLORS[index % TIER_COLORS.length],
-      titles: row.titleIds
-        .map((id) => titleById.get(Number(id)))
-        .filter(Boolean)
-        .slice(0, 4),
-    }))
-    .filter((row) => row.titles.length > 0)
-    .slice(0, 4);
-
-  return (
-    <article className="glass-heavy tierlist-browse-card tierlist-community-card">
-      <div className="tierlist-community-preview">
-        {previewRows.length > 0 ? (
-          previewRows.map((row) => (
-            <div key={`${list.id}-${row.id}`} className="tierlist-community-preview-row">
-              <span
-                className="tierlist-community-preview-label"
-                style={{ background: row.color }}
-              >
-                {row.label}
-              </span>
-              <div className="tierlist-community-preview-strip">
-                {row.titles.map((title) => (
-                  <ArtworkImage key={`${list.id}-${row.id}-${title.id}`} entity={title} alt="" loading="lazy" />
-                ))}
-              </div>
-            </div>
-          ))
-        ) : coverTitles.length > 0 ? (
-          <div className="tierlist-browse-cover">
-            {coverTitles.map((title) => (
-              <ArtworkImage key={`${list.id}-${title.id}`} entity={title} alt="" loading="lazy" />
-            ))}
-          </div>
-        ) : (
-          <div className="tierlist-browse-cover-empty" />
-        )}
-      </div>
-      <div className="tierlist-browse-card-body">
-        <small className="tierlist-chip">
-          {pick('โดย', 'by')}{' '}
-          {(() => {
-            const slug = list.ownerUsername || list.ownerName;
-            const label = getOwnerDisplayName(list.ownerName, list.ownerUsername, pick);
-            return slug && slug !== 'You' ? (
-              <Link to={`/u/${slug}`} className="tierlist-owner-link" onClick={(e) => e.stopPropagation()}>
-                {label}
-              </Link>
-            ) : label;
-          })()}
-        </small>
-        <h3>{list.title}</h3>
-        <small className="tierlist-meta">
-          {list.rows.length} {pick('ชั้น', 'tiers')} • {list.playCount || 0} {pick('ครั้งเล่น', 'plays')}
-        </small>
-      </div>
-      <div className="tierlist-browse-card-actions">
-        {primaryTo ? (
-          <Link className="btn btn-primary btn-sm" to={primaryTo}>{primaryLabel}</Link>
-        ) : (
-          <Button size="sm" variant="primary" onClick={onPrimaryClick}>{primaryLabel}</Button>
-        )}
-        {secondaryLabel ? (
-          <Button size="sm" variant="ghost" onClick={onSecondaryClick}>{secondaryLabel}</Button>
-        ) : null}
-      </div>
-    </article>
-  );
 }
 
 function TierTitleCard({
@@ -1847,7 +1292,7 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       window.removeEventListener('pointerup', finishRowDrag);
       window.removeEventListener('pointercancel', cancelRowDrag);
     };
-  }, [autoScrollDuringDrag, readOnly, resolveRowDragTarget, rowDragState, setTierList]);
+  }, [readOnly, rowDragState, setTierList]);
 
   const filteredPoolIds = useMemo(() => {
     if (!normalizedPoolQuery) return tierList.poolTitleIds;
@@ -2521,314 +1966,6 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
           onClose={() => setIsSongModalOpen(false)}
         />
       ) : null}
-    </section>
-  );
-}
-
-function formatCmtDate(value) {
-  if (!value) return '';
-  try {
-    return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-  } catch {
-    return '';
-  }
-}
-
-function TierListCommentSection({ listId, listOwnerId, pick }) {
-  const { user } = useAuth();
-  const [comments, setComments] = useState([]);
-  const [draft, setDraft] = useState('');
-  const [replyDraft, setReplyDraft] = useState('');
-  const [activeReplyId, setActiveReplyId] = useState(null);
-  const [expandedReplies, setExpandedReplies] = useState(new Set());
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [replyError, setReplyError] = useState('');
-  const replyInputRef = useRef(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!supabase || !listId) return;
-      setIsLoading(true);
-      try {
-        const { data, error: loadErr } = await supabase
-          .from('tierlist_comments')
-          .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
-          .eq('list_id', listId)
-          .order('created_at', { ascending: true })
-          .limit(100);
-        if (loadErr) throw loadErr;
-        if (!cancelled) setComments(data || []);
-      } catch {
-        // silently ignore load error
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [listId]);
-
-  const fireNotifications = (parentEntry) => {
-    const actorName = user?.profile?.name || user?.profile?.username || pick('ใครบางคน', 'Someone');
-    const notifInserts = [];
-    if (listOwnerId && listOwnerId !== user.id) {
-      notifInserts.push(supabase.from('notifications').insert({
-        user_id: listOwnerId,
-        type: parentEntry ? 'comment_reply' : 'tierlist_comment',
-        reference_id: listId,
-        actor_user_id: user.id,
-        message: parentEntry
-          ? `${actorName} ${pick('ตอบกลับคอมเมนต์บน tierlist ของคุณ', 'replied to a comment on your tierlist')}`
-          : `${actorName} ${pick('คอมเมนต์บน tierlist ของคุณ', 'commented on your tierlist')}`,
-      }));
-    }
-    if (parentEntry?.author_user_id && parentEntry.author_user_id !== user.id && parentEntry.author_user_id !== listOwnerId) {
-      notifInserts.push(supabase.from('notifications').insert({
-        user_id: parentEntry.author_user_id,
-        type: 'comment_reply',
-        reference_id: listId,
-        actor_user_id: user.id,
-        message: `${actorName} ${pick('ตอบกลับคอมเมนต์ของคุณ', 'replied to your comment')}`,
-      }));
-    }
-    if (notifInserts.length) Promise.allSettled(notifInserts);
-  };
-
-  const submitComment = async (e) => {
-    e.preventDefault();
-    if (!user?.id || !draft.trim() || !supabase) return;
-    const body = draft.trim();
-    if (body.length > 500) { setError(pick('คอมเมนต์ยาวเกินไป (สูงสุด 500 ตัวอักษร)', 'Comment too long (max 500 chars)')); return; }
-    setIsSubmitting(true);
-    setError('');
-    try {
-      const { data, error: insertErr } = await supabase
-        .from('tierlist_comments')
-        .insert({ list_id: listId, author_user_id: user.id, parent_comment_id: null, comment_body: body })
-        .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
-        .single();
-      if (insertErr) throw insertErr;
-      setComments((c) => [...c, data]);
-      setDraft('');
-      fireNotifications(null);
-    } catch {
-      setError(pick('โพสต์คอมเมนต์ไม่สำเร็จ', 'Failed to post comment'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const submitReply = async (e, parentEntry) => {
-    e.preventDefault();
-    if (!user?.id || !replyDraft.trim() || !supabase) return;
-    const body = replyDraft.trim();
-    if (body.length > 500) { setReplyError(pick('คอมเมนต์ยาวเกินไป (สูงสุด 500 ตัวอักษร)', 'Comment too long (max 500 chars)')); return; }
-    setIsSubmitting(true);
-    setReplyError('');
-    try {
-      const { data, error: insertErr } = await supabase
-        .from('tierlist_comments')
-        .insert({ list_id: listId, author_user_id: user.id, parent_comment_id: parentEntry.id, comment_body: body })
-        .select('id, comment_body, created_at, parent_comment_id, author_user_id, author:user_profiles!tierlist_comments_author_user_id_fkey(id, name, username, avatar_url)')
-        .single();
-      if (insertErr) throw insertErr;
-      setComments((c) => [...c, data]);
-      setReplyDraft('');
-      setActiveReplyId(null);
-      setExpandedReplies((prev) => new Set([...prev, parentEntry.id]));
-      fireNotifications(parentEntry);
-    } catch {
-      setReplyError(pick('โพสต์คอมเมนต์ไม่สำเร็จ', 'Failed to post comment'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleReplyClick = (entry) => {
-    const isSame = activeReplyId === entry.id;
-    setActiveReplyId(isSame ? null : entry.id);
-    setReplyDraft('');
-    setReplyError('');
-    if (!isSame) {
-      setExpandedReplies((prev) => new Set([...prev, entry.id]));
-      setTimeout(() => replyInputRef.current?.focus(), 50);
-    }
-  };
-
-  const toggleReplies = (commentId) => {
-    setExpandedReplies((prev) => {
-      const next = new Set(prev);
-      if (next.has(commentId)) next.delete(commentId);
-      else next.add(commentId);
-      return next;
-    });
-  };
-
-  const topLevel = comments.filter((c) => !c.parent_comment_id);
-  const repliesMap = {};
-  comments.filter((c) => c.parent_comment_id).forEach((c) => {
-    if (!repliesMap[c.parent_comment_id]) repliesMap[c.parent_comment_id] = [];
-    repliesMap[c.parent_comment_id].push(c);
-  });
-
-  const renderThread = (entry) => {
-    const author = entry.author_profile || entry.author || {};
-    const authorName = author.name || author.username || pick('ผู้ใช้', 'User');
-    const authorInitial = authorName.charAt(0).toUpperCase();
-    const replies = repliesMap[entry.id] || [];
-    const hasReplies = replies.length > 0;
-    const isExpanded = expandedReplies.has(entry.id);
-    const isReplyFormOpen = activeReplyId === entry.id;
-
-    return (
-      <div key={entry.id} className="tl-comment-thread">
-        <div className="tl-comment">
-          <div className="tl-comment-avatar">
-            {author.avatar_url
-              ? <img src={author.avatar_url} alt="" />
-              : <span>{authorInitial}</span>}
-          </div>
-          <div className="tl-comment-body">
-            <div className="tl-comment-meta">
-              {author.username
-                ? <Link to={`/u/${author.username}`} className="tl-comment-author">{authorName}</Link>
-                : <span className="tl-comment-author">{authorName}</span>}
-              <span className="tl-comment-date">{formatCmtDate(entry.created_at)}</span>
-            </div>
-            <p className="tl-comment-text">{entry.comment_body}</p>
-            {user?.id && (
-              <button
-                type="button"
-                className="tl-comment-reply-btn"
-                onClick={() => handleReplyClick(entry)}
-              >
-                {pick('ตอบกลับ', 'Reply')}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {(hasReplies || isReplyFormOpen) && (
-          <div className="tl-comment-thread-indent">
-            {hasReplies && (
-              <button
-                type="button"
-                className="tl-comment-show-replies-btn"
-                onClick={() => toggleReplies(entry.id)}
-              >
-                <span className={`tl-reply-chevron${isExpanded ? ' expanded' : ''}`}>โ–ถ</span>
-                {isExpanded
-                  ? pick('ซ่อนการตอบกลับ', 'Hide replies')
-                  : pick(`${replies.length} การตอบกลับ`, `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`)}
-              </button>
-            )}
-
-            {isExpanded && (
-              <div className="tl-comment-replies">
-                {replies.map((reply) => {
-                  const rAuthor = reply.author_profile || reply.author || {};
-                  const rAuthorName = rAuthor.name || rAuthor.username || pick('ผู้ใช้', 'User');
-                  const rAuthorInitial = rAuthorName.charAt(0).toUpperCase();
-                  return (
-                    <div key={reply.id} className="tl-comment tl-comment-reply">
-                      <div className="tl-comment-avatar tl-comment-avatar-sm">
-                        {rAuthor.avatar_url
-                          ? <img src={rAuthor.avatar_url} alt="" />
-                          : <span>{rAuthorInitial}</span>}
-                      </div>
-                      <div className="tl-comment-body">
-                        <div className="tl-comment-meta">
-                          {rAuthor.username
-                            ? <Link to={`/u/${rAuthor.username}`} className="tl-comment-author">{rAuthorName}</Link>
-                            : <span className="tl-comment-author">{rAuthorName}</span>}
-                          <span className="tl-comment-date">{formatCmtDate(reply.created_at)}</span>
-                        </div>
-                        <p className="tl-comment-text">{reply.comment_body}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {isReplyFormOpen && (
-              <form className="tl-comment-inline-form" onSubmit={(e) => submitReply(e, entry)}>
-                <textarea
-                  ref={replyInputRef}
-                  value={replyDraft}
-                  onChange={(e) => { setReplyDraft(e.target.value); setReplyError(''); }}
-                  placeholder={pick(`ตอบกลับ ${authorName}...`, `Reply to ${authorName}...`)}
-                  maxLength={500}
-                  rows={2}
-                  disabled={isSubmitting}
-                  className="tl-comment-inline-textarea"
-                />
-                <div className="tl-comment-inline-actions">
-                  <small>{replyDraft.length}/500</small>
-                  {replyError && <span className="tl-comment-error">{replyError}</span>}
-                  <button
-                    type="button"
-                    className="tl-comment-cancel-btn"
-                    onClick={() => { setActiveReplyId(null); setReplyDraft(''); }}
-                  >
-                    {pick('ยกเลิก', 'Cancel')}
-                  </button>
-                  <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !replyDraft.trim()}>
-                    {isSubmitting ? pick('กำลังโพสต์...', 'Posting...') : pick('ตอบกลับ', 'Reply')}
-                  </Button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <section className="container tl-comments-section">
-      <h2 className="tl-comments-title">
-        <MessageSquare size={16} />
-        {pick('ความคิดเห็น', 'Comments')}
-        <span className="tierlist-count">{comments.length}</span>
-      </h2>
-
-      {user?.id ? (
-        <form className="tl-comment-form" onSubmit={submitComment}>
-          <textarea
-            value={draft}
-            onChange={(e) => { setDraft(e.target.value); setError(''); }}
-            placeholder={pick('เขียนความคิดเห็น...', 'Write a comment...')}
-            maxLength={500}
-            rows={3}
-            disabled={isSubmitting}
-          />
-          <div className="tl-comment-form-row">
-            <small>{draft.length}/500</small>
-            {error && <span className="tl-comment-error">{error}</span>}
-            <Button type="submit" size="sm" variant="primary" disabled={isSubmitting || !draft.trim()}>
-              {isSubmitting ? pick('กำลังโพสต์...', 'Posting...') : pick('โพสต์', 'Post')}
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <p className="tl-comment-login-hint">
-          <Link to="/login">{pick('เข้าสู่ระบบ', 'Log in')}</Link> {pick('เพื่อแสดงความคิดเห็น', 'to leave a comment')}
-        </p>
-      )}
-
-      {isLoading ? (
-        <div className="tl-comment-loading"><Loader2 size={18} className="animate-spin" /></div>
-      ) : topLevel.length === 0 ? (
-        <p className="tl-comment-empty">{pick('ยังไม่มีความคิดเห็น มาเป็นคนแรกได้เลย', 'No comments yet. Be the first!')}</p>
-      ) : (
-        <div className="tl-comments-list">
-          {topLevel.map((entry) => renderThread(entry))}
-        </div>
-      )}
     </section>
   );
 }
