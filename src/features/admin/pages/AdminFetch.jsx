@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fetchAniListGraphQL } from '@/shared/lib/anilist';
+import { annotateCharacterIdentities, normalizePresentationGender } from '@/shared/lib/characterIdentity';
 import { supabase } from '@/shared/lib/supabase';
 import { getAutoDerivableMoods } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -154,7 +155,7 @@ const ANILIST_CHARACTER_ROLE_OPTIONS = ['MAIN', 'SUPPORTING', 'BACKGROUND'];
 const ANILIST_RATE_LIMIT_MAX_RETRIES = 4;
 const ANILIST_RATE_LIMIT_BASE_DELAY_MS = 2500;
 const ANILIST_RATE_LIMIT_TITLE_COOLDOWN_MS = 8000;
-const CHAR_STAFF_GQL = `query($id:Int!$characterPage:Int!$characterPerPage:Int!){Media(id:$id){characters(page:$characterPage,perPage:$characterPerPage,sort:[ROLE,RELEVANCE]){pageInfo{currentPage hasNextPage}edges{role node{id name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
+const CHAR_STAFF_GQL = `query($id:Int!$characterPage:Int!$characterPerPage:Int!){Media(id:$id){characters(page:$characterPage,perPage:$characterPerPage,sort:[ROLE,RELEVANCE]){pageInfo{currentPage hasNextPage}edges{role node{id gender name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
 
 function isAniListRateLimitError(error) {
   const message = String(error?.message || '').toLowerCase();
@@ -902,17 +903,19 @@ async function upsertCharStaff(titleId, media, options = {}) {
   const { error: delStaffErr } = await supabase.from('title_staff').delete().eq('canonical_title_id', titleId);
   if (delStaffErr) throw delStaffErr;
 
-  const chars = (media?.characters?.edges || []).map((edge, i) => ({
+  const rawChars = (media?.characters?.edges || []).map((edge, i) => ({
     canonical_title_id: titleId,
     anilist_id: edge.node?.id ?? null,
     name_full: edge.node?.name?.full ?? null,
     name_native: edge.node?.name?.native ?? null,
     image_url: edge.node?.image?.medium ?? null,
     role: edge.role ?? null,
+    presentation_gender: normalizePresentationGender(edge.node?.gender),
     voice_actor_name: edge.voiceActors?.[0]?.name?.full ?? null,
     voice_actor_image: edge.voiceActors?.[0]?.image?.medium ?? null,
     sort_order: i,
   }));
+  const chars = annotateCharacterIdentities(rawChars);
 
   const dedupedChars = [];
   const seenAniListIds = new Set();
@@ -957,6 +960,10 @@ async function upsertCharStaff(titleId, media, options = {}) {
           name_native: character.name_native,
           image_url: character.image_url,
           role: character.role,
+          presentation_gender: character.presentation_gender,
+          lead_type: character.lead_type,
+          is_primary_protagonist: Boolean(character.is_primary_protagonist),
+          is_primary_heroine: Boolean(character.is_primary_heroine),
           voice_actor_name: character.voice_actor_name,
           voice_actor_image: character.voice_actor_image,
           sort_order: character.sort_order,
@@ -1066,15 +1073,17 @@ async function fetchPornhwaDbCharactersViaProxy(slug, apiKey, signal) {
 }
 
 async function upsertPornhwaDbCharacters(titleId, characters) {
-  const rows = (characters || []).map((char, i) => ({
+  const rawRows = (characters || []).map((char, i) => ({
     canonical_title_id: titleId,
     anilist_id: null,
     name_full: char.name || null,
     name_native: (char.alternativeNames || []).find((n) => /[가-힣]/.test(n)) || null,
     image_url: char.image || null,
     role: char.role ? char.role.toUpperCase() : null,
+    presentation_gender: normalizePresentationGender(char.gender),
     sort_order: i,
   }));
+  const rows = annotateCharacterIdentities(rawRows);
 
   const { data: existingChars, error: existingCharsErr } = await supabase
     .from('title_characters')
@@ -1097,6 +1106,10 @@ async function upsertPornhwaDbCharacters(titleId, characters) {
         .update({
           name_native: row.name_native,
           image_url: row.image_url,
+          presentation_gender: row.presentation_gender,
+          lead_type: row.lead_type,
+          is_primary_protagonist: Boolean(row.is_primary_protagonist),
+          is_primary_heroine: Boolean(row.is_primary_heroine),
           sort_order: row.sort_order,
         })
         .eq('id', existingRow.id);

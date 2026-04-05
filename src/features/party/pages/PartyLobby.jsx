@@ -57,6 +57,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const templateName = room?.settings?.templateName || '';
   const templateCoverUrl = room?.settings?.templateCoverUrl || '';
   const titleGuessSetName = room?.settings?.titleGuessSetName || '';
+  const titleGuessSetId = room?.settings?.titleGuessSetId || '';
   const titleGuessQuestionCount = Math.max(0, Number(room?.settings?.titleGuessQuestionCount || 0));
   const resolvedPool = getResolvedPoolCopy({
     isTitleGuessMode,
@@ -72,10 +73,23 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const editorTemplateName = hostEditor?.settings?.templateName || '';
   const selectedTitleGuessSet = hostEditor?.selectedTitleGuessSet || null;
   const selectedTitleGuessSetName = selectedTitleGuessSet?.name || hostEditor?.settings?.titleGuessSetName || '';
+  const selectedTitleGuessSetCoverUrl = selectedTitleGuessSet?.coverUrl || '';
+  const officialTitleGuessSetOptions = useMemo(
+    () => (hostEditor?.titleGuessSetOptions || []).filter((option) => option?.isOfficial),
+    [hostEditor?.titleGuessSetOptions]
+  );
   const selectedTitleGuessQuestionCount = Math.max(
     0,
     Number(selectedTitleGuessSet?.questionCount || hostEditor?.settings?.titleGuessQuestionCount || 0),
   );
+  const activeLobbyTitleGuessSet = useMemo(() => {
+    if (!titleGuessSetId) {
+      return null;
+    }
+
+    return hostEditor?.titleGuessSetOptions?.find((option) => String(option.id || '') === String(titleGuessSetId)) || null;
+  }, [hostEditor?.titleGuessSetOptions, titleGuessSetId]);
+  const activeLobbyTitleGuessCoverUrl = activeLobbyTitleGuessSet?.coverUrl || '';
   const titleGuessStartBlocked = editorIsTitleGuess && (!String(hostEditor?.settings?.titleGuessSetId || '').trim() || selectedTitleGuessQuestionCount <= 0);
   const hostStartDisabled = busyAction === 'start' || readyCount < requiredReadyCount || titleGuessStartBlocked;
 
@@ -148,6 +162,19 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
             <div className="party-host-settings-editor">
               {editorIsTitleGuess ? (
                 <div className="party-host-template-hero party-host-template-hero--title-guess">
+                  <div className="party-host-template-hero-art" aria-hidden="true">
+                    {selectedTitleGuessSetCoverUrl ? (
+                      <img
+                        className="party-host-template-hero-art-image"
+                        src={selectedTitleGuessSetCoverUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className="party-host-template-hero-art-fallback">🃏</span>
+                    )}
+                  </div>
                   <div className="party-host-template-hero-copy">
                     <span className="party-host-template-hero-kicker">{pick('ชุดคำถาม', 'Question set')}</span>
                     <strong>
@@ -319,7 +346,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                       disabled={hostEditor.titleGuessSetsLoading}
                       onChange={(event) => {
                         const nextId = String(event.target.value || '').trim();
-                        const selectedSet = hostEditor.titleGuessSetOptions.find((item) => String(item.id || '') === nextId);
+                        const selectedSet = officialTitleGuessSetOptions.find((item) => String(item.id || '') === nextId);
                         hostEditor.onChange((current) => ({
                           ...current,
                           titleGuessSetId: nextId,
@@ -334,9 +361,9 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                       <option value="">
                         {hostEditor.titleGuessSetsLoading
                           ? pick('กำลังโหลดชุดทายชื่อเรื่อง...', 'Loading Guess the Title sets...')
-                          : pick('เลือกชุดทายชื่อเรื่อง', 'Choose a Guess the Title set')}
+                          : pick('เลือกชุดทางการ', 'Choose an official set')}
                       </option>
-                      {hostEditor.titleGuessSetOptions.map((option) => (
+                      {officialTitleGuessSetOptions.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.questionCount > 0
                             ? `${option.name} (${option.questionCount})`
@@ -507,11 +534,11 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 </div>
               ) : null}
 
-              {editorIsTitleGuess && !hostEditor.titleGuessSetsLoading && hostEditor.titleGuessSetOptions.length === 0 ? (
+              {editorIsTitleGuess && !hostEditor.titleGuessSetsLoading && officialTitleGuessSetOptions.length === 0 ? (
                 <div className="party-host-settings-alert is-info">
                   {pick(
-                    'ยังไม่มีชุดทายชื่อเรื่องให้เลือก ลองกด "สร้างชุดใหม่" ด้านบนเพื่อเพิ่มชุดแรกของห้องนี้',
-                    'No Guess the Title sets are available yet. Use "Create new set" above to add the first one.',
+                    'ยังไม่มีชุดคำถามทางการให้เลือกในตอนนี้',
+                    'No official question sets are available right now.',
                   )}
                 </div>
               ) : null}
@@ -644,7 +671,17 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
           {isTitleGuessMode && titleGuessSetName ? (
             <div className="party-lobby-template-banner party-lobby-template-banner--title-guess">
               <div className="party-lobby-template-cover party-lobby-template-cover--title-guess" aria-hidden="true">
-                <span>🃏</span>
+                {activeLobbyTitleGuessCoverUrl ? (
+                  <img
+                    className="party-lobby-template-cover-image"
+                    src={activeLobbyTitleGuessCoverUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <span>🃏</span>
+                )}
               </div>
               <div>
                 <strong>{titleGuessSetName}</strong>
@@ -653,11 +690,17 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
             </div>
           ) : templateName ? (
             <div className="party-lobby-template-banner">
-              <div
-                className="party-lobby-template-cover"
-                aria-hidden="true"
-                style={{ backgroundImage: `url(${getTemplateCoverUrl(templateCoverUrl)})` }}
-              />
+              <div className="party-lobby-template-cover" aria-hidden="true">
+                {templateCoverUrl ? (
+                  <img
+                    className="party-lobby-template-cover-image"
+                    src={getTemplateCoverUrl(templateCoverUrl)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : null}
+              </div>
               <div>
                 <strong>{templateName}</strong>
                 <span>{pick('ชุดเพลง', 'Song set')}</span>

@@ -126,11 +126,11 @@ export function PartyTemplateBuilderPage() {
   const { user } = useAuth();
 
   const returnTo = searchParams.get('returnTo') || '/party/templates';
-  const baseTemplateId = searchParams.get('base') || null;
-  const editTemplateId = searchParams.get('edit') || null;
-  const sourceId = editTemplateId || baseTemplateId;
   const requestedMode = String(searchParams.get('mode') || '').trim().toLowerCase();
-  const builderMode = !sourceId && requestedMode === 'title-guess' ? 'title-guess' : 'template';
+  const builderMode = requestedMode === 'title-guess' ? 'title-guess' : 'template';
+  const baseTemplateId = builderMode === 'template' ? (searchParams.get('base') || null) : null;
+  const editTemplateId = builderMode === 'template' ? (searchParams.get('edit') || null) : null;
+  const sourceId = editTemplateId || baseTemplateId;
   const templateDraftStorageKey = useMemo(
     () => getPartyTemplateBuilderDraftKey({ editTemplateId, baseTemplateId }),
     [baseTemplateId, editTemplateId],
@@ -1458,7 +1458,6 @@ export function PartyTemplateBuilderPage() {
     </div>
   );
 }
-
 
 
 

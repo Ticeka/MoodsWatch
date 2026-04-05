@@ -1,4 +1,4 @@
-import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -8,6 +8,8 @@ import {
   Compass,
   Crown,
   Download,
+  Eye,
+  EyeOff,
   GripVertical,
   Layers,
   Loader2,
@@ -16,6 +18,7 @@ import {
   Monitor,
   Music,
   Palette,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -52,12 +55,18 @@ import {
   buildTierListFromTemplate,
   createTemplateFromCatalog,
   createTierListFromTemplate,
+  cleanupDuplicateTierLists,
+  deleteTierList,
+  deleteTierTemplate,
   dedupeTierTemplatesByIdentity,
   findTierList,
+  findReusableTierListDraft,
   findTierTemplate,
   filterTierListToCatalog,
   loadTierListDetail,
   loadTierLibrary,
+  loadOwnedTierListStats,
+  loadOwnedTierListsPage,
   loadTierTemplateDetail,
   loadTierTemplates,
   moveTitle,
@@ -66,6 +75,7 @@ import {
   saveTierList,
   saveTierTemplate,
   seedPoolFromCatalog,
+  saveTierListDraftLocal,
 } from '@/features/tierlist/lib/tierlistStore';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { CANONICAL_TITLE_PREVIEW_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
@@ -75,6 +85,7 @@ import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import './TierList.css';
 
 const BROWSE_PAGE_SIZE = 9;
+const MANAGE_LISTS_PAGE_SIZE = 12;
 const BROWSE_ENTITY_LIST_LIMIT = 8;
 const BROWSE_ENTITY_ID_LIMIT = 320;
 const BROWSE_ENTITY_IDS_PER_TEMPLATE = 8;
@@ -178,10 +189,16 @@ function getOwnerDisplayName(ownerName, ownerUsername, pick) {
 }
 
 function getDisplayName(title) {
+  if (title?.isCustomTierItem) {
+    return title.title || title.title_en || title.title_th || 'Custom item';
+  }
   return getCatalogEntityName(title);
 }
 
 function getMetaLine(title) {
+  if (title?.isCustomTierItem) {
+    return title.subtitle || title.sourceTitleName || '';
+  }
   return getCatalogEntityMeta(title);
 }
 
@@ -191,6 +208,63 @@ function getThemeSongSummary(song) {
     song?.artist_name,
     song?.episodes_text,
   ].filter(Boolean);
+}
+
+function getTemplateExplorerSummary(template, pick) {
+  const entityLabel = getEntityTypeLabel(template?.entityType, pick);
+  const categoryLabel = template?.category ? getTierCategoryLabel(template.category, pick) : pick('ทั่วไป', 'General');
+  const rowCount = Array.isArray(template?.defaultRows) ? template.defaultRows.length : 0;
+  const plays = Number(template?.plays || 0);
+  const playsLabel = pick(`${plays} ครั้งเล่น`, `${plays} plays`);
+
+  return {
+    categoryLabel,
+    statLine: [
+      entityLabel,
+      rowCount > 0 ? pick(`${rowCount} tier`, `${rowCount} tiers`) : '',
+      plays > 0 ? playsLabel : '',
+    ].filter(Boolean).join(' • '),
+    playsLabel,
+  };
+}
+
+const TIERLIST_IMAGE_BUCKET = 'tierlist-images';
+
+function buildTierlistImagePath(userId, file, prefix = 'image') {
+  const ext = String(file?.name || 'jpg').split('.').pop() || 'jpg';
+  const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  return `${userId}/${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+}
+
+async function uploadTierlistImage(file, userId, prefix = 'image') {
+  if (!supabase || !userId || !file) {
+    throw new Error('Invalid image upload request');
+  }
+
+  const path = buildTierlistImagePath(userId, file, prefix);
+  const { error } = await supabase.storage
+    .from(TIERLIST_IMAGE_BUCKET)
+    .upload(path, file, { cacheControl: '31536000', upsert: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data } = supabase.storage.from(TIERLIST_IMAGE_BUCKET).getPublicUrl(path);
+  if (!data?.publicUrl) {
+    throw new Error('Image upload did not return a public URL');
+  }
+
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
+function getTierItemTitleFromFilename(fileName, pick) {
+  const rawName = String(fileName || '').replace(/\.[^.]+$/, '').trim();
+  if (!rawName) {
+    return pick('รูปที่อัปโหลด', 'Uploaded image');
+  }
+
+  return rawName.replace(/[_-]+/g, ' ').trim() || pick('รูปที่อัปโหลด', 'Uploaded image');
 }
 
 function ArtworkImage({ entity, alt = '', className = '', loading = 'lazy', fetchPriority = 'auto' }) {
@@ -218,22 +292,39 @@ function ArtworkImage({ entity, alt = '', className = '', loading = 'lazy', fetc
   );
 }
 
-function buildEntityMaps(titles = []) {
+function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
+  return {
+    id: Number(item?.id),
+    title: String(item?.title || ''),
+    title_en: String(item?.title || ''),
+    title_th: String(item?.title || ''),
+    sourceTitleName: String(item?.subtitle || ''),
+    subtitle: String(item?.subtitle || ''),
+    cover: String(item?.imageUrl || ''),
+    image_url: String(item?.imageUrl || ''),
+    source_url: String(item?.sourceUrl || ''),
+    entityType: normalizeCatalogEntityType(entityType),
+    isCustomTierItem: true,
+  };
+}
+
+function buildEntityMaps(titles = [], customItems = [], customEntityType = TITLE_ENTITY_TYPE) {
   const sourceEntries = Array.isArray(titles) ? titles : [];
+  const customEntities = (customItems || []).map((item) => toCustomTierEntity(item, customEntityType));
   const titleMap = new Map(
-    sourceEntries
+    [...sourceEntries
       .filter((entry) => !isCharacterEntity(entry) && !isThemeSongEntity(entry))
-      .map((title) => [Number(title.id), title])
+      .map((title) => [Number(title.id), title]), ...customEntities.map((item) => [Number(item.id), item])]
   );
   const directCharacterEntities = sourceEntries.filter((entry) => isCharacterEntity(entry));
   const catalogCharacterEntities = getCatalogEntities(sourceEntries, CHARACTER_ENTITY_TYPE);
   const characterMap = new Map(
-    [...catalogCharacterEntities, ...directCharacterEntities].map((character) => [Number(character.id), character])
+    [...catalogCharacterEntities, ...directCharacterEntities, ...customEntities].map((character) => [Number(character.id), character])
   );
   const themeSongMap = new Map(
-    sourceEntries
+    [...sourceEntries
       .filter((entry) => isThemeSongEntity(entry))
-      .map((song) => [Number(song.id), song])
+      .map((song) => [Number(song.id), song]), ...customEntities.map((item) => [Number(item.id), item])]
   );
 
   return {
@@ -383,6 +474,10 @@ async function fetchCharacterEntitiesByIds(characterIds = [], options = {}) {
           name_native,
           image_url,
           role,
+          is_primary_protagonist,
+          is_primary_heroine,
+          lead_type,
+          presentation_gender,
           voice_actor_name,
           voice_actor_image,
           sort_order,
@@ -428,6 +523,10 @@ async function fetchCharacterEntitiesByIds(characterIds = [], options = {}) {
             name_native,
             image_url,
             role,
+            is_primary_protagonist,
+            is_primary_heroine,
+            lead_type,
+            presentation_gender,
             voice_actor_name,
             voice_actor_image,
             sort_order,
@@ -901,6 +1000,46 @@ async function resolveTierBrowseEntitiesForEntries(entries = [], options = {}) {
 
 function getCurrentUsername(user) {
   return user?.profile?.username || user?.user_metadata?.username || null;
+}
+
+function isOwnedTemplateByUser(template, user) {
+  if (!template) {
+    return false;
+  }
+
+  if (user?.id && template?.ownerUserId) {
+    return String(template.ownerUserId) === String(user.id);
+  }
+
+  return !template?.ownerUserId && !template?.isPublic;
+}
+
+function isOwnedListByUser(list, user) {
+  if (!list) {
+    return false;
+  }
+
+  if (user?.id && list?.ownerUserId) {
+    return String(list.ownerUserId) === String(user.id);
+  }
+
+  return !list?.ownerUserId && String(list?.ownerName || '').trim().toLowerCase() === 'you';
+}
+
+function formatTierDate(value, locale) {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return new Intl.DateTimeFormat(locale || undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(value));
+  } catch {
+    return '';
+  }
 }
 
 function buildRemixedTierList(list, user) {
@@ -1436,9 +1575,14 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
   const boardRef = useRef(null);
   const dragStateRef = useRef(null);
   const rowDragStateRef = useRef(null);
+  const tierListRef = useRef(tierList);
   const sampleEntity = titleById.values().next().value;
   const isSongTierList = normalizeCatalogEntityType(tierList?.entityType) === THEME_SONG_ENTITY_TYPE || isThemeSongEntity(sampleEntity);
   const normalizedPoolQuery = useMemo(() => String(query || '').trim().toLowerCase(), [query]);
+
+  useEffect(() => {
+    tierListRef.current = tierList;
+  }, [tierList]);
 
   useEffect(() => {
     dragStateRef.current = dragState;
@@ -1744,6 +1888,33 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (readOnly || !tierList?.id) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      saveTierListDraftLocal(tierList);
+    }, 450);
+
+    return () => window.clearTimeout(timeout);
+  }, [readOnly, tierList]);
+
+  useEffect(() => {
+    if (readOnly) {
+      return undefined;
+    }
+
+    const handleBeforeUnload = () => {
+      if (tierListRef.current?.id) {
+        saveTierListDraftLocal(tierListRef.current);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [readOnly]);
 
   useEffect(() => {
     if (saveState !== 'success') {
@@ -2060,15 +2231,6 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
             {pick('แถว', 'Row')}
           </Button>
           <Button
-            variant="primary"
-            size="sm"
-            icon={<Save size={14} />}
-            onClick={handleSave}
-            disabled={isSaving || readOnly}
-          >
-            {isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
-          </Button>
-          <Button
             variant="ghost"
             size="sm"
             icon={<Download size={14} />}
@@ -2102,6 +2264,30 @@ function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pic
           </span>
         )}
       </section>
+
+      {!readOnly ? (
+        <section className={`tiermaker-savebar glass-heavy ${isSaving ? 'is-saving' : ''} ${statusClass}`}>
+          <div className="tiermaker-savebar-copy">
+            <strong>{pick('บันทึกเมื่อจัดเสร็จแล้ว', 'Save when you finish arranging')}</strong>
+            <span>
+              {saveState === 'success'
+                ? saveMessage || pick('บันทึกล่าสุดเรียบร้อยแล้ว', 'Latest changes are saved')
+                : saveState === 'error'
+                  ? saveMessage || pick('บันทึกไม่สำเร็จ ลองอีกครั้งได้เลย', 'Save failed. Please try again.')
+                  : pick('การลากจัดอันดับจะยังไม่ถูกบันทึกจนกว่าจะกดปุ่มนี้', 'Your ranking changes will not be saved until you press this button.')}
+            </span>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Save size={14} />}
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึกการจัดอันดับ', 'Save Ranking')}
+          </Button>
+        </section>
+      ) : null}
 
       {/* Board */}
       {isSongTierList ? (
@@ -2884,9 +3070,16 @@ export function TierListBrowsePage() {
     hydrateBrowseEntities();
   }, [isLoading, previewHydrationEntries, showAdult, hydrationRetryKey]);
 
+  const browseCustomItems = useMemo(
+    () => [
+      ...communityPreviewCandidates.flatMap((list) => list?.customItems || []),
+      ...library.templates.flatMap((template) => template?.customItems || []),
+    ],
+    [communityPreviewCandidates, library.templates]
+  );
   const entityMaps = useMemo(
-    () => buildEntityMaps([...titles, ...songEntities]),
-    [songEntities, titles]
+    () => buildEntityMaps([...titles, ...songEntities], browseCustomItems),
+    [browseCustomItems, songEntities, titles]
   );
   const publicLists = useMemo(
     () => {
@@ -2907,8 +3100,18 @@ export function TierListBrowsePage() {
 
   const handlePlayTemplate = async (template) => {
     try {
+      const currentLibrary = await loadTierLibrary([], {
+        userId: user?.id || null,
+        includePublic: false,
+        includeOwned: true,
+        showAdult,
+      });
+      const cleanupResult = await cleanupDuplicateTierLists(currentLibrary, {
+        userId: user?.id || null,
+      });
+      const workingLibrary = cleanupResult.library;
       const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, null, {
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, workingLibrary, {
         userId: user?.id || null,
         preserveOwnership: true,
       });
@@ -2919,6 +3122,19 @@ export function TierListBrowsePage() {
       const list = buildTierListFromTemplate(normalizedSavedTemplate);
       const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
       const ownerUsername = getCurrentUsername(user);
+      const reusableDraft = findReusableTierListDraft({
+        ...seeded,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
+        ownerUserId: user?.id || null,
+      }, libraryAfterTemplate, {
+        userId: user?.id || null,
+      });
+      if (reusableDraft) {
+        setLibrary(libraryAfterTemplate);
+        navigate(`/tierlist/play/${reusableDraft.id}`);
+        return;
+      }
       const libraryAfterList = await saveTierList({
         ...seeded,
         ownerName: ownerUsername || 'You',
@@ -2980,9 +3196,16 @@ export function TierListBrowsePage() {
         <div className="tierlist-browse-title-row-left">
           <h1>{pick('ศูนย์รวม Tier List', 'Tier List Explorer')}</h1>
         </div>
-        <Link className="tierlist-browse-create-btn" to="/tierlist/create">
-          <Plus size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}
-        </Link>
+        <div className="tierlist-browse-title-row-actions">
+          {user?.id ? (
+            <Link className="tierlist-browse-manage-btn" to="/tierlist/me">
+              <Monitor size={14} /> {pick('จัดการของฉัน', 'Manage Mine')}
+            </Link>
+          ) : null}
+          <Link className="tierlist-browse-create-btn" to="/tierlist/create">
+            <Plus size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}
+          </Link>
+        </div>
       </div>
 
       <nav className="container tierlist-browse-tabs">
@@ -3085,6 +3308,7 @@ export function TierListBrowsePage() {
                     .map((id) => entityById.get(Number(id)))
                     .filter(Boolean);
                   const coverEntity = cover[0] || (template.previewArtworkUrl ? { cover: template.previewArtworkUrl } : null);
+                  const explorerSummary = getTemplateExplorerSummary(template, pick);
 
                   return (
                     <article key={template.id} className="tierlist-explorer-card">
@@ -3106,7 +3330,12 @@ export function TierListBrowsePage() {
                         </span>
                       </div>
                       <div className="tierlist-explorer-card-body">
+                        <div className="tierlist-explorer-card-meta">
+                          <span className="tierlist-explorer-card-tag">{explorerSummary.categoryLabel}</span>
+                          <span className="tierlist-explorer-card-stat">{explorerSummary.statLine}</span>
+                        </div>
                         <h3>{template.title}</h3>
+                        <p className="tierlist-explorer-card-description">{explorerSummary.playsLabel}</p>
                         <div className="tierlist-explorer-card-actions">
                           <Button size="sm" variant="primary" className="tierlist-explorer-btn-rank" onClick={() => handlePlayTemplate(template)}>
                             {pick('จัดอันดับ', 'Rank')}
@@ -3300,7 +3529,10 @@ export function TierListTemplatePage() {
     return () => { cancelled = true; };
   }, [pick, templateId, showAdult, user?.id, isAuthLoading]);
 
-  const entityMaps = useMemo(() => buildEntityMaps([...titles, ...songEntities]), [songEntities, titles]);
+  const entityMaps = useMemo(
+    () => buildEntityMaps([...titles, ...songEntities], template?.customItems || [], template?.entityType),
+    [songEntities, template?.customItems, template?.entityType, titles]
+  );
   const titleById = useMemo(
     () => getBestEntityMapForIds(entityMaps, template?.titleIds || [], template?.entityType),
     [entityMaps, template?.entityType, template?.titleIds]
@@ -3320,8 +3552,12 @@ export function TierListTemplatePage() {
 
   const handlePlay = async () => {
     try {
+      const cleanupResult = await cleanupDuplicateTierLists(library, {
+        userId: user?.id || null,
+      });
+      const workingLibrary = cleanupResult.library;
       const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, library, {
+      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, workingLibrary, {
         userId: user?.id || null,
         preserveOwnership: true,
       });
@@ -3331,6 +3567,18 @@ export function TierListTemplatePage() {
       const list = buildTierListFromTemplate(savedTemplate);
       const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
       const ownerUsername = getCurrentUsername(user);
+      const reusableDraft = findReusableTierListDraft({
+        ...seeded,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
+        ownerUserId: user?.id || null,
+      }, libraryAfterTemplate, {
+        userId: user?.id || null,
+      });
+      if (reusableDraft) {
+        navigate(`/tierlist/play/${reusableDraft.id}`);
+        return;
+      }
       const libraryAfterList = await saveTierList({
         ...seeded,
         ownerName: ownerUsername || 'You',
@@ -3520,6 +3768,10 @@ export function TierListCreatePage() {
   const [loadError, setLoadError] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [templateDesc, setTemplateDesc] = useState('');
+  const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [customItems, setCustomItems] = useState([]);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isUploadingPoolItems, setIsUploadingPoolItems] = useState(false);
   const [category, setCategory] = useState('anime');
   const [entityType, setEntityType] = useState(TITLE_ENTITY_TYPE);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -3679,7 +3931,14 @@ export function TierListCreatePage() {
     return result;
   }, [isSongMode, selectedIds, songEntityCache]);
 
-  const selectedItems = isSongMode ? selectedSongEntities : selectedTitles;
+  const selectedCustomEntities = useMemo(
+    () => Array.from(selectedIds)
+      .map((id) => selectedEntityCache.get(id))
+      .filter((entry) => entry?.isCustomTierItem),
+    [selectedEntityCache, selectedIds]
+  );
+
+  const selectedItems = isSongMode ? [...selectedSongEntities, ...selectedCustomEntities] : selectedTitles;
   const minimumRequired = isSongMode ? 2 : 8;
   const hasActiveFilters = typeFilter !== 'all'
     || sortBy !== 'popularity'
@@ -3704,6 +3963,99 @@ export function TierListCreatePage() {
     });
   };
 
+  const handleUploadCover = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!user?.id) {
+      toast.error(pick('กรุณาเข้าสู่ระบบก่อนอัปโหลดรูป', 'Please sign in before uploading images'));
+      event.target.value = '';
+      return;
+    }
+
+    setIsUploadingCover(true);
+    try {
+      const uploadedUrl = await uploadTierlistImage(file, user.id, 'tierlist-cover');
+      setCoverImageUrl(uploadedUrl);
+      toast.success(pick('อัปโหลดรูปหน้าปกแล้ว', 'Cover image uploaded'));
+    } catch (error) {
+      toast.error(error?.message || pick('อัปโหลดรูปหน้าปกไม่สำเร็จ', 'Failed to upload cover image'));
+    } finally {
+      setIsUploadingCover(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleUploadPoolItems = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) {
+      return;
+    }
+
+    if (!user?.id) {
+      toast.error(pick('กรุณาเข้าสู่ระบบก่อนอัปโหลดรูป', 'Please sign in before uploading images'));
+      event.target.value = '';
+      return;
+    }
+
+    setIsUploadingPoolItems(true);
+    try {
+      const uploadedItems = [];
+      for (const file of files) {
+        const imageUrl = await uploadTierlistImage(file, user.id, 'tierlist-item');
+        const customId = -(Date.now() + Math.floor(Math.random() * 1000) + uploadedItems.length);
+        const title = getTierItemTitleFromFilename(file.name, pick);
+        uploadedItems.push({
+          id: customId,
+          title,
+          subtitle: '',
+          imageUrl,
+        });
+      }
+
+      setCustomItems((prev) => [...prev, ...uploadedItems]);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        uploadedItems.forEach((item) => next.add(Number(item.id)));
+        return next;
+      });
+      setSelectedEntityCache((prev) => {
+        const next = new Map(prev);
+        uploadedItems.forEach((item) => {
+          next.set(Number(item.id), toCustomTierEntity(item, entityType));
+        });
+        return next;
+      });
+      toast.success(
+        uploadedItems.length === 1
+          ? pick('เพิ่มรูปเข้า pool แล้ว', 'Added image to the pool')
+          : pick(`เพิ่มรูปเข้า pool แล้ว ${uploadedItems.length} รูป`, `Added ${uploadedItems.length} images to the pool`)
+      );
+    } catch (error) {
+      toast.error(error?.message || pick('อัปโหลดรูปเข้า pool ไม่สำเร็จ', 'Failed to upload pool images'));
+    } finally {
+      setIsUploadingPoolItems(false);
+      event.target.value = '';
+    }
+  };
+
+  const removeCustomItem = (itemId) => {
+    const normalizedId = Number(itemId);
+    setCustomItems((prev) => prev.filter((item) => Number(item.id) !== normalizedId));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(normalizedId);
+      return next;
+    });
+    setSelectedEntityCache((prev) => {
+      const next = new Map(prev);
+      next.delete(normalizedId);
+      return next;
+    });
+  };
+
   const handleCreate = async () => {
     const entitiesToUse = selectedItems;
     if (entitiesToUse.length < minimumRequired) {
@@ -3717,7 +4069,16 @@ export function TierListCreatePage() {
 
     setIsSaving(true);
     try {
-      const template = createTemplateFromCatalog(entitiesToUse, {
+      const externalPoolItems = entitiesToUse
+        .filter((entry) => entry?.isCustomTierItem)
+        .map((entry) => ({
+          id: Number(entry.id),
+          title: getDisplayName(entry),
+          subtitle: entry.subtitle || entry.sourceTitleName || '',
+          imageUrl: entry.cover || entry.image_url || '',
+        }));
+      const catalogItems = entitiesToUse.filter((entry) => !entry?.isCustomTierItem);
+      const template = createTemplateFromCatalog(catalogItems, {
         title: templateName.trim() || (isSongMode ? pick('เทมเพลตเพลงใหม่', 'New Song Template') : pick('เทมเพลตใหม่', 'New Template')),
         description: templateDesc.trim(),
         category: isSongMode ? 'songs' : category,
@@ -3725,6 +4086,8 @@ export function TierListCreatePage() {
         isPublic: true,
         isSystem: false,
         defaultRows: ['S', 'A', 'B', 'C', 'D'],
+        previewArtworkUrl: coverImageUrl.trim(),
+        customItems: externalPoolItems,
         ownerUserId: user?.id || null,
       });
 
@@ -3733,7 +4096,11 @@ export function TierListCreatePage() {
         includePublic: false,
         showAdult,
       });
-      const libraryAfterTemplate = await saveTierTemplate(template, currentLibrary, { userId: user?.id || null });
+      const cleanupResult = await cleanupDuplicateTierLists(currentLibrary, {
+        userId: user?.id || null,
+      });
+      const workingLibrary = cleanupResult.library;
+      const libraryAfterTemplate = await saveTierTemplate(template, workingLibrary, { userId: user?.id || null });
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
       const normalizedSavedTemplate = isSongMode
         ? { ...savedTemplate, entityType: THEME_SONG_ENTITY_TYPE }
@@ -3744,6 +4111,20 @@ export function TierListCreatePage() {
         entityType: isSongMode ? THEME_SONG_ENTITY_TYPE : list.entityType,
       }, entitiesToUse.map((e) => Number(e.id)));
       const ownerUsername = getCurrentUsername(user);
+      const reusableDraft = findReusableTierListDraft({
+        ...seeded,
+        templateId: normalizedSavedTemplate.id,
+        entityType: isSongMode ? THEME_SONG_ENTITY_TYPE : seeded.entityType,
+        ownerName: ownerUsername || 'You',
+        ownerUsername,
+        ownerUserId: user?.id || null,
+      }, libraryAfterTemplate, {
+        userId: user?.id || null,
+      });
+      if (reusableDraft) {
+        navigate(`/tierlist/play/${reusableDraft.id}`);
+        return;
+      }
       const libraryAfterList = await saveTierList({
         ...seeded,
         templateId: normalizedSavedTemplate.id,
@@ -3891,6 +4272,69 @@ export function TierListCreatePage() {
             placeholder={pick('อธิบายสั้น ๆ ว่าเทมเพลตนี้เหมาะกับอะไร', 'Add a short description for this template')}
           />
         </label>
+
+        <div className="tierlist-create-external-panel glass-heavy">
+          <div className="tierlist-create-external-head">
+            <strong>{pick('อัปโหลดรูป', 'Upload Images')}</strong>
+            <span>{pick('อัปโหลดไฟล์สำหรับหน้าปกและรูปใน pool ได้เลย โดยไม่ต้องตั้งชื่อเอง', 'Upload files for the cover and pool items without naming them manually')}</span>
+          </div>
+          <div className="tierlist-create-external-grid">
+            <label className="tierlist-field tierlist-create-upload-field">
+              <span>{pick('รูปหน้าปก', 'Cover image')}</span>
+              <label className={`tierlist-upload-button${isUploadingCover ? ' is-uploading' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleUploadCover}
+                  disabled={isUploadingCover || isSaving}
+                />
+                <span>{isUploadingCover ? pick('กำลังอัปโหลด...', 'Uploading...') : pick('เลือกรูปหน้าปก', 'Choose cover image')}</span>
+              </label>
+              <small>{coverImageUrl ? pick('อัปโหลดแล้ว พร้อมใช้เป็นหน้าปก', 'Uploaded and ready as the cover') : pick('ใช้รูปเดียวสำหรับหน้าปกเทมเพลต', 'Use a single image as the template cover')}</small>
+            </label>
+            <label className="tierlist-field tierlist-create-upload-field">
+              <span>{pick('รูปสำหรับ pool', 'Pool images')}</span>
+              <label className={`tierlist-upload-button${isUploadingPoolItems ? ' is-uploading' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadPoolItems}
+                  disabled={isUploadingPoolItems || isSaving}
+                />
+                <span>{isUploadingPoolItems ? pick('กำลังอัปโหลด...', 'Uploading...') : pick('เลือกรูปหลายไฟล์', 'Choose multiple images')}</span>
+              </label>
+              <small>{pick('ระบบจะเพิ่มเข้าพูลให้อัตโนมัติ', 'Files will be added to the pool automatically')}</small>
+            </label>
+          </div>
+          <div className="tierlist-create-external-status">
+            <span className="tierlist-chip">{coverImageUrl ? pick('มีหน้าปกแล้ว', 'Cover ready') : pick('ยังไม่มีหน้าปก', 'No cover yet')}</span>
+            <span className="tierlist-chip">{pick(`${customItems.length} รูปในพูล`, `${customItems.length} pool images`)}</span>
+          </div>
+          {coverImageUrl ? (
+            <div className="tierlist-create-cover-preview">
+              <img src={coverImageUrl} alt={pick('ตัวอย่างหน้าปก', 'Cover preview')} loading="lazy" />
+            </div>
+          ) : null}
+          {customItems.length > 0 ? (
+            <div className="tierlist-create-custom-list">
+              {customItems.map((item) => (
+                <article key={item.id} className="tierlist-create-custom-card">
+                  <div className="tierlist-create-custom-thumb">
+                    <img src={item.imageUrl} alt={item.title} loading="lazy" />
+                  </div>
+                  <div className="tierlist-create-custom-copy">
+                    <strong>{item.title}</strong>
+                    <span>{pick('รูปที่อัปโหลดเข้า pool', 'Uploaded pool image')}</span>
+                  </div>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => removeCustomItem(item.id)}>
+                    <Trash2 size={14} /> {pick('ลบ', 'Remove')}
+                  </Button>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {!isSongMode && (
           <label className="tierlist-field">
@@ -4409,6 +4853,704 @@ export function TierListCreatePage() {
   );
 }
 
+export function TierListManagePage() {
+  const { pick, locale } = useLanguage();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { showAdult } = useAgeGate();
+  const [library, setLibrary] = useState({ templates: [], lists: [] });
+  const [myListStats, setMyListStats] = useState({
+    totalCount: 0,
+    publicCount: 0,
+    linkedCountByTemplateId: {},
+  });
+  const [listPage, setListPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [isSavingId, setIsSavingId] = useState('');
+  const [editingKey, setEditingKey] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftDescription, setDraftDescription] = useState('');
+
+  useEffect(() => {
+    setListPage(1);
+  }, [showAdult, user?.id]);
+
+  const refreshLibrary = useCallback(async (options = {}) => {
+    if (!user?.id) {
+      const emptyLibrary = { templates: [], lists: [] };
+      setLibrary(emptyLibrary);
+      setMyListStats({
+        totalCount: 0,
+        publicCount: 0,
+        linkedCountByTemplateId: {},
+      });
+      return emptyLibrary;
+    }
+
+    const targetPage = Number.isFinite(options?.page) && options.page > 0
+      ? Math.floor(options.page)
+      : listPage;
+    const offset = (targetPage - 1) * MANAGE_LISTS_PAGE_SIZE;
+
+    const [ownedTemplates, pagedLists, nextStats] = await Promise.all([
+      loadTierTemplates([], {
+        userId: user.id,
+        includePublic: false,
+        includeOwned: true,
+        showAdult,
+      }),
+      loadOwnedTierListsPage(user.id, {
+        limit: MANAGE_LISTS_PAGE_SIZE,
+        offset,
+        showAdult,
+      }),
+      loadOwnedTierListStats(user.id, { showAdult }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(nextStats.totalCount / MANAGE_LISTS_PAGE_SIZE));
+    const nextPage = Math.min(targetPage, totalPages);
+    const nextLists = nextPage === targetPage
+      ? pagedLists
+      : await loadOwnedTierListsPage(user.id, {
+        limit: MANAGE_LISTS_PAGE_SIZE,
+        offset: (nextPage - 1) * MANAGE_LISTS_PAGE_SIZE,
+        showAdult,
+      });
+    const nextLibrary = {
+      templates: ownedTemplates,
+      lists: nextLists,
+    };
+
+    if (nextPage !== listPage) {
+      setListPage(nextPage);
+    }
+
+    setLibrary(nextLibrary);
+    setMyListStats(nextStats);
+    return nextLibrary;
+  }, [listPage, showAdult, user?.id]);
+
+  useEffect(() => {
+    if (isAuthLoading || !user?.id) {
+      return;
+    }
+
+    let cancelled = false;
+    async function load() {
+      setIsLoading(true);
+      setLoadError('');
+      try {
+        await refreshLibrary();
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error?.message || pick('โหลดรายการของคุณไม่สำเร็จ', 'Failed to load your tier lists'));
+          setIsLoading(false);
+        }
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [isAuthLoading, pick, refreshLibrary, user?.id]);
+
+  const myTemplates = useMemo(
+    () => sortTemplates(
+      (library.templates || []).filter((template) => isOwnedTemplateByUser(template, user)),
+      'newest'
+    ),
+    [library.templates, user]
+  );
+  const myLists = useMemo(
+    () => [...(library.lists || [])]
+      .filter((list) => isOwnedListByUser(list, user))
+      .sort((left, right) => {
+        const updatedDelta = new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime();
+        if (updatedDelta !== 0) {
+          return updatedDelta;
+        }
+        return Number(right?.playCount || 0) - Number(left?.playCount || 0);
+      }),
+    [library.lists, user]
+  );
+  const totalListPages = Math.max(1, Math.ceil(myListStats.totalCount / MANAGE_LISTS_PAGE_SIZE));
+  const linkedCountByTemplateId = myListStats.linkedCountByTemplateId || {};
+
+  const loadFullListForAction = useCallback(async (listId) => {
+    const detail = await loadTierListDetail(listId, {
+      userId: user?.id || null,
+      showAdult,
+    });
+    if (!detail?.list) {
+      throw new Error(pick('ไม่พบลิสต์ที่ต้องการแก้ไข', 'Ranking not found'));
+    }
+    return detail;
+  }, [pick, showAdult, user?.id]);
+
+  const beginEditing = (kind, entry) => {
+    setEditingKey(`${kind}:${entry.id}`);
+    setDraftTitle(String(entry?.title || ''));
+    setDraftDescription(String(entry?.description || ''));
+  };
+
+  const stopEditing = () => {
+    setEditingKey('');
+    setDraftTitle('');
+    setDraftDescription('');
+  };
+
+  const handleToggleTemplateVisibility = async (template) => {
+    const nextTemplate = { ...template, isPublic: !template.isPublic };
+    const savingKey = `template:${template.id}`;
+    setIsSavingId(savingKey);
+
+    try {
+      await saveTierTemplate(nextTemplate, library, {
+        userId: user?.id || null,
+        preserveOwnership: true,
+      });
+      await refreshLibrary();
+      toast.success(
+        nextTemplate.isPublic
+          ? pick('เผยแพร่เทมเพลตแล้ว', 'Template is now public')
+          : pick('ซ่อนเทมเพลตแล้ว', 'Template is now private')
+      );
+    } catch (error) {
+      toast.error(error?.message || pick('อัปเดตสถานะเทมเพลตไม่สำเร็จ', 'Failed to update template visibility'));
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  const handleSaveTemplateMeta = async (template) => {
+    const nextTemplate = {
+      ...template,
+      title: draftTitle.trim() || template.title,
+      description: draftDescription.trim(),
+    };
+    const savingKey = `template:${template.id}:edit`;
+    setIsSavingId(savingKey);
+
+    try {
+      await saveTierTemplate(nextTemplate, library, {
+        userId: user?.id || null,
+        preserveOwnership: true,
+      });
+      await refreshLibrary();
+      stopEditing();
+      toast.success(pick('อัปเดตเทมเพลตแล้ว', 'Template updated'));
+    } catch (error) {
+      toast.error(error?.message || pick('บันทึกเทมเพลตไม่สำเร็จ', 'Failed to save template'));
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  const handleToggleListVisibility = async (list) => {
+    const savingKey = `list:${list.id}`;
+    setIsSavingId(savingKey);
+
+    try {
+      const detail = await loadFullListForAction(list.id);
+      const nextList = { ...detail.list, isPublic: !detail.list.isPublic };
+      await saveTierList(nextList, detail.library, {
+        userId: user?.id || null,
+      });
+      await refreshLibrary();
+      toast.success(
+        nextList.isPublic
+          ? pick('เผยแพร่อันดับแล้ว', 'Ranking is now public')
+          : pick('ซ่อนอันดับแล้ว', 'Ranking is now private')
+      );
+    } catch (error) {
+      toast.error(error?.message || pick('อัปเดตสถานะลิสต์ไม่สำเร็จ', 'Failed to update list visibility'));
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  const handleSaveListMeta = async (list) => {
+    const savingKey = `list:${list.id}:edit`;
+    setIsSavingId(savingKey);
+
+    try {
+      const detail = await loadFullListForAction(list.id);
+      const nextList = {
+        ...detail.list,
+        title: draftTitle.trim() || detail.list.title,
+        description: draftDescription.trim(),
+      };
+      await saveTierList(nextList, detail.library, {
+        userId: user?.id || null,
+      });
+      await refreshLibrary();
+      stopEditing();
+      toast.success(pick('อัปเดตลิสต์แล้ว', 'Ranking updated'));
+    } catch (error) {
+      toast.error(error?.message || pick('บันทึกลิสต์ไม่สำเร็จ', 'Failed to save ranking'));
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  const handleDeleteTemplate = async (template) => {
+    const linkedCount = Number(linkedCountByTemplateId[String(template.id)] || 0);
+    const confirmMessage = linkedCount > 0
+      ? pick(
+        `ลบเทมเพลต "${template.title}" ใช่ไหม\n\nลิสต์ที่อ้างอิงอยู่ ${linkedCount} รายการจะถูกเก็บไว้ต่อ และเปลี่ยนเป็นลิสต์เดี่ยว`,
+        `Delete template "${template.title}"?\n\n${linkedCount} linked rankings will be kept and converted into standalone rankings.`
+      )
+      : pick(`ลบเทมเพลต "${template.title}" ใช่ไหม`, `Delete template "${template.title}"?`);
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    const savingKey = `template:${template.id}:delete`;
+    setIsSavingId(savingKey);
+    try {
+      const fullOwnedLibrary = await loadTierLibrary([], {
+        userId: user?.id || null,
+        includePublic: false,
+        includeOwned: true,
+        showAdult,
+      });
+      await deleteTierTemplate(template.id, {
+        templates: fullOwnedLibrary.templates,
+        lists: fullOwnedLibrary.lists,
+      }, {
+        userId: user?.id || null,
+      });
+      await refreshLibrary();
+      if (editingKey === `template:${template.id}`) {
+        stopEditing();
+      }
+      toast.success(
+        linkedCount > 0
+          ? pick('ลบเทมเพลตแล้ว และแปลงลิสต์ที่อ้างอิงเป็นลิสต์เดี่ยว', 'Template deleted and linked rankings were converted to standalone')
+          : pick('ลบเทมเพลตแล้ว', 'Template deleted')
+      );
+    } catch (error) {
+      const message = String(error?.message || '');
+      if (message === 'Template is still referenced by rankings that cannot be detached automatically') {
+        toast.error(
+          pick(
+            'ยังลบเทมเพลตไม่ได้ เพราะยังมีลิสต์บางรายการอ้างอิงอยู่และระบบถอดออกให้อัตโนมัติไม่ได้',
+            'This template cannot be deleted yet because some rankings still reference it and could not be detached automatically'
+          )
+        );
+      } else {
+        toast.error(error?.message || pick('ลบเทมเพลตไม่สำเร็จ', 'Failed to delete template'));
+      }
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  const handleDeleteList = async (list) => {
+    console.info('tierlist delete requested', {
+      listId: list?.id || '',
+      title: list?.title || '',
+      userId: user?.id || null,
+      libraryListCount: Array.isArray(library?.lists) ? library.lists.length : 0,
+    });
+
+    if (!window.confirm(pick(`ลบลิสต์ "${list.title}" ใช่ไหม`, `Delete ranking "${list.title}"?`))) {
+      return;
+    }
+
+    const savingKey = `list:${list.id}:delete`;
+    setIsSavingId(savingKey);
+    try {
+      await deleteTierList(list.id, library, {
+        userId: user?.id || null,
+      });
+      console.info('tierlist delete remote step resolved', {
+        listId: list?.id || '',
+      });
+      await refreshLibrary();
+      console.info('tierlist delete refresh resolved', {
+        listId: list?.id || '',
+      });
+      if (editingKey === `list:${list.id}`) {
+        stopEditing();
+      }
+      toast.success(pick('ลบลิสต์แล้ว', 'Ranking deleted'));
+    } catch (error) {
+      console.error('tierlist delete failed', {
+        listId: list?.id || '',
+        title: list?.title || '',
+        debug: error?.tierlistDebug || null,
+        error,
+      });
+      toast.error(error?.message || pick('ลบลิสต์ไม่สำเร็จ', 'Failed to delete ranking'));
+    } finally {
+      setIsSavingId('');
+    }
+  };
+
+  if (isAuthLoading || (isLoading && !loadError)) {
+    return (
+      <div className="tierlist-page">
+        <section className="container tierlist-section">
+          <TierListEmptyPanel
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title={pick('กำลังโหลดพื้นที่จัดการ', 'Loading your workspace')}
+            message={pick('กำลังดึงเทมเพลตและลิสต์ของคุณ', 'Fetching your templates and rankings.')}
+          />
+        </section>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="tierlist-page">
+        <section className="container tierlist-section">
+          <TierListErrorPanel
+            message={loadError}
+            onRetry={() => window.location.reload()}
+            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+            backTo="/tierlist"
+          />
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tierlist-page">
+      <section className="container tierlist-manage-hero">
+        <div className="tierlist-manage-hero-copy">
+          <span className="tierlist-kicker"><Monitor size={14} /> {pick('พื้นที่จัดการส่วนตัว', 'Personal Workspace')}</span>
+          <h1>{pick('จัดการ Tier List ของฉัน', 'Manage My Tier Lists')}</h1>
+          <p>{pick('รวมเทมเพลตและอันดับที่คุณสร้างไว้ทั้งหมดในที่เดียว เปิดแก้ไขต่อหรือสลับ public/private ได้เร็วขึ้น', 'See every template and ranking you created in one place, then jump back in to edit or switch visibility faster.')}</p>
+        </div>
+        <div className="tierlist-manage-hero-actions">
+          <Link className="tierlist-browse-manage-btn" to="/tierlist">
+            <ChevronLeft size={14} /> {pick('กลับไปหน้ารวม', 'Back to Browse')}
+          </Link>
+          <Link className="tierlist-browse-create-btn" to="/tierlist/create">
+            <Plus size={14} /> {pick('สร้าง Tier List ใหม่', 'Create New Tier List')}
+          </Link>
+        </div>
+        <div className="tierlist-manage-summary-grid">
+          <article className="glass-heavy tierlist-manage-summary-card">
+            <strong>{myTemplates.length}</strong>
+            <span>{pick('เทมเพลตของฉัน', 'My templates')}</span>
+          </article>
+          <article className="glass-heavy tierlist-manage-summary-card">
+            <strong>{myListStats.totalCount}</strong>
+            <span>{pick('ลิสต์ของฉัน', 'My rankings')}</span>
+          </article>
+          <article className="glass-heavy tierlist-manage-summary-card">
+            <strong>{myListStats.publicCount}</strong>
+            <span>{pick('ลิสต์สาธารณะ', 'Public rankings')}</span>
+          </article>
+        </div>
+      </section>
+
+      <section className="container tierlist-section">
+        <div className="tierlist-section-head">
+          <h2>{pick('เทมเพลตของฉัน', 'My Templates')}</h2>
+          <span className="tierlist-count">{myTemplates.length} {pick('รายการ', 'items')}</span>
+        </div>
+
+        {myTemplates.length === 0 ? (
+          <TierListEmptyPanel
+            icon={<Sparkles size={24} />}
+            title={pick('ยังไม่มีเทมเพลตของคุณ', 'No templates yet')}
+            message={pick('เริ่มจากสร้างเทมเพลตแรก แล้วมันจะมารวมที่หน้านี้อัตโนมัติ', 'Create your first template and it will show up here automatically.')}
+            action={(
+              <Link className="btn btn-primary btn-sm" to="/tierlist/create">
+                {pick('เริ่มสร้าง', 'Start Creating')}
+              </Link>
+            )}
+          />
+        ) : (
+          <div className="tierlist-manage-grid">
+            {myTemplates.map((template) => {
+              const savingKey = `template:${template.id}`;
+              const linkedCount = Number(linkedCountByTemplateId[String(template.id)] || 0);
+              const isEditing = editingKey === `template:${template.id}`;
+              return (
+                <article key={template.id} className="glass-heavy tierlist-manage-card">
+                  <div
+                    className="tierlist-manage-card-cover"
+                    style={template.previewArtworkUrl ? { backgroundImage: `url(${template.previewArtworkUrl})` } : undefined}
+                  >
+                    {!template.previewArtworkUrl && (
+                      <div className="tierlist-manage-cover-fallback">
+                        <Sparkles size={30} />
+                      </div>
+                    )}
+                    <div className="tierlist-manage-cover-badges">
+                      <small className="tierlist-chip">{getTierCategoryLabel(template.category, pick)}</small>
+                      <span className={`tierlist-manage-visibility${template.isPublic ? ' is-public' : ''}`}>
+                        {template.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
+                        {template.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="tierlist-manage-card-body">
+                    <h3 className="tierlist-manage-card-title">{template.title}</h3>
+                    {!isEditing && (
+                      <p className="tierlist-manage-description">
+                        {template.description || pick('ยังไม่ได้ใส่คำอธิบาย', 'No description yet.')}
+                      </p>
+                    )}
+                    {!isEditing && (
+                      <div className="tierlist-manage-meta">
+                        <span>{getEntityTypeLabel(template.entityType, pick)}</span>
+                        <span>{template.titleIds.length} {pick('รายการ', 'items')}</span>
+                        {Number(template.plays || 0) > 0 && <span>{Number(template.plays)} {pick('ครั้งเล่น', 'plays')}</span>}
+                        {linkedCount > 0 && <span>{linkedCount} {pick('ลิสต์ที่ผูก', 'linked')}</span>}
+                        <span>{formatTierDate(template.updatedAt, locale)}</span>
+                      </div>
+                    )}
+                    {isEditing && (
+                      <div className="tierlist-manage-edit-form">
+                        <label className="tierlist-field">
+                          <span>{pick('ชื่อเทมเพลต', 'Template name')}</span>
+                          <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
+                        </label>
+                        <label className="tierlist-field">
+                          <span>{pick('คำอธิบาย', 'Description')}</span>
+                          <input value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} />
+                        </label>
+                      </div>
+                    )}
+                    <div className="tierlist-manage-actions">
+                      <Link className="btn btn-primary btn-sm tierlist-manage-action-primary" to={`/tierlist/template/${template.id}`}>
+                        {pick('เปิดเทมเพลต', 'Open')}
+                      </Link>
+                      {isEditing ? (
+                        <div className="tierlist-manage-action-icons">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            className="tierlist-manage-action-primary"
+                            onClick={() => handleSaveTemplateMeta(template)}
+                            disabled={isSavingId === `template:${template.id}:edit`}
+                          >
+                            {isSavingId === `template:${template.id}:edit` ? pick('บันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={stopEditing}>
+                            {pick('ยกเลิก', 'Cancel')}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="tierlist-manage-action-icons">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title={pick('แก้ไขชื่อและคำอธิบาย', 'Edit name & description')}
+                            onClick={() => beginEditing('template', template)}
+                          >
+                            <Pencil size={14} />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title={template.isPublic ? pick('ทำเป็นส่วนตัว', 'Make Private') : pick('เผยแพร่', 'Publish')}
+                            onClick={() => handleToggleTemplateVisibility(template)}
+                            disabled={isSavingId === savingKey}
+                          >
+                            {isSavingId === savingKey ? <Loader2 size={14} className="animate-spin" /> : (template.isPublic ? <EyeOff size={14} /> : <Eye size={14} />)}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="tierlist-manage-icon-danger"
+                            title={linkedCount > 0 ? pick('ลบแล้วลิสต์ที่ผูกจะเปลี่ยนเป็นลิสต์เดี่ยว', 'Deleting converts linked rankings to standalone') : pick('ลบเทมเพลต', 'Delete template')}
+                            onClick={() => handleDeleteTemplate(template)}
+                            disabled={isSavingId === `template:${template.id}:delete`}
+                          >
+                            {isSavingId === `template:${template.id}:delete` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="container tierlist-section">
+        <div className="tierlist-section-head">
+          <h2>{pick('ลิสต์ของฉัน', 'My Rankings')}</h2>
+          <span className="tierlist-count">{myListStats.totalCount} {pick('รายการ', 'items')}</span>
+        </div>
+
+        {myListStats.totalCount === 0 ? (
+          <TierListEmptyPanel
+            icon={<Layers size={24} />}
+            title={pick('ยังไม่มีลิสต์ของคุณ', 'No rankings yet')}
+            message={pick('เล่นจากเทมเพลตสักอันก่อน แล้วลิสต์ของคุณจะกลับมาจัดการต่อได้จากหน้านี้', 'Play a template first and your rankings will be collected here for quick editing later.')}
+            action={(
+              <Link className="btn btn-primary btn-sm" to="/tierlist">
+                {pick('ไปเลือกเทมเพลต', 'Browse Templates')}
+              </Link>
+            )}
+          />
+        ) : (
+          <div className="tierlist-manage-grid">
+            {myLists.map((list) => {
+              const savingKey = `list:${list.id}`;
+              const sourceTemplate = list.templateId ? findTierTemplate(list.templateId, library) : null;
+              const isEditing = editingKey === `list:${list.id}`;
+              const previewRows = list.rows.slice(0, 5);
+              const maxItems = Math.max(1, ...previewRows.map((r) => r.titleIds.length));
+              return (
+                <article key={list.id} className="glass-heavy tierlist-manage-card">
+                  <div className="tierlist-manage-tier-preview">
+                    {previewRows.length > 0 ? previewRows.map((row) => {
+                      const barPct = Math.max(4, (row.titleIds.length / maxItems) * 100);
+                      return (
+                        <div key={row.id} className="tierlist-manage-tier-row" style={row.color ? { '--row-c': row.color } : undefined}>
+                          <span className="tierlist-manage-tier-tag">{row.label}</span>
+                          <div className="tierlist-manage-tier-bar-wrap">
+                            <div className="tierlist-manage-tier-bar" style={{ width: row.titleIds.length > 0 ? `${barPct}%` : '0%' }} />
+                          </div>
+                          <span className="tierlist-manage-tier-n">{row.titleIds.length}</span>
+                        </div>
+                      );
+                    }) : (
+                      <div className="tierlist-manage-tier-empty">
+                        <Layers size={18} />
+                        <span>{pick('ยังไม่มี tier', 'No tiers yet')}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="tierlist-manage-card-body">
+                    <div className="tierlist-manage-card-head">
+                      <small className="tierlist-chip">
+                        {sourceTemplate ? pick('จากเทมเพลต', 'From template') : pick('ลิสต์เดี่ยว', 'Standalone')}
+                      </small>
+                      <span className={`tierlist-manage-visibility${list.isPublic ? ' is-public' : ''}`}>
+                        {list.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
+                        {list.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}
+                      </span>
+                    </div>
+                    <h3 className="tierlist-manage-card-title">{list.title}</h3>
+                    {!isEditing && (
+                      <div className="tierlist-manage-meta">
+                        <span>{list.rows.length} {pick('tier', 'tiers')}</span>
+                        {Number(list.playCount || 0) > 0 && <span>{Number(list.playCount)} {pick('ครั้งเล่น', 'plays')}</span>}
+                        <span>{formatTierDate(list.updatedAt, locale)}</span>
+                      </div>
+                    )}
+                    {isEditing && (
+                      <div className="tierlist-manage-edit-form">
+                        <label className="tierlist-field">
+                          <span>{pick('ชื่อลิสต์', 'Ranking name')}</span>
+                          <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
+                        </label>
+                        <label className="tierlist-field">
+                          <span>{pick('คำอธิบาย', 'Description')}</span>
+                          <input value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} />
+                        </label>
+                      </div>
+                    )}
+                    <div className="tierlist-manage-actions">
+                      <Link className="btn btn-primary btn-sm tierlist-manage-action-primary" to={`/tierlist/play/${list.id}`}>
+                        {pick('เปิดแก้ไข', 'Open')}
+                      </Link>
+                      {isEditing ? (
+                        <div className="tierlist-manage-action-icons">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            className="tierlist-manage-action-primary"
+                            onClick={() => handleSaveListMeta(list)}
+                            disabled={isSavingId === `list:${list.id}:edit`}
+                          >
+                            {isSavingId === `list:${list.id}:edit` ? pick('บันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={stopEditing}>
+                            {pick('ยกเลิก', 'Cancel')}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="tierlist-manage-action-icons">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title={pick('แก้ไขชื่อ', 'Edit name')}
+                            onClick={() => beginEditing('list', list)}
+                          >
+                            <Pencil size={14} />
+                          </Button>
+                          {sourceTemplate && (
+                            <Link
+                              className="btn btn-ghost btn-sm"
+                              to={`/tierlist/template/${sourceTemplate.id}`}
+                              title={pick('ดูเทมเพลตต้นทาง', 'View source template')}
+                            >
+                              <ArrowRight size={14} />
+                            </Link>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title={list.isPublic ? pick('ทำเป็นส่วนตัว', 'Make Private') : pick('เผยแพร่', 'Publish')}
+                            onClick={() => handleToggleListVisibility(list)}
+                            disabled={isSavingId === savingKey}
+                          >
+                            {isSavingId === savingKey ? <Loader2 size={14} className="animate-spin" /> : (list.isPublic ? <EyeOff size={14} /> : <Eye size={14} />)}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="tierlist-manage-icon-danger"
+                            title={pick('ลบลิสต์', 'Delete ranking')}
+                            onClick={() => handleDeleteList(list)}
+                            disabled={isSavingId === `list:${list.id}:delete`}
+                          >
+                            {isSavingId === `list:${list.id}:delete` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {myListStats.totalCount > MANAGE_LISTS_PAGE_SIZE ? (
+          <div className="tierlist-pagination">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<ChevronLeft size={14} />}
+              disabled={listPage <= 1}
+              onClick={() => setListPage((current) => Math.max(1, current - 1))}
+            >
+              {pick('ก่อนหน้า', 'Previous')}
+            </Button>
+            <span>{listPage} / {totalListPages}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconRight={<ChevronRight size={14} />}
+              disabled={listPage >= totalListPages}
+              onClick={() => setListPage((current) => Math.min(totalListPages, current + 1))}
+            >
+              {pick('ถัดไป', 'Next')}
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 export function TierListPlayPage() {
   const { listId } = useParams();
   const navigate = useNavigate();
@@ -4582,8 +5724,11 @@ export function TierListPlayPage() {
   }, [listId, pick, showAdult, user?.id, isAuthLoading]);
 
   const sourceTemplate = tierList?.templateId ? findTierTemplate(tierList.templateId, library) : null;
-  const entityMaps = useMemo(() => buildEntityMaps(titles), [titles]);
   const activeEntityType = normalizeCatalogEntityType(tierList?.entityType || sourceTemplate?.entityType);
+  const entityMaps = useMemo(
+    () => buildEntityMaps(titles, tierList?.customItems || sourceTemplate?.customItems || [], activeEntityType),
+    [activeEntityType, sourceTemplate, tierList, titles]
+  );
   const titleById = useMemo(
     () => getEntityMap(entityMaps, activeEntityType),
     [activeEntityType, entityMaps]
@@ -5147,5 +6292,3 @@ export function SongTierListBrowsePage() {
 }
 
 export default TierListBrowsePage;
-
-

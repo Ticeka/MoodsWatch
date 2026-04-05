@@ -49,7 +49,11 @@ export function getPartyTemplateBuilderDraftKey({ editTemplateId = '', baseTempl
   return `${PARTY_DRAFT_PREFIX}:template-builder:new`;
 }
 
-export function getPartyTitleGuessBuilderDraftKey() {
+export function getPartyTitleGuessBuilderDraftKey({ editSetId = '' } = {}) {
+  if (editSetId) {
+    return `${PARTY_DRAFT_PREFIX}:title-guess-builder:edit:${editSetId}`;
+  }
+
   return `${PARTY_DRAFT_PREFIX}:title-guess-builder:new`;
 }
 

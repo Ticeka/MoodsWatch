@@ -213,9 +213,26 @@
 .party-template-card-cover {
   width: 100%;
   height: 100%;
-  background-size: cover;
-  background-position: center;
   position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(var(--color-primary-rgb), 0.16), rgba(var(--color-primary-rgb), 0.04)),
+    var(--color-surface-hover);
+}
+
+.party-template-card-cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.party-template-card-cover-fallback {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at top right, rgba(var(--color-primary-rgb), 0.24), transparent 45%),
+    linear-gradient(135deg, rgba(var(--color-primary-rgb), 0.1), rgba(255,255,255,0.02));
 }
 
 .party-template-card-overlay {
@@ -339,6 +356,32 @@
 
 .party-templates-page .heart-item {
   color: #e74c3c;
+}
+
+.party-template-card-actions {
+  margin-top: 0.85rem;
+  display: flex;
+}
+
+.party-template-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.party-template-inline-action:hover {
+  background: rgba(var(--color-primary-rgb), 0.14);
+  border-color: rgba(var(--color-primary-rgb), 0.35);
+  transform: translateY(-1px);
 }
 
 /* Detail Page Specifics */

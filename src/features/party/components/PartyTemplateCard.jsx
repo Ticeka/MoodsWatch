@@ -1,9 +1,9 @@
 import React from 'react';
-import { Heart, Layers, Play, Sparkles, Star, Users } from 'lucide-react';
+import { Heart, Layers, Pencil, Play, Sparkles, Star, Users } from 'lucide-react';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import './PartyTemplates.css';
 
-export function PartyTemplateCard({ template, onClick, pick }) {
+export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, pick }) {
   const {
     name,
     description,
@@ -23,10 +23,18 @@ export function PartyTemplateCard({ template, onClick, pick }) {
   return (
     <div className="party-template-card" onClick={onClick}>
       <div className="party-template-card-header">
-        <div
-          className="party-template-card-cover"
-          style={{ backgroundImage: `url(${resolvedCoverUrl})` }}
-        >
+        <div className="party-template-card-cover">
+          {resolvedCoverUrl ? (
+            <img
+              className="party-template-card-cover-image"
+              src={resolvedCoverUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <div className="party-template-card-cover-fallback" aria-hidden="true" />
+          )}
           {isOfficial && (
             <div className="party-badge badge-official">
               <Star size={12} fill="currentColor" />
@@ -79,6 +87,22 @@ export function PartyTemplateCard({ template, onClick, pick }) {
             </div>
           )}
         </div>
+
+        {canEdit ? (
+          <div className="party-template-card-actions">
+            <button
+              type="button"
+              className="party-template-inline-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit?.();
+              }}
+            >
+              <Pencil size={14} />
+              <span>{pick('แก้ไขชุดคำถาม', 'Edit set')}</span>
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

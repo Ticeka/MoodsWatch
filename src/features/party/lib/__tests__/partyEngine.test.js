@@ -400,6 +400,52 @@ describe('partyEngine', () => {
     expect(score.points).toBeGreaterThan(0);
   });
 
+  it('accepts other titles from the same franchise for title-guess typing answers', () => {
+    const round = {
+      kind: 'title-guess',
+      sourceTitleAliases: ['Attack on Titan Season 2'],
+      franchiseAliases: ['Attack on Titan', 'Shingeki no Kyojin'],
+      sameFranchiseTitleAliases: [
+        'Attack on Titan',
+        'Attack on Titan Final Season',
+        'Attack on Titan Season 3',
+      ],
+      revealedClueCount: 2,
+    };
+
+    const score = scorePartyAnswer({
+      presetId: 'title-guess',
+      round,
+      typedTitle: 'Attack on Titan Final Season',
+      elapsedMs: 900,
+      timeLimitMs: 7000,
+    });
+
+    expect(score.titleCorrect).toBe(true);
+    expect(score.points).toBeGreaterThan(0);
+  });
+
+  it('accepts franchise-aware autocomplete selections for title-guess typing answers', () => {
+    const round = {
+      kind: 'title-guess',
+      sourceTitleAliases: ['Haikyuu!!'],
+      franchiseAnswerKey: 'franchise:haikyuu',
+      revealedClueCount: 1,
+    };
+
+    const score = scorePartyAnswer({
+      presetId: 'title-guess',
+      round,
+      typedTitle: 'Haikyuu!! TO THE TOP',
+      selectedFranchiseAnswerKey: 'franchise:haikyuu',
+      elapsedMs: 500,
+      timeLimitMs: 7000,
+    });
+
+    expect(score.titleCorrect).toBe(true);
+    expect(score.points).toBeGreaterThan(0);
+  });
+
   it('scores title-guess choice answers from selected option ids', () => {
     const match = buildPartyTitleGuessSnapshot(TITLE_GUESS_CHOICE_QUESTIONS, {
       modeType: 'title-guess',
@@ -454,6 +500,68 @@ describe('partyEngine', () => {
 
     expect(score.titleCorrect).toBe(true);
     expect(score.points).toBeGreaterThan(0);
+  });
+
+  it('does not build same-franchise distractors for title-guess choice rounds', () => {
+    const match = buildPartyTitleGuessSnapshot([
+      ...TITLE_GUESS_CHOICE_QUESTIONS,
+      {
+        id: 'tg-5',
+        answerTitleId: 205,
+        answerTitle: 'Haikyuu!! TO THE TOP',
+        answerTitleAliases: ['Haikyuu!! TO THE TOP'],
+        franchiseId: 9001,
+        franchiseName: 'Haikyuu!',
+        franchiseAliases: ['Haikyuu!'],
+        clues: [
+          { id: 'tg-5-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Sugawara Koushi', characterImageUrl: 'https://cdn.example.com/tg5-1.jpg' },
+          { id: 'tg-5-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Tanaka Ryuunosuke', characterImageUrl: 'https://cdn.example.com/tg5-2.jpg' },
+          { id: 'tg-5-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Hinata Shoyo', characterImageUrl: 'https://cdn.example.com/tg5-3.jpg' },
+          { id: 'tg-5-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Kageyama Tobio', characterImageUrl: 'https://cdn.example.com/tg5-4.jpg' },
+        ],
+      },
+    ], {
+      modeType: 'title-guess',
+      presetId: 'title-guess-choice',
+      roundCount: 1,
+      randomOrder: false,
+    });
+
+    const round = match.rounds[0];
+    const distractorFranchiseKeys = round.options
+      .filter((option) => !option.isCorrect)
+      .map((option) => option.franchiseAnswerKey);
+
+    expect(distractorFranchiseKeys).not.toContain(round.franchiseAnswerKey);
+  });
+
+  it('collects same-franchise title aliases into each round snapshot', () => {
+    const match = buildPartyTitleGuessSnapshot([
+      ...TITLE_GUESS_CHOICE_QUESTIONS,
+      {
+        id: 'tg-family',
+        answerTitleId: 299,
+        answerTitle: 'Haikyuu!! Season 2',
+        answerTitleAliases: ['Haikyuu!! Season 2'],
+        franchiseId: 9001,
+        franchiseName: 'Haikyuu!',
+        franchiseAliases: ['Haikyuu!'],
+        clues: [
+          { id: 'tg-family-c1', clueOrder: 1, clueRoleBucket: 'supporting', characterName: 'Suga', characterImageUrl: 'https://cdn.example.com/f1.jpg' },
+          { id: 'tg-family-c2', clueOrder: 2, clueRoleBucket: 'supporting', characterName: 'Tanaka', characterImageUrl: 'https://cdn.example.com/f2.jpg' },
+          { id: 'tg-family-c3', clueOrder: 3, clueRoleBucket: 'main-side', characterName: 'Hinata', characterImageUrl: 'https://cdn.example.com/f3.jpg' },
+          { id: 'tg-family-c4', clueOrder: 4, clueRoleBucket: 'wildcard', characterName: 'Kageyama', characterImageUrl: 'https://cdn.example.com/f4.jpg' },
+        ],
+      },
+    ], {
+      modeType: 'title-guess',
+      roundCount: 1,
+      randomOrder: false,
+    });
+
+    expect(match.rounds[0].sameFranchiseTitleAliases).toEqual(
+      expect.arrayContaining(['Haikyuu!!', 'Haikyuu!! Season 2'])
+    );
   });
 
   it('builds distinct runtime song keys for YouTube rounds', () => {
@@ -558,5 +666,3 @@ describe('partyEngine', () => {
     })).toThrow('Not enough distinct answer choices');
   });
 });
-
-

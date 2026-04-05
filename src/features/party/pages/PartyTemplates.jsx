@@ -227,14 +227,28 @@ export function PartyTemplatesPage() {
       return;
     }
 
+    if (
+      template.contentType === 'title-guess'
+      && user?.id
+      && !template.isOfficial
+      && String(template.ownerUserId || '') === String(user.id)
+    ) {
+      navigate(`/party/templates/create?mode=title-guess&edit=${encodeURIComponent(template.contentId)}`);
+      return;
+    }
+
     toast(pick('ชุดทายชื่อเรื่องสามารถเลือกใช้ได้ตอนตั้งค่าห้อง', 'Guess the Title sets can be selected from the room setup flow.'));
-  }, [filterMode, navigate, pick, returnTo]);
+  }, [filterMode, navigate, pick, returnTo, user?.id]);
 
   const backDestination = returnTo || '/party';
   const backLabel = returnTo ? pick('กลับไปห้อง', 'Back to room') : pick('ย้อนกลับ', 'Back');
   const createSetUrl = returnTo
     ? `/party/templates/create?returnTo=${encodeURIComponent(returnTo)}`
     : '/party/templates/create';
+  const buildTitleGuessEditUrl = useCallback(
+    (setId) => `/party/templates/create?mode=title-guess&edit=${encodeURIComponent(setId)}`,
+    [],
+  );
 
   return (
     <div className="party-page is-hub">
@@ -304,6 +318,13 @@ export function PartyTemplatesPage() {
                   key={template.id}
                   template={template}
                   pick={pick}
+                  canEdit={
+                    template.contentType === 'title-guess'
+                    && user?.id
+                    && !template.isOfficial
+                    && String(template.ownerUserId || '') === String(user.id)
+                  }
+                  onEdit={() => navigate(buildTitleGuessEditUrl(template.contentId))}
                   onClick={() => handleCardClick(template)}
                 />
               ))}

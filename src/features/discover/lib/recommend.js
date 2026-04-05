@@ -49,6 +49,10 @@ const TITLE_CHARACTER_SELECT = `
   name_native,
   image_url,
   role,
+  is_primary_protagonist,
+  is_primary_heroine,
+  lead_type,
+  presentation_gender,
   voice_actor_name,
   voice_actor_image,
   sort_order
@@ -115,6 +119,60 @@ function normalizeTitleType(title) {
   }
 
   return title;
+}
+
+function normalizeFranchiseIdentityPart(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0E00-\u0E7F]+/g, ' ')
+    .trim();
+}
+
+function getTitleFranchiseIdentity(title = {}, fallbackIndex = 0) {
+  const franchiseId = Number(title?.franchise_id || 0);
+  if (franchiseId > 0) {
+    return `franchise-id:${franchiseId}`;
+  }
+
+  const franchiseSlug = normalizeFranchiseIdentityPart(title?.franchise_slug);
+  if (franchiseSlug) {
+    return `franchise-slug:${franchiseSlug}`;
+  }
+
+  const franchiseName = normalizeFranchiseIdentityPart(title?.franchise_name);
+  if (franchiseName) {
+    return `franchise-name:${franchiseName}`;
+  }
+
+  const titleId = Number(title?.id || 0);
+  if (titleId > 0) {
+    return `title-id:${titleId}`;
+  }
+
+  const titleSlug = normalizeFranchiseIdentityPart(title?.slug);
+  if (titleSlug) {
+    return `title-slug:${titleSlug}`;
+  }
+
+  return `title-fallback:${fallbackIndex}`;
+}
+
+export function collapseTitlesByFranchise(titles = []) {
+  const seen = new Set();
+  const deduped = [];
+
+  titles.forEach((title, index) => {
+    const franchiseKey = getTitleFranchiseIdentity(title, index);
+    if (seen.has(franchiseKey)) {
+      return;
+    }
+
+    seen.add(franchiseKey);
+    deduped.push(title);
+  });
+
+  return deduped;
 }
 
 function resolveRequestedRowLimit(maxRows) {
@@ -564,38 +622,60 @@ async function fetchSearchResultsFromDB({ query = '', type = 'all', page = 1, pa
 
   const safePage = Math.max(1, page);
   const safePageSize = Math.max(1, pageSize);
-  const from = (safePage - 1) * safePageSize;
-  const to = from + safePageSize - 1;
-
-  let titleQuery = supabase
-    .from('canonical_titles')
-    .select(CANONICAL_TITLE_SEARCH_SELECT, { count: 'planned' });
-
-  titleQuery = applyTypeFilter(titleQuery, type);
-
-  if (showAdult) {
-    titleQuery = titleQuery.eq('is_adult', true);
-  } else {
-    titleQuery = titleQuery.eq('is_adult', false);
-  }
-
   const normalizedQuery = query.trim();
-  if (normalizedQuery.length >= 2) {
-    const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
-    titleQuery = titleQuery.or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`);
+  const chunkSize = Math.max(120, safePageSize * 4);
+  let from = 0;
+  let allRecords = [];
+  let totalCount = 0;
+
+  while (true) {
+    const to = from + chunkSize - 1;
+    let titleQuery = supabase
+      .from('canonical_titles')
+      .select(CANONICAL_TITLE_SEARCH_SELECT, { count: from === 0 ? 'planned' : undefined });
+
+    titleQuery = applyTypeFilter(titleQuery, type);
+
+    if (showAdult) {
+      titleQuery = titleQuery.eq('is_adult', true);
+    } else {
+      titleQuery = titleQuery.eq('is_adult', false);
+    }
+
+    if (normalizedQuery.length >= 2) {
+      const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
+      titleQuery = titleQuery.or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`);
+    }
+
+    titleQuery = applySort(titleQuery, 'popularity');
+
+    const { data, error, count } = await titleQuery.range(from, to);
+    if (error) throw error;
+
+    if (from === 0) {
+      totalCount = count || 0;
+    }
+
+    if (!data?.length) {
+      break;
+    }
+
+    allRecords = allRecords.concat(mapRecords(data));
+    if (data.length < chunkSize || allRecords.length >= totalCount) {
+      break;
+    }
+    from += chunkSize;
   }
 
-  titleQuery = applySort(titleQuery, 'popularity');
-
-  const { data, error, count } = await titleQuery.range(from, to);
-  if (error) throw error;
+  const dedupedItems = collapseTitlesByFranchise(allRecords);
+  const start = (safePage - 1) * safePageSize;
 
   return {
-    items: mapRecords(data),
-    total: count || 0,
+    items: dedupedItems.slice(start, start + safePageSize),
+    total: dedupedItems.length,
     page: safePage,
     pageSize: safePageSize,
-    totalPages: Math.max(1, Math.ceil((count || 0) / safePageSize)),
+    totalPages: Math.max(1, Math.ceil(dedupedItems.length / safePageSize)),
   };
 }
 
@@ -836,14 +916,17 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
       Number(right.popularity || 0) - Number(left.popularity || 0)
     ))
     : filtered;
+  const collapsedRanked = normalizedQuery.length >= 2
+    ? collapseTitlesByFranchise(ranked)
+    : ranked;
   const safePage = Math.max(1, page);
   const safePageSize = Math.max(1, pageSize);
-  const total = ranked.length;
+  const total = collapsedRanked.length;
   const totalPages = Math.max(1, Math.ceil(total / safePageSize));
   const start = (safePage - 1) * safePageSize;
 
   return {
-    items: ranked.slice(start, start + safePageSize),
+    items: collapsedRanked.slice(start, start + safePageSize),
     total,
     page: Math.min(safePage, totalPages),
     pageSize: safePageSize,

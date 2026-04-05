@@ -130,9 +130,9 @@ export function PartyHubPage() {
   const [delightIndex, setDelightIndex] = useState(0);
 
   const delightTexts = [
-    pick('เหมาะกับห้องดูอนิเมะ 🎌', 'Perfect for anime watch parties 🎌'),
-    pick('ใช้ได้กับเทมเพลตหลายแบบ 🎵', 'Works with any community template 🎵'),
-    pick('ตั้งค่าทีหลังใน lobby ได้หมด ✅', 'Configure everything in the lobby ✅'),
+    pick('ตั้งค่าห้องได้ครบก่อนเริ่มเล่น', 'Finish setup before anyone starts playing'),
+    pick('รองรับทั้งชุดเพลงและชุดทายชื่อเรื่อง', 'Works with both song sets and title-guess sets'),
+    pick('ชวนเพื่อนเข้าห้องได้ทันทีด้วยรหัสห้อง', 'Invite friends instantly with a room code'),
   ];
 
   useEffect(() => {
@@ -187,12 +187,12 @@ export function PartyHubPage() {
           <div className="pgw-kicker"><Radio size={11} />{pick('ห้องปาร์ตี้เพลง', 'Party Room')}</div>
           <h1 className="pgw-title">PARTY</h1>
           <p className="pgw-tagline">
-            {pick('เปิดห้องแล้วชวนเพื่อนเข้า', 'Open a room and invite your friends')}
+            {pick('สร้างห้องแล้วตั้งค่าเกมในล็อบบี้', 'Create a room, then finish setup in the lobby')}
           </p>
           <p className="pgw-sub">
             {pick(
-              'สร้างห้องก่อน แล้วค่อยเลือกกติกา ชุดเพลง และรายละเอียดต่าง ๆ ในล็อบบี้',
-              'Create the room first, then choose the rules, song set, and other settings in the lobby.',
+              'เริ่มจากสร้างห้องก่อน แล้วค่อยเลือกโหมด ชุดเพลง หรือชุดคำถาม รวมถึงเวลาต่อรอบในล็อบบี้',
+              'Start by creating the room, then choose the mode, song set or question set, and round timing in the lobby.',
             )}
           </p>
         </header>
@@ -238,11 +238,11 @@ export function PartyHubPage() {
             >
               {busyAction === 'create'
                 ? <><Loader2 size={16} style={{ animation: 'prd-spin-anim 0.8s linear infinite', marginRight: '0.4rem' }} />{pick('กำลังสร้าง…', 'Creating…')}</>
-                : pick('🎮  สร้างห้อง', '🎮  Create Room')}
+                : pick('สร้างห้อง', 'Create room')}
             </Button>
             <p className="pgw-create-hint">
               <Sparkles size={12} style={{ flexShrink: 0 }} />
-              {pick('ตั้งค่าทั้งหมดได้ใน lobby — สร้างแล้วไปต่อได้เลย', 'All settings are in the lobby — just create and go')}
+              {pick('ตั้งค่าหลักทั้งหมดได้หลังสร้างห้อง ระบบจะพาไปที่ล็อบบี้ทันที', 'You can finish all key setup after room creation. We will take you straight to the lobby.')}
             </p>
           </form>
 
@@ -288,20 +288,20 @@ export function PartyHubPage() {
           <div className="pgw-steps">
             <div className="pgw-step-card" data-step="1">
               <div className="pgw-step-num">1</div>
-              <strong className="pgw-step-title">{pick('สร้างห้อง', 'Create a Room')}</strong>
-              <p className="pgw-step-desc">{pick('กด "สร้างห้อง" ด้านบน ใช้เวลาไม่ถึง 10 วิ', 'Tap Create Room above — takes under 10 seconds')}</p>
+              <strong className="pgw-step-title">{pick('สร้างห้อง', 'Create room')}</strong>
+              <p className="pgw-step-desc">{pick('ตั้งชื่อห้องถ้าต้องการ แล้วกดสร้างห้องเพื่อเข้าไปตั้งค่าต่อ', 'Add a room name if you want, then create the room to continue setup')}</p>
             </div>
             <div className="pgw-step-arrow" aria-hidden="true"><ChevronRight size={20} /></div>
             <div className="pgw-step-card" data-step="2">
               <div className="pgw-step-num">2</div>
-              <strong className="pgw-step-title">{pick('ตั้งค่าใน Lobby', 'Set Up in Lobby')}</strong>
-              <p className="pgw-step-desc">{pick('เลือกโหมด เทมเพลต และรายละเอียดการเล่น', 'Pick mode, template, and play settings')}</p>
+              <strong className="pgw-step-title">{pick('ตั้งค่าห้อง', 'Configure the room')}</strong>
+              <p className="pgw-step-desc">{pick('เลือกโหมด ชุดเพลงหรือชุดคำถาม และเวลาที่ใช้ต่อรอบ', 'Choose the mode, set list or question set, and round timing')}</p>
             </div>
             <div className="pgw-step-arrow" aria-hidden="true"><ChevronRight size={20} /></div>
             <div className="pgw-step-card" data-step="3">
               <div className="pgw-step-num">3</div>
-              <strong className="pgw-step-title">{pick('แชร์โค้ดแล้วเริ่ม', 'Share & Start')}</strong>
-              <p className="pgw-step-desc">{pick('ส่งโค้ดให้เพื่อน แล้วกด Start ได้เลย', 'Send the code, then press Start')}</p>
+              <strong className="pgw-step-title">{pick('ชวนเพื่อนแล้วเริ่มเกม', 'Invite players and start')}</strong>
+              <p className="pgw-step-desc">{pick('แชร์รหัสห้องให้เพื่อนเข้ามาพร้อมกัน แล้วค่อยเริ่มเกมเมื่อทุกคนพร้อม', 'Share the room code, wait until everyone is ready, then start the game')}</p>
             </div>
           </div>
         </section>
@@ -899,7 +899,7 @@ export function PartyRoomPage() {
       return undefined;
     }
 
-    const shouldLoadTitleGuessSets = isHost || roomSettingsDraft.modeType === 'title-guess';
+    const shouldLoadTitleGuessSets = roomSettingsDraft.modeType === 'title-guess';
     if (!shouldLoadTitleGuessSets) {
       return undefined;
     }
@@ -1889,7 +1889,6 @@ export function PartyRoomPage() {
     </div>
   );
 }
-
 
 
 

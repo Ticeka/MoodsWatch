@@ -18,6 +18,7 @@
     "catalog:ingest:all": "node scripts/catalog/run-all.mjs",
     "catalog:resume:all": "node scripts/catalog/resume-all.mjs",
     "catalog:dedupe": "node scripts/catalog/dedupe-catalog.mjs",
+    "catalog:import:franchises": "node scripts/catalog/import-franchises.mjs",
     "catalog:map:webtoon:th": "node scripts/catalog/map-webtoon-th.mjs",
     "test:unit": "vitest run --project unit",
     "test:unit:watch": "vitest --project unit",

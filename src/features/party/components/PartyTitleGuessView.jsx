@@ -61,6 +61,28 @@ function getTitleGuessDisplayTitle(title = {}) {
   ).trim();
 }
 
+function getTitleGuessAnswerDisplayLabel(title = {}) {
+  return String(
+    title?.franchise_name
+    || getTitleGuessDisplayTitle(title)
+    || ''
+  ).trim();
+}
+
+function getTitleGuessSuggestionIdentity(title = {}) {
+  const franchiseName = String(title?.franchise_name || '').trim();
+  if (franchiseName) {
+    return `franchise:${normalizeTitleGuessSearchValue(franchiseName)}`;
+  }
+
+  const titleLabel = getTitleGuessDisplayTitle(title);
+  if (titleLabel) {
+    return `title:${normalizeTitleGuessSearchValue(titleLabel)}`;
+  }
+
+  return `id:${String(title?.id || '')}`;
+}
+
 function getTitleGuessSuggestionMeta(title = {}, pick) {
   const parts = [
     title?.type ? pick(title.type === 'anime' ? 'อนิเมะ' : title.type, title.type) : '',
@@ -253,6 +275,10 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
   const [suggestionsError, setSuggestionsError] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
+  const [pendingAnswerMetadata, setPendingAnswerMetadata] = useState({
+    selectedTitleId: null,
+    selectedFranchiseAnswerKey: '',
+  });
   const [frozenLeaderboard, setFrozenLeaderboard] = useState(() => leaderboard);
   const lastRoundIdRef = useRef(round?.id);
   const searchShellRef = useRef(null);
@@ -267,7 +293,22 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
   const normalizedTypedTitle = String(typedTitle || '').trim();
   const shouldShowSuggestions = !isChoiceMode && !isAnswered && normalizedTypedTitle.length >= 2;
   const rawSuggestionItems = useMemo(
-    () => (Array.isArray(titleSuggestions) ? titleSuggestions.slice(0, TITLE_GUESS_SUGGESTION_LIMIT) : []),
+    () => {
+      const items = Array.isArray(titleSuggestions) ? titleSuggestions : [];
+      const seen = new Set();
+      const deduped = [];
+
+      items.forEach((item) => {
+        const identity = getTitleGuessSuggestionIdentity(item);
+        if (!identity || seen.has(identity)) {
+          return;
+        }
+        seen.add(identity);
+        deduped.push(item);
+      });
+
+      return deduped.slice(0, TITLE_GUESS_SUGGESTION_LIMIT);
+    },
     [titleSuggestions]
   );
   const listboxId = useMemo(
@@ -283,7 +324,7 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
       case 'discover.autocompleteNoResults':
         return pick('ยังไม่เจอชื่อเรื่องใกล้เคียง ลองพิมพ์ต่อหรือใช้ชื่อ alias อื่น', 'No close title suggestions yet. Keep typing or use another alias.');
       case 'discover.autocompleteSearchFor':
-        return pick(`ส่งคำตอบ "${vars?.query || ''}"`, `Submit "${vars?.query || ''}"`);
+        return pick(`เลือก "${vars?.query || ''}" มาใส่`, `Use "${vars?.query || ''}"`);
       case 'discover.scopeTitles':
         return pick('ชื่อเรื่อง', 'Titles');
       default:
@@ -293,15 +334,22 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
   const suggestionItems = useMemo(
     () => rawSuggestionItems.map((item, index) => {
       const displayTitle = getTitleGuessDisplayTitle(item);
+      const answerDisplayLabel = getTitleGuessAnswerDisplayLabel(item);
       return {
         id: `party-title-guess-option-${item?.id || index}`,
         entityId: item?.id || `title-${index}`,
         groupId: 'titles',
-        title: displayTitle,
+        title: answerDisplayLabel,
         meta: getTitleGuessSuggestionMeta(item, pick),
         description: getTitleGuessSuggestionDescription(item),
         thumbnailUrl: item?.cover || '',
-        searchTerm: displayTitle,
+        searchTerm: answerDisplayLabel,
+        answerValue: answerDisplayLabel,
+        fallbackAnswerValue: displayTitle,
+        sourceTitleId: item?.id || null,
+        franchiseAnswerKey: item?.franchise_name
+          ? `franchise:${normalizeTitleGuessSearchValue(item.franchise_name)}`
+          : '',
         selectOnly: true,
       };
     }),
@@ -329,6 +377,10 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
 
   useEffect(() => {
     setTypedTitle(answer?.typed_title || '');
+    setPendingAnswerMetadata({
+      selectedTitleId: null,
+      selectedFranchiseAnswerKey: '',
+    });
   }, [answer?.typed_title, round?.id]);
 
   useEffect(() => {
@@ -337,6 +389,10 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
     setSuggestionsLoading(false);
     setSearchOpen(false);
     setHighlightedSuggestionIndex(-1);
+    setPendingAnswerMetadata({
+      selectedTitleId: null,
+      selectedFranchiseAnswerKey: '',
+    });
   }, [round?.id]);
 
   useEffect(() => {
@@ -369,7 +425,7 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
       setSuggestionsError('');
 
       listTitles({
-        type: 'all',
+        type: 'anime',
         query: normalizedTypedTitle,
         sortBy: 'popularity',
         page: 1,
@@ -434,7 +490,7 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAutocompleteOpen]);
 
-  const handleCommitAnswer = useCallback((value) => {
+  const handleCommitAnswer = useCallback((value, metadata = {}) => {
     const nextTitle = String(value || '').trim();
     if (!nextTitle || submitting || isAnswered) {
       return;
@@ -443,22 +499,44 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
     setTypedTitle(nextTitle);
     setSearchOpen(false);
     setHighlightedSuggestionIndex(-1);
-    onSubmit({ typedTitle: nextTitle });
+    onSubmit({
+      typedTitle: nextTitle,
+      selectedTitleId: Number((metadata?.selectedTitleId ?? metadata?.sourceTitleId) || 0) || null,
+      selectedFranchiseAnswerKey: String((metadata?.selectedFranchiseAnswerKey ?? metadata?.franchiseAnswerKey) || '').trim(),
+    });
   }, [isAnswered, onSubmit, submitting]);
 
+  const handleStageAnswer = useCallback((value, metadata = {}) => {
+    const nextTitle = String(value || '').trim();
+    if (!nextTitle || submitting || isAnswered) {
+      return;
+    }
+
+    setTypedTitle(nextTitle);
+    setPendingAnswerMetadata({
+      selectedTitleId: Number(metadata?.sourceTitleId || 0) || null,
+      selectedFranchiseAnswerKey: String(metadata?.franchiseAnswerKey || '').trim(),
+    });
+    setSearchOpen(false);
+    setHighlightedSuggestionIndex(-1);
+  }, [isAnswered, submitting]);
+
   const handleSuggestionSelect = useCallback((item = null) => {
-    const nextTitle = String(item?.searchTerm || item?.title || '').trim();
+    const nextTitle = String(item?.answerValue || item?.searchTerm || item?.title || '').trim();
     if (!nextTitle) {
       return;
     }
 
-    handleCommitAnswer(nextTitle);
-  }, [handleCommitAnswer]);
+    handleStageAnswer(nextTitle, {
+      sourceTitleId: item?.sourceTitleId,
+      franchiseAnswerKey: item?.franchiseAnswerKey,
+    });
+  }, [handleStageAnswer]);
 
   const handleSearchSubmit = useCallback((event) => {
     event.preventDefault();
-    handleCommitAnswer(typedTitle);
-  }, [handleCommitAnswer, typedTitle]);
+    handleCommitAnswer(typedTitle, pendingAnswerMetadata);
+  }, [handleCommitAnswer, pendingAnswerMetadata, typedTitle]);
 
   const handleSearchInputKeyDown = useCallback((event) => {
     const hasSuggestions = suggestionItems.length > 0;
@@ -469,9 +547,9 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
     }
 
     if (!hasSuggestions) {
-      if (event.key === 'Enter' && normalizedTypedTitle) {
+      if (event.key === 'Enter') {
         event.preventDefault();
-        handleCommitAnswer(normalizedTypedTitle);
+        setSearchOpen(false);
       }
       return;
     }
@@ -510,9 +588,9 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
         handleSuggestionSelect(suggestionItems[highlightedSuggestionIndex]);
         return;
       }
-      handleCommitAnswer(normalizedTypedTitle);
+      setSearchOpen(false);
     }
-  }, [handleCommitAnswer, handleSuggestionSelect, highlightedSuggestionIndex, normalizedTypedTitle, suggestionItems]);
+  }, [handleSuggestionSelect, highlightedSuggestionIndex, suggestionItems]);
 
   return (
     <div className="party-answer-layout party-title-guess-layout">
@@ -646,20 +724,24 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
                           aria-controls={listboxId}
                           aria-expanded={isAutocompleteOpen}
                           aria-activedescendant={highlightedSuggestionIndex >= 0 ? (suggestionItems[highlightedSuggestionIndex]?.id || undefined) : undefined}
-                          className="party-title-guess-search-input"
-                          value={typedTitle}
-                          onChange={(event) => {
-                            setTypedTitle(event.target.value);
-                            setSearchOpen(true);
-                          }}
+                      className="party-title-guess-search-input"
+                      value={typedTitle}
+                      onChange={(event) => {
+                        setTypedTitle(event.target.value);
+                        setPendingAnswerMetadata({
+                          selectedTitleId: null,
+                          selectedFranchiseAnswerKey: '',
+                        });
+                        setSearchOpen(true);
+                      }}
                           onFocus={() => {
                             if (!submitting) {
                               setSearchOpen(true);
                             }
-                          }}
-                          onKeyDown={handleSearchInputKeyDown}
-                          placeholder={pick('ค้นหาชื่อเรื่องแล้วเลือกเพื่อตอบทันที', 'Search a title and pick it to answer instantly')}
-                          disabled={submitting}
+                      }}
+                      onKeyDown={handleSearchInputKeyDown}
+                      placeholder={pick('ค้นหาแฟรนไชส์หรือชื่อเรื่อง แล้วกดส่งคำตอบ', 'Search a franchise or title, then press submit')}
+                      disabled={submitting}
                           autoComplete="off"
                           autoCapitalize="off"
                           autoCorrect="off"
@@ -677,7 +759,7 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
                         listboxId={listboxId}
                         t={autocompleteT}
                         onSelect={handleSuggestionSelect}
-                        onSearchAll={() => handleCommitAnswer(typedTitle)}
+                        onSearchAll={() => handleStageAnswer(typedTitle)}
                       />
                     </div>
                   </label>
@@ -700,8 +782,8 @@ export const PartyTitleGuessQuestionStage = React.memo(function PartyTitleGuessQ
                 ) : null}
                 <p className="party-title-guess-answer-hint">
                   {pick(
-                    'เลือกชื่อเรื่องจากรายการได้เลย หรือพิมพ์เองก็ได้ ระบบยังเช็ก alias ของชื่อเรื่องให้อีกชั้น',
-                    'Pick from the list for an instant answer, or type manually. The game still checks title aliases.',
+                    'ถ้าเรื่องนั้นมีแฟรนไชส์ ระบบจะแสดงชื่อแฟรนไชส์ให้เลือกแทนชื่อเรื่อง และจะส่งคำตอบก็ต่อเมื่อคุณกดปุ่มยืนยัน',
+                    'If the title belongs to a franchise, the picker shows the franchise name instead of the specific title, and your answer is only sent after you press submit.',
                   )}
                 </p>
               </>

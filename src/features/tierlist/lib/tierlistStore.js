@@ -17,8 +17,8 @@ const remoteTemplatesResultCache = new Map();
 const remoteListsResultCache = new Map();
 const tierTemplateDetailRequestCache = new Map();
 const tierListDetailRequestCache = new Map();
-const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, preview_artwork_url, created_at, updated_at';
-const REMOTE_LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, has_adult_content, created_at, updated_at';
+const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, preview_artwork_url, custom_items, created_at, updated_at';
+const REMOTE_LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, has_adult_content, custom_items, created_at, updated_at';
 const REMOTE_LIST_ROWS_SELECT = 'id, list_id, position, label, color, title_ids';
 const REMOTE_LIST_POOL_SELECT = 'list_id, title_id, position';
 let tierlistRemoteCacheVersion = 0;
@@ -89,6 +89,54 @@ function dedupeNumberIds(ids = []) {
     });
 }
 
+function dedupeTierEntryIds(ids = []) {
+  const seen = new Set();
+  return ids
+    .map(Number)
+    .filter((id) => Number.isFinite(id) && id !== 0)
+    .filter((id) => {
+      if (seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+}
+
+function makeCustomTierItemId(index = 0) {
+  return -(Date.now() + index + Math.floor(Math.random() * 1000));
+}
+
+function normalizeCustomTierItems(items = []) {
+  const source = Array.isArray(items) ? items : [];
+  const seen = new Set();
+  return source
+    .map((item, index) => {
+      const rawId = Number(item?.id);
+      const id = Number.isFinite(rawId) && rawId !== 0 ? rawId : makeCustomTierItemId(index);
+      const imageUrl = String(item?.imageUrl ?? item?.image_url ?? item?.cover ?? '').trim();
+      const title = String(item?.title ?? item?.label ?? item?.name ?? '').trim();
+      const subtitle = String(item?.subtitle ?? item?.description ?? '').trim();
+      const sourceUrl = String(item?.sourceUrl ?? item?.source_url ?? '').trim();
+
+      return {
+        id,
+        title: title || `Custom item ${index + 1}`,
+        imageUrl,
+        subtitle,
+        sourceUrl,
+      };
+    })
+    .filter((item) => item.imageUrl)
+    .filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+}
+
 function getTemplatePreviewArtworkUrl(entries = []) {
   return (entries || [])
     .map((entry) => (
@@ -109,7 +157,7 @@ function dedupeRows(rows = []) {
   const seenTitleIds = new Set();
   return rows.map((row, index) => {
     const nextTitleIds = [];
-    dedupeNumberIds(row?.titleIds || []).forEach((titleId) => {
+    dedupeTierEntryIds(row?.titleIds || []).forEach((titleId) => {
       if (!seenTitleIds.has(titleId)) {
         seenTitleIds.add(titleId);
         nextTitleIds.push(titleId);
@@ -151,6 +199,7 @@ function normalizeTemplate(raw, index = 0) {
   const entityType = normalizeCatalogEntityType(raw?.entityType || decodedCategory.entityType);
   const hasAdultContent = raw?.hasAdultContent ?? raw?.has_adult_content;
   const previewArtworkUrl = String(raw?.previewArtworkUrl ?? raw?.preview_artwork_url ?? '').trim();
+  const customItems = normalizeCustomTierItems(raw?.customItems ?? raw?.custom_items ?? []);
 
   return {
     id: String(raw?.id || makeId(`template-${index}`)),
@@ -158,7 +207,7 @@ function normalizeTemplate(raw, index = 0) {
     description: String(raw?.description || ''),
     category: String(decodedCategory.category || 'general'),
     entityType,
-    titleIds: dedupeNumberIds(raw?.titleIds || []),
+    titleIds: dedupeTierEntryIds([...(raw?.titleIds || []), ...customItems.map((item) => item.id)]),
     defaultRows: Array.isArray(raw?.defaultRows) && raw.defaultRows.length > 0
       ? raw.defaultRows.map((label) => String(label || '').trim()).filter(Boolean)
       : DEFAULT_ROWS,
@@ -167,6 +216,7 @@ function normalizeTemplate(raw, index = 0) {
     plays: Number(raw?.plays || 0),
     hasAdultContent: typeof hasAdultContent === 'boolean' ? hasAdultContent : null,
     previewArtworkUrl: previewArtworkUrl || '',
+    customItems,
     ownerUserId: raw?.ownerUserId ? String(raw.ownerUserId) : null,
     createdAt: raw?.createdAt || new Date().toISOString(),
     updatedAt: raw?.updatedAt || new Date().toISOString(),
@@ -214,9 +264,14 @@ function getTierListCommunityIdentityKey(list) {
     rows: (list.rows || []).map((row) => ({
       label: normalizeTierListIdentityText(row?.label),
       color: String(row?.color || ''),
-      titleIds: (row?.titleIds || []).map(Number).filter(Boolean),
+      titleIds: (row?.titleIds || []).map(Number).filter((id) => Number.isFinite(id) && id !== 0),
     })),
-    poolTitleIds: (list.poolTitleIds || []).map(Number).filter(Boolean),
+    poolTitleIds: (list.poolTitleIds || []).map(Number).filter((id) => Number.isFinite(id) && id !== 0),
+    customItems: (list.customItems || []).map((item) => ({
+      id: Number(item?.id),
+      title: normalizeTierListIdentityText(item?.title),
+      imageUrl: String(item?.imageUrl || ''),
+    })),
   });
 }
 
@@ -254,7 +309,8 @@ export function getTierTemplateIdentityKey(template) {
     normalizeTemplateIdentityText(normalized.title),
     normalizeTemplateIdentityText(normalized.description),
     normalized.defaultRows.map(normalizeTemplateIdentityText).join('|'),
-    dedupeNumberIds(normalized.titleIds).join(','),
+    dedupeTierEntryIds(normalized.titleIds).join(','),
+    (normalized.customItems || []).map((item) => `${Number(item?.id)}:${normalizeTemplateIdentityText(item?.title)}:${String(item?.imageUrl || '')}`).join('|'),
   ].join('::');
 }
 
@@ -312,6 +368,7 @@ export function createTierListFromTemplate(template) {
       color: '',
     })),
     poolTitleIds: Array.isArray(template?.titleIds) ? template.titleIds : [],
+    customItems: normalizeCustomTierItems(template?.customItems || []),
     entityType: normalizeCatalogEntityType(template?.entityType),
     isPublic: false,
     playCount: 0,
@@ -327,6 +384,7 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
   const baseRows = Array.isArray(options.defaultRows) && options.defaultRows.length > 0
     ? options.defaultRows
     : DEFAULT_ROWS;
+  const customItems = normalizeCustomTierItems(options.customItems || []);
 
   return normalizeTemplate({
     id: makeId('template'),
@@ -334,13 +392,14 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
     description: options.description || '',
     category: options.category || 'general',
     entityType: normalizeCatalogEntityType(options.entityType),
-    titleIds: titles.map((title) => Number(title.id)),
+    titleIds: [...titles.map((title) => Number(title.id)), ...customItems.map((item) => item.id)],
     defaultRows: baseRows,
     isPublic: Boolean(options.isPublic ?? true),
     isSystem: Boolean(options.isSystem),
     plays: 0,
     hasAdultContent: titles.some((title) => Boolean(title?.is_adult)),
-    previewArtworkUrl: getTemplatePreviewArtworkUrl(titles),
+    previewArtworkUrl: String(options.previewArtworkUrl || '').trim() || getTemplatePreviewArtworkUrl([...customItems.map((item) => ({ cover: item.imageUrl })), ...titles]),
+    customItems,
     ownerUserId: options.ownerUserId || null,
   });
 }
@@ -348,7 +407,8 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
 function normalizeTierList(raw, index = 0) {
   const rows = normalizeRows(raw?.rows);
   const assigned = new Set(rows.flatMap((row) => row.titleIds));
-  const poolTitleIds = dedupeNumberIds(raw?.poolTitleIds || []).filter((id) => !assigned.has(id));
+  const customItems = normalizeCustomTierItems(raw?.customItems ?? raw?.custom_items ?? []);
+  const poolTitleIds = dedupeTierEntryIds([...(raw?.poolTitleIds || []), ...customItems.map((item) => item.id)]).filter((id) => !assigned.has(id));
   const hasAdultContent = raw?.hasAdultContent ?? raw?.has_adult_content;
 
   return {
@@ -359,6 +419,7 @@ function normalizeTierList(raw, index = 0) {
     entityType: inferTierListEntityType(raw),
     rows,
     poolTitleIds,
+    customItems,
     isPublic: Boolean(raw?.isPublic),
     playCount: Number(raw?.playCount || 0),
     ownerName: String(raw?.ownerName || 'You'),
@@ -479,6 +540,25 @@ function saveLibraryRaw(library) {
   return normalized;
 }
 
+function getComparableTimestamp(value) {
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function preferNewerTierListVersion(remoteList, localList) {
+  if (!remoteList) {
+    return localList || null;
+  }
+
+  if (!localList) {
+    return remoteList;
+  }
+
+  return getComparableTimestamp(localList.updatedAt) >= getComparableTimestamp(remoteList.updatedAt)
+    ? localList
+    : remoteList;
+}
+
 function readTimedCache(cache, key) {
   const entry = cache.get(key);
   if (!entry) {
@@ -530,6 +610,67 @@ function getErrorDetails(error) {
 
 function getErrorHint(error) {
   return String(error?.hint ?? error?.error?.hint ?? '').toLowerCase();
+}
+
+function isNoRowsSingleResultError(error) {
+  const code = getErrorCode(error);
+  const message = getErrorMessage(error);
+  const details = getErrorDetails(error);
+  return (
+    code === 'PGRST116' &&
+    (
+      message.includes('cannot coerce the result to a single json object') ||
+      message.includes('0 rows') ||
+      details.includes('0 rows')
+    )
+  );
+}
+
+function getErrorText(error) {
+  return {
+    status: getErrorStatus(error),
+    code: String(error?.code ?? error?.error?.code ?? ''),
+    message: String(error?.message ?? error?.error?.message ?? ''),
+    details: String(error?.details ?? error?.error?.details ?? ''),
+    hint: String(error?.hint ?? error?.error?.hint ?? ''),
+  };
+}
+
+function buildTierlistDiagnosticMessage(action, context = {}, error = null) {
+  const { status, code, message, details, hint } = getErrorText(error);
+  const actionLabel = String(action || 'tierlist_action_failed');
+  const step = context?.step ? `step=${context.step}` : '';
+  const listId = context?.listId ? `listId=${context.listId}` : '';
+  const templateId = context?.templateId ? `templateId=${context.templateId}` : '';
+  const statusLabel = status ? `status=${status}` : '';
+  const codeLabel = code ? `code=${code}` : '';
+  const messageLabel = message ? `message=${message}` : '';
+  const detailsLabel = details ? `details=${details}` : '';
+  const hintLabel = hint ? `hint=${hint}` : '';
+
+  return [
+    actionLabel,
+    step,
+    listId,
+    templateId,
+    statusLabel,
+    codeLabel,
+    messageLabel,
+    detailsLabel,
+    hintLabel,
+  ].filter(Boolean).join(' | ');
+}
+
+function createTierlistDiagnosticError(action, context = {}, error = null) {
+  const diagnosticError = new Error(buildTierlistDiagnosticMessage(action, context, error));
+  diagnosticError.name = 'TierlistDiagnosticError';
+  diagnosticError.cause = error || null;
+  diagnosticError.tierlistDebug = {
+    action,
+    ...context,
+    ...getErrorText(error),
+  };
+  return diagnosticError;
 }
 
 function isNetworkLikeError(error) {
@@ -638,6 +779,62 @@ function shouldPromoteTierListToOwnedCopy(list, userId) {
     list &&
     (!list.ownerUserId || String(list.ownerUserId) !== String(userId))
   );
+}
+
+function isOwnedTierListByUser(list, userId = null) {
+  if (!list) {
+    return false;
+  }
+
+  if (userId && list.ownerUserId) {
+    return String(list.ownerUserId) === String(userId);
+  }
+
+  return !list.ownerUserId && String(list.ownerName || '').trim().toLowerCase() === 'you';
+}
+
+function hasMeaningfulTierRankingInStore(list) {
+  return (list?.rows || []).some((row) => Array.isArray(row?.titleIds) && row.titleIds.length > 0);
+}
+
+function getTierListDraftIdentityKey(list) {
+  if (!list) {
+    return '';
+  }
+
+  const normalized = normalizeTierList(list);
+  return JSON.stringify({
+    owner: normalizeTierListIdentityText(normalized.ownerUserId || normalized.ownerUsername || normalized.ownerName || ''),
+    templateId: String(normalized.templateId || ''),
+    entityType: normalizeCatalogEntityType(normalized.entityType),
+    title: normalizeTierListIdentityText(normalized.title),
+    description: normalizeTierListIdentityText(normalized.description),
+    rows: (normalized.rows || []).map((row) => ({
+      label: normalizeTierListIdentityText(row?.label),
+      color: String(row?.color || ''),
+      titleIds: dedupeTierEntryIds(row?.titleIds || []),
+    })),
+    poolTitleIds: dedupeTierEntryIds(normalized.poolTitleIds || []),
+    customItems: (normalized.customItems || []).map((item) => ({
+      id: Number(item?.id),
+      title: normalizeTierListIdentityText(item?.title),
+      imageUrl: String(item?.imageUrl || ''),
+    })),
+  });
+}
+
+function compareTierListsByRecency(left, right) {
+  const updatedDelta = new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime();
+  if (updatedDelta !== 0) {
+    return updatedDelta;
+  }
+
+  const createdDelta = new Date(right?.createdAt || 0).getTime() - new Date(left?.createdAt || 0).getTime();
+  if (createdDelta !== 0) {
+    return createdDelta;
+  }
+
+  return String(right?.id || '').localeCompare(String(left?.id || ''));
 }
 
 function createSystemTemplatesFromCatalog(catalog = []) {
@@ -770,6 +967,7 @@ function toRemoteTemplate(template, userId = null) {
     plays: normalized.plays,
     has_adult_content: normalized.hasAdultContent,
     preview_artwork_url: normalized.previewArtworkUrl || null,
+    custom_items: normalized.customItems,
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
@@ -788,6 +986,7 @@ function fromRemoteTemplate(row) {
     plays: row?.plays,
     hasAdultContent: typeof row?.has_adult_content === 'boolean' ? row.has_adult_content : null,
     previewArtworkUrl: row?.preview_artwork_url || '',
+    customItems: row?.custom_items || [],
     ownerUserId: row?.owner_user_id,
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
@@ -807,6 +1006,7 @@ function toRemoteList(list, userId = null) {
     owner_name: normalized.ownerName,
     owner_username: normalized.ownerUsername || '',
     has_adult_content: normalized.hasAdultContent,
+    custom_items: normalized.customItems,
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
@@ -834,6 +1034,7 @@ function fromRemoteList(row, rows = [], poolItems = []) {
     ownerName: row?.owner_name,
     ownerUsername: row?.owner_username || null,
     hasAdultContent: typeof row?.has_adult_content === 'boolean' ? row.has_adult_content : null,
+    customItems: row?.custom_items || [],
     ownerUserId: row?.owner_user_id,
     createdAt: row?.created_at,
     updatedAt: row?.updated_at,
@@ -936,14 +1137,21 @@ async function fetchRemoteLists(userId = null, options = {}) {
   const publicLimit = Number.isFinite(options?.publicLimit) && options.publicLimit > 0
     ? Math.floor(options.publicLimit)
     : null;
+  const ownedLimit = Number.isFinite(options?.ownedLimit) && options.ownedLimit > 0
+    ? Math.floor(options.ownedLimit)
+    : null;
+  const ownedOffset = Number.isFinite(options?.ownedOffset) && options.ownedOffset >= 0
+    ? Math.floor(options.ownedOffset)
+    : 0;
   const skipPoolItems = options?.skipPoolItems !== false;
+  const skipRows = options?.skipRows === true;
   const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
   const includeOwned = options?.includeOwned !== false && Boolean(userId);
   if (!includePublic && !includeOwned) {
     return [];
   }
 
-  const requestKey = `${userId || 'anon'}::${includePublic ? 'public' : 'owned-only'}::${includeOwned ? 'owned' : 'no-owned'}::${publicLimit ?? 'all'}::${skipPoolItems ? 'npool' : 'pool'}::${showAdult ?? 'any'}`;
+  const requestKey = `${userId || 'anon'}::${includePublic ? 'public' : 'owned-only'}::${includeOwned ? 'owned' : 'no-owned'}::${publicLimit ?? 'all'}::owned-limit:${ownedLimit ?? 'all'}::owned-offset:${ownedOffset}::${skipRows ? 'nrows' : 'rows'}::${skipPoolItems ? 'npool' : 'pool'}::${showAdult ?? 'any'}`;
   const cachedResult = readTimedCache(remoteListsResultCache, requestKey);
   if (cachedResult) {
     return cachedResult;
@@ -980,10 +1188,16 @@ async function fetchRemoteLists(userId = null, options = {}) {
       let ownedListsQuery = supabase
         .from('tierlist_lists')
         .select(REMOTE_LIST_SELECT)
-        .eq('owner_user_id', userId);
+        .eq('owner_user_id', userId)
+        .order('updated_at', { ascending: false })
+        .order('play_count', { ascending: false });
 
       if (showAdult !== null) {
         ownedListsQuery = ownedListsQuery.eq('has_adult_content', showAdult);
+      }
+
+      if (ownedLimit !== null) {
+        ownedListsQuery = ownedListsQuery.range(ownedOffset, ownedOffset + ownedLimit - 1);
       }
 
       requests.push(ownedListsQuery);
@@ -1004,18 +1218,31 @@ async function fetchRemoteLists(userId = null, options = {}) {
       return [];
     }
 
-    const listIds = dedupedLists.map((entry) => entry.id);
-    const { data: rowsData, error: rowsError } = await supabase
-      .from('tierlist_list_rows')
-      .select(REMOTE_LIST_ROWS_SELECT)
-      .in('list_id', listIds);
+    if (skipRows && skipPoolItems) {
+      const result = dedupedLists.map((listRow) => fromRemoteList(listRow, [], []));
+      if (cacheVersion === tierlistRemoteCacheVersion) {
+        writeTimedCache(remoteListsResultCache, requestKey, result);
+      }
+      return result;
+    }
 
-    if (rowsError) throw rowsError;
+    const listIds = dedupedLists.map((entry) => entry.id);
+    const rowsData = skipRows
+      ? []
+      : await (async () => {
+        const { data, error } = await supabase
+          .from('tierlist_list_rows')
+          .select(REMOTE_LIST_ROWS_SELECT)
+          .in('list_id', listIds);
+
+        if (error) throw error;
+        return data || [];
+      })();
 
     if (skipPoolItems) {
       const result = dedupedLists.map((listRow) => fromRemoteList(
         listRow,
-        (rowsData || []).filter((entry) => entry.list_id === listRow.id),
+        rowsData.filter((entry) => entry.list_id === listRow.id),
         []
       ));
       if (cacheVersion === tierlistRemoteCacheVersion) {
@@ -1136,7 +1363,7 @@ export async function loadTierTemplateDetail(templateId, options = {}) {
 
       const { data: templateRow, error: templateError } = await templateQuery.maybeSingle();
 
-      if (templateError) {
+      if (templateError && !isNoRowsSingleResultError(templateError)) {
         throw templateError;
       }
 
@@ -1258,7 +1485,7 @@ export async function loadTierListDetail(listId, options = {}) {
 
       const { data: listRow, error: listError } = await listQuery.maybeSingle();
 
-      if (listError) {
+      if (listError && !isNoRowsSingleResultError(listError)) {
         throw listError;
       }
 
@@ -1304,12 +1531,15 @@ export async function loadTierListDetail(listId, options = {}) {
       if (poolResult.error) {
         throw poolResult.error;
       }
-      if (templateResult?.error) {
+      if (templateResult?.error && !isNoRowsSingleResultError(templateResult.error)) {
         throw templateResult.error;
       }
 
       const remoteTemplate = templateResult?.data ? fromRemoteTemplate(templateResult.data) : localTemplate;
-      const currentList = fromRemoteList(listRow, rowsResult.data || [], poolResult.data || []);
+      const currentList = preferNewerTierListVersion(
+        fromRemoteList(listRow, rowsResult.data || [], poolResult.data || []),
+        localList
+      );
       let relatedPublicLists = [];
 
       if (templateId) {
@@ -1432,7 +1662,7 @@ function getChangedRowPayloads(previousRows, nextRowPayloads) {
       {
         label: String(row.label || ''),
         color: String(row.color || ''),
-        title_ids: dedupeNumberIds(row.titleIds),
+        title_ids: dedupeTierEntryIds(row.titleIds),
         position: index,
       },
     ])
@@ -1453,7 +1683,7 @@ function getChangedRowPayloads(previousRows, nextRowPayloads) {
 // Returns true if the pool title IDs or their order has changed.
 function poolTitleIdsChanged(previousList, nextPoolTitleIds) {
   if (!previousList) return nextPoolTitleIds.length > 0;
-  const prevPool = dedupeNumberIds(previousList.poolTitleIds || []);
+  const prevPool = dedupeTierEntryIds(previousList.poolTitleIds || []);
   if (prevPool.length !== nextPoolTitleIds.length) return true;
   return prevPool.some((id, index) => id !== nextPoolTitleIds[index]);
 }
@@ -1465,8 +1695,8 @@ function getRemovedTierRowIds(previousList, nextList) {
 }
 
 function getRemovedPoolTitleIds(previousList, nextList) {
-  const previousIds = new Set(dedupeNumberIds(previousList?.poolTitleIds || []));
-  const nextIds = new Set(dedupeNumberIds(nextList?.poolTitleIds || []));
+  const previousIds = new Set(dedupeTierEntryIds(previousList?.poolTitleIds || []));
+  const nextIds = new Set(dedupeTierEntryIds(nextList?.poolTitleIds || []));
   return [...previousIds].filter((id) => !nextIds.has(id));
 }
 
@@ -1540,10 +1770,10 @@ async function saveRemoteList(list, userId = null, previousList = null) {
     position: index,
     label: row.label,
     color: row.color || '',
-    title_ids: dedupeNumberIds(row.titleIds),
+    title_ids: dedupeTierEntryIds(row.titleIds),
   }));
 
-  const poolPayload = dedupeNumberIds(normalized.poolTitleIds).map((titleId, index) => ({
+  const poolPayload = dedupeTierEntryIds(normalized.poolTitleIds).map((titleId, index) => ({
     list_id: normalized.id,
     title_id: titleId,
     position: index,
@@ -1559,7 +1789,7 @@ async function saveRemoteList(list, userId = null, previousList = null) {
   }
 
   // Only upsert pool items when the pool has actually changed.
-  const nextPoolIds = dedupeNumberIds(normalized.poolTitleIds);
+  const nextPoolIds = dedupeTierEntryIds(normalized.poolTitleIds);
   if (poolTitleIdsChanged(previousList, nextPoolIds) && poolPayload.length > 0) {
     const CHUNK_SIZE = 500;
     for (let i = 0; i < poolPayload.length; i += CHUNK_SIZE) {
@@ -1699,6 +1929,9 @@ export async function loadTierLibrary(catalog = [], options = {}) {
         includePublic,
         includeOwned,
         publicLimit: options?.publicListLimit,
+        ownedLimit: options?.ownedListLimit,
+        ownedOffset: options?.ownedListOffset,
+        skipRows: options?.skipOwnedListRows === true,
         skipPoolItems: true,
         showAdult: options?.showAdult,
       }),
@@ -1724,6 +1957,105 @@ export async function loadTierLibrary(catalog = [], options = {}) {
 
     throw error;
   }
+}
+
+export async function loadOwnedTierListsPage(userId, options = {}) {
+  const limit = Number.isFinite(options?.limit) && options.limit > 0
+    ? Math.floor(options.limit)
+    : null;
+  const offset = Number.isFinite(options?.offset) && options.offset >= 0
+    ? Math.floor(options.offset)
+    : 0;
+  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
+  const localLibrary = normalizeLibrary(loadLibraryRaw());
+  const localOwnedLists = sortListsByRecentAndPopularity(
+    localLibrary.lists.filter((list) => (
+      isOwnedTierListByUser(list, userId)
+      && matchesRequestedAdultMode(list, showAdult)
+    ))
+  );
+  const localPage = limit === null
+    ? localOwnedLists.slice(offset)
+    : localOwnedLists.slice(offset, offset + limit);
+
+  if (!userId || !supabase) {
+    return localPage;
+  }
+
+  try {
+    return await fetchRemoteLists(userId, {
+      includePublic: false,
+      includeOwned: true,
+      ownedLimit: limit,
+      ownedOffset: offset,
+      skipRows: true,
+      skipPoolItems: true,
+      showAdult,
+    });
+  } catch (error) {
+    if (isNetworkLikeError(error)) {
+      return localPage;
+    }
+
+    throw error;
+  }
+}
+
+export async function loadOwnedTierListStats(userId, options = {}) {
+  if (!userId) {
+    return {
+      totalCount: 0,
+      publicCount: 0,
+      linkedCountByTemplateId: {},
+    };
+  }
+
+  if (!supabase) {
+    const localLibrary = normalizeLibrary(loadLibraryRaw());
+    const ownedLists = localLibrary.lists.filter((list) => isOwnedTierListByUser(list, userId));
+    const linkedCountByTemplateId = {};
+    ownedLists.forEach((list) => {
+      const templateId = String(list.templateId || '');
+      if (!templateId) {
+        return;
+      }
+      linkedCountByTemplateId[templateId] = Number(linkedCountByTemplateId[templateId] || 0) + 1;
+    });
+    return {
+      totalCount: ownedLists.length,
+      publicCount: ownedLists.filter((list) => list.isPublic).length,
+      linkedCountByTemplateId,
+    };
+  }
+
+  let query = supabase
+    .from('tierlist_lists')
+    .select('template_id, is_public')
+    .eq('owner_user_id', userId);
+
+  if (typeof options?.showAdult === 'boolean') {
+    query = query.eq('has_adult_content', options.showAdult);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+
+  const linkedCountByTemplateId = {};
+  (data || []).forEach((row) => {
+    const templateId = String(row?.template_id || '');
+    if (!templateId) {
+      return;
+    }
+    linkedCountByTemplateId[templateId] = Number(linkedCountByTemplateId[templateId] || 0) + 1;
+  });
+
+  return {
+    totalCount: (data || []).length,
+    publicCount: (data || []).filter((row) => Boolean(row?.is_public)).length,
+    linkedCountByTemplateId,
+  };
 }
 
 export async function loadTierTemplates(catalog = [], options = {}) {
@@ -1792,6 +2124,22 @@ export async function saveTierLibrary(library, options = {}) {
     }
     throw error;
   }
+}
+
+export function saveTierListDraftLocal(tierList, library = null) {
+  const source = normalizeLibrary(library || loadLibraryRaw());
+  const normalized = normalizeTierList({
+    ...tierList,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return saveLibraryRaw({
+    ...source,
+    lists: [
+      normalized,
+      ...source.lists.filter((entry) => String(entry.id || '') !== String(normalized.id || '')),
+    ],
+  });
 }
 
 export async function saveTierTemplate(template, library = null, options = {}) {
@@ -1887,6 +2235,242 @@ export async function saveTierList(tierList, library = null, options = {}) {
   }
 }
 
+async function deleteRemoteTemplate(templateId) {
+  if (!supabase || !templateId) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('tierlist_templates')
+    .delete()
+    .eq('id', String(templateId));
+
+  if (error) {
+    throw error;
+  }
+}
+
+function detachTemplateFromList(list) {
+  return normalizeTierList({
+    ...list,
+    templateId: '',
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function deleteRemoteList(listId) {
+  if (!supabase || !listId) {
+    return;
+  }
+
+  const normalizedListId = String(listId);
+
+  const deleteSteps = [
+    {
+      step: 'delete_rows',
+      request: () => supabase
+      .from('tierlist_list_rows')
+      .delete()
+      .eq('list_id', normalizedListId),
+    },
+    {
+      step: 'delete_pool_items',
+      request: () => supabase
+      .from('tierlist_list_pool_items')
+      .delete()
+      .eq('list_id', normalizedListId),
+    },
+    {
+      step: 'delete_comments',
+      request: () => supabase
+      .from('tierlist_comments')
+      .delete()
+      .eq('list_id', normalizedListId),
+    },
+  ];
+
+  for (const { step, request } of deleteSteps) {
+    const { error } = await request();
+    if (error) {
+      throw createTierlistDiagnosticError('delete_tierlist_failed', {
+        step,
+        listId: normalizedListId,
+      }, error);
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('tierlist_lists')
+    .delete()
+    .eq('id', normalizedListId)
+    .select('id');
+
+  if (error) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'delete_list_row',
+      listId: normalizedListId,
+    }, error);
+  }
+
+  const deletedRow = Array.isArray(data) ? data[0] : null;
+  if (!deletedRow?.id) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'delete_list_row',
+      listId: normalizedListId,
+      note: 'delete returned no row',
+    }, null);
+  }
+}
+
+async function verifyRemoteListDeleted(listId) {
+  if (!supabase || !listId) {
+    return;
+  }
+
+  const normalizedListId = String(listId);
+  const { data, error } = await supabase
+    .from('tierlist_lists')
+    .select('id, owner_user_id')
+    .eq('id', normalizedListId)
+    .limit(1);
+
+  if (error) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'verify_delete_list_row',
+      listId: normalizedListId,
+    }, error);
+  }
+
+  const existingRow = Array.isArray(data) ? data[0] : null;
+  if (existingRow?.id) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'verify_delete_list_row',
+      listId: normalizedListId,
+      note: 'list still visible after delete',
+    }, null);
+  }
+}
+
+export async function deleteTierTemplate(templateId, library = null, options = {}) {
+  const userId = options?.userId || null;
+  const source = normalizeLibrary(library || loadLibraryRaw());
+  const normalizedTemplateId = String(templateId || '');
+  const targetTemplate = source.templates.find((entry) => String(entry.id || '') === normalizedTemplateId) || null;
+
+  if (!targetTemplate) {
+    return source;
+  }
+
+  const linkedLists = source.lists.filter((list) => String(list.templateId || '') === normalizedTemplateId);
+  const detachedListById = new Map(
+    linkedLists.map((list) => [String(list.id || ''), detachTemplateFromList(list)])
+  );
+
+  const nextLibrary = saveLibraryRaw({
+    ...source,
+    templates: source.templates.filter((entry) => String(entry.id || '') !== normalizedTemplateId),
+    lists: source.lists.map((entry) => detachedListById.get(String(entry.id || '')) || entry),
+  });
+  invalidateTierlistRemoteCaches();
+
+  if (!supabase || !userId) {
+    return nextLibrary;
+  }
+
+  try {
+    const ownedLinkedLists = linkedLists.filter((list) => (
+      !list.ownerUserId || String(list.ownerUserId || '') === String(userId)
+    ));
+    for (const list of ownedLinkedLists) {
+      const detachedList = detachedListById.get(String(list.id || ''));
+      if (!detachedList) {
+        continue;
+      }
+      await saveRemoteListWithRecovery(detachedList, userId, list);
+    }
+    await deleteRemoteTemplate(normalizedTemplateId);
+    return nextLibrary;
+  } catch (error) {
+    if (isNetworkLikeError(error)) {
+      return nextLibrary;
+    }
+    if (isForeignKeyError(error)) {
+      throw new Error('Template is still referenced by rankings that cannot be detached automatically');
+    }
+    throw error;
+  }
+}
+
+export async function deleteTierList(listId, library = null, options = {}) {
+  const userId = options?.userId || null;
+  const source = normalizeLibrary(library || loadLibraryRaw());
+  const normalizedListId = String(listId || '');
+
+  if (!normalizedListId) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'validate_input',
+      listId: normalizedListId,
+      note: 'missing list id',
+    }, null);
+  }
+
+  const targetList = source.lists.find((entry) => String(entry.id || '') === normalizedListId) || null;
+
+  if (!targetList) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'resolve_local_target',
+      listId: normalizedListId,
+      note: 'list not found in current library state',
+    }, null);
+  }
+
+  if (!userId) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'require_user',
+      listId: normalizedListId,
+      note: 'missing authenticated user id',
+    }, null);
+  }
+
+  if (!supabase) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'require_supabase',
+      listId: normalizedListId,
+      note: 'supabase client unavailable',
+    }, null);
+  }
+
+  if (targetList.ownerUserId && String(targetList.ownerUserId) !== String(userId)) {
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'validate_owner',
+      listId: normalizedListId,
+      note: `list owner mismatch (${targetList.ownerUserId})`,
+    }, null);
+  }
+
+  const nextLibrary = saveLibraryRaw({
+    ...source,
+    lists: source.lists.filter((entry) => String(entry.id || '') !== normalizedListId),
+  });
+  invalidateTierlistRemoteCaches();
+
+  try {
+    await deleteRemoteList(normalizedListId);
+    await verifyRemoteListDeleted(normalizedListId);
+    return nextLibrary;
+  } catch (error) {
+    // Revert the optimistic local delete — there is no sync mechanism
+    // to re-apply it later, so leaving it removed would cause the list
+    // to reappear from remote on the next load anyway.
+    saveLibraryRaw(source);
+    invalidateTierlistRemoteCaches();
+    throw createTierlistDiagnosticError('delete_tierlist_failed', {
+      step: 'delete_tierlist',
+      listId: normalizedListId,
+    }, error);
+  }
+}
+
 export function findTierTemplate(templateId, library = null) {
   const source = library ? normalizeLibrary(library) : loadLibraryRaw();
   return source.templates.find((template) => template.id === templateId) || null;
@@ -1906,18 +2490,134 @@ export function buildTierListFromTemplate(template, options = {}) {
   });
 }
 
+export function findReusableTierListDraft(candidateList, library = null, options = {}) {
+  const userId = options?.userId || null;
+  const source = normalizeLibrary(library || loadLibraryRaw());
+  const normalizedCandidate = normalizeTierList(candidateList);
+  const candidateKey = getTierListDraftIdentityKey(normalizedCandidate);
+
+  if (!candidateKey) {
+    return null;
+  }
+
+  return source.lists
+    .filter((list) => (
+      !list.isPublic &&
+      !hasMeaningfulTierRankingInStore(list) &&
+      isOwnedTierListByUser(list, userId) &&
+      getTierListDraftIdentityKey(list) === candidateKey
+    ))
+    .sort(compareTierListsByRecency)[0] || null;
+}
+
+export async function cleanupDuplicateTierLists(library = null, options = {}) {
+  const userId = options?.userId || null;
+  const source = normalizeLibrary(library || loadLibraryRaw());
+  const duplicateGroups = new Map();
+
+  source.lists.forEach((list) => {
+    if (
+      !list ||
+      list.isPublic ||
+      hasMeaningfulTierRankingInStore(list) ||
+      !isOwnedTierListByUser(list, userId)
+    ) {
+      return;
+    }
+
+    const identityKey = getTierListDraftIdentityKey(list);
+    if (!identityKey) {
+      return;
+    }
+
+    const group = duplicateGroups.get(identityKey) || [];
+    group.push(list);
+    duplicateGroups.set(identityKey, group);
+  });
+
+  const duplicateIdsToRemove = [];
+  duplicateGroups.forEach((group) => {
+    if (!Array.isArray(group) || group.length < 2) {
+      return;
+    }
+
+    group
+      .slice()
+      .sort(compareTierListsByRecency)
+      .slice(1)
+      .forEach((list) => {
+        duplicateIdsToRemove.push(String(list.id || ''));
+      });
+  });
+
+  if (duplicateIdsToRemove.length === 0) {
+    return {
+      library: source,
+      removedIds: [],
+      failedIds: [],
+    };
+  }
+
+  const removedIds = [];
+  const failedIds = [];
+
+  if (supabase && userId) {
+    for (const duplicateId of duplicateIdsToRemove) {
+      try {
+        await deleteRemoteList(duplicateId);
+        await verifyRemoteListDeleted(duplicateId);
+        removedIds.push(duplicateId);
+      } catch (error) {
+        failedIds.push({
+          id: duplicateId,
+          message: error?.message || 'Failed to delete duplicate tier list',
+        });
+        console.error('tierlist duplicate cleanup failed', {
+          listId: duplicateId,
+          error,
+        });
+      }
+    }
+  } else {
+    removedIds.push(...duplicateIdsToRemove);
+  }
+
+  if (removedIds.length === 0) {
+    return {
+      library: source,
+      removedIds,
+      failedIds,
+    };
+  }
+
+  const removedIdSet = new Set(removedIds.map(String));
+  const nextLibrary = saveLibraryRaw({
+    ...source,
+    lists: source.lists.filter((list) => !removedIdSet.has(String(list.id || ''))),
+  });
+  invalidateTierlistRemoteCaches();
+
+  return {
+    library: nextLibrary,
+    removedIds,
+    failedIds,
+  };
+}
+
 export function seedPoolFromCatalog(tierList, catalogTitleIds = []) {
   const normalized = normalizeTierList(tierList);
   const knownIds = new Set(catalogTitleIds.map(Number).filter(Boolean));
-  const assignedIds = new Set(normalized.rows.flatMap((row) => row.titleIds).filter((id) => knownIds.has(id)));
-  const poolFromStored = dedupeNumberIds(normalized.poolTitleIds).filter((id) => knownIds.has(id) && !assignedIds.has(id));
+  const customItemIds = new Set((normalized.customItems || []).map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id !== 0));
+  const allowedIds = new Set([...knownIds, ...customItemIds]);
+  const assignedIds = new Set(normalized.rows.flatMap((row) => row.titleIds).filter((id) => allowedIds.has(id)));
+  const poolFromStored = dedupeTierEntryIds(normalized.poolTitleIds).filter((id) => allowedIds.has(id) && !assignedIds.has(id));
   const missingIds = dedupeNumberIds(catalogTitleIds).filter((id) => !assignedIds.has(id) && !poolFromStored.includes(id));
 
   return normalizeTierList({
     ...normalized,
     rows: normalized.rows.map((row) => ({
       ...row,
-      titleIds: row.titleIds.filter((id) => knownIds.has(id)),
+      titleIds: row.titleIds.filter((id) => allowedIds.has(id)),
     })),
     poolTitleIds: [...poolFromStored, ...missingIds],
   });
@@ -1926,14 +2626,16 @@ export function seedPoolFromCatalog(tierList, catalogTitleIds = []) {
 export function filterTierListToCatalog(tierList, catalogTitleIds = []) {
   const normalized = normalizeTierList(tierList);
   const knownIds = new Set(catalogTitleIds.map(Number).filter(Boolean));
+  const customItemIds = new Set((normalized.customItems || []).map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id !== 0));
+  const allowedIds = new Set([...knownIds, ...customItemIds]);
 
   return normalizeTierList({
     ...normalized,
     rows: normalized.rows.map((row) => ({
       ...row,
-      titleIds: dedupeNumberIds(row.titleIds).filter((id) => knownIds.has(id)),
+      titleIds: dedupeTierEntryIds(row.titleIds).filter((id) => allowedIds.has(id)),
     })),
-    poolTitleIds: dedupeNumberIds(normalized.poolTitleIds).filter((id) => knownIds.has(id)),
+    poolTitleIds: dedupeTierEntryIds(normalized.poolTitleIds).filter((id) => allowedIds.has(id)),
   });
 }
 
@@ -1962,13 +2664,13 @@ export function moveTitle(tierList, titleId, fromRowId, toRowId, toIndex = null)
       nextTitleIds.splice(insertIndex, 0, id);
       rows[targetIndex] = {
         ...rows[targetIndex],
-        titleIds: dedupeNumberIds(nextTitleIds),
+        titleIds: dedupeTierEntryIds(nextTitleIds),
       };
     } else {
-      poolTitleIds = dedupeNumberIds([...poolTitleIds, id]);
+      poolTitleIds = dedupeTierEntryIds([...poolTitleIds, id]);
     }
   } else {
-    poolTitleIds = dedupeNumberIds([...poolTitleIds, id]);
+    poolTitleIds = dedupeTierEntryIds([...poolTitleIds, id]);
   }
 
   return normalizeTierList({

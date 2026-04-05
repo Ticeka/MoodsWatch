@@ -1126,10 +1126,16 @@
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.5rem;
-  background-size: cover;
-  background-position: center;
   background-color: rgba(var(--color-primary-rgb), 0.1);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.party-lobby-template-cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .party-lobby-template-banner > div { min-width: 0; }
@@ -1153,6 +1159,9 @@
   background: linear-gradient(135deg, rgba(251, 191, 36, 0.95), rgba(249, 115, 22, 0.85));
   color: #fff;
   font-size: 1.2rem;
+}
+.party-lobby-template-cover--title-guess .party-lobby-template-cover-image {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Pill toggle switches (lobby context) ───────────────────── */
@@ -1239,6 +1248,30 @@
   background:
     linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(249, 115, 22, 0.06)),
     var(--bg-elevated);
+}
+.party-host-template-hero-art {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.9rem;
+  overflow: hidden;
+  flex-shrink: 0;
+  background:
+    linear-gradient(135deg, rgba(251, 191, 36, 0.92), rgba(249, 115, 22, 0.78)),
+    var(--bg-secondary);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.party-host-template-hero-art-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.party-host-template-hero-art-fallback {
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
 }
 .party-host-template-hero-copy {
   min-width: 0;
@@ -2169,6 +2202,41 @@
 .party-title-guess-builder-meta-description textarea {
   min-height: 5.25rem;
 }
+.party-title-guess-builder-overview {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.82rem 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border-default));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 90%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+}
+.party-title-guess-builder-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.party-title-guess-builder-overview-card {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.7rem 0.76rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-primary) 92%, var(--paper-tint));
+}
+.party-title-guess-builder-overview-card span {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.party-title-guess-builder-overview-card strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+.party-title-guess-builder-overview-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
 .party-title-guess-builder-note {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -2199,6 +2267,10 @@
 .party-title-guess-builder-note.is-error {
   border-color: color-mix(in srgb, var(--danger, #ef4444) 28%, var(--border-default));
   background: color-mix(in srgb, var(--danger, #ef4444) 8%, var(--bg-elevated));
+}
+.party-title-guess-builder-note--editing {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border-default));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--bg-elevated)), color-mix(in srgb, var(--accent, #f59e0b) 6%, var(--bg-primary)));
 }
 .party-title-guess-builder-section-head {
   display: grid;
@@ -2251,6 +2323,11 @@
   border: 1px solid var(--border-default);
   background: color-mix(in srgb, var(--paper-tint) 84%, var(--bg-primary));
 }
+.party-title-guess-builder-question-card.is-editing {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border-default));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--bg-elevated)), color-mix(in srgb, var(--paper-tint) 88%, var(--bg-primary)));
+  box-shadow: 0 10px 22px rgba(var(--primary-rgb), 0.08);
+}
 .party-title-guess-builder-question-copy {
   min-width: 0;
   display: grid;
@@ -2268,6 +2345,13 @@
 .party-title-guess-builder-question-copy p {
   margin: 0;
 }
+.party-title-guess-builder-question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
 .party-title-guess-builder-actions,
 .party-title-guess-builder-footer-actions {
   display: flex;
@@ -2279,17 +2363,45 @@
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: 0.9rem;
 }
+.party-title-guess-builder-top-grid.is-custom {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+}
 .party-title-guess-builder-step {
   display: grid;
   gap: 0.75rem;
-  padding: 0.88rem 0.92rem;
-  border-radius: 1rem;
+  padding: clamp(0.9rem, 1.6vw, 1.08rem);
+  border-radius: 1.05rem;
   border: 1px solid var(--border-default);
   background: color-mix(in srgb, var(--paper-tint) 82%, var(--bg-primary));
+}
+.party-title-guess-builder-step.is-custom {
+  align-content: start;
 }
 .party-title-guess-builder-search {
   display: grid;
   gap: 0.4rem;
+}
+.party-title-guess-builder-mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.party-title-guess-builder-mode-btn {
+  flex: 1 1 12rem;
+  min-height: 2.4rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.party-title-guess-builder-mode-btn.is-active {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border-default));
+  background: color-mix(in srgb, var(--primary) 10%, var(--bg-elevated));
+  color: var(--text-primary);
 }
 .party-title-guess-builder-search-label {
   color: var(--text-secondary);
@@ -2304,7 +2416,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.72rem;
   align-items: center;
-  padding: 0.72rem 0.8rem;
+  padding: 0.82rem 0.92rem;
   border-radius: 1rem;
   border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border-default));
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, var(--bg-elevated)), color-mix(in srgb, var(--accent, #f59e0b) 7%, var(--bg-primary)));
@@ -2346,17 +2458,27 @@
   color: var(--text-secondary);
   font-size: 0.76rem;
 }
+.party-title-guess-builder-selected-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.1rem;
+}
 .party-title-guess-builder-slot-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.8rem;
+}
+.party-title-guess-builder-slot-grid.is-custom {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
 }
 .party-title-guess-builder-slot {
-  min-height: 11.25rem;
+  min-height: 12.5rem;
   display: grid;
   align-content: start;
   gap: 0.6rem;
-  padding: 0.72rem;
+  padding: 0.8rem;
   border-radius: 0.95rem;
   border: 1px dashed color-mix(in srgb, var(--primary) 18%, var(--border-default));
   background: color-mix(in srgb, var(--bg-primary) 90%, var(--paper-tint));
@@ -2378,6 +2500,14 @@
 }
 .party-title-guess-builder-slot.is-filled {
   background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 90%, transparent), color-mix(in srgb, var(--bg-elevated) 96%, transparent));
+}
+.party-title-guess-builder-slot.is-custom {
+  min-height: 20rem;
+  gap: 0.72rem;
+  cursor: default;
+}
+.party-title-guess-builder-slot.is-custom:hover {
+  transform: none;
 }
 .party-title-guess-builder-slot-top {
   display: flex;
@@ -2404,6 +2534,9 @@
   display: grid;
   gap: 0.5rem;
 }
+.party-title-guess-builder-slot.is-custom .party-title-guess-builder-slot-body {
+  grid-template-rows: auto auto 1fr auto;
+}
 .party-title-guess-builder-slot-media {
   width: 100%;
   aspect-ratio: 4 / 5;
@@ -2422,6 +2555,74 @@
 .party-title-guess-builder-slot-copy span {
   color: var(--text-secondary);
   font-size: 0.72rem;
+}
+.party-title-guess-builder-custom-slot-fields {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.68rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border-default));
+  background: color-mix(in srgb, var(--bg-primary) 94%, var(--paper-tint));
+}
+.party-title-guess-builder-custom-slot-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+.party-title-guess-builder-custom-slot-head {
+  display: grid;
+  gap: 0.18rem;
+}
+.party-title-guess-builder-custom-slot-head strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+.party-title-guess-builder-custom-slot-head span {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.party-title-guess-builder-custom-slot-field {
+  display: grid;
+  gap: 0.28rem;
+}
+.party-title-guess-builder-custom-slot-label {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.party-title-guess-builder-custom-slot-fields input,
+.party-title-guess-builder-custom-input {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.62rem 0.78rem;
+  border-radius: 0.82rem;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+.party-title-guess-builder-custom-slot-fields input::placeholder,
+.party-title-guess-builder-custom-input::placeholder {
+  color: var(--text-tertiary);
+}
+.party-title-guess-builder-custom-slot-fields input:focus,
+.party-title-guess-builder-custom-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border-default));
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+}
+.party-title-guess-builder-custom-slot-actions {
+  display: flex;
+  justify-content: stretch;
+}
+.party-title-guess-builder-custom-slot-actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+.party-title-guess-builder-custom-slot-note {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 .party-title-guess-builder-slot-clear {
   width: 2rem;
@@ -2528,6 +2729,11 @@
 .party-title-guess-builder-footer-copy span {
   color: var(--text-secondary);
   font-size: 0.76rem;
+}
+.party-title-guess-builder-footer-note {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 @keyframes party-title-guess-sheen {
@@ -3169,8 +3375,10 @@
   .party-title-guess-podium { grid-template-columns: 1fr; }
   .party-title-guess-builder-grid { grid-template-columns: 1fr; }
   .party-title-guess-builder-top-grid { grid-template-columns: 1fr; }
+  .party-title-guess-builder-top-grid.is-custom { grid-template-columns: 1fr; }
   .party-title-guess-builder-shell--sidebar { position: static; }
   .party-title-guess-builder-slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .party-title-guess-builder-slot-grid.is-custom { grid-template-columns: 1fr 1fr; }
   .party-title-guess-builder-character-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .party-builder-mode-switch { grid-template-columns: 1fr; }
 
@@ -3218,12 +3426,25 @@
   .party-title-guess-builder-header { flex-direction: column; }
   .party-title-guess-builder-steps { min-width: 0; width: 100%; }
   .party-title-guess-builder-steps span { justify-content: center; }
+  .party-title-guess-builder-shell-head { flex-direction: column; align-items: stretch; }
+  .party-title-guess-builder-mode-btn { flex-basis: 100%; }
   .party-title-guess-builder-selected-title { grid-template-columns: auto minmax(0, 1fr); }
   .party-title-guess-builder-selected-title .btn { grid-column: 1 / -1; }
+  .party-title-guess-builder-overview-grid { grid-template-columns: 1fr; }
   .party-title-guess-builder-slot-grid,
   .party-title-guess-builder-character-grid { grid-template-columns: 1fr 1fr; }
+  .party-title-guess-builder-slot-grid.is-custom { grid-template-columns: 1fr; }
   .party-title-guess-builder-pagination-summary { align-items: flex-start; }
   .party-title-guess-builder-footer { flex-direction: column; align-items: stretch; }
+  .party-title-guess-builder-question-actions,
+  .party-title-guess-builder-actions,
+  .party-title-guess-builder-footer-actions { justify-content: stretch; }
+  .party-title-guess-builder-question-actions .btn,
+  .party-title-guess-builder-actions .btn,
+  .party-title-guess-builder-footer-actions .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
   /* Stack host to 1-col */
   .party-lobby-layout--host {
     grid-template-columns: 1fr;
@@ -3248,4 +3469,28 @@
   .party-player-list--many { grid-template-columns: 1fr; max-height: 16rem; }
   .party-player-card { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
   .party-player-badges { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (max-width: 420px) {
+  .party-title-guess-builder-page {
+    padding-inline: 0.35rem;
+  }
+  .party-title-guess-builder-step,
+  .party-title-guess-builder-footer,
+  .party-title-guess-builder-overview,
+  .party-title-guess-builder-note {
+    padding-inline: 0.78rem;
+  }
+  .party-title-guess-builder-selected-title {
+    grid-template-columns: 1fr;
+  }
+  .party-title-guess-builder-selected-cover,
+  .party-title-guess-builder-cover-fallback {
+    width: 100%;
+    max-width: 5.5rem;
+  }
+  .party-title-guess-builder-slot-grid,
+  .party-title-guess-builder-character-grid {
+    grid-template-columns: 1fr;
+  }
 }

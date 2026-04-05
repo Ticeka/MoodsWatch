@@ -37,6 +37,10 @@ const CANONICAL_TITLE_LIST_SELECT = `
   created_at,
   updated_at,
   last_synced_at,
+  franchise_id,
+  franchise_name,
+  franchise_aliases,
+  franchises_cache,
   aliases:aliases_cache,
   genres:genres_cache,
   tags:tags_cache,
@@ -61,6 +65,10 @@ const CANONICAL_TITLE_BROWSE_SELECT = `
   banner_image,
   avg_score,
   popularity_score,
+  franchise_id,
+  franchise_name,
+  franchise_aliases,
+  franchises_cache,
   trailer_url,
   trailer_site,
   trailer_video_id,
@@ -84,6 +92,10 @@ const CANONICAL_TITLE_PREVIEW_SELECT = `
   banner_image,
   avg_score,
   popularity_score,
+  franchise_id,
+  franchise_name,
+  franchise_aliases,
+  franchises_cache,
   aliases:aliases_cache
 `;
 
@@ -100,6 +112,10 @@ const CANONICAL_TITLE_SEARCH_SELECT = `
   is_adult,
   cover_image,
   popularity_score,
+  franchise_id,
+  franchise_name,
+  franchise_aliases,
+  franchises_cache,
   aliases:aliases_cache,
   genres:genres_cache,
   moods:moods_cache
@@ -145,6 +161,10 @@ const CANONICAL_TITLE_ADMIN_LIST_SELECT = `
   created_at,
   updated_at,
   last_synced_at,
+  franchise_id,
+  franchise_name,
+  franchise_aliases,
+  franchises_cache,
   aliases:aliases_cache,
   genres:genres_cache,
   tags:tags_cache,
@@ -155,7 +175,7 @@ const CANONICAL_TITLE_DETAIL_SELECT = `
   ${CANONICAL_TITLE_LIST_SELECT},
   availability:title_availability(platform_name, region_code, url, is_official),
   source_refs:title_source_refs(provider, external_id, source_priority),
-  characters:title_characters(anilist_id, name_full, name_native, image_url, role, voice_actor_name, voice_actor_image, sort_order),
+  characters:title_characters(anilist_id, name_full, name_native, image_url, role, voice_actor_name, voice_actor_image, sort_order, is_primary_protagonist, is_primary_heroine, lead_type, presentation_gender),
   staff:title_staff(anilist_id, name_full, name_native, image_url, role, sort_order)
 `;
 
@@ -224,6 +244,12 @@ export function toCanonicalType(displayType) {
 }
 
 export function mapCanonicalTitle(record) {
+  const primaryFranchise = Array.isArray(record?.franchises_cache)
+    ? (record.franchises_cache.find((entry) => entry?.is_primary) || record.franchises_cache[0] || null)
+    : null;
+  const franchiseAliases = Array.isArray(record?.franchise_aliases)
+    ? record.franchise_aliases.filter(Boolean)
+    : [];
   const titleEn =
     getAlias(record, (alias) => alias.alias_type === 'english' || alias.language_code === 'en') ||
     record.canonical_title;
@@ -279,6 +305,11 @@ export function mapCanonicalTitle(record) {
     mean_score: record.mean_score ?? null,
     favorites_count: record.favorites_count ?? null,
     hashtag: record.hashtag || null,
+    franchise_id: record.franchise_id ?? primaryFranchise?.id ?? null,
+    franchise_name: record.franchise_name || primaryFranchise?.franchise_name || null,
+    franchise_slug: primaryFranchise?.slug || null,
+    franchise_aliases: franchiseAliases,
+    franchises: Array.isArray(record?.franchises_cache) ? record.franchises_cache : [],
     trailer_url: record.trailer_url || null,
     trailer_site: trailer?.site || null,
     trailer_video_id: trailer?.videoId || null,
@@ -294,7 +325,16 @@ export function mapCanonicalTitle(record) {
     studios: record.studios?.filter((s) => s.is_animation_studio).map((s) => s.studio_name) || [],
     platforms: dedupePlatforms([...officialPlatforms, ...fallbackPlatforms]),
     source_refs: record.source_refs || [],
-    characters: (record.characters || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    characters: (record.characters || [])
+      .slice()
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map((character) => ({
+        ...character,
+        is_primary_protagonist: Boolean(character?.is_primary_protagonist),
+        is_primary_heroine: Boolean(character?.is_primary_heroine),
+        lead_type: character?.lead_type || 'unknown',
+        presentation_gender: character?.presentation_gender || 'unknown',
+      })),
     staff: (record.staff || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
   };
 }

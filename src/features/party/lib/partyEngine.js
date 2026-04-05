@@ -473,6 +473,11 @@ function buildTitleGuessRound(question = {}) {
     franchiseId: Number(question?.franchiseId ?? question?.answerFranchiseId ?? question?.franchise_id ?? 0) || null,
     franchiseName,
     franchiseAliases,
+    sameFranchiseTitleAliases: buildUniquePartyAliases(
+      question?.sameFranchiseTitleAliases
+      ?? question?.same_franchise_title_aliases
+      ?? []
+    ),
     franchiseAnswerKey,
     choiceTarget: 'source',
     choiceTargetLabel: 'Title',
@@ -486,13 +491,31 @@ function buildTitleGuessRound(question = {}) {
 function buildTitleGuessChoiceOptions(correctRound, titlePool = []) {
   const correctAnswerKey = String(correctRound?.choiceAnswerKey || '').trim();
   const correctAnswerLabel = String(correctRound?.choiceAnswerLabel || '').trim();
+  const correctFranchiseAnswerKey = String(correctRound?.franchiseAnswerKey || '').trim();
   if (!correctAnswerKey || !correctAnswerLabel) {
     return [];
   }
 
-  const distractors = shufflePartyItems(
-    titlePool.filter((entry) => entry.answerKey !== correctAnswerKey)
-  ).slice(0, 3);
+  const seenFranchiseKeys = new Set(correctFranchiseAnswerKey ? [correctFranchiseAnswerKey] : []);
+  const distractors = [];
+
+  for (const entry of shufflePartyItems(
+    titlePool.filter((poolEntry) => poolEntry.answerKey !== correctAnswerKey)
+  )) {
+    const entryFranchiseAnswerKey = String(entry?.franchiseAnswerKey || '').trim();
+    if (entryFranchiseAnswerKey && seenFranchiseKeys.has(entryFranchiseAnswerKey)) {
+      continue;
+    }
+
+    if (entryFranchiseAnswerKey) {
+      seenFranchiseKeys.add(entryFranchiseAnswerKey);
+    }
+
+    distractors.push(entry);
+    if (distractors.length >= 3) {
+      break;
+    }
+  }
 
   if (distractors.length < 3) {
     return [];
@@ -537,6 +560,22 @@ export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
   const orderedQuestions = normalizedSettings.randomOrder
     ? shufflePartyItems(eligibleQuestions)
     : [...eligibleQuestions];
+  const franchiseAliasesByKey = new Map();
+  eligibleQuestions.forEach((entry) => {
+    const franchiseKey = String(entry?.franchiseAnswerKey || '').trim();
+    if (!franchiseKey) {
+      return;
+    }
+
+    const aliases = franchiseAliasesByKey.get(franchiseKey) || [];
+    franchiseAliasesByKey.set(
+      franchiseKey,
+      buildUniquePartyAliases([
+        ...aliases,
+        ...entry.sourceTitleAliases,
+      ]),
+    );
+  });
   const titlePool = eligibleQuestions.map((entry) => ({
     answerKey: entry.choiceAnswerKey,
     answerLabel: entry.choiceAnswerLabel,
@@ -547,6 +586,10 @@ export function buildPartyTitleGuessSnapshot(questions = [], settings = {}) {
     .slice(0, roundLimit)
     .map((entry) => ({
       ...entry,
+      sameFranchiseTitleAliases: buildUniquePartyAliases([
+        ...(entry.sameFranchiseTitleAliases || []),
+        ...(franchiseAliasesByKey.get(String(entry?.franchiseAnswerKey || '').trim()) || []),
+      ]),
       options: preset.answerMode === 'choice'
         ? buildTitleGuessChoiceOptions(entry, titlePool)
         : [],
@@ -895,6 +938,7 @@ export function scorePartyAnswer({
   selectedOptionId = '',
   typedTitle = '',
   typedSong = '',
+  selectedFranchiseAnswerKey = '',
   elapsedMs = 0,
   timeLimitMs = 12000,
 } = {}) {
@@ -923,7 +967,22 @@ export function scorePartyAnswer({
     const franchiseTypingCorrect = Array.isArray(round?.franchiseAliases) && round.franchiseAliases.length > 0
       ? isAnswerMatch(typedTitle, round.franchiseAliases)
       : false;
-    const titleCorrect = exactChoiceCorrect || franchiseChoiceCorrect || exactTypingCorrect || franchiseTypingCorrect;
+    const sameFranchiseTitleTypingCorrect = Array.isArray(round?.sameFranchiseTitleAliases) && round.sameFranchiseTitleAliases.length > 0
+      ? isAnswerMatch(typedTitle, round.sameFranchiseTitleAliases)
+      : false;
+    const franchiseSelectedTypingCorrect = Boolean(
+      selectedFranchiseAnswerKey
+      && round.franchiseAnswerKey
+      && selectedFranchiseAnswerKey === round.franchiseAnswerKey
+    );
+    const titleCorrect = (
+      exactChoiceCorrect
+      || franchiseChoiceCorrect
+      || exactTypingCorrect
+      || franchiseTypingCorrect
+      || sameFranchiseTitleTypingCorrect
+      || franchiseSelectedTypingCorrect
+    );
     const revealedClueCount = clamp(Number(round?.revealedClueCount || 1), 1, PARTY_TITLE_GUESS_MAX_CLUES);
     const basePoints = PARTY_TITLE_GUESS_BASE_POINTS[revealedClueCount - 1]
       || PARTY_TITLE_GUESS_BASE_POINTS[PARTY_TITLE_GUESS_BASE_POINTS.length - 1]

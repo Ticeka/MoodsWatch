@@ -1405,19 +1405,26 @@ describe('partyRemote template CRUD', () => {
 
     mockState.from.mockImplementation((table) => {
       if (table === 'party_title_guess_sets') {
-        return {
-          select: vi.fn(() => ({
-            gt() {
-              return this;
-            },
-            order() {
-              return this;
-            },
-            limit: vi.fn(async () => ({
+        const builder = {
+          in() {
+            return this;
+          },
+          order() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          then(resolve) {
+            return Promise.resolve({
               data: null,
               error: missingRelationError,
-            })),
-          })),
+            }).then(resolve);
+          },
+        };
+
+        return {
+          select: vi.fn(() => builder),
         };
       }
 
@@ -1491,7 +1498,7 @@ describe('partyRemote template CRUD', () => {
     });
 
     await expect(startPartyMatch({ id: 'room-1' })).rejects.toMatchObject({
-      message: 'Not enough ready Title Guess questions to start this room.',
+      message: 'Not enough ready Guess the Title questions to start this room.',
     });
   });
 
@@ -2089,5 +2096,3 @@ describe('partyRemote template CRUD', () => {
     ).toBe(true);
   });
 });
-
-

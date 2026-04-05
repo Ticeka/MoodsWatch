@@ -25,6 +25,7 @@ const PartyTemplatesPage = lazy(() => import('@/features/party/pages/PartyTempla
 const PartyTemplateDetailPage = lazy(() => import('@/features/party/pages/PartyTemplateDetail').then((module) => ({ default: module.PartyTemplateDetailPage })));
 const PartyTemplateBuilderPage = lazy(() => import('@/features/party/pages/PartyTemplateBuilder').then((module) => ({ default: module.PartyTemplateBuilderPage })));
 const TierListBrowsePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListBrowsePage })));
+const TierListManagePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListManagePage })));
 const TierListCreatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListCreatePage })));
 const TierListPlayPage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListPlayPage })));
 const TierListTemplatePage = lazy(() => import('@/features/tierlist/pages/TierList').then((module) => ({ default: module.TierListTemplatePage })));
@@ -125,6 +126,14 @@ function App() {
                     <Route path="party/templates/:templateId" element={<PartyTemplateDetailPage />} />
                     <Route path="party/room/:roomCode" element={<PartyRoomPage />} />
                     <Route path="tierlist" element={<TierListBrowsePage />} />
+                    <Route
+                      path="tierlist/me"
+                      element={(
+                        <ProtectedRoute>
+                          <TierListManagePage />
+                        </ProtectedRoute>
+                      )}
+                    />
                     <Route path="tierlist/create" element={<TierListCreatePage />} />
                     <Route path="tierlist/template/:templateId" element={<TierListTemplatePage />} />
                     <Route path="tierlist/play/:listId" element={<TierListPlayPage />} />
