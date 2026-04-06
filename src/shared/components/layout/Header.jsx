@@ -1,416 +1,25 @@
-
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart2, Bell, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Radio, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
+import { BarChart2, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Radio, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
-import { supabase } from '@/shared/lib/supabase';
+import { BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
+import { AdultModeBadgeIcon } from '@/shared/components/layout/AdultModeBadgeIcon';
+import { getAdultModeLabel, scheduleWhenIdle } from '@/shared/components/layout/headerUtils';
+import { GuestSettingsDropdown } from '@/shared/components/layout/GuestSettingsDropdown';
+import { HeaderSearchFallback } from '@/shared/components/layout/HeaderSearchFallback';
+import { LanguageToggle } from '@/shared/components/layout/LanguageToggle';
+import { NotificationBell } from '@/shared/components/layout/NotificationBell';
 import './Layout.css';
 
 const HeaderSearchExperience = lazy(() => import('@/shared/components/layout/HeaderSearchExperience').then((module) => ({
   default: module.HeaderSearchExperience,
 })));
 
-function scheduleWhenIdle(callback, timeout = 1500) {
-  if (typeof window === 'undefined') {
-    return () => {};
-  }
-
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout });
-    return () => window.cancelIdleCallback(handle);
-  }
-
-  const handle = window.setTimeout(callback, Math.min(timeout, 400));
-  return () => window.clearTimeout(handle);
-}
-
-function LanguageToggle() {
-  const { language, setLanguage, t } = useLanguage();
-
-  return (
-    <div className="language-toggle" role="radiogroup" aria-label={t('layout.language')}>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={language === 'en'}
-        className={`language-toggle-btn ${language === 'en' ? 'active' : ''}`}
-        onClick={(e) => { e.stopPropagation(); setLanguage('en'); }}
-      >
-        EN
-      </button>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={language === 'th'}
-        className={`language-toggle-btn ${language === 'th' ? 'active' : ''}`}
-        onClick={(e) => { e.stopPropagation(); setLanguage('th'); }}
-      >
-        TH
-      </button>
-    </div>
-  );
-}
-
-function GuestSettingsDropdown({ showAdult, toggleAdult, theme, toggleTheme, t }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, right: 0 });
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e) => {
-      if (
-        btnRef.current && !btnRef.current.contains(e.target) &&
-        panelRef.current && !panelRef.current.contains(e.target)
-      ) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const handleToggle = () => {
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-    }
-    setOpen((v) => !v);
-  };
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        className={`guest-pill-btn ${open ? 'is-active' : ''}`}
-        onClick={handleToggle}
-        aria-label="Settings"
-        title="Settings"
-        aria-expanded={open}
-      >
-        <Settings size={17} />
-      </button>
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          className="guest-settings-panel glass"
-          style={{ position: 'fixed', top: pos.top, right: pos.right }}
-        >
-          <div className="guest-settings-row">
-            <span className="guest-settings-label"><Globe size={13} />{t('layout.language') || 'Language'}</span>
-            <LanguageToggle />
-          </div>
-          <div className="guest-settings-row">
-            <span className="guest-settings-label"><ShieldAlert size={13} />18+</span>
-            <button
-              type="button"
-              className={`adult-toggle-btn adult-toggle-btn-desktop ${showAdult ? 'is-active' : ''}`}
-              onClick={toggleAdult}
-              aria-label={getAdultModeLabel(showAdult)}
-            >
-              <span className="adult-toggle-desktop-label">18+</span>
-              <span className={`adult-toggle-state-dot ${showAdult ? 'is-active' : ''}`} aria-hidden="true" />
-            </button>
-          </div>
-          <div className="guest-settings-row">
-            <span className="guest-settings-label">
-              {theme === 'dark' ? <Moon size={13} /> : <Sun size={13} />}
-              {theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
-            </span>
-            <button
-              type="button"
-              className="guest-pill-btn"
-              onClick={toggleTheme}
-              aria-label={theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
-            >
-              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-function AdultModeBadgeIcon({ size = 18, active = false, className = '' }) {
-  return (
-    <span
-      className={`adult-mode-icon ${active ? 'is-active' : ''} ${className}`.trim()}
-      style={{ '--adult-mode-icon-size': `${size}px` }}
-      aria-hidden="true"
-    >
-      <span>18+</span>
-    </span>
-  );
-}
-
-function getAdultModeLabel(showAdult) {
-  return showAdult ? '18+ ON' : '18+ OFF';
-}
-
-function NotificationBell({ userId }) {
-  const { t } = useLanguage();
-  const [notifications, setNotifications] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, right: 0 });
-  const bellRef = useRef(null);
-  const panelRef = useRef(null);
-  // Stable ref so handleOpen can trigger a fresh fetch without being inside the effect
-  const loadRef = useRef(null);
-
-  useEffect(() => {
-    if (!userId || !supabase) return;
-    let cancelled = false;
-    let cancelIdleWork = null;
-    let pollInterval = null;
-
-    async function load() {
-      const { data } = await supabase
-        .from('notifications')
-        .select('id, type, message, is_read, created_at, reference_id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (!cancelled) setNotifications(data || []);
-      return data || [];
-    }
-
-    loadRef.current = load;
-
-    function startPolling() {
-      if (pollInterval) return;
-      // Add up to 5 s of jitter so multiple open tabs don't all fire at once.
-      const jitter = Math.floor(Math.random() * 5000);
-      pollInterval = window.setInterval(() => {
-        if (document.visibilityState !== 'hidden') void load();
-      }, 30000 + jitter);
-    }
-
-    function stopPolling() {
-      if (pollInterval) {
-        window.clearInterval(pollInterval);
-        pollInterval = null;
-      }
-    }
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'hidden') {
-        stopPolling();
-      } else {
-        void load();
-        startPolling();
-      }
-    }
-
-    cancelIdleWork = scheduleWhenIdle(() => {
-      // Don't fire the initial load or start polling if the tab is already hidden.
-      // handleVisibilityChange will kick things off when the tab becomes visible.
-      if (document.visibilityState !== 'hidden') {
-        void load();
-        startPolling();
-      }
-    }, 2000);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      loadRef.current = null;
-      cancelIdleWork?.();
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [userId]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e) => {
-      if (
-        bellRef.current && !bellRef.current.contains(e.target) &&
-        panelRef.current && !panelRef.current.contains(e.target)
-      ) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const markAllRead = async (freshData) => {
-    if (!supabase || !userId) return;
-    // Prefer freshData from a just-completed load so we mark unread items that
-    // arrived since the last poll, rather than the stale pre-open state.
-    const source = freshData || notifications;
-    const unreadIds = source.filter((n) => !n.is_read).map((n) => n.id);
-    if (unreadIds.length === 0) return;
-    await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-  };
-
-  const handleOpen = async () => {
-    if (!open && bellRef.current) {
-      const rect = bellRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
-    }
-    setOpen((v) => !v);
-    if (!open) {
-      // Await the fresh fetch so markAllRead sees the latest notifications,
-      // not the stale state from before the panel was opened.
-      const freshData = await loadRef.current?.();
-      void markAllRead(freshData);
-    }
-  };
-
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
-
-  return (
-    <>
-      <button
-        ref={bellRef}
-        className="notif-bell-btn"
-        onClick={handleOpen}
-        aria-label={t('layout.openNotifications')}
-        title={t('layout.openNotifications')}
-        type="button"
-      >
-        <Bell size={18} />
-        {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-      </button>
-
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          className="notif-panel glass-heavy"
-          style={{ position: 'fixed', top: pos.top, right: pos.right }}
-        >
-          <div className="notif-panel-head">
-            <strong>{t('layout.notifications')}</strong>
-          </div>
-          {notifications.length === 0 ? (
-            <p className="notif-empty">{t('layout.notificationsEmpty')}</p>
-          ) : (
-            <ul className="notif-list">
-              {notifications.map((n) => {
-                let href = null;
-                if (n.reference_id) {
-                  if (n.type === 'profile_comment' || (n.type === 'comment_reply' && !String(n.reference_id).startsWith('tierlist-'))) {
-                    href = `/u/${n.reference_id}`;
-                  } else {
-                    href = `/tierlist/play/${n.reference_id}`;
-                  }
-                }
-                return (
-                  <li key={n.id} className={`notif-item${n.is_read ? '' : ' is-unread'}`}>
-                    {href ? (
-                      <Link to={href} className="notif-link" onClick={() => setOpen(false)}>
-                        {n.message}
-                      </Link>
-                    ) : (
-                      <span>{n.message}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-function HeaderSearchFallback({
-  surface = 'header',
-  query,
-  setQuery,
-  isDiscoverActive = false,
-  onActivate,
-  onSubmit,
-  onClear,
-  t,
-}) {
-  if (surface === 'drawer') {
-    return (
-      <div className="drawer-search-wrap">
-        <form className="drawer-search" onSubmit={onSubmit} role="search" aria-label={t('discover.searchInputLabel')}>
-          <Search size={16} className="drawer-search-icon" aria-hidden="true" />
-          <label htmlFor="drawer-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
-          <input
-            id="drawer-global-search"
-            type="search"
-            className="drawer-search-input"
-            value={query}
-            onChange={(event) => {
-              onActivate();
-              setQuery(event.target.value);
-            }}
-            onFocus={onActivate}
-            placeholder={t('discover.searchPlaceholder')}
-            autoComplete="off"
-          />
-          {query ? (
-            <button
-              type="button"
-              className="drawer-search-clear"
-              onClick={onClear}
-              aria-label={t('discover.clearSearch')}
-              title={t('discover.clearSearch')}
-            >
-              <X size={15} aria-hidden="true" />
-            </button>
-          ) : null}
-          <button type="submit" className="drawer-search-submit">
-            {t('discover.searchLabel')}
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  return (
-    <form
-      className={`header-search ${isDiscoverActive ? 'is-active' : ''}`}
-      onSubmit={onSubmit}
-      role="search"
-      aria-label={t('discover.searchInputLabel')}
-    >
-      <label htmlFor="header-global-search" className="visually-hidden">{t('discover.searchInputLabel')}</label>
-      <input
-        id="header-global-search"
-        type="search"
-        value={query}
-        onChange={(event) => {
-          onActivate();
-          setQuery(event.target.value);
-        }}
-        onFocus={onActivate}
-        className="header-search-input"
-        placeholder={t('discover.searchPlaceholder')}
-        autoComplete="off"
-      />
-      <Search size={16} className="header-search-icon" aria-hidden="true" />
-      {query ? (
-        <button
-          type="button"
-          className="header-search-clear"
-          onClick={onClear}
-          aria-label={t('discover.clearSearch')}
-          title={t('discover.clearSearch')}
-        >
-          <X size={15} aria-hidden="true" />
-        </button>
-      ) : null}
-      <button type="submit" className="header-search-submit" aria-label={t('discover.searchLabel')} title={t('discover.searchLabel')}>
-        <Search size={17} aria-hidden="true" />
-      </button>
-    </form>
-  );
-}
+export { Footer } from '@/shared/components/layout/Footer';
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
@@ -446,9 +55,11 @@ export function Header() {
   const userRole = user?.profile?.role;
   const canAccessAdmin = userRole === 'admin' || userRole === 'editor';
   const closeMobileMenu = () => setMobileMenuOpen(false);
+
   const enableSearchEnhancements = useCallback(() => {
     setSearchEnhancementsEnabled(true);
   }, []);
+
   const performFallbackSearch = useCallback((nextQuery = globalSearch.trim()) => {
     const normalizedQuery = String(nextQuery || '').trim();
     const nextParams = new URLSearchParams();
@@ -507,6 +118,7 @@ export function Header() {
       }
       frameId = window.requestAnimationFrame(updateScrolled);
     };
+
     const handleClickOutside = (event) => {
       if (
         dropdownRef.current && !dropdownRef.current.contains(event.target) &&
@@ -538,7 +150,6 @@ export function Header() {
       });
     }
   }, [dropdownOpen]);
-
 
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -641,7 +252,6 @@ export function Header() {
           </nav>
 
           <div className="header-actions">
-
             {!user && (
               <div className="guest-actions-desktop">
                 <GuestSettingsDropdown showAdult={showAdult} toggleAdult={toggleAdult} theme={theme} toggleTheme={toggleTheme} t={t} />
@@ -845,14 +455,13 @@ export function Header() {
         </button>
       </nav>
 
-
       {dropdownOpen && user && createPortal(
         <div
           id="user-account-menu"
           ref={portalRef}
           className="user-dropdown-menu glass-heavy"
           style={{ position: 'fixed', top: dropdownPos.top, right: dropdownPos.right }}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
           role="menu"
           aria-labelledby="user-chip-btn"
         >
@@ -912,48 +521,5 @@ export function Header() {
         document.body
       )}
     </>
-  );
-}
-
-export function Footer() {
-  const { t } = useLanguage();
-
-  return (
-    <footer className="footer">
-      <div className="container footer-content">
-        <div className="footer-brand">
-          <Link to="/" className="logo">
-            <span className="logo-icon">
-              <Sparkles size={19} />
-            </span>
-            <span className="logo-wordmark">{BRAND_WORDMARK_LEAD}<span className="logo-accent">{BRAND_WORDMARK_ACCENT}</span></span>
-          </Link>
-          <p className="footer-desc">{t('layout.footerDesc')}</p>
-        </div>
-
-        <div className="footer-links">
-          <div className="link-group">
-            <h4>{t('layout.menu')}</h4>
-            <Link to="/">{t('layout.home')}</Link>
-            <Link to="/battle">{t('layout.battle')}</Link>
-            <Link to="/tierlist">{t('layout.tierlist')}</Link>
-            <Link to="/discover">{t('layout.discover')}</Link>
-            <Link to="/watchlist">{t('layout.watchlist')}</Link>
-            <Link to="/stats">{t('layout.stats')}</Link>
-            <Link to="/profile">{t('layout.profile')}</Link>
-          </div>
-          <div className="link-group">
-            <h4>{t('layout.more')}</h4>
-            <Link to="#">{t('layout.about')}</Link>
-            <Link to="#">{t('layout.contact')}</Link>
-          </div>
-        </div>
-      </div>
-      <div className="footer-bottom">
-        <div className="container">
-          <p>&copy; {new Date().getFullYear()} {BRAND_NAME} | {t('layout.copyright')}</p>
-        </div>
-      </div>
-    </footer>
   );
 }
