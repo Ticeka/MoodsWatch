@@ -179,6 +179,204 @@ function buildEntityMaps(titles = [], customItems = [], customEntityType = TITLE
   };
 }
 
+const TEMPLATE_PREVIEW_MIN_SCALE = 1;
+const TEMPLATE_PREVIEW_MAX_SCALE = 4;
+const TEMPLATE_PREVIEW_MAX_OFFSET = 50;
+const TEMPLATE_PREVIEW_ASPECT_RATIO = 5 / 3;
+
+function normalizeTemplatePreviewFit(value) {
+  return String(value || '').trim().toLowerCase() === 'contain' ? 'contain' : 'cover';
+}
+
+function normalizeTemplatePreviewPosition(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'top' || normalized === 'bottom') {
+    return normalized;
+  }
+  return 'center';
+}
+
+function clampTemplatePreviewOffset(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.max(-TEMPLATE_PREVIEW_MAX_OFFSET, Math.min(TEMPLATE_PREVIEW_MAX_OFFSET, numeric));
+}
+
+function normalizeTemplatePreviewScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return TEMPLATE_PREVIEW_MIN_SCALE;
+  }
+  return Math.max(TEMPLATE_PREVIEW_MIN_SCALE, Math.min(TEMPLATE_PREVIEW_MAX_SCALE, numeric));
+}
+
+function areTemplatePreviewTransformsEqual(left = {}, right = {}) {
+  return Math.abs(
+    normalizeTemplatePreviewScale(left?.previewArtworkScale) - normalizeTemplatePreviewScale(right?.previewArtworkScale)
+  ) < 0.01
+    && Math.abs(
+      clampTemplatePreviewOffset(left?.previewArtworkOffsetX) - clampTemplatePreviewOffset(right?.previewArtworkOffsetX)
+    ) < 0.1
+    && Math.abs(
+      clampTemplatePreviewOffset(left?.previewArtworkOffsetY) - clampTemplatePreviewOffset(right?.previewArtworkOffsetY)
+    ) < 0.1;
+}
+
+function getTemplatePreviewViewportBounds({
+  imageWidth,
+  imageHeight,
+  previewArtworkScale,
+  previewArtworkOffsetX,
+  previewArtworkOffsetY,
+} = {}) {
+  const normalizedWidth = Number(imageWidth);
+  const normalizedHeight = Number(imageHeight);
+
+  if (!(normalizedWidth > 0) || !(normalizedHeight > 0)) {
+    return null;
+  }
+
+  const imageAspect = normalizedWidth / normalizedHeight;
+  const scale = normalizeTemplatePreviewScale(previewArtworkScale);
+  const baseRenderedWidth = imageAspect >= TEMPLATE_PREVIEW_ASPECT_RATIO ? imageAspect : TEMPLATE_PREVIEW_ASPECT_RATIO;
+  const baseRenderedHeight = imageAspect >= TEMPLATE_PREVIEW_ASPECT_RATIO ? 1 : TEMPLATE_PREVIEW_ASPECT_RATIO / imageAspect;
+  const renderedWidth = baseRenderedWidth * scale;
+  const renderedHeight = baseRenderedHeight * scale;
+  const viewportWidth = Math.min(1, TEMPLATE_PREVIEW_ASPECT_RATIO / renderedWidth);
+  const viewportHeight = Math.min(1, 1 / renderedHeight);
+  const maxOriginX = Math.max(0, 1 - viewportWidth);
+  const maxOriginY = Math.max(0, 1 - viewportHeight);
+  const positionX = 0.5 + (clampTemplatePreviewOffset(previewArtworkOffsetX) / 100);
+  const positionY = 0.5 + (clampTemplatePreviewOffset(previewArtworkOffsetY) / 100);
+
+  return {
+    imageAspect,
+    viewportWidth,
+    viewportHeight,
+    maxOriginX,
+    maxOriginY,
+    originX: maxOriginX * positionX,
+    originY: maxOriginY * positionY,
+  };
+}
+
+function getTemplatePreviewViewportWidthForScale(imageAspect, previewArtworkScale) {
+  const normalizedAspect = Number(imageAspect);
+  if (!(normalizedAspect > 0)) {
+    return 1;
+  }
+
+  const scale = normalizeTemplatePreviewScale(previewArtworkScale);
+  if (normalizedAspect >= TEMPLATE_PREVIEW_ASPECT_RATIO) {
+    return Math.min(1, TEMPLATE_PREVIEW_ASPECT_RATIO / (normalizedAspect * scale));
+  }
+  return Math.min(1, 1 / scale);
+}
+
+function getTemplatePreviewViewportHeightForWidth(imageAspect, viewportWidth) {
+  const normalizedAspect = Number(imageAspect);
+  const normalizedWidth = Number(viewportWidth);
+  if (!(normalizedAspect > 0) || !(normalizedWidth > 0)) {
+    return 1;
+  }
+
+  return normalizedWidth * (normalizedAspect / TEMPLATE_PREVIEW_ASPECT_RATIO);
+}
+
+function getTemplatePreviewScaleFromViewportWidth(imageAspect, viewportWidth) {
+  const normalizedAspect = Number(imageAspect);
+  const normalizedWidth = Number(viewportWidth);
+  if (!(normalizedAspect > 0) || !(normalizedWidth > 0)) {
+    return TEMPLATE_PREVIEW_MIN_SCALE;
+  }
+
+  if (normalizedAspect >= TEMPLATE_PREVIEW_ASPECT_RATIO) {
+    return normalizeTemplatePreviewScale(TEMPLATE_PREVIEW_ASPECT_RATIO / (normalizedAspect * normalizedWidth));
+  }
+
+  return normalizeTemplatePreviewScale(1 / normalizedWidth);
+}
+
+function getContainedImageRect(containerWidth, containerHeight, imageAspect) {
+  const width = Number(containerWidth);
+  const height = Number(containerHeight);
+
+  if (!(width > 0) || !(height > 0) || !(imageAspect > 0)) {
+    return null;
+  }
+
+  const containerAspect = width / height;
+  if (imageAspect > containerAspect) {
+    const displayHeight = width / imageAspect;
+    return {
+      left: 0,
+      top: (height - displayHeight) / 2,
+      width,
+      height: displayHeight,
+    };
+  }
+
+  const displayWidth = height * imageAspect;
+  return {
+    left: (width - displayWidth) / 2,
+    top: 0,
+    width: displayWidth,
+    height,
+  };
+}
+
+function getTemplatePreviewOffsetFromViewportOrigin(origin, maxOrigin) {
+  if (!(maxOrigin > 0)) {
+    return 0;
+  }
+
+  const ratio = Math.max(0, Math.min(1, Number(origin) / maxOrigin));
+  return clampTemplatePreviewOffset((ratio - 0.5) * 100);
+}
+
+function getTemplatePreviewPositionCss(position) {
+  const normalized = normalizeTemplatePreviewPosition(position);
+  if (normalized === 'top') {
+    return 'center top';
+  }
+  if (normalized === 'bottom') {
+    return 'center bottom';
+  }
+  return 'center center';
+}
+
+function getTemplatePreviewMediaStyle(settings = {}) {
+  return {
+    '--tierlist-cover-fit': normalizeTemplatePreviewFit(settings?.previewArtworkFit),
+    '--tierlist-cover-position': getTemplatePreviewPositionCss(settings?.previewArtworkPosition),
+    '--tierlist-cover-offset-x': `${clampTemplatePreviewOffset(settings?.previewArtworkOffsetX)}%`,
+    '--tierlist-cover-offset-y': `${clampTemplatePreviewOffset(settings?.previewArtworkOffsetY)}%`,
+    '--tierlist-cover-scale': String(normalizeTemplatePreviewScale(settings?.previewArtworkScale)),
+  };
+}
+
+function getTemplatePreviewArtworkSource(template, fallbackEntity = null) {
+  const templatePreviewUrl = String(template?.previewArtworkUrl || '').trim();
+  if (templatePreviewUrl) {
+    return templatePreviewUrl;
+  }
+
+  const customItemArtwork = (template?.customItems || [])
+    .map((item) => String(item?.imageUrl || item?.cover || item?.image_url || '').trim())
+    .find(Boolean);
+  if (customItemArtwork) {
+    return customItemArtwork;
+  }
+
+  return fallbackEntity ? getTierEntityArtworkSource(fallbackEntity) : '';
+}
+
+function getTierEntityArtworkSource(entity) {
+  return String(entity?.cover || entity?.image_url || getTitleArtwork(entity) || '').trim();
+}
+
 function getEntityMap(entityMaps, entityType = TITLE_ENTITY_TYPE) {
   return entityMaps[normalizeCatalogEntityType(entityType)] || entityMaps[TITLE_ENTITY_TYPE] || new Map();
 }
@@ -2444,18 +2642,23 @@ export function TierListBrowsePage() {
                     .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
                     .map((id) => entityById.get(Number(id)))
                     .filter(Boolean);
-                  const coverEntity = cover[0] || (template.previewArtworkUrl ? { cover: template.previewArtworkUrl } : null);
+                  const coverArtwork = getTemplatePreviewArtworkSource(template, cover[0]);
                   const explorerSummary = getTemplateExplorerSummary(template, pick);
 
                   return (
                     <article key={template.id} className="tierlist-explorer-card">
-                      <div className="tierlist-explorer-card-cover">
-                        {coverEntity
+                      <div
+                        className={`tierlist-explorer-card-cover${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
+                        style={getTemplatePreviewMediaStyle(template)}
+                      >
+                        {coverArtwork
                           ? (
-                            <ArtworkImage
-                              entity={coverEntity}
+                            <img
+                              src={coverArtwork}
                               alt={template.title}
+                              draggable={false}
                               loading={index < 3 ? 'eager' : 'lazy'}
+                              decoding="async"
                               fetchPriority={index < 3 ? 'high' : 'auto'}
                             />
                           )
@@ -2555,17 +2758,26 @@ export function TierListBrowsePage() {
             <ul className="tierlist-trending-list">
               {trendingTemplates.map((template, index) => {
                 const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
-                const coverEntity = template.titleIds
+                const fallbackEntity = template.titleIds
                   .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
                   .map((id) => entityById.get(Number(id)))
-                  .filter(Boolean)[0] || (template.previewArtworkUrl ? { cover: template.previewArtworkUrl } : null);
+                  .filter(Boolean)[0] || null;
+                const coverArtwork = getTemplatePreviewArtworkSource(template, fallbackEntity);
 
                 return (
                   <li key={template.id}>
                     <Link className="tierlist-trending-item" to={`/tierlist/template/${template.id}`}>
                       <span className="tierlist-trending-rank">{index + 1}.</span>
-                      {coverEntity ? (
-                        <ArtworkImage className="tierlist-trending-thumb" entity={coverEntity} alt="" loading="lazy" />
+                      {coverArtwork ? (
+                        <img
+                          className={`tierlist-trending-thumb${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
+                          style={getTemplatePreviewMediaStyle(template)}
+                          src={coverArtwork}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          draggable={false}
+                        />
                       ) : (
                         <span className="tierlist-trending-thumb tierlist-trending-thumb-empty" />
                       )}
@@ -2772,7 +2984,7 @@ export function TierListTemplatePage() {
     .slice(0, 16)
     .map((id) => titleById.get(Number(id)))
     .filter(Boolean);
-  const heroCover = previewTitles[0] || (template.previewArtworkUrl ? { cover: template.previewArtworkUrl } : null);
+  const heroCoverArtwork = getTemplatePreviewArtworkSource(template, previewTitles[0]);
   const previewPodium = previewTitles.slice(0, 3);
 
   return (
@@ -2790,9 +3002,18 @@ export function TierListTemplatePage() {
           </div>
         </div>
         <div className="tierlist-hero-panel glass-heavy">
-          {heroCover ? (
-            <div className="tierlist-hero-cover">
-              <ArtworkImage entity={heroCover} alt={template.title} loading="lazy" />
+          {heroCoverArtwork ? (
+            <div
+              className={`tierlist-hero-cover${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
+              style={getTemplatePreviewMediaStyle(template)}
+            >
+              <img
+                src={heroCoverArtwork}
+                alt={template.title}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+              />
             </div>
           ) : null}
           <div className="tierlist-stat"><strong>{template.titleIds.length}</strong><span>{pick('เรื่อง', 'Titles')}</span></div>
@@ -2906,6 +3127,13 @@ export function TierListCreatePage() {
   const [templateName, setTemplateName] = useState('');
   const [templateDesc, setTemplateDesc] = useState('');
   const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [coverImageScale, setCoverImageScale] = useState(TEMPLATE_PREVIEW_MIN_SCALE);
+  const [coverImageOffsetX, setCoverImageOffsetX] = useState(0);
+  const [coverImageOffsetY, setCoverImageOffsetY] = useState(0);
+  const [draftCoverImageScale, setDraftCoverImageScale] = useState(TEMPLATE_PREVIEW_MIN_SCALE);
+  const [draftCoverImageOffsetX, setDraftCoverImageOffsetX] = useState(0);
+  const [draftCoverImageOffsetY, setDraftCoverImageOffsetY] = useState(0);
+  const [isCoverEditorOpen, setIsCoverEditorOpen] = useState(false);
   const [customItems, setCustomItems] = useState([]);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingPoolItems, setIsUploadingPoolItems] = useState(false);
@@ -2924,6 +3152,11 @@ export function TierListCreatePage() {
   const [songEntityCache, setSongEntityCache] = useState(new Map());
   const [isSongsLoading, setIsSongsLoading] = useState(false);
   const [isAudienceSwitching, setIsAudienceSwitching] = useState(false);
+  const coverPreviewDragRef = useRef(null);
+  const coverFileInputRef = useRef(null);
+  const coverStageRef = useRef(null);
+  const [coverStageSize, setCoverStageSize] = useState({ width: 0, height: 0 });
+  const [coverImageNaturalSize, setCoverImageNaturalSize] = useState({ width: 0, height: 0 });
 
   // Initialise library in background (no catalog needed)
   useEffect(() => {
@@ -2982,6 +3215,44 @@ export function TierListCreatePage() {
       setIsAudienceSwitching(false);
     }
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!coverImageUrl) {
+      setCoverImageNaturalSize({ width: 0, height: 0 });
+      setCoverStageSize({ width: 0, height: 0 });
+      coverPreviewDragRef.current = null;
+    }
+  }, [coverImageUrl]);
+
+  useEffect(() => {
+    if (!isCoverEditorOpen) {
+      return undefined;
+    }
+
+    const stageNode = coverStageRef.current;
+    if (!stageNode) {
+      return undefined;
+    }
+
+    const updateStageSize = () => {
+      const bounds = stageNode.getBoundingClientRect();
+      setCoverStageSize({
+        width: bounds.width || 0,
+        height: bounds.height || 0,
+      });
+    };
+
+    updateStageSize();
+
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(() => updateStageSize());
+      observer.observe(stageNode);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateStageSize);
+    return () => window.removeEventListener('resize', updateStageSize);
+  }, [coverImageUrl, isCoverEditorOpen]);
 
   // Load songs when user drills into a title (song picker mode)
   useEffect(() => {
@@ -3082,6 +3353,86 @@ export function TierListCreatePage() {
     || statusFilter !== 'all'
     || titleQuery.trim().length > 0
     || songQuery.trim().length > 0;
+  const hasPendingCoverFrameChanges = useMemo(
+    () => !areTemplatePreviewTransformsEqual(
+      {
+        previewArtworkScale: draftCoverImageScale,
+        previewArtworkOffsetX: draftCoverImageOffsetX,
+        previewArtworkOffsetY: draftCoverImageOffsetY,
+      },
+      {
+        previewArtworkScale: coverImageScale,
+        previewArtworkOffsetX: coverImageOffsetX,
+        previewArtworkOffsetY: coverImageOffsetY,
+      }
+    ),
+    [
+      coverImageOffsetX,
+      coverImageOffsetY,
+      coverImageScale,
+      draftCoverImageOffsetX,
+      draftCoverImageOffsetY,
+      draftCoverImageScale,
+    ]
+  );
+  const savedCoverPreviewStyle = useMemo(
+    () => getTemplatePreviewMediaStyle({
+      previewArtworkFit: 'cover',
+      previewArtworkPosition: 'center',
+      previewArtworkScale: coverImageScale,
+      previewArtworkOffsetX: coverImageOffsetX,
+      previewArtworkOffsetY: coverImageOffsetY,
+    }),
+    [coverImageOffsetX, coverImageOffsetY, coverImageScale]
+  );
+  const draftCoverPreviewStyle = useMemo(
+    () => getTemplatePreviewMediaStyle({
+      previewArtworkFit: 'cover',
+      previewArtworkPosition: 'center',
+      previewArtworkScale: draftCoverImageScale,
+      previewArtworkOffsetX: draftCoverImageOffsetX,
+      previewArtworkOffsetY: draftCoverImageOffsetY,
+    }),
+    [draftCoverImageOffsetX, draftCoverImageOffsetY, draftCoverImageScale]
+  );
+  const draftCoverViewportBounds = useMemo(
+    () => getTemplatePreviewViewportBounds({
+      imageWidth: coverImageNaturalSize.width,
+      imageHeight: coverImageNaturalSize.height,
+      previewArtworkScale: draftCoverImageScale,
+      previewArtworkOffsetX: draftCoverImageOffsetX,
+      previewArtworkOffsetY: draftCoverImageOffsetY,
+    }),
+    [
+      coverImageNaturalSize.height,
+      coverImageNaturalSize.width,
+      draftCoverImageOffsetX,
+      draftCoverImageOffsetY,
+      draftCoverImageScale,
+    ]
+  );
+  const draftCoverStageCropRect = useMemo(() => {
+    if (!draftCoverViewportBounds) {
+      return null;
+    }
+
+    const imageRect = getContainedImageRect(
+      coverStageSize.width,
+      coverStageSize.height,
+      draftCoverViewportBounds.imageAspect
+    );
+
+    if (!imageRect) {
+      return null;
+    }
+
+    return {
+      left: imageRect.left + (draftCoverViewportBounds.originX * imageRect.width),
+      top: imageRect.top + (draftCoverViewportBounds.originY * imageRect.height),
+      width: draftCoverViewportBounds.viewportWidth * imageRect.width,
+      height: draftCoverViewportBounds.viewportHeight * imageRect.height,
+    };
+  }, [coverStageSize.height, coverStageSize.width, draftCoverViewportBounds]);
 
   const toggleTitle = (id, entity) => {
     const numId = Number(id);
@@ -3116,6 +3467,15 @@ export function TierListCreatePage() {
     try {
       const uploadedUrl = await uploadTierlistImage(file, user.id, 'tierlist-cover');
       setCoverImageUrl(uploadedUrl);
+      setCoverImageScale(TEMPLATE_PREVIEW_MIN_SCALE);
+      setCoverImageOffsetX(0);
+      setCoverImageOffsetY(0);
+      setDraftCoverImageScale(TEMPLATE_PREVIEW_MIN_SCALE);
+      setDraftCoverImageOffsetX(0);
+      setDraftCoverImageOffsetY(0);
+      setIsCoverEditorOpen(true);
+      setCoverImageNaturalSize({ width: 0, height: 0 });
+      setCoverStageSize({ width: 0, height: 0 });
       toast.success(pick('อัปโหลดรูปหน้าปกแล้ว', 'Cover image uploaded'));
     } catch (error) {
       toast.error(error?.message || pick('อัปโหลดรูปหน้าปกไม่สำเร็จ', 'Failed to upload cover image'));
@@ -3193,8 +3553,26 @@ export function TierListCreatePage() {
     });
   };
 
+  const removeSelectedPoolItem = (entry) => {
+    const normalizedId = Number(entry?.id);
+    if (!Number.isFinite(normalizedId)) {
+      return;
+    }
+
+    if (entry?.isCustomTierItem) {
+      removeCustomItem(normalizedId);
+      return;
+    }
+
+    toggleTitle(normalizedId, entry);
+  };
+
   const handleCreate = async () => {
     const entitiesToUse = selectedItems;
+    if (coverImageUrl && isCoverEditorOpen && hasPendingCoverFrameChanges) {
+      toast.error(pick('กดบันทึกการครอปรูปหน้าปกก่อนสร้างเทมเพลต', 'Save the cover crop before creating the template'));
+      return;
+    }
     if (entitiesToUse.length < minimumRequired) {
       toast.error(
         isSongMode
@@ -3224,6 +3602,11 @@ export function TierListCreatePage() {
         isSystem: false,
         defaultRows: ['S', 'A', 'B', 'C', 'D'],
         previewArtworkUrl: coverImageUrl.trim(),
+        previewArtworkFit: 'cover',
+        previewArtworkPosition: 'center',
+        previewArtworkScale: coverImageScale,
+        previewArtworkOffsetX: coverImageOffsetX,
+        previewArtworkOffsetY: coverImageOffsetY,
         customItems: externalPoolItems,
         ownerUserId: user?.id || null,
       });
@@ -3294,6 +3677,230 @@ export function TierListCreatePage() {
       toggleAdult();
       setCatalogPage(1);
     }
+  };
+
+  const resetCoverPreviewFrame = () => {
+    setDraftCoverImageScale(TEMPLATE_PREVIEW_MIN_SCALE);
+    setDraftCoverImageOffsetX(0);
+    setDraftCoverImageOffsetY(0);
+  };
+
+  const openCoverEditor = () => {
+    setDraftCoverImageScale(coverImageScale);
+    setDraftCoverImageOffsetX(coverImageOffsetX);
+    setDraftCoverImageOffsetY(coverImageOffsetY);
+    setIsCoverEditorOpen(true);
+  };
+
+  const closeCoverEditor = () => {
+    setDraftCoverImageScale(coverImageScale);
+    setDraftCoverImageOffsetX(coverImageOffsetX);
+    setDraftCoverImageOffsetY(coverImageOffsetY);
+    setIsCoverEditorOpen(false);
+    coverPreviewDragRef.current = null;
+  };
+
+  const saveCoverPreviewFrame = () => {
+    if (!coverImageUrl) {
+      return;
+    }
+
+    const nextScale = normalizeTemplatePreviewScale(draftCoverImageScale);
+    const nextOffsetX = clampTemplatePreviewOffset(draftCoverImageOffsetX);
+    const nextOffsetY = clampTemplatePreviewOffset(draftCoverImageOffsetY);
+    setCoverImageScale(nextScale);
+    setCoverImageOffsetX(nextOffsetX);
+    setCoverImageOffsetY(nextOffsetY);
+    setDraftCoverImageScale(nextScale);
+    setDraftCoverImageOffsetX(nextOffsetX);
+    setDraftCoverImageOffsetY(nextOffsetY);
+    setIsCoverEditorOpen(false);
+    coverPreviewDragRef.current = null;
+    toast.success(pick('บันทึกการครอปรูปแล้ว', 'Cover crop saved'));
+  };
+
+  const handleCoverPreviewPointerDown = (event) => {
+    if (!coverImageUrl || !isCoverEditorOpen || !draftCoverViewportBounds) {
+      return;
+    }
+
+    const imageRect = getContainedImageRect(
+      coverStageSize.width,
+      coverStageSize.height,
+      draftCoverViewportBounds.imageAspect
+    );
+    if (!imageRect) {
+      return;
+    }
+
+    coverPreviewDragRef.current = {
+      mode: 'move',
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startOriginX: draftCoverViewportBounds.originX,
+      startOriginY: draftCoverViewportBounds.originY,
+      maxOriginX: draftCoverViewportBounds.maxOriginX,
+      maxOriginY: draftCoverViewportBounds.maxOriginY,
+      width: imageRect.width || 1,
+      height: imageRect.height || 1,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleCoverPreviewResizePointerDown = (event, corner) => {
+    if (!coverImageUrl || !isCoverEditorOpen || !draftCoverViewportBounds) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const imageRect = getContainedImageRect(
+      coverStageSize.width,
+      coverStageSize.height,
+      draftCoverViewportBounds.imageAspect
+    );
+    if (!imageRect) {
+      return;
+    }
+
+    coverPreviewDragRef.current = {
+      mode: 'resize',
+      corner,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      imageRectWidth: imageRect.width || 1,
+      imageRectHeight: imageRect.height || 1,
+      imageAspect: draftCoverViewportBounds.imageAspect,
+      startViewportWidth: draftCoverViewportBounds.viewportWidth,
+      minViewportWidth: getTemplatePreviewViewportWidthForScale(
+        draftCoverViewportBounds.imageAspect,
+        TEMPLATE_PREVIEW_MAX_SCALE
+      ),
+      maxViewportWidth: getTemplatePreviewViewportWidthForScale(
+        draftCoverViewportBounds.imageAspect,
+        TEMPLATE_PREVIEW_MIN_SCALE
+      ),
+      fixedLeft: corner === 'ne' || corner === 'se' ? draftCoverViewportBounds.originX : null,
+      fixedRight: corner === 'nw' || corner === 'sw'
+        ? draftCoverViewportBounds.originX + draftCoverViewportBounds.viewportWidth
+        : null,
+      fixedTop: corner === 'sw' || corner === 'se' ? draftCoverViewportBounds.originY : null,
+      fixedBottom: corner === 'nw' || corner === 'ne'
+        ? draftCoverViewportBounds.originY + draftCoverViewportBounds.viewportHeight
+        : null,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleCoverPreviewPointerMove = (event) => {
+    const dragState = coverPreviewDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (dragState.mode === 'resize') {
+      const horizontalDelta = (event.clientX - dragState.startX) / (dragState.imageRectWidth || 1);
+      const verticalDelta = (event.clientY - dragState.startY) / (dragState.imageRectHeight || 1);
+      const verticalWidthDelta = verticalDelta * (TEMPLATE_PREVIEW_ASPECT_RATIO / dragState.imageAspect);
+      let widthDeltaFromX = 0;
+      let widthDeltaFromY = 0;
+
+      switch (dragState.corner) {
+        case 'ne':
+          widthDeltaFromX = horizontalDelta;
+          widthDeltaFromY = -verticalWidthDelta;
+          break;
+        case 'nw':
+          widthDeltaFromX = -horizontalDelta;
+          widthDeltaFromY = -verticalWidthDelta;
+          break;
+        case 'sw':
+          widthDeltaFromX = -horizontalDelta;
+          widthDeltaFromY = verticalWidthDelta;
+          break;
+        case 'se':
+        default:
+          widthDeltaFromX = horizontalDelta;
+          widthDeltaFromY = verticalWidthDelta;
+          break;
+      }
+
+      const widthDelta = Math.abs(widthDeltaFromX) >= Math.abs(widthDeltaFromY)
+        ? widthDeltaFromX
+        : widthDeltaFromY;
+      const lowerBound = dragState.minViewportWidth;
+      let upperBound = dragState.maxViewportWidth;
+
+      if (Number.isFinite(dragState.fixedLeft)) {
+        upperBound = Math.min(upperBound, 1 - dragState.fixedLeft);
+      }
+      if (Number.isFinite(dragState.fixedRight)) {
+        upperBound = Math.min(upperBound, dragState.fixedRight);
+      }
+      if (Number.isFinite(dragState.fixedTop)) {
+        upperBound = Math.min(
+          upperBound,
+          (1 - dragState.fixedTop) * (TEMPLATE_PREVIEW_ASPECT_RATIO / dragState.imageAspect)
+        );
+      }
+      if (Number.isFinite(dragState.fixedBottom)) {
+        upperBound = Math.min(
+          upperBound,
+          dragState.fixedBottom * (TEMPLATE_PREVIEW_ASPECT_RATIO / dragState.imageAspect)
+        );
+      }
+
+      const effectiveLowerBound = Math.min(lowerBound, upperBound);
+      const nextViewportWidth = Math.max(
+        effectiveLowerBound,
+        Math.min(upperBound, dragState.startViewportWidth + widthDelta)
+      );
+      const nextViewportHeight = getTemplatePreviewViewportHeightForWidth(
+        dragState.imageAspect,
+        nextViewportWidth
+      );
+      const nextOriginX = Number.isFinite(dragState.fixedLeft)
+        ? dragState.fixedLeft
+        : dragState.fixedRight - nextViewportWidth;
+      const nextOriginY = Number.isFinite(dragState.fixedTop)
+        ? dragState.fixedTop
+        : dragState.fixedBottom - nextViewportHeight;
+
+      setDraftCoverImageScale(
+        getTemplatePreviewScaleFromViewportWidth(dragState.imageAspect, nextViewportWidth)
+      );
+      setDraftCoverImageOffsetX(
+        getTemplatePreviewOffsetFromViewportOrigin(nextOriginX, Math.max(0, 1 - nextViewportWidth))
+      );
+      setDraftCoverImageOffsetY(
+        getTemplatePreviewOffsetFromViewportOrigin(nextOriginY, Math.max(0, 1 - nextViewportHeight))
+      );
+      return;
+    }
+
+    const deltaX = (event.clientX - dragState.startX) / dragState.width;
+    const deltaY = (event.clientY - dragState.startY) / dragState.height;
+    const nextOriginX = Math.max(0, Math.min(dragState.maxOriginX, dragState.startOriginX + deltaX));
+    const nextOriginY = Math.max(0, Math.min(dragState.maxOriginY, dragState.startOriginY + deltaY));
+    setDraftCoverImageOffsetX(getTemplatePreviewOffsetFromViewportOrigin(nextOriginX, dragState.maxOriginX));
+    setDraftCoverImageOffsetY(getTemplatePreviewOffsetFromViewportOrigin(nextOriginY, dragState.maxOriginY));
+  };
+
+  const handleCoverPreviewPointerUp = (event) => {
+    if (coverPreviewDragRef.current?.pointerId === event.pointerId) {
+      coverPreviewDragRef.current = null;
+    }
+  };
+
+  const handleCoverStageImageLoad = (event) => {
+    setCoverImageNaturalSize({
+      width: event.currentTarget.naturalWidth || 0,
+      height: event.currentTarget.naturalHeight || 0,
+    });
   };
 
   if (loadError && !isLoading) {
@@ -3420,6 +4027,7 @@ export function TierListCreatePage() {
               <span>{pick('รูปหน้าปก', 'Cover image')}</span>
               <label className={`tierlist-upload-button${isUploadingCover ? ' is-uploading' : ''}`}>
                 <input
+                  ref={coverFileInputRef}
                   type="file"
                   accept="image/*"
                   onChange={handleUploadCover}
@@ -3449,28 +4057,219 @@ export function TierListCreatePage() {
             <span className="tierlist-chip">{pick(`${customItems.length} รูปในพูล`, `${customItems.length} pool images`)}</span>
           </div>
           {coverImageUrl ? (
-            <div className="tierlist-create-cover-preview">
-              <img src={coverImageUrl} alt={pick('ตัวอย่างหน้าปก', 'Cover preview')} loading="lazy" />
-            </div>
-          ) : null}
-          {customItems.length > 0 ? (
-            <div className="tierlist-create-custom-list">
-              {customItems.map((item) => (
-                <article key={item.id} className="tierlist-create-custom-card">
-                  <div className="tierlist-create-custom-thumb">
-                    <img src={item.imageUrl} alt={item.title} loading="lazy" />
+            <div className="tierlist-create-cover-shell">
+              <div className="tierlist-create-cover-summary">
+                <div className="tierlist-create-cover-summary-media" style={savedCoverPreviewStyle}>
+                  <img src={coverImageUrl} alt={pick('หน้าปกที่บันทึกแล้ว', 'Saved cover preview')} loading="lazy" />
+                </div>
+                <div className="tierlist-create-cover-summary-copy">
+                  <div className="tierlist-create-cover-stage-head">
+                    <strong>{pick('หน้าปกที่ใช้จริง', 'Saved cover')}</strong>
+                    <span>
+                      {isCoverEditorOpen
+                        ? pick('กำลังแก้ไขครอปอยู่ กดบันทึกการครอปเพื่ออัปเดตหน้าปกจริง', 'You are editing the crop. Save it to update the actual cover.')
+                        : pick('รูปนี้จะถูกใช้เป็นหน้าปกเทมเพลตหลังจากกดสร้าง', 'This saved frame will be used as the template cover when you create it.')}
+                    </span>
                   </div>
-                  <div className="tierlist-create-custom-copy">
-                    <strong>{item.title}</strong>
-                    <span>{pick('รูปที่อัปโหลดเข้า pool', 'Uploaded pool image')}</span>
+                  <div className="tierlist-create-cover-summary-status">
+                    <span className={`tierlist-chip${hasPendingCoverFrameChanges ? ' tierlist-chip-warning' : ' tierlist-chip-success'}`}>
+                      {hasPendingCoverFrameChanges ? pick('มีการแก้ไขที่ยังไม่บันทึก', 'Unsaved crop changes') : pick('บันทึกครอปแล้ว', 'Crop saved')}
+                    </span>
+                    <span className="tierlist-chip">{pick('อัตราส่วน 5:3', '5:3 cover')}</span>
                   </div>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => removeCustomItem(item.id)}>
-                    <Trash2 size={14} /> {pick('ลบ', 'Remove')}
+                </div>
+                <div className="tierlist-create-cover-summary-actions">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    icon={<Pencil size={14} />}
+                    onClick={openCoverEditor}
+                    disabled={isSaving || isUploadingCover || isCoverEditorOpen}
+                  >
+                    {isCoverEditorOpen ? pick('กำลังแก้ไขครอป', 'Editing crop') : pick('แก้ไขครอป', 'Edit crop')}
                   </Button>
-                </article>
-              ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    icon={<RotateCcw size={14} />}
+                    onClick={() => coverFileInputRef.current?.click()}
+                    disabled={isSaving || isUploadingCover}
+                  >
+                    {pick('เปลี่ยนรูป', 'Change image')}
+                  </Button>
+                </div>
+              </div>
+              {isCoverEditorOpen ? (
+                <div className="tierlist-create-cover-editor-card">
+                  <div className="tierlist-create-cover-controls">
+                    <div className="tierlist-create-cover-control-group">
+                      <span className="tierlist-create-cover-control-label">{pick('เลื่อนซ้ายขวา', 'Horizontal position')}</span>
+                      <div className="tierlist-create-cover-slider-row">
+                        <input
+                          className="tierlist-create-cover-slider"
+                          type="range"
+                          min={-TEMPLATE_PREVIEW_MAX_OFFSET}
+                          max={TEMPLATE_PREVIEW_MAX_OFFSET}
+                          step="0.5"
+                          value={draftCoverImageOffsetX}
+                          onChange={(event) => setDraftCoverImageOffsetX(clampTemplatePreviewOffset(event.target.value))}
+                          disabled={isSaving}
+                          aria-label={pick('เลื่อนรูปแนวนอน', 'Move image horizontally')}
+                        />
+                        <strong>{Math.round(draftCoverImageOffsetX)}%</strong>
+                      </div>
+                    </div>
+                    <div className="tierlist-create-cover-control-group">
+                      <span className="tierlist-create-cover-control-label">{pick('เลื่อนบนล่าง', 'Vertical position')}</span>
+                      <div className="tierlist-create-cover-slider-row">
+                        <input
+                          className="tierlist-create-cover-slider"
+                          type="range"
+                          min={-TEMPLATE_PREVIEW_MAX_OFFSET}
+                          max={TEMPLATE_PREVIEW_MAX_OFFSET}
+                          step="0.5"
+                          value={draftCoverImageOffsetY}
+                          onChange={(event) => setDraftCoverImageOffsetY(clampTemplatePreviewOffset(event.target.value))}
+                          disabled={isSaving}
+                          aria-label={pick('เลื่อนรูปแนวตั้ง', 'Move image vertically')}
+                        />
+                        <strong>{Math.round(draftCoverImageOffsetY)}%</strong>
+                      </div>
+                    </div>
+                    <small className="tierlist-create-cover-control-hint">
+                      {pick('ลากทั้งกรอบเพื่อย้ายตำแหน่ง หรือดึงที่มุมกรอบเพื่อย่อขยายขนาดได้เลย จากนั้นค่อยกดบันทึกการครอป', 'Drag the frame to reposition it, or pull its corners to resize it before saving.')}
+                    </small>
+                  </div>
+                  <div className="tierlist-create-cover-editor">
+                    <div className="tierlist-create-cover-stage-panel">
+                      <div className="tierlist-create-cover-stage-head">
+                        <strong>{pick('แก้ไขครอป', 'Crop editor')}</strong>
+                        <span>{pick('ภาพเต็มอยู่ด้านหลัง ส่วนกรอบคือพื้นที่ที่จะถูกใช้จริง', 'The full image stays in the background, and the frame shows what will actually be used.')}</span>
+                      </div>
+                      <div className="tierlist-create-cover-stage" ref={coverStageRef}>
+                        <img
+                          className="tierlist-create-cover-stage-base"
+                          src={coverImageUrl}
+                          alt={pick('รูปต้นฉบับ', 'Original image')}
+                          loading="lazy"
+                          draggable={false}
+                          onLoad={handleCoverStageImageLoad}
+                        />
+                        {draftCoverStageCropRect ? (
+                          <div
+                            className="tierlist-create-cover-stage-crop"
+                            style={draftCoverStageCropRect}
+                            onPointerDown={handleCoverPreviewPointerDown}
+                            onPointerMove={handleCoverPreviewPointerMove}
+                            onPointerUp={handleCoverPreviewPointerUp}
+                            onPointerCancel={handleCoverPreviewPointerUp}
+                            aria-label={pick('กรอบครอปรูปหน้าปก', 'Cover crop frame')}
+                          >
+                            {['nw', 'ne', 'sw', 'se'].map((corner) => (
+                              <button
+                                key={corner}
+                                type="button"
+                                className={`tierlist-create-cover-stage-handle is-${corner}`}
+                                onPointerDown={(event) => handleCoverPreviewResizePointerDown(event, corner)}
+                                onPointerMove={handleCoverPreviewPointerMove}
+                                onPointerUp={handleCoverPreviewPointerUp}
+                                onPointerCancel={handleCoverPreviewPointerUp}
+                                aria-label={pick('ลากเพื่อย่อขยายกรอบครอป', 'Drag to resize the crop frame')}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="tierlist-create-cover-preview-panel">
+                      <div className="tierlist-create-cover-stage-head">
+                        <strong>{pick('ตัวอย่างหลังบันทึก', 'Saved result preview')}</strong>
+                        <span>{pick('พอกดบันทึกการครอป หน้าปกจริงจะอัปเดตเป็นมุมนี้', 'Once you save the crop, the actual cover will update to this framing.')}</span>
+                      </div>
+                      <div
+                        className="tierlist-create-cover-preview"
+                        style={draftCoverPreviewStyle}
+                      >
+                        <img src={coverImageUrl} alt={pick('ตัวอย่างหน้าปก', 'Cover preview')} loading="lazy" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="tierlist-create-cover-actions tierlist-create-cover-actions-editor">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => coverFileInputRef.current?.click()}
+                      disabled={isSaving || isUploadingCover}
+                    >
+                      {pick('เปลี่ยนรูป', 'Change image')}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={resetCoverPreviewFrame} disabled={isSaving}>
+                      {pick('รีเซ็ตเฟรม', 'Reset framing')}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={closeCoverEditor} disabled={isSaving}>
+                      {pick('ยกเลิก', 'Cancel')}
+                    </Button>
+                    <Button type="button" size="sm" variant="primary" icon={<Save size={14} />} onClick={saveCoverPreviewFrame} disabled={isSaving}>
+                      {hasPendingCoverFrameChanges ? pick('บันทึกการครอป', 'Save crop') : pick('ใช้เฟรมนี้', 'Use this frame')}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
+          <div className="tierlist-create-summary is-visible">
+            <div className="tierlist-create-summary-head">
+              <strong>{pick('พูลที่เลือกแล้ว', 'Selected pool')}</strong>
+              <div className="tierlist-create-summary-meta">
+                <span>{pick(`${selectedItems.length} รายการพร้อมใช้`, `${selectedItems.length} items ready`)}</span>
+                <span>{pick(`${customItems.length} รูปจากการอิมพอร์ต`, `${customItems.length} imported images`)}</span>
+              </div>
+            </div>
+            {selectedItems.length > 0 ? (
+              <div className="tierlist-create-summary-list">
+                {selectedItems.map((entry) => {
+                  const artworkSource = getTierEntityArtworkSource(entry);
+                  const metaLine = entry?.isCustomTierItem
+                    ? pick('อิมพอร์ตจากข้างนอก', 'Imported from outside')
+                    : getMetaLine(entry) || pick('เลือกจากคลังในเว็บ', 'Selected from the site catalog');
+                  return (
+                    <article key={`selected-pool-${entry.id}`} className="tierlist-create-summary-item">
+                      <div className="tierlist-create-summary-thumb">
+                        {artworkSource ? <img src={artworkSource} alt={getDisplayName(entry)} loading="lazy" /> : null}
+                      </div>
+                      <div className="tierlist-create-summary-copy">
+                        <div className="tierlist-create-summary-item-tags">
+                          <span className="tierlist-chip">
+                            {entry?.isCustomTierItem
+                              ? pick('อิมพอร์ต', 'Imported')
+                              : pick('จากเว็บ', 'Catalog')}
+                          </span>
+                          {entry?.is_adult ? <span className="tierlist-chip tierlist-chip-adult">18+</span> : null}
+                        </div>
+                        <strong>{getDisplayName(entry)}</strong>
+                        <span>{metaLine}</span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeSelectedPoolItem(entry)}
+                      >
+                        <Trash2 size={14} /> {pick('เอาออก', 'Remove')}
+                      </Button>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="tierlist-create-summary-empty">
+                {pick('พอเลือกจากในเว็บหรืออิมพอร์ตจากข้างนอกแล้ว รายการทั้งหมดจะมาโชว์รวมกันตรงนี้', 'Once you pick items from the site or import them, everything will appear together here.')}
+              </p>
+            )}
+          </div>
         </div>
 
         {!isSongMode && (
@@ -3995,6 +4794,7 @@ export function TierListManagePage() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult } = useAgeGate();
   const [library, setLibrary] = useState({ templates: [], lists: [] });
+  const [templatePreviewEntityMap, setTemplatePreviewEntityMap] = useState(new Map());
   const [myListStats, setMyListStats] = useState({
     totalCount: 0,
     publicCount: 0,
@@ -4114,6 +4914,77 @@ export function TierListManagePage() {
   );
   const totalListPages = Math.max(1, Math.ceil(myListStats.totalCount / MANAGE_LISTS_PAGE_SIZE));
   const linkedCountByTemplateId = myListStats.linkedCountByTemplateId || {};
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTemplatePreviewEntities() {
+      if (myTemplates.length === 0) {
+        setTemplatePreviewEntityMap(new Map());
+        return;
+      }
+
+      const previewCustomMap = new Map();
+      const titleIds = new Set();
+      const characterIds = new Set();
+      const songIds = new Set();
+
+      myTemplates.forEach((template) => {
+        const entityType = normalizeCatalogEntityType(template.entityType);
+        const previewIds = [...new Set((template.titleIds || []).map(Number).filter((id) => Number.isFinite(id) && id !== 0))].slice(0, 4);
+
+        previewIds.forEach((id) => {
+          if (id < 0) {
+            return;
+          }
+          if (entityType === CHARACTER_ENTITY_TYPE) {
+            characterIds.add(id);
+            return;
+          }
+          if (entityType === THEME_SONG_ENTITY_TYPE) {
+            songIds.add(id);
+            return;
+          }
+          titleIds.add(id);
+        });
+
+        (template.customItems || []).forEach((item) => {
+          const normalizedId = Number(item?.id);
+          if (!Number.isFinite(normalizedId) || normalizedId === 0) {
+            return;
+          }
+          previewCustomMap.set(normalizedId, toCustomTierEntity(item, entityType));
+        });
+      });
+
+      try {
+        const [previewTitles, previewCharacters, previewSongs] = await Promise.all([
+          titleIds.size > 0 ? getTitlePreviewByIds([...titleIds]) : [],
+          characterIds.size > 0 ? fetchCharacterEntitiesByIds([...characterIds]) : [],
+          songIds.size > 0 ? fetchThemeSongEntitiesByIds([...songIds]) : [],
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextMap = new Map(previewCustomMap);
+        previewTitles.forEach((entry) => nextMap.set(Number(entry.id), entry));
+        previewCharacters.forEach((entry) => nextMap.set(Number(entry.id), entry));
+        previewSongs.forEach((entry) => nextMap.set(Number(entry.id), entry));
+        setTemplatePreviewEntityMap(nextMap);
+      } catch {
+        if (!cancelled) {
+          setTemplatePreviewEntityMap(new Map(previewCustomMap));
+        }
+      }
+    }
+
+    loadTemplatePreviewEntities();
+    return () => {
+      cancelled = true;
+    };
+  }, [myTemplates, showAdult]);
 
   const loadFullListForAction = useCallback(async (listId) => {
     const detail = await loadTierListDetail(listId, {
@@ -4412,13 +5283,26 @@ export function TierListManagePage() {
               const savingKey = `template:${template.id}`;
               const linkedCount = Number(linkedCountByTemplateId[String(template.id)] || 0);
               const isEditing = editingKey === `template:${template.id}`;
+              const templateCoverFallback = (template.titleIds || [])
+                .map((id) => templatePreviewEntityMap.get(Number(id)))
+                .find(Boolean) || null;
+              const templateCoverArtwork = getTemplatePreviewArtworkSource(template, templateCoverFallback);
               return (
                 <article key={template.id} className="glass-heavy tierlist-manage-card">
                   <div
-                    className="tierlist-manage-card-cover"
-                    style={template.previewArtworkUrl ? { backgroundImage: `url(${template.previewArtworkUrl})` } : undefined}
+                    className={`tierlist-manage-card-cover${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
+                    style={getTemplatePreviewMediaStyle(template)}
                   >
-                    {!template.previewArtworkUrl && (
+                    {templateCoverArtwork ? (
+                      <img
+                        src={templateCoverArtwork}
+                        alt=""
+                        className="tierlist-manage-card-cover-image"
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                      />
+                    ) : (
                       <div className="tierlist-manage-cover-fallback">
                         <Sparkles size={30} />
                       </div>

@@ -17,11 +17,14 @@ const remoteTemplatesResultCache = new Map();
 const remoteListsResultCache = new Map();
 const tierTemplateDetailRequestCache = new Map();
 const tierListDetailRequestCache = new Map();
-const REMOTE_TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, preview_artwork_url, custom_items, created_at, updated_at';
+const REMOTE_TEMPLATE_SELECT_BASE = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, has_adult_content, preview_artwork_url, custom_items, created_at, updated_at';
+const REMOTE_TEMPLATE_PREVIEW_SETTINGS_SELECT = 'manual_preview_artwork_url, preview_artwork_fit, preview_artwork_position, preview_artwork_scale, preview_artwork_offset_x, preview_artwork_offset_y';
+const REMOTE_TEMPLATE_SELECT = `${REMOTE_TEMPLATE_SELECT_BASE}, ${REMOTE_TEMPLATE_PREVIEW_SETTINGS_SELECT}`;
 const REMOTE_LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, has_adult_content, custom_items, created_at, updated_at';
 const REMOTE_LIST_ROWS_SELECT = 'id, list_id, position, label, color, title_ids';
 const REMOTE_LIST_POOL_SELECT = 'list_id, title_id, position';
 let tierlistRemoteCacheVersion = 0;
+let remoteTemplatePreviewSettingsSupported = true;
 
 function encodeTemplateCategory(category, entityType = TITLE_ENTITY_TYPE) {
   const normalizedCategory = String(category || 'general');
@@ -153,6 +156,34 @@ function getTemplatePreviewArtworkUrl(entries = []) {
     .find((value) => typeof value === 'string' && value.trim().length > 0) || '';
 }
 
+function normalizeTemplatePreviewFit(value) {
+  return String(value || '').trim().toLowerCase() === 'contain' ? 'contain' : 'cover';
+}
+
+function normalizeTemplatePreviewPosition(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'top' || normalized === 'bottom') {
+    return normalized;
+  }
+  return 'center';
+}
+
+function normalizeTemplatePreviewScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(2.5, numeric));
+}
+
+function normalizeTemplatePreviewOffset(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.max(-35, Math.min(35, numeric));
+}
+
 function dedupeRows(rows = []) {
   const seenTitleIds = new Set();
   return rows.map((row, index) => {
@@ -199,7 +230,13 @@ function normalizeTemplate(raw, index = 0) {
   const entityType = normalizeCatalogEntityType(raw?.entityType || decodedCategory.entityType);
   const hasAdultContent = raw?.hasAdultContent ?? raw?.has_adult_content;
   const previewArtworkUrl = String(raw?.previewArtworkUrl ?? raw?.preview_artwork_url ?? '').trim();
+  const manualPreviewArtworkUrl = String(raw?.manualPreviewArtworkUrl ?? raw?.manual_preview_artwork_url ?? '').trim();
   const customItems = normalizeCustomTierItems(raw?.customItems ?? raw?.custom_items ?? []);
+  const previewArtworkFit = normalizeTemplatePreviewFit(raw?.previewArtworkFit ?? raw?.preview_artwork_fit);
+  const previewArtworkPosition = normalizeTemplatePreviewPosition(raw?.previewArtworkPosition ?? raw?.preview_artwork_position);
+  const previewArtworkScale = normalizeTemplatePreviewScale(raw?.previewArtworkScale ?? raw?.preview_artwork_scale);
+  const previewArtworkOffsetX = normalizeTemplatePreviewOffset(raw?.previewArtworkOffsetX ?? raw?.preview_artwork_offset_x);
+  const previewArtworkOffsetY = normalizeTemplatePreviewOffset(raw?.previewArtworkOffsetY ?? raw?.preview_artwork_offset_y);
 
   return {
     id: String(raw?.id || makeId(`template-${index}`)),
@@ -215,7 +252,13 @@ function normalizeTemplate(raw, index = 0) {
     isSystem: Boolean(raw?.isSystem),
     plays: Number(raw?.plays || 0),
     hasAdultContent: typeof hasAdultContent === 'boolean' ? hasAdultContent : null,
-    previewArtworkUrl: previewArtworkUrl || '',
+    previewArtworkUrl: previewArtworkUrl || manualPreviewArtworkUrl || '',
+    manualPreviewArtworkUrl: manualPreviewArtworkUrl || '',
+    previewArtworkFit,
+    previewArtworkPosition,
+    previewArtworkScale,
+    previewArtworkOffsetX,
+    previewArtworkOffsetY,
     customItems,
     ownerUserId: raw?.ownerUserId ? String(raw.ownerUserId) : null,
     createdAt: raw?.createdAt || new Date().toISOString(),
@@ -385,6 +428,7 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
     ? options.defaultRows
     : DEFAULT_ROWS;
   const customItems = normalizeCustomTierItems(options.customItems || []);
+  const manualPreviewArtworkUrl = String(options.manualPreviewArtworkUrl ?? options.previewArtworkUrl ?? '').trim();
 
   return normalizeTemplate({
     id: makeId('template'),
@@ -398,7 +442,13 @@ export function createTemplateFromCatalog(titles = [], options = {}) {
     isSystem: Boolean(options.isSystem),
     plays: 0,
     hasAdultContent: titles.some((title) => Boolean(title?.is_adult)),
-    previewArtworkUrl: String(options.previewArtworkUrl || '').trim() || getTemplatePreviewArtworkUrl([...customItems.map((item) => ({ cover: item.imageUrl })), ...titles]),
+    previewArtworkUrl: manualPreviewArtworkUrl || getTemplatePreviewArtworkUrl([...customItems.map((item) => ({ cover: item.imageUrl })), ...titles]),
+    manualPreviewArtworkUrl,
+    previewArtworkFit: normalizeTemplatePreviewFit(options.previewArtworkFit),
+    previewArtworkPosition: normalizeTemplatePreviewPosition(options.previewArtworkPosition),
+    previewArtworkScale: normalizeTemplatePreviewScale(options.previewArtworkScale),
+    previewArtworkOffsetX: normalizeTemplatePreviewOffset(options.previewArtworkOffsetX),
+    previewArtworkOffsetY: normalizeTemplatePreviewOffset(options.previewArtworkOffsetY),
     customItems,
     ownerUserId: options.ownerUserId || null,
   });
@@ -610,6 +660,37 @@ function getErrorDetails(error) {
 
 function getErrorHint(error) {
   return String(error?.hint ?? error?.error?.hint ?? '').toLowerCase();
+}
+
+function hasMissingColumn(error, columnName) {
+  const normalizedColumn = String(columnName || '').trim().toLowerCase();
+  const haystack = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.code,
+    error?.error_description,
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  return (
+    haystack.includes(`column "${normalizedColumn}"`) ||
+    haystack.includes(`'${normalizedColumn}'`) ||
+    haystack.includes(`"${normalizedColumn}"`) ||
+    (haystack.includes('schema cache') && haystack.includes(normalizedColumn))
+  );
+}
+
+function isMissingTemplatePreviewSettingsError(error) {
+  return [
+    'manual_preview_artwork_url',
+    'preview_artwork_fit',
+    'preview_artwork_position',
+    'preview_artwork_scale',
+    'preview_artwork_offset_x',
+    'preview_artwork_offset_y',
+  ].some((columnName) => hasMissingColumn(error, columnName));
 }
 
 function isNoRowsSingleResultError(error) {
@@ -919,7 +1000,23 @@ function matchesRequestedAdultMode(entry, showAdult = null) {
     return true;
   }
 
-  return typeof entry?.hasAdultContent === 'boolean' && entry.hasAdultContent === showAdult;
+  if (typeof entry?.hasAdultContent !== 'boolean') {
+    return !showAdult;
+  }
+
+  return entry.hasAdultContent === showAdult;
+}
+
+function applyAdultContentQueryFilter(query, showAdult, column = 'has_adult_content') {
+  if (typeof showAdult !== 'boolean') {
+    return query;
+  }
+
+  if (showAdult) {
+    return query.eq(column, true);
+  }
+
+  return query.or(`${column}.eq.false,${column}.is.null`);
 }
 
 function filterLocalTemplatesForRemoteMerge(templates = [], userId = null, showAdult = null) {
@@ -952,9 +1049,10 @@ function filterLocalListsForRemoteMerge(lists = [], userId = null, showAdult = n
   });
 }
 
-function toRemoteTemplate(template, userId = null) {
+function toRemoteTemplate(template, userId = null, options = {}) {
   const normalized = normalizeTemplate(template);
-  return {
+  const includePreviewSettings = options?.includePreviewSettings !== false;
+  const payload = {
     id: normalized.id,
     owner_user_id: normalized.isSystem ? null : (normalized.ownerUserId || userId || null),
     title: normalized.title,
@@ -971,6 +1069,17 @@ function toRemoteTemplate(template, userId = null) {
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
+
+  if (includePreviewSettings) {
+    payload.manual_preview_artwork_url = normalized.manualPreviewArtworkUrl || null;
+    payload.preview_artwork_fit = normalized.previewArtworkFit;
+    payload.preview_artwork_position = normalized.previewArtworkPosition;
+    payload.preview_artwork_scale = normalized.previewArtworkScale;
+    payload.preview_artwork_offset_x = normalized.previewArtworkOffsetX;
+    payload.preview_artwork_offset_y = normalized.previewArtworkOffsetY;
+  }
+
+  return payload;
 }
 
 function fromRemoteTemplate(row) {
@@ -986,6 +1095,12 @@ function fromRemoteTemplate(row) {
     plays: row?.plays,
     hasAdultContent: typeof row?.has_adult_content === 'boolean' ? row.has_adult_content : null,
     previewArtworkUrl: row?.preview_artwork_url || '',
+    manualPreviewArtworkUrl: row?.manual_preview_artwork_url || '',
+    previewArtworkFit: row?.preview_artwork_fit || 'cover',
+    previewArtworkPosition: row?.preview_artwork_position || 'center',
+    previewArtworkScale: row?.preview_artwork_scale ?? 1,
+    previewArtworkOffsetX: row?.preview_artwork_offset_x ?? 0,
+    previewArtworkOffsetY: row?.preview_artwork_offset_y ?? 0,
     customItems: row?.custom_items || [],
     ownerUserId: row?.owner_user_id,
     createdAt: row?.created_at,
@@ -1069,37 +1184,48 @@ async function fetchRemoteTemplates(userId = null, options = {}) {
   const cacheVersion = tierlistRemoteCacheVersion;
   const request = (async () => {
     const requests = [];
+    const runTemplateSelect = async (buildQuery) => {
+      const selectValue = remoteTemplatePreviewSettingsSupported
+        ? REMOTE_TEMPLATE_SELECT
+        : REMOTE_TEMPLATE_SELECT_BASE;
+      const result = await buildQuery(selectValue);
+      if (result?.error && remoteTemplatePreviewSettingsSupported && isMissingTemplatePreviewSettingsError(result.error)) {
+        remoteTemplatePreviewSettingsSupported = false;
+        return buildQuery(REMOTE_TEMPLATE_SELECT_BASE);
+      }
+      return result;
+    };
 
     if (includePublic) {
-      let publicTemplatesQuery = supabase
-        .from('tierlist_templates')
-        .select(REMOTE_TEMPLATE_SELECT)
-        .eq('is_public', true)
-        .order('plays', { ascending: false })
-        .order('updated_at', { ascending: false });
+      requests.push(runTemplateSelect((selectValue) => {
+        let publicTemplatesQuery = supabase
+          .from('tierlist_templates')
+          .select(selectValue)
+          .eq('is_public', true)
+          .order('plays', { ascending: false })
+          .order('updated_at', { ascending: false });
 
-      if (showAdult !== null) {
-        publicTemplatesQuery = publicTemplatesQuery.eq('has_adult_content', showAdult);
-      }
+        publicTemplatesQuery = applyAdultContentQueryFilter(publicTemplatesQuery, showAdult);
 
-      if (publicLimit !== null) {
-        publicTemplatesQuery = publicTemplatesQuery.limit(publicLimit);
-      }
+        if (publicLimit !== null) {
+          publicTemplatesQuery = publicTemplatesQuery.limit(publicLimit);
+        }
 
-      requests.push(publicTemplatesQuery);
+        return publicTemplatesQuery;
+      }));
     }
 
     if (includeOwned) {
-      let ownedTemplatesQuery = supabase
-        .from('tierlist_templates')
-        .select(REMOTE_TEMPLATE_SELECT)
-        .eq('owner_user_id', userId);
+      requests.push(runTemplateSelect((selectValue) => {
+        let ownedTemplatesQuery = supabase
+          .from('tierlist_templates')
+          .select(selectValue)
+          .eq('owner_user_id', userId);
 
-      if (showAdult !== null) {
-        ownedTemplatesQuery = ownedTemplatesQuery.eq('has_adult_content', showAdult);
-      }
+        ownedTemplatesQuery = applyAdultContentQueryFilter(ownedTemplatesQuery, showAdult);
 
-      requests.push(ownedTemplatesQuery);
+        return ownedTemplatesQuery;
+      }));
     }
 
     const results = await Promise.all(requests);
@@ -1173,9 +1299,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
         .order('updated_at', { ascending: false })
         .order('play_count', { ascending: false });
 
-      if (showAdult !== null) {
-        publicListsQuery = publicListsQuery.eq('has_adult_content', showAdult);
-      }
+      publicListsQuery = applyAdultContentQueryFilter(publicListsQuery, showAdult);
 
       if (publicLimit !== null) {
         publicListsQuery = publicListsQuery.limit(publicLimit);
@@ -1192,9 +1316,7 @@ async function fetchRemoteLists(userId = null, options = {}) {
         .order('updated_at', { ascending: false })
         .order('play_count', { ascending: false });
 
-      if (showAdult !== null) {
-        ownedListsQuery = ownedListsQuery.eq('has_adult_content', showAdult);
-      }
+      ownedListsQuery = applyAdultContentQueryFilter(ownedListsQuery, showAdult);
 
       if (ownedLimit !== null) {
         ownedListsQuery = ownedListsQuery.range(ownedOffset, ownedOffset + ownedLimit - 1);
@@ -1352,16 +1474,31 @@ export async function loadTierTemplateDetail(templateId, options = {}) {
     }
 
     try {
-      let templateQuery = supabase
-        .from('tierlist_templates')
-        .select(REMOTE_TEMPLATE_SELECT)
-        .eq('id', normalizedTemplateId);
+      const { data: templateRow, error: templateError } = await (async () => {
+        const runTemplateDetailQuery = async (selectValue) => {
+          let templateQuery = supabase
+            .from('tierlist_templates')
+            .select(selectValue)
+            .eq('id', normalizedTemplateId);
 
-      if (showAdult !== null) {
-        templateQuery = templateQuery.eq('has_adult_content', showAdult);
-      }
+          templateQuery = applyAdultContentQueryFilter(templateQuery, showAdult);
 
-      const { data: templateRow, error: templateError } = await templateQuery.maybeSingle();
+          return templateQuery.maybeSingle();
+        };
+
+        const result = await runTemplateDetailQuery(
+          remoteTemplatePreviewSettingsSupported
+            ? REMOTE_TEMPLATE_SELECT
+            : REMOTE_TEMPLATE_SELECT_BASE
+        );
+
+        if (result?.error && remoteTemplatePreviewSettingsSupported && isMissingTemplatePreviewSettingsError(result.error)) {
+          remoteTemplatePreviewSettingsSupported = false;
+          return runTemplateDetailQuery(REMOTE_TEMPLATE_SELECT_BASE);
+        }
+
+        return result;
+      })();
 
       if (templateError && !isNoRowsSingleResultError(templateError)) {
         throw templateError;
@@ -1386,9 +1523,7 @@ export async function loadTierTemplateDetail(templateId, options = {}) {
         .order('updated_at', { ascending: false })
         .order('play_count', { ascending: false });
 
-      if (showAdult !== null) {
-        relatedListsQuery = relatedListsQuery.eq('has_adult_content', showAdult);
-      }
+      relatedListsQuery = applyAdultContentQueryFilter(relatedListsQuery, showAdult);
 
       const { data: relatedListRows, error: relatedListsError } = await relatedListsQuery;
 
@@ -1479,9 +1614,7 @@ export async function loadTierListDetail(listId, options = {}) {
         .select(REMOTE_LIST_SELECT)
         .eq('id', normalizedListId);
 
-      if (showAdult !== null) {
-        listQuery = listQuery.eq('has_adult_content', showAdult);
-      }
+      listQuery = applyAdultContentQueryFilter(listQuery, showAdult);
 
       const { data: listRow, error: listError } = await listQuery.maybeSingle();
 
@@ -1514,13 +1647,26 @@ export async function loadTierListDetail(listId, options = {}) {
       ];
 
       if (templateId) {
-        currentListRequests.push(
-          supabase
+        currentListRequests.push((async () => {
+          const runTemplateQuery = async (selectValue) => supabase
             .from('tierlist_templates')
-            .select(REMOTE_TEMPLATE_SELECT)
+            .select(selectValue)
             .eq('id', templateId)
-            .maybeSingle()
-        );
+            .maybeSingle();
+
+          const result = await runTemplateQuery(
+            remoteTemplatePreviewSettingsSupported
+              ? REMOTE_TEMPLATE_SELECT
+              : REMOTE_TEMPLATE_SELECT_BASE
+          );
+
+          if (result?.error && remoteTemplatePreviewSettingsSupported && isMissingTemplatePreviewSettingsError(result.error)) {
+            remoteTemplatePreviewSettingsSupported = false;
+            return runTemplateQuery(REMOTE_TEMPLATE_SELECT_BASE);
+          }
+
+          return result;
+        })());
       }
 
       const [rowsResult, poolResult, templateResult] = await Promise.all(currentListRequests);
@@ -1552,9 +1698,7 @@ export async function loadTierListDetail(listId, options = {}) {
           .order('updated_at', { ascending: false })
           .order('play_count', { ascending: false });
 
-        if (showAdult !== null) {
-          relatedListsQuery = relatedListsQuery.eq('has_adult_content', showAdult);
-        }
+        relatedListsQuery = applyAdultContentQueryFilter(relatedListsQuery, showAdult);
 
         const { data: relatedListRows, error: relatedListsError } = await relatedListsQuery;
 
@@ -1611,39 +1755,53 @@ async function saveRemoteTemplate(template, userId = null) {
     return normalizeTemplate(template);
   }
 
-  const payload = toRemoteTemplate(template, userId);
-  const { data: updatedRows, error: updateError } = await supabase
-    .from('tierlist_templates')
-    .update(payload)
-    .eq('id', payload.id)
-    .select('*');
-
-  if (updateError) {
-    throw updateError;
-  }
-
-  const updatedRow = Array.isArray(updatedRows) && updatedRows.length > 0 ? updatedRows[0] : null;
-
-  const { data, error } = updatedRow
-    ? { data: updatedRow, error: null }
-    : await supabase
+  const persistTemplate = async (includePreviewSettings) => {
+    const payload = toRemoteTemplate(template, userId, { includePreviewSettings });
+    const { data: updatedRows, error: updateError } = await supabase
       .from('tierlist_templates')
-      .insert(payload)
-      .select('*')
-      .single();
+      .update(payload)
+      .eq('id', payload.id)
+      .select('*');
 
-  if (error) {
+    if (updateError) {
+      throw updateError;
+    }
+
+    const updatedRow = Array.isArray(updatedRows) && updatedRows.length > 0 ? updatedRows[0] : null;
+
+    const { data, error } = updatedRow
+      ? { data: updatedRow, error: null }
+      : await supabase
+        .from('tierlist_templates')
+        .insert(payload)
+        .select('*')
+        .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return fromRemoteTemplate(data || payload);
+  };
+
+  try {
+    return await persistTemplate(remoteTemplatePreviewSettingsSupported);
+  } catch (error) {
+    if (remoteTemplatePreviewSettingsSupported && isMissingTemplatePreviewSettingsError(error)) {
+      remoteTemplatePreviewSettingsSupported = false;
+      return persistTemplate(false);
+    }
     throw error;
   }
-
-  return fromRemoteTemplate(data || payload);
 }
 
-async function saveRemoteTemplateWithRecovery(template, userId = null) {
+async function saveRemoteTemplateWithRecovery(template, userId = null, options = {}) {
+  const allowRekey = options?.allowRekey !== false;
+
   try {
     return await saveRemoteTemplate(template, userId);
   } catch (error) {
-    if (!userId || (!isUniqueConflictError(error) && getErrorStatus(error) !== 409)) {
+    if (!userId || !allowRekey || (!isUniqueConflictError(error) && getErrorStatus(error) !== 409)) {
       throw error;
     }
 
@@ -1760,6 +1918,14 @@ async function saveRemoteList(list, userId = null, previousList = null) {
     throw error;
   }
 
+  // For a first-time INSERT there is no existing remote state to diff against,
+  // so always write all rows/pool regardless of what previousList contains.
+  // Also force a full rewrite when publishing (isPublic going false → true) because
+  // previousList reflects local draft state, not what's actually in tierlist_list_rows —
+  // rows may be missing from the DB if they were never successfully written.
+  const isPublishing = normalized.isPublic === true && !previousList?.isPublic;
+  const remoteBaseline = (updatedRow && !isPublishing) ? previousList : null;
+
   if (updatedRow && previousList) {
     await deleteRemoteListChildrenDiff(previousList, normalized);
   }
@@ -1779,8 +1945,8 @@ async function saveRemoteList(list, userId = null, previousList = null) {
     position: index,
   }));
 
-  // Only upsert rows that are new or changed since the last save.
-  const changedRowPayload = getChangedRowPayloads(previousList?.rows, rowPayload);
+  // Only upsert rows that are new or changed since the last remote save.
+  const changedRowPayload = getChangedRowPayloads(remoteBaseline?.rows, rowPayload);
   if (changedRowPayload.length > 0) {
     const { error: rowInsertError } = await supabase
       .from('tierlist_list_rows')
@@ -1788,9 +1954,9 @@ async function saveRemoteList(list, userId = null, previousList = null) {
     if (rowInsertError) throw rowInsertError;
   }
 
-  // Only upsert pool items when the pool has actually changed.
+  // Only upsert pool items when the pool has actually changed vs remote.
   const nextPoolIds = dedupeTierEntryIds(normalized.poolTitleIds);
-  if (poolTitleIdsChanged(previousList, nextPoolIds) && poolPayload.length > 0) {
+  if (poolTitleIdsChanged(remoteBaseline, nextPoolIds) && poolPayload.length > 0) {
     const CHUNK_SIZE = 500;
     for (let i = 0; i < poolPayload.length; i += CHUNK_SIZE) {
       const chunk = poolPayload.slice(i, i + CHUNK_SIZE);
@@ -1804,7 +1970,9 @@ async function saveRemoteList(list, userId = null, previousList = null) {
   return fromRemoteList(data || payload, rowPayload, poolPayload);
 }
 
-async function saveRemoteListWithRecovery(list, userId = null, previousList = null, allowRetry = true) {
+async function saveRemoteListWithRecovery(list, userId = null, previousList = null, options = {}, library = null) {
+  const allowRetry = options?.allowRetry !== false;
+  const allowRekey = options?.allowRekey !== false;
   const shouldRetryAfterConflict = (error) => (
     getErrorStatus(error) === 409 ||
     isUniqueConflictError(error) ||
@@ -1815,23 +1983,43 @@ async function saveRemoteListWithRecovery(list, userId = null, previousList = nu
     return await saveRemoteList(list, userId, previousList);
   } catch (error) {
     if (isForeignKeyError(error)) {
+      // Try saving the referenced template first so the FK constraint can be satisfied
+      if (library && list.templateId && userId) {
+        const sourceTemplate = (library.templates || []).find(
+          (t) => String(t.id) === String(list.templateId)
+        );
+        if (sourceTemplate) {
+          try {
+            await saveRemoteTemplateWithRecovery(sourceTemplate, userId, { allowRekey: false });
+            return await saveRemoteList(list, userId, previousList);
+          } catch {
+            // template save or list retry failed — fall through to strip templateId
+          }
+        }
+      }
       // template_id references a template that doesn't exist remotely — save without it
       const listWithoutTemplate = normalizeTierList({ ...list, templateId: '' });
       try {
         return await saveRemoteList(listWithoutTemplate, userId, previousList);
       } catch (retryError) {
         // If the no-template retry also conflicts (duplicate ID), rekey and retry
-        if (!userId || !allowRetry || !shouldRetryAfterConflict(retryError)) {
+        if (!userId || !allowRetry || !allowRekey || !shouldRetryAfterConflict(retryError)) {
           throw retryError;
         }
-        return saveRemoteListWithRecovery(rekeyTierListForOwner(listWithoutTemplate, userId), userId, null, false);
+        return saveRemoteListWithRecovery(rekeyTierListForOwner(listWithoutTemplate, userId), userId, null, {
+          allowRetry: false,
+          allowRekey: false,
+        });
       }
     }
-    if (!userId || !allowRetry || !shouldRetryAfterConflict(error)) {
+    if (!userId || !allowRetry || !allowRekey || !shouldRetryAfterConflict(error)) {
       throw error;
     }
 
-    return saveRemoteListWithRecovery(rekeyTierListForOwner(list, userId), userId, null, false);
+    return saveRemoteListWithRecovery(rekeyTierListForOwner(list, userId), userId, null, {
+      allowRetry: false,
+      allowRekey: false,
+    });
   }
 }
 
@@ -1983,14 +2171,19 @@ export async function loadOwnedTierListsPage(userId, options = {}) {
   }
 
   try {
-    return await fetchRemoteLists(userId, {
+    const remoteLists = await fetchRemoteLists(userId, {
       includePublic: false,
       includeOwned: true,
       ownedLimit: limit,
       ownedOffset: offset,
-      skipRows: true,
-      skipPoolItems: true,
+      skipRows: false,
+      skipPoolItems: false,
       showAdult,
+    });
+    // Prefer local draft over remote when local is newer (e.g. remote save was queued/failed)
+    return remoteLists.map((remoteList) => {
+      const localList = localLibrary.lists.find((l) => String(l.id) === String(remoteList.id));
+      return preferNewerTierListVersion(remoteList, localList);
     });
   } catch (error) {
     if (isNetworkLikeError(error)) {
@@ -2033,9 +2226,7 @@ export async function loadOwnedTierListStats(userId, options = {}) {
     .select('template_id, is_public')
     .eq('owner_user_id', userId);
 
-  if (typeof options?.showAdult === 'boolean') {
-    query = query.eq('has_adult_content', options.showAdult);
-  }
+  query = applyAdultContentQueryFilter(query, options?.showAdult);
 
   const { data, error } = await query;
   if (error) {
@@ -2146,6 +2337,7 @@ export async function saveTierTemplate(template, library = null, options = {}) {
   const userId = options?.userId || null;
   const preserveOwnership = Boolean(options?.preserveOwnership);
   const source = normalizeLibrary(library || loadLibraryRaw());
+  const hasExistingTemplateId = source.templates.some((entry) => String(entry?.id || '') === String(template?.id || ''));
   const baseTemplate = !preserveOwnership && shouldPromoteTemplateToOwnedCopy(template, userId)
     ? rekeyTemplateForOwner(template, userId)
     : template;
@@ -2176,7 +2368,9 @@ export async function saveTierTemplate(template, library = null, options = {}) {
   }
 
   try {
-    const remoteTemplate = await saveRemoteTemplateWithRecovery(normalizedTemplate, userId);
+    const remoteTemplate = await saveRemoteTemplateWithRecovery(normalizedTemplate, userId, {
+      allowRekey: !hasExistingTemplateId,
+    });
     return saveLibraryRaw({
       ...localLibrary,
       templates: [
@@ -2195,6 +2389,7 @@ export async function saveTierTemplate(template, library = null, options = {}) {
 export async function saveTierList(tierList, library = null, options = {}) {
   const userId = options?.userId || null;
   const source = normalizeLibrary(library || loadLibraryRaw());
+  const hasExistingListId = source.lists.some((entry) => String(entry?.id || '') === String(tierList?.id || ''));
   const existingList = source.lists.find((entry) => String(entry.id || '') === String(tierList?.id || '')) || null;
   const baseTierList = shouldPromoteTierListToOwnedCopy(tierList, userId)
     ? rekeyTierListForOwner(tierList, userId)
@@ -2219,7 +2414,9 @@ export async function saveTierList(tierList, library = null, options = {}) {
   }
 
   try {
-    const remoteList = await saveRemoteListWithRecovery(normalized, userId, existingList);
+    const remoteList = await saveRemoteListWithRecovery(normalized, userId, existingList, {
+      allowRekey: !hasExistingListId,
+    }, source);
     return saveLibraryRaw({
       ...localLibrary,
       lists: [

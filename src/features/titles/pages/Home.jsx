@@ -5,7 +5,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { MoodSelector } from '@/features/discover/components/MoodSelector';
 import { TimeSelector } from '@/features/discover/components/TimeSelector';
-import { recommend, getTrendingTitles, getCacheInfo, getTitlesByIds, clearTitlesCache } from '@/features/discover/lib/recommend';
+import { recommend, getTrendingTitles, getCacheInfo, getTitlesByIds, clearTitlesCache, getAllTitles, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { useFavoriteTitles } from '@/features/profile/hooks/useFavoriteTitles';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
@@ -63,6 +63,7 @@ export function Home() {
   const recommendRequestRef = useRef(0);
   const adultAutoLoadRef = useRef(false);
   const pendingScrollRef = useRef(false);
+  const catalogWarmedRef = useRef(false);
 
   const { watchlist, advanceProgress, updateItem, setConsumptionTarget, catchUpToTarget } = useWatchlist();
   const { favoriteTitleIds } = useFavoriteTitles();
@@ -146,6 +147,8 @@ export function Home() {
 
   useEffect(() => {
     async function fetchInitial() {
+      // Warm catalog cache in background so "Find My Match" is instant
+      getAllTitles().catch(() => {});
       try {
         const [nextTrending, homepageBlocks] = await Promise.all([
           getTrendingTitles(8, { showAdult }),
@@ -666,7 +669,7 @@ export function Home() {
                     aria-pressed={type === opt.id}
                     className={`type-btn ${type === opt.id ? 'active' : ''}`}
                     data-type={opt.id}
-                    onClick={() => setType(opt.id)}
+                    onClick={() => { if (!catalogWarmedRef.current && !isCatalogCacheWarm()) { catalogWarmedRef.current = true; getAllTitles().catch(() => {}); } setType(opt.id); }}
                   >
                     <span className="type-icon">
                       <TypeIcon option={opt} className="type-icon-graphic" />
@@ -677,9 +680,9 @@ export function Home() {
               </div>
             )}
 
-            <MoodSelector selected={moods} onChange={setMoods} />
+            <MoodSelector selected={moods} onChange={(v) => { if (!catalogWarmedRef.current && !isCatalogCacheWarm()) { catalogWarmedRef.current = true; getAllTitles().catch(() => {}); } setMoods(v); }} />
             <div className="divider"></div>
-            <TimeSelector selected={timeOption} onChange={setTimeOption} />
+            <TimeSelector selected={timeOption} onChange={(v) => { if (!catalogWarmedRef.current && !isCatalogCacheWarm()) { catalogWarmedRef.current = true; getAllTitles().catch(() => {}); } setTimeOption(v); }} />
 
             <div className="finder-submit">
               <Button

@@ -26,6 +26,15 @@ async function bootstrap() {
       <App />
     </React.StrictMode>
   );
+
+  // Warm catalog cache during idle time so the first "Find My Match" is instant
+  const warmCatalog = () =>
+    import('@/features/discover/lib/recommend').then((m) => m.getAllTitles().catch(() => {}));
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(warmCatalog, { timeout: 5000 });
+  } else {
+    setTimeout(warmCatalog, 1500);
+  }
 }
 
 void bootstrap();

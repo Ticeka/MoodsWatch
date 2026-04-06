@@ -77,6 +77,10 @@ function createSelectBuilder(table, responseQueue, fallbackResponse, callLog) {
     state.filters.push({ type: 'order', column, options });
     return builder;
   });
+  builder.or = vi.fn((expression) => {
+    state.filters.push({ type: 'or', expression });
+    return builder;
+  });
   builder.limit = vi.fn((value) => {
     state.filters.push({ type: 'limit', value });
     return builder;
@@ -308,7 +312,41 @@ describe('tierlistStore saveTierList recovery', () => {
     expect(mockState.listInsertPayloads[0]?.template_id).toBe('missing-template');
   });
 
-  it('retries with template_id null when remote insert returns FK violation (23503)', async () => {
+  it('saves template first then retries list with original template_id on FK violation (23503)', async () => {
+    mockState.listInsertResponses.push(
+      {
+        data: null,
+        error: {
+          status: 409,
+          code: '23503',
+          details: 'Key is not present in table "tierlist_templates".',
+          message: 'insert or update on table "tierlist_lists" violates foreign key constraint',
+        },
+      },
+      {
+        data: null,
+        error: null,
+      }
+    );
+
+    const library = { templates: [makeTemplate()], lists: [] };
+    const saved = await saveTierList(
+      makeList({ templateId: 'template-public-stale' }),
+      library,
+      { userId: 'user-1' }
+    );
+
+    // Template should be saved first to satisfy the FK constraint
+    expect(mockState.templateInsertPayloads).toHaveLength(1);
+    // List should be retried with the original template_id preserved
+    expect(mockState.listInsertPayloads).toHaveLength(2);
+    expect(mockState.listInsertPayloads[0]?.template_id).toBe('template-public-stale');
+    expect(mockState.listInsertPayloads[1]?.template_id).toBe('template-public-stale');
+    expect(saved.lists[0]?.templateId).toBe('template-public-stale');
+  });
+
+  it('falls back to stripping template_id when template save also fails on FK violation', async () => {
+    mockState.templateInsertResponses.push({ data: null, error: { status: 500, message: 'template save failed' } });
     mockState.listInsertResponses.push(
       {
         data: null,
@@ -367,6 +405,64 @@ describe('tierlistStore saveTierList recovery', () => {
     expect(mockState.listInsertPayloads[1]?.id).not.toBe(mockState.listInsertPayloads[0]?.id);
   });
 
+  it('upserts all rows and pool items on first remote INSERT even when previousList has matching data', async () => {
+    // Simulate: list exists only locally (update finds 0 rows → INSERT path)
+    // previousList has same rows as nextList — without the fix, diff would be empty and rows never reach remote
+    const list = makeList({
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [1], color: '' },
+        { id: 'row-2', label: 'A', titleIds: [2], color: '' },
+      ],
+      poolTitleIds: [3, 4],
+    });
+
+    await saveTierList(
+      list,
+      { templates: [], lists: [list] },  // previousList == list (same rows)
+      { userId: 'user-1' }
+    );
+
+    // List should be inserted (update returned empty)
+    expect(mockState.listInsertPayloads).toHaveLength(1);
+    // All rows must be upserted — not skipped because diff thought nothing changed
+    expect(mockState.rowUpserts).toHaveLength(1);
+    expect(mockState.rowUpserts[0]).toHaveLength(2);
+    // Pool must be upserted too
+    expect(mockState.poolUpserts).toHaveLength(1);
+    expect(mockState.poolUpserts[0]).toHaveLength(2);
+  });
+
+  it('force-writes all rows and pool on publish even when previousList has identical data', async () => {
+    // Simulate: list exists in DB (UPDATE succeeds) but tierlist_list_rows is empty due to prior bug.
+    // previousList (from local draft) has the same rows — without the fix, diff would be empty.
+    mockState.listUpdateResponses.push({
+      data: [{ id: 'tierlist-local-1' }],
+      error: null,
+    });
+
+    const privateList = makeList({
+      isPublic: false,
+      rows: [
+        { id: 'row-1', label: 'S', titleIds: [1], color: '' },
+        { id: 'row-2', label: 'A', titleIds: [2], color: '' },
+      ],
+      poolTitleIds: [3],
+    });
+    const publishedList = { ...privateList, isPublic: true };
+
+    await saveTierList(
+      publishedList,
+      { templates: [], lists: [privateList] }, // previousList is private w/ same rows
+      { userId: 'user-1' }
+    );
+
+    // All rows must be force-written when publishing
+    expect(mockState.rowUpserts).toHaveLength(1);
+    expect(mockState.rowUpserts[0]).toHaveLength(2);
+    expect(mockState.poolUpserts).toHaveLength(1);
+    expect(mockState.poolUpserts[0]).toHaveLength(1);
+  });
+
   it('deletes only removed rows and pool items for existing lists', async () => {
     mockState.listUpdateResponses.push({
       data: [{ id: 'tierlist-local-1' }],
@@ -405,6 +501,157 @@ describe('tierlistStore saveTierList recovery', () => {
         { type: 'in', column: 'title_id', value: [3, 5] },
       ],
     ]);
+  });
+});
+
+describe('tierlistStore template preview settings', () => {
+  beforeEach(() => {
+    mockState.templateUpdateResponses = [];
+    mockState.templateInsertResponses = [];
+    mockState.templateUpdatePayloads = [];
+    mockState.templateInsertPayloads = [];
+    mockState.templateSelectResponses = [];
+    mockState.templateSelectCalls = [];
+    mockState.listUpdateResponses = [];
+    mockState.listInsertResponses = [];
+    mockState.listUpdatePayloads = [];
+    mockState.listInsertPayloads = [];
+    mockState.listSelectResponses = [];
+    mockState.listSelectCalls = [];
+    mockState.rowSelectResponses = [];
+    mockState.rowSelectCalls = [];
+    mockState.poolSelectResponses = [];
+    mockState.poolSelectCalls = [];
+    mockState.rowUpserts = [];
+    mockState.poolUpserts = [];
+    mockState.rowDeletes = [];
+    mockState.poolDeletes = [];
+    mockState.from.mockImplementation((table) => createTableClient(table));
+  });
+
+  it('persists manual cover framing fields when remote columns are available', async () => {
+    await saveTierTemplate(
+      makeTemplate({
+        previewArtworkUrl: 'https://cdn.example.com/cover.jpg',
+        manualPreviewArtworkUrl: 'https://cdn.example.com/cover.jpg',
+        previewArtworkFit: 'cover',
+        previewArtworkPosition: 'center',
+        previewArtworkScale: 1.8,
+        previewArtworkOffsetX: 12,
+        previewArtworkOffsetY: -8,
+      }),
+      { templates: [], lists: [] },
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.templateInsertPayloads).toHaveLength(1);
+    expect(mockState.templateInsertPayloads[0]).toMatchObject({
+      preview_artwork_url: 'https://cdn.example.com/cover.jpg',
+      manual_preview_artwork_url: 'https://cdn.example.com/cover.jpg',
+      preview_artwork_fit: 'cover',
+      preview_artwork_position: 'center',
+      preview_artwork_scale: 1.8,
+      preview_artwork_offset_x: 12,
+      preview_artwork_offset_y: -8,
+    });
+  });
+
+  it('retries without preview-setting columns when the database schema is older', async () => {
+    mockState.templateUpdateResponses.push(
+      {
+        data: null,
+        error: {
+          message: 'column "manual_preview_artwork_url" of relation "tierlist_templates" does not exist',
+        },
+      },
+      {
+        data: [],
+        error: null,
+      }
+    );
+
+    await saveTierTemplate(
+      makeTemplate({
+        previewArtworkUrl: 'https://cdn.example.com/cover.jpg',
+        manualPreviewArtworkUrl: 'https://cdn.example.com/cover.jpg',
+        previewArtworkFit: 'cover',
+        previewArtworkPosition: 'center',
+        previewArtworkScale: 2,
+        previewArtworkOffsetX: -10,
+        previewArtworkOffsetY: 6,
+      }),
+      { templates: [], lists: [] },
+      { userId: 'user-1' }
+    );
+
+    expect(mockState.templateUpdatePayloads).toHaveLength(2);
+    expect(mockState.templateUpdatePayloads[0]).toHaveProperty('manual_preview_artwork_url');
+    expect(mockState.templateUpdatePayloads[0]).toHaveProperty('preview_artwork_scale');
+    expect(mockState.templateUpdatePayloads[1]).not.toHaveProperty('manual_preview_artwork_url');
+    expect(mockState.templateUpdatePayloads[1]).not.toHaveProperty('preview_artwork_scale');
+    expect(mockState.templateInsertPayloads[0]).not.toHaveProperty('manual_preview_artwork_url');
+  });
+
+  it('does not clone an existing template into a new id when a repeated save hits a conflict', async () => {
+    mockState.templateUpdateResponses.push({
+      data: [],
+      error: null,
+    });
+    mockState.templateInsertResponses.push({
+      data: null,
+      error: {
+        status: 409,
+        message: 'duplicate key value violates unique constraint',
+      },
+    });
+
+    const existingTemplate = makeTemplate({
+      id: 'template-existing',
+      ownerUserId: 'user-1',
+      title: 'Existing template',
+    });
+
+    await expect(saveTierTemplate(
+      { ...existingTemplate, title: 'Existing template updated' },
+      { templates: [existingTemplate], lists: [] },
+      { userId: 'user-1', preserveOwnership: true }
+    )).rejects.toMatchObject({
+      status: 409,
+    });
+
+    expect(mockState.templateInsertPayloads).toHaveLength(1);
+    expect(mockState.templateInsertPayloads[0]?.id).toBe('template-existing');
+  });
+
+  it('does not clone an existing list into a new id when a repeated save hits a conflict', async () => {
+    mockState.listUpdateResponses.push({
+      data: [],
+      error: null,
+    });
+    mockState.listInsertResponses.push({
+      data: null,
+      error: {
+        status: 409,
+        message: 'duplicate key value violates unique constraint',
+      },
+    });
+
+    const existingList = makeList({
+      id: 'tierlist-existing',
+      ownerUserId: 'user-1',
+      title: 'Existing ranking',
+    });
+
+    await expect(saveTierList(
+      { ...existingList, title: 'Existing ranking updated' },
+      { templates: [], lists: [existingList] },
+      { userId: 'user-1' }
+    )).rejects.toMatchObject({
+      status: 409,
+    });
+
+    expect(mockState.listInsertPayloads).toHaveLength(1);
+    expect(mockState.listInsertPayloads[0]?.id).toBe('tierlist-existing');
   });
 });
 
@@ -823,10 +1070,10 @@ describe('tierlistStore load performance guards', () => {
 
     expect(mockState.templateSelectCalls).toHaveLength(2);
     expect(mockState.templateSelectCalls[0]?.filters.some((filter) => (
-      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+      filter.type === 'or' && filter.expression === 'has_adult_content.eq.false,has_adult_content.is.null'
     ))).toBe(true);
     expect(mockState.templateSelectCalls[1]?.filters.some((filter) => (
-      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+      filter.type === 'or' && filter.expression === 'has_adult_content.eq.false,has_adult_content.is.null'
     ))).toBe(true);
   });
 
@@ -1012,10 +1259,10 @@ describe('tierlistStore load performance guards', () => {
 
     expect(mockState.listSelectCalls).toHaveLength(2);
     expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
-      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+      filter.type === 'or' && filter.expression === 'has_adult_content.eq.false,has_adult_content.is.null'
     ))).toBe(true);
     expect(mockState.listSelectCalls[1]?.filters.some((filter) => (
-      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+      filter.type === 'or' && filter.expression === 'has_adult_content.eq.false,has_adult_content.is.null'
     ))).toBe(true);
   });
 
@@ -1104,7 +1351,7 @@ describe('tierlistStore load performance guards', () => {
 
     expect(mockState.listSelectCalls).toHaveLength(2);
     expect(mockState.listSelectCalls[0]?.filters.some((filter) => (
-      filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === false
+      filter.type === 'or' && filter.expression === 'has_adult_content.eq.false,has_adult_content.is.null'
     ))).toBe(true);
     expect(mockState.listSelectCalls[1]?.filters.some((filter) => (
       filter.type === 'eq' && filter.column === 'has_adult_content' && filter.value === true
