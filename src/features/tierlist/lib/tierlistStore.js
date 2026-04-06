@@ -2317,22 +2317,6 @@ export async function saveTierLibrary(library, options = {}) {
   }
 }
 
-export function saveTierListDraftLocal(tierList, library = null) {
-  const source = normalizeLibrary(library || loadLibraryRaw());
-  const normalized = normalizeTierList({
-    ...tierList,
-    updatedAt: new Date().toISOString(),
-  });
-
-  return saveLibraryRaw({
-    ...source,
-    lists: [
-      normalized,
-      ...source.lists.filter((entry) => String(entry.id || '') !== String(normalized.id || '')),
-    ],
-  });
-}
-
 export async function saveTierTemplate(template, library = null, options = {}) {
   const userId = options?.userId || null;
   const preserveOwnership = Boolean(options?.preserveOwnership);
@@ -2685,26 +2669,6 @@ export function buildTierListFromTemplate(template, options = {}) {
     description: options.description || template.description,
     ownerUserId: options.ownerUserId || template.ownerUserId || null,
   });
-}
-
-export function findReusableTierListDraft(candidateList, library = null, options = {}) {
-  const userId = options?.userId || null;
-  const source = normalizeLibrary(library || loadLibraryRaw());
-  const normalizedCandidate = normalizeTierList(candidateList);
-  const candidateKey = getTierListDraftIdentityKey(normalizedCandidate);
-
-  if (!candidateKey) {
-    return null;
-  }
-
-  return source.lists
-    .filter((list) => (
-      !list.isPublic &&
-      !hasMeaningfulTierRankingInStore(list) &&
-      isOwnedTierListByUser(list, userId) &&
-      getTierListDraftIdentityKey(list) === candidateKey
-    ))
-    .sort(compareTierListsByRecency)[0] || null;
 }
 
 export async function cleanupDuplicateTierLists(library = null, options = {}) {
