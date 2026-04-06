@@ -1,0 +1,623 @@
+.battle-page {
+  padding: 0.85rem 0 1.75rem;
+  background:
+    radial-gradient(circle at 15% 24%, color-mix(in srgb, var(--accent-500) 14%, transparent), transparent 30%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--peach-400) 10%, transparent), transparent 24%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 34%, transparent), transparent),
+    var(--bg-primary);
+}
+
+.battle-hero,
+.battle-builder-grid,
+.battle-match-grid,
+.battle-session-head,
+.battle-result-hero {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.battle-hero,
+.battle-builder-grid {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+}
+
+.battle-builder-grid {
+  grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.battle-session-head,
+.battle-result-hero {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.battle-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-600);
+}
+
+.battle-hero-copy h1,
+.battle-session-head h1,
+.battle-result-hero h2 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 0.98;
+  font-family: var(--font-heading);
+  letter-spacing: -0.04em;
+}
+
+.battle-hero-copy p,
+.battle-section-head p,
+.battle-builder-preview p,
+.battle-card-body p,
+.battle-result-hero p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.battle-hero-panel,
+.battle-builder-panel,
+.battle-builder-preview,
+.battle-progress-panel,
+.battle-card,
+.battle-ranking-list,
+.battle-empty-state,
+.battle-recent-card,
+.battle-preset-card {
+  padding: 1.1rem;
+  border-radius: 22px;
+}
+
+.battle-leaderboard {
+  padding: 0.8rem;
+  border-radius: 22px;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.glass-heavy {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  box-shadow: 0 20px 42px rgba(96, 66, 48, 0.1);
+}
+
+.battle-hero-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.battle-hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.battle-hero-actions .btn {
+  padding: 0.6rem 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1.1;
+}
+
+.battle-hero-actions .btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.battle-hero-stat {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.battle-hero-stat strong {
+  font-size: 1.75rem;
+}
+
+
+/* ── Battle Section ──────────────────────────────────── */
+.battle-section {
+  margin-top: 0.9rem;
+}
+
+.battle-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.battle-preset-grid,
+.battle-recent-grid,
+.battle-deck-grid {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.battle-preset-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 260px));
+  justify-content: start;
+  align-items: start;
+}
+
+.battle-recent-grid,
+.battle-deck-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.battle-preset-grid-compact {
+  justify-items: start;
+}
+
+.battle-preset-grid-compact .battle-preset-card {
+  width: 260px;
+  height: 576px;
+}
+
+.battle-recent-card {
+  display: grid;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.battle-recent-card:hover {
+  border-color: color-mix(in srgb, var(--accent-500) 24%, transparent);
+  background: color-mix(in srgb, var(--accent-500) 8%, var(--bg-elevated));
+}
+
+/* ── Skeleton Loading ── */
+@keyframes battle-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.battle-skeleton-block {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ink-900) 7%, transparent) 25%,
+    color-mix(in srgb, var(--ink-900) 15%, transparent) 50%,
+    color-mix(in srgb, var(--ink-900) 7%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: battle-shimmer 1.6s ease-in-out infinite;
+}
+
+.battle-preset-card-skeleton {
+  max-width: 260px;
+  width: 100%;
+  min-height: 576px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+  box-shadow: 0 18px 36px rgba(26, 43, 60, 0.1);
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding-bottom: 1.1rem;
+}
+
+.battle-preset-card-skeleton .battle-skeleton-body {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0 1.1rem;
+}
+
+.battle-slot-card-skeleton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 82px;
+  padding: 0.65rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+}
+
+.battle-catalog-card-skeleton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+}
+
+[data-theme="dark"] .battle-skeleton-block {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: battle-shimmer 1.6s ease-in-out infinite;
+}
+
+[data-theme="dark"] .battle-preset-card-skeleton {
+  background: linear-gradient(180deg, rgba(78, 60, 55, 0.98), rgba(52, 40, 37, 0.96));
+  border-color: rgba(255, 226, 206, 0.08);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="dark"] .battle-slot-card-skeleton,
+[data-theme="dark"] .battle-catalog-card-skeleton {
+  border-color: rgba(255, 226, 206, 0.08);
+}
+
+[data-theme="dark"] .battle-page {
+  background:
+    radial-gradient(circle at 15% 24%, rgba(232, 111, 103, 0.16), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(220, 132, 65, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(255, 240, 226, 0.02), transparent),
+    var(--bg-primary);
+}
+
+[data-theme="dark"] .glass-heavy,
+[data-theme="dark"] .battle-recent-card,
+[data-theme="dark"] .battle-preset-card,
+[data-theme="dark"] .battle-deck-card {
+  background: linear-gradient(180deg, rgba(78, 60, 55, 0.98), rgba(52, 40, 37, 0.96));
+  border-color: rgba(255, 226, 206, 0.08);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.28);
+}
+
+.battle-recent-card strong {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.battle-recent-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.battle-recent-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.battle-recent-actions .btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.battle-recent-actions .battle-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.battle-deck-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.1rem;
+}
+
+.battle-preset-grid,
+.battle-recent-grid,
+.battle-deck-grid,
+.battle-deck-list-grid,
+.battle-slot-grid,
+.battle-catalog-grid {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 900px;
+}
+
+.battle-preset-card,
+.battle-deck-card {
+  display: grid;
+  gap: 0.75rem;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+  box-shadow: 0 18px 36px rgba(26, 43, 60, 0.1);
+  cursor: pointer;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  padding-top: 0;
+  max-width: 260px;
+  width: 100%;
+  min-height: 576px;
+}
+
+.battle-preset-card::before,
+.battle-deck-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.battle-preset-card:hover,
+.battle-deck-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent-500) 24%, transparent);
+  box-shadow: 0 24px 42px rgba(26, 43, 60, 0.14);
+}
+
+.battle-preset-card.is-static {
+  cursor: default;
+}
+
+.battle-preset-card:hover::before,
+.battle-deck-card:hover::before {
+  opacity: 1;
+}
+
+.battle-preset-card.is-disabled,
+.battle-deck-card.is-disabled {
+  opacity: 0.75;
+}
+
+.battle-preset-art {
+  min-height: 164px;
+  margin: 0 -1.1rem;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-rows: repeat(2, minmax(72px, 1fr));
+  gap: 0.4rem;
+  padding: 0.45rem;
+  background:
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.28), transparent 50%),
+    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15, 23, 42, 0.3));
+}
+
+.battle-preset-art-tile,
+.battle-preset-art-empty {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.battle-preset-art-tile-1 {
+  grid-row: 1 / span 2;
+}
+
+.battle-preset-art-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.battle-preset-art-tile span,
+.battle-preset-art-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.75rem;
+  color: rgba(255,255,255,0.72);
+  font-size: 0.8rem;
+}
+
+.battle-preset-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  z-index: 1;
+}
+
+.battle-preset-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 10px rgba(249, 115, 22, 0.3);
+  align-self: flex-start;
+}
+
+.battle-preset-meta,
+.battle-preview-muted,
+.battle-card-meta,
+.battle-ranking-title-group small {
+  color: var(--text-tertiary);
+}
+
+.battle-preset-card p,
+.battle-preset-meta {
+  z-index: 1;
+}
+
+.battle-deck-card-body {
+  display: grid;
+  gap: 0.65rem;
+  z-index: 1;
+}
+
+.battle-deck-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.battle-visibility-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.battle-visibility-pill.is-public {
+  color: color-mix(in srgb, var(--success) 85%, white);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.battle-visibility-pill.is-private {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-default) 78%, transparent);
+}
+
+.battle-deck-card-actions,
+.battle-builder-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  z-index: 1;
+}
+
+.battle-deck-preset-wrap {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.battle-deck-preset-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.battle-deck-preset-actions .btn {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+.battle-deck-card-actions .btn {
+  flex: 1 1 180px;
+}
+
+.battle-deck-card-compact {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 0;
+  min-height: 420px;
+  height: auto;
+  border-radius: 22px;
+  width: 100%;
+  max-width: none;
+}
+
+.battle-deck-card-compact:hover {
+  transform: translateY(-4px);
+}
+
+.battle-deck-card-compact .battle-preset-art {
+  min-height: 164px;
+  margin: 0 -1.1rem;
+  padding: 0.45rem;
+  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-rows: repeat(2, minmax(72px, 1fr));
+  border-right: 0;
+  background:
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.28), transparent 50%),
+    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15, 23, 42, 0.3));
+}
+
+.battle-deck-card-compact .battle-preset-art-tile-1 {
+  grid-row: 1 / span 2;
+}
+
+.battle-deck-card-compact .battle-deck-card-body,
+.battle-deck-card-compact .battle-deck-card-actions {
+  padding: 0 1.1rem;
+}
+
+.battle-deck-card-compact .battle-deck-card-body {
+  padding-top: 0.85rem;
+  padding-bottom: 0.6rem;
+}
+
+.battle-deck-card-compact .battle-deck-card-actions {
+  padding-top: 0;
+  padding-bottom: 1.1rem;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.battle-deck-card-compact .battle-preset-head {
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+}
+
+.battle-deck-card-compact .battle-preset-head strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.battle-deck-card-compact p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.battle-deck-card-compact .battle-deck-card-actions .btn {
+  flex: 1 1 140px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.battle-deck-card-compact .battle-deck-card-actions {
+  align-items: flex-start;
+}
+
+.battle-deck-card-compact .battle-visibility-pill {
+  font-size: 0.68rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.battle-preset-cta {
+  z-index: 1;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fcd34d;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.battle-preset-cta:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.battle-owner-profile-link {
+  color: color-mix(in srgb, var(--accent-300) 78%, white);
+  text-decoration: underline;
+  font-weight: 700;
+}
+
