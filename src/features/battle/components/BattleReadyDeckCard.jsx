@@ -13,6 +13,7 @@ export function BattleReadyDeckCard({
   subtitle,
   deck,
   badge,
+  badgeClassName = '',
   disabled,
   onStart,
   actionLabel = '',
@@ -21,18 +22,51 @@ export function BattleReadyDeckCard({
   variant = 'default',
 }) {
   const { t } = useLanguage();
+  const getLocalizedReadyUnit = (entityType) => {
+    const unit = getBattleDeckEntryUnitLabel(entityType);
+    if (unit === 'characters') return t('battle.unitCharacters');
+    if (unit === 'songs') return t('battle.unitSongs');
+    return t('battle.unitTitles');
+  };
   const resolvedActionLabel = actionLabel || t('battle.startBattle');
-  const previewTitles = deck?.titles?.slice(0, 3) || [];
+  const previewTitles = (() => {
+    const items = deck?.titles?.slice(0, 3) || [];
+    if (items.length === 2) {
+      return [...items, items[1]];
+    }
+    if (items.length === 1) {
+      return [items[0], items[0], items[0]];
+    }
+    return items;
+  })();
   const canStart = (deck?.titles?.length || 0) >= 8;
   const metaLabel = getBattleDeckMeta(deck);
+  const isCardDisabled = disabled || !canStart;
+  const handlePresetActivate = () => {
+    if (isCardDisabled) {
+      return;
+    }
+    onStart?.();
+  };
+  const handlePresetKeyDown = (event) => {
+    if (isCardDisabled) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onStart?.();
+    }
+  };
 
   if (variant === 'preset') {
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={isCardDisabled ? -1 : 0}
+        aria-disabled={isCardDisabled}
         className={`battle-preset-card glass-heavy ${!canStart ? 'is-disabled' : ''} ${className}`.trim()}
-        onClick={onStart}
-        disabled={disabled || !canStart}
+        onClick={handlePresetActivate}
+        onKeyDown={handlePresetKeyDown}
       >
         <div className="battle-preset-art">
           {previewTitles.length > 0 ? (
@@ -51,13 +85,13 @@ export function BattleReadyDeckCard({
           )}
         </div>
         <div className="battle-preset-head">
-          <span className="battle-preset-badge">{badge}</span>
+          <span className={`battle-preset-badge ${badgeClassName}`.trim()}>{badge}</span>
           <strong>{title}</strong>
         </div>
         {subtitle ? <p>{subtitle}</p> : null}
         <span className="battle-preset-meta">{metaLabel}</span>
         <span className="battle-preset-cta">{resolvedActionLabel}</span>
-      </button>
+      </div>
     );
   }
 
@@ -82,12 +116,17 @@ export function BattleReadyDeckCard({
 
       <div className="battle-deck-card-body">
         <div className="battle-preset-head">
-          <span className="battle-preset-badge">{badge}</span>
+          <span className={`battle-preset-badge ${badgeClassName}`.trim()}>{badge}</span>
           <strong>{title}</strong>
         </div>
         {subtitle ? <p>{subtitle}</p> : null}
         <div className="battle-deck-meta-row">
-          <span className="battle-preset-meta">{deck?.titles?.length || 0} {getBattleDeckEntryUnitLabel(deck?.filters?.entityType)} ready</span>
+          <span className="battle-preset-meta">
+            {t('battle.deckReadyMeta', {
+              count: deck?.titles?.length || 0,
+              unit: getLocalizedReadyUnit(deck?.filters?.entityType),
+            })}
+          </span>
           <span className={`battle-visibility-pill ${deck?.isPublic ? 'is-public' : 'is-private'}`}>
             {deck?.isPublic ? <Globe size={12} /> : <Lock size={12} />}
             {deck?.isPublic ? t('battle.publicDeck') : t('battle.privateDeck')}
@@ -96,7 +135,7 @@ export function BattleReadyDeckCard({
       </div>
 
       <div className="battle-deck-card-actions">
-        <Button onClick={onStart} disabled={disabled || !canStart} icon={<Play size={16} />}>
+        <Button onClick={onStart} disabled={isCardDisabled} icon={<Play size={16} />}>
           {actionLabel || t('battle.startBattle')}
         </Button>
         {children}

@@ -329,6 +329,8 @@
 .battle-deck-card {
   display: grid;
   gap: 0.75rem;
+  align-content: start;
+  grid-template-rows: auto auto auto auto 1fr;
   text-align: left;
   border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
@@ -341,6 +343,23 @@
   max-width: 260px;
   width: 100%;
   min-height: 576px;
+}
+
+.battle-preset-card > .battle-preset-head,
+.battle-preset-card > p,
+.battle-preset-card > .battle-preset-meta,
+.battle-deck-card > .battle-deck-card-body,
+.battle-deck-card > .battle-deck-card-actions {
+  padding-inline: 1.1rem;
+}
+
+.battle-preset-card > .battle-preset-cta,
+.battle-deck-card > .battle-deck-card-actions {
+  margin-top: auto;
+}
+
+.battle-preset-card > .battle-preset-cta {
+  margin: auto 1.1rem 1.1rem;
 }
 
 .battle-preset-card::before,
@@ -381,20 +400,19 @@
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   grid-template-rows: repeat(2, minmax(72px, 1fr));
-  gap: 0.4rem;
-  padding: 0.45rem;
-  background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.28), transparent 50%),
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15, 23, 42, 0.3));
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.82);
 }
 
 .battle-preset-art-tile,
 .battle-preset-art-empty {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 0;
   background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 0;
 }
 
 .battle-preset-art-tile-1 {
@@ -426,6 +444,15 @@
   z-index: 1;
 }
 
+.battle-preset-head strong {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
 .battle-preset-badge {
   font-size: 0.7rem;
   font-weight: 700;
@@ -447,8 +474,26 @@
 }
 
 .battle-preset-card p,
+.battle-deck-card-body p,
 .battle-preset-meta {
   z-index: 1;
+}
+
+.battle-preset-card p,
+.battle-deck-card-body p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.battle-preset-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.25rem;
+  font-size: 0.82rem;
+  line-height: 1.3;
 }
 
 .battle-deck-card-body {
@@ -536,13 +581,13 @@
 .battle-deck-card-compact .battle-preset-art {
   min-height: 164px;
   margin: 0 -1.1rem;
-  padding: 0.45rem;
+  padding: 0;
   grid-template-columns: 1.1fr 0.9fr;
   grid-template-rows: repeat(2, minmax(72px, 1fr));
   border-right: 0;
-  background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.28), transparent 50%),
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(15, 23, 42, 0.3));
+  gap: 0;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.82);
 }
 
 .battle-deck-card-compact .battle-preset-art-tile-1 {
@@ -599,15 +644,45 @@
 
 .battle-preset-cta {
   z-index: 1;
-  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  max-width: calc(100% - 2.2rem);
+  font-size: 0.68rem;
   font-weight: 700;
   color: #fcd34d;
-  background: transparent;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
   border: none;
-  padding: 0;
+  border-radius: 999px;
+  padding: 0.24rem 0.5rem;
   text-align: left;
-  width: fit-content;
+  width: auto;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.battle-preset-card:hover:not(.is-disabled) .battle-preset-cta,
+.battle-preset-card:focus-visible .battle-preset-cta {
+  color: #fff7ed;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  box-shadow: 0 10px 22px rgba(249, 115, 22, 0.24);
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .battle-preset-cta {
+  background: rgba(251, 191, 36, 0.12);
+}
+
+[data-theme="dark"] .battle-preset-card:hover:not(.is-disabled) .battle-preset-cta,
+[data-theme="dark"] .battle-preset-card:focus-visible .battle-preset-cta {
+  color: #fff7ed;
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  box-shadow: 0 12px 26px rgba(249, 115, 22, 0.28);
 }
 
 .battle-preset-cta:disabled {
@@ -620,4 +695,3 @@
   text-decoration: underline;
   font-weight: 700;
 }
-

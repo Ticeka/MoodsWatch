@@ -154,7 +154,7 @@ export function BattleDeckLibraryPage() {
                   {t('battle.makePublic')}
                 </Button>
                 <Link className="btn btn-secondary btn-sm" to={`/battle/build?deckId=${deck.id}`}>
-                  Edit
+                  {t('battle.editDeck')}
                 </Link>
                 <button type="button" className="battle-icon-btn" onClick={() => handleDeleteDeck(deck)} aria-label={t('battle.deleteDeck')}>
                   <Trash2 size={16} />
@@ -196,7 +196,7 @@ export function BattleDeckLibraryPage() {
                     {t('battle.makePrivate')}
                   </Button>
                   <Link className="btn btn-secondary btn-sm" to={`/battle/build?deckId=${deck.id}`}>
-                    Edit
+                    {t('battle.editDeck')}
                   </Link>
                   <button type="button" className="battle-icon-btn" onClick={() => handleDeleteDeck(deck)} aria-label={t('battle.deleteDeck')}>
                     <Trash2 size={16} />
