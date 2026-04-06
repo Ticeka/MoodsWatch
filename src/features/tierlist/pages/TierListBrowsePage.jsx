@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight, Compass, Layers, Loader2, Monitor, Music, Plus, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Layers } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { TierListCommunityCard, TierListEmptyPanel, TierListErrorPanel } from '@/features/tierlist/components';
-import { BROWSE_ENTITY_IDS_PER_TEMPLATE, BROWSE_ENTITY_LIST_LIMIT, BROWSE_PAGE_SIZE, ENTITY_TYPE_OPTIONS } from '@/features/tierlist/constants';
+import {
+  TierListBrowseContent,
+  TierListBrowseHeader,
+  TierListBrowseSidebar,
+  TierListBrowseTabs,
+  TierListErrorPanel,
+} from '@/features/tierlist/components';
+import { BROWSE_ENTITY_LIST_LIMIT, BROWSE_PAGE_SIZE, ENTITY_TYPE_OPTIONS } from '@/features/tierlist/constants';
 import { buildTierListFromTemplate, cleanupDuplicateTierLists, dedupeTierTemplatesByIdentity, findTierTemplate, loadTierLibrary, loadTierTemplates, saveTierTemplate, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
-import { getEntityTypeLabel, getTemplateExplorerSummary, getTierCategoryLabel } from '@/features/tierlist/lib/tierlistLabels';
-import { buildEntityMaps, createEmptyBrowseVisibility, getBestEntityMapForIds, getBrowseHydrationEntryKey, getEntityMap, matchesListMetadataAgeGate, matchesTemplateMetadataAgeGate, matchesTierEntryAgeGate, mergeBrowseVisibilityState, mergeEntitiesByTypeAndId, resolveTierBrowseEntitiesForEntries, resolveTierBrowsePreviewEntitiesForEntries } from '@/features/tierlist/lib/tierlistBrowseHelpers';
+import { getEntityTypeLabel, getTierCategoryLabel } from '@/features/tierlist/lib/tierlistLabels';
+import { buildEntityMaps, createEmptyBrowseVisibility, getBrowseHydrationEntryKey, matchesListMetadataAgeGate, matchesTemplateMetadataAgeGate, matchesTierEntryAgeGate, mergeBrowseVisibilityState, mergeEntitiesByTypeAndId, resolveTierBrowseEntitiesForEntries, resolveTierBrowsePreviewEntitiesForEntries } from '@/features/tierlist/lib/tierlistBrowseHelpers';
 import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, paginate, sortListsByRecentAndPopularity, sortTemplates } from '@/features/tierlist/lib/tierlistPageUtils';
-import { getTemplatePreviewArtworkSource, getTemplatePreviewMediaStyle, normalizeTemplatePreviewFit } from '@/features/tierlist/lib/tierlistPreviewUtils';
-import { Button } from '@/shared/components/ui/Button';
-import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
@@ -354,6 +357,37 @@ export function TierListBrowsePage() {
       .filter(Boolean)
   )];
   const hasActiveFilters = entityTypeFilter !== 'all' || category !== 'all' || query.trim().length > 0 || sortBy !== 'popular';
+  const activeTabValue = category !== 'all' ? `cat:${category}` : entityTypeFilter;
+
+  const handleBrowseTabSelect = (tabValue) => {
+    const isEntityTab = tabValue === 'all' || ENTITY_TYPE_OPTIONS.some((option) => option.value === tabValue);
+
+    if (isEntityTab) {
+      setEntityTypeFilter(tabValue);
+      setCategory('all');
+    } else if (tabValue.startsWith('cat:')) {
+      setCategory(tabValue.replace('cat:', ''));
+    }
+    setPage(1);
+  };
+
+  const handleBrowseQueryChange = (nextQuery) => {
+    setQuery(nextQuery);
+    setPage(1);
+  };
+
+  const handleBrowseSortChange = (nextSort) => {
+    setSortBy(nextSort);
+    setPage(1);
+  };
+
+  const handleClearBrowseFilters = () => {
+    setEntityTypeFilter('all');
+    setCategory('all');
+    setQuery('');
+    setSortBy('popular');
+    setPage(1);
+  };
 
   if (loadError && !isLoading) {
     return (
@@ -380,268 +414,43 @@ export function TierListBrowsePage() {
 
   return (
     <div className="tierlist-page">
-      <div className="container tierlist-browse-title-row">
-        <div className="tierlist-browse-title-row-left">
-          <h1>{pick('ศูนย์รวม Tier List', 'Tier List Explorer')}</h1>
-        </div>
-        <div className="tierlist-browse-title-row-actions">
-          {user?.id ? (
-            <Link className="tierlist-browse-manage-btn" to="/tierlist/me">
-              <Monitor size={14} /> {pick('จัดการของฉัน', 'Manage Mine')}
-            </Link>
-          ) : null}
-          <Link className="tierlist-browse-create-btn" to="/tierlist/create">
-            <Plus size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}
-          </Link>
-        </div>
-      </div>
+      <TierListBrowseHeader
+        pick={pick}
+        userId={user?.id || null}
+      />
 
-      <nav className="container tierlist-browse-tabs">
-        {tabItems.map((tab) => {
-          const isEntityTab = tab.value === 'all' || ENTITY_TYPE_OPTIONS.some((o) => o.value === tab.value);
-          const isCatTab = tab.value.startsWith('cat:');
-          const isActive = isEntityTab
-            ? (entityTypeFilter === tab.value && category === 'all')
-            : (isCatTab && category === tab.value.replace('cat:', ''));
-
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              className={`tierlist-browse-tab${isActive ? ' is-active' : ''}`}
-              onClick={() => {
-                if (isEntityTab) {
-                  setEntityTypeFilter(tab.value);
-                  setCategory('all');
-                } else if (isCatTab) {
-                  setCategory(tab.value.replace('cat:', ''));
-                }
-                setPage(1);
-              }}
-            >
-              {tab.icon}{tab.label}
-            </button>
-          );
-        })}
-      </nav>
+      <TierListBrowseTabs
+        activeTabValue={activeTabValue}
+        onSelectTab={handleBrowseTabSelect}
+        tabItems={tabItems}
+      />
 
       <div className="container tierlist-browse-layout">
-        <div className="tierlist-browse-main">
-          <div className="tierlist-browse-search-bar" role="group" aria-label={pick('ควบคุมการค้นหาเทมเพลต', 'Template search controls')}>
-            <input
-              value={query}
-              onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-              placeholder={pick('ค้นหา tier lists...', 'Search tier lists...')}
-              aria-label={pick('ค้นหาเทมเพลต', 'Search templates')}
-            />
-            <button type="button" className="tierlist-browse-search-icon" aria-hidden="true">
-              <Search size={16} />
-            </button>
-          </div>
+        <TierListBrowseContent
+          entityMaps={entityMaps}
+          filteredTemplatesCount={filteredTemplates.length}
+          hasActiveFilters={hasActiveFilters}
+          handlePlayTemplate={handlePlayTemplate}
+          handleRemixList={handleRemixList}
+          isCatalogHydrating={isCatalogHydrating}
+          isLoading={isLoading}
+          onClearFilters={handleClearBrowseFilters}
+          onNextPage={() => setPage((current) => Math.min(pagedTemplates.totalPages, current + 1))}
+          onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
+          onQueryChange={handleBrowseQueryChange}
+          onSortByChange={handleBrowseSortChange}
+          pagedTemplates={pagedTemplates}
+          pick={pick}
+          query={query}
+          recentCommunityLists={recentCommunityLists}
+          sortBy={sortBy}
+        />
 
-          <div className="tierlist-browse-sort-row">
-            {!isLoading && (
-              <span className="tierlist-browse-result-count">{filteredTemplates.length} {pick('เทมเพลต', 'templates')}</span>
-            )}
-            <SortSelect
-              value={sortBy}
-              onChange={(value) => { setSortBy(value); setPage(1); }}
-              label={pick('เรียงลำดับ', 'Sort')}
-              className="tierlist-browse-sorter"
-            >
-              <option value="popular">{pick('ยอดนิยม', 'Popular')}</option>
-              <option value="newest">{pick('ใหม่ล่าสุด', 'Newest')}</option>
-              <option value="alphabet">{pick('ก-ฮ', 'A-Z')}</option>
-            </SortSelect>
-          </div>
-
-          <section className="tierlist-browse-content">
-            {isLoading ? (
-              <TierListEmptyPanel
-                icon={<Loader2 size={28} className="animate-spin" />}
-                title={pick('กำลังโหลดเทมเพลต', 'Loading templates')}
-                message={pick('กำลังเตรียมเทมเพลตและอันดับล่าสุดจากชุมชน', 'Fetching templates and recent community rankings.')}
-              />
-            ) : pagedTemplates.items.length === 0 ? (
-              <TierListEmptyPanel
-                icon={<Compass size={28} />}
-                title={pick('ยังไม่พบเทมเพลตที่ตรง', 'No matching templates')}
-                message={
-                  hasActiveFilters
-                    ? pick('ลองล้างคำค้นหา เปลี่ยนหมวดหมู่ หรือสลับการเรียงลำดับ', 'Try clearing your search, switching categories, or changing the sort order.')
-                    : pick('ยังไม่มีเทมเพลตสาธารณะในตอนนี้', 'There are no public templates yet.')
-                }
-                action={hasActiveFilters ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setEntityTypeFilter('all');
-                      setCategory('all');
-                      setQuery('');
-                      setSortBy('popular');
-                      setPage(1);
-                    }}
-                  >
-                    {pick('ล้างตัวกรอง', 'Clear filters')}
-                  </Button>
-                ) : null}
-              />
-            ) : (
-              <div className="tierlist-browse-grid">
-                {pagedTemplates.items.map((template, index) => {
-                  const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
-                  const cover = template.titleIds
-                    .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
-                    .map((id) => entityById.get(Number(id)))
-                    .filter(Boolean);
-                  const coverArtwork = getTemplatePreviewArtworkSource(template, cover[0]);
-                  const explorerSummary = getTemplateExplorerSummary(template, pick);
-
-                  return (
-                    <article key={template.id} className="tierlist-explorer-card">
-                      <div
-                        className={`tierlist-explorer-card-cover${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
-                        style={getTemplatePreviewMediaStyle(template)}
-                      >
-                        {coverArtwork
-                          ? (
-                            <img
-                              src={coverArtwork}
-                              alt={template.title}
-                              draggable={false}
-                              loading={index < 3 ? 'eager' : 'lazy'}
-                              decoding="async"
-                              fetchPriority={index < 3 ? 'high' : 'auto'}
-                            />
-                          )
-                          : isCatalogHydrating
-                            ? <div className="tierlist-explorer-card-cover-loading" />
-                            : <div className="tierlist-explorer-card-cover-empty" />}
-                        <span className="tierlist-explorer-card-count">
-                          {template.titleIds.length} {pick('เรื่อง', 'titles')}
-                        </span>
-                      </div>
-                      <div className="tierlist-explorer-card-body">
-                        <div className="tierlist-explorer-card-meta">
-                          <span className="tierlist-explorer-card-tag">{explorerSummary.categoryLabel}</span>
-                          <span className="tierlist-explorer-card-stat">{explorerSummary.statLine}</span>
-                        </div>
-                        <h3>{template.title}</h3>
-                        <p className="tierlist-explorer-card-description">{explorerSummary.playsLabel}</p>
-                        <div className="tierlist-explorer-card-actions">
-                          <Button size="sm" variant="primary" className="tierlist-explorer-btn-rank" onClick={() => handlePlayTemplate(template)}>
-                            {pick('จัดอันดับ', 'Rank')}
-                          </Button>
-                          <Link className="tierlist-explorer-btn-view" to={`/tierlist/template/${template.id}`}>
-                            {pick('ดู', 'View')}
-                          </Link>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-
-            {pagedTemplates.totalPages > 1 && (
-              <div className="tierlist-pagination">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<ChevronLeft size={14} />}
-                  disabled={pagedTemplates.page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  {pick('ก่อนหน้า', 'Previous')}
-                </Button>
-                <span>{pagedTemplates.page} / {pagedTemplates.totalPages}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  iconRight={<ChevronRight size={14} />}
-                  disabled={pagedTemplates.page >= pagedTemplates.totalPages}
-                  onClick={() => setPage((current) => Math.min(pagedTemplates.totalPages, current + 1))}
-                >
-                  {pick('ถัดไป', 'Next')}
-                </Button>
-              </div>
-            )}
-          </section>
-
-          <section className="tierlist-browse-songs-section">
-            <Link className="tierlist-songs-banner glass-heavy" to="/tierlist/songs">
-              <div className="tierlist-songs-banner-icon"><Music size={28} /></div>
-              <div className="tierlist-songs-banner-copy">
-                <h2>{pick('จัดอันดับเพลงเปิด-ปิด', 'Rank Opening & Ending Songs')}</h2>
-                <p>{pick('เลือกเรื่องที่มีข้อมูลเพลง แล้วจัดอันดับ OP/ED ในแบบของคุณเอง', 'Pick a title with song data and build your own OP/ED tier list.')}</p>
-              </div>
-              <span className="btn btn-primary btn-sm">
-                {pick('ดูลิสต์จัดอันดับเพลง', 'Explore Song Tier Lists')} <ArrowRight size={13} />
-              </span>
-            </Link>
-          </section>
-
-          {recentCommunityLists.length > 0 && (
-            <section className="tierlist-browse-community-section">
-              <div className="tierlist-section-head">
-                <h2>{pick('อันดับชุมชนล่าสุด', 'Fresh Community Rankings')}</h2>
-              </div>
-              <div className="tierlist-browse-grid">
-                {recentCommunityLists.map((list) => (
-                  <TierListCommunityCard
-                    key={list.id}
-                    list={list}
-                    titleById={getEntityMap(entityMaps, list.entityType)}
-                    pick={pick}
-                    primaryLabel={pick('เปิดอันดับ', 'Open ranking')}
-                    primaryTo={`/tierlist/play/${list.id}`}
-                    secondaryLabel={pick('รีมิกซ์', 'Remix')}
-                    onSecondaryClick={() => handleRemixList(list)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <aside className="tierlist-browse-sidebar">
-          <div className="tierlist-browse-sidebar-card">
-            <h3>{pick('เทมเพลตยอดนิยม', 'Trending Templates')}</h3>
-            <ul className="tierlist-trending-list">
-              {trendingTemplates.map((template, index) => {
-                const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
-                const fallbackEntity = template.titleIds
-                  .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
-                  .map((id) => entityById.get(Number(id)))
-                  .filter(Boolean)[0] || null;
-                const coverArtwork = getTemplatePreviewArtworkSource(template, fallbackEntity);
-
-                return (
-                  <li key={template.id}>
-                    <Link className="tierlist-trending-item" to={`/tierlist/template/${template.id}`}>
-                      <span className="tierlist-trending-rank">{index + 1}.</span>
-                      {coverArtwork ? (
-                        <img
-                          className={`tierlist-trending-thumb${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
-                          style={getTemplatePreviewMediaStyle(template)}
-                          src={coverArtwork}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          draggable={false}
-                        />
-                      ) : (
-                        <span className="tierlist-trending-thumb tierlist-trending-thumb-empty" />
-                      )}
-                      <span className="tierlist-trending-name">{template.title}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </aside>
+        <TierListBrowseSidebar
+          entityMaps={entityMaps}
+          pick={pick}
+          trendingTemplates={trendingTemplates}
+        />
       </div>
     </div>
   );

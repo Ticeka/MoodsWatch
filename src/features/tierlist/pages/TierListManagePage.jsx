@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Layers, Loader2, Monitor, Pencil, Play, Plus, Save, Sparkles, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getTitlePreviewByIds } from '@/features/discover/lib/recommend';
-import { TierListEmptyPanel, TierListErrorPanel } from '@/features/tierlist/components';
+import {
+  TierListEmptyPanel,
+  TierListErrorPanel,
+  TierListManageHero,
+  TierListManageRankingsSection,
+  TierListManageTemplatesSection,
+} from '@/features/tierlist/components';
 import { MANAGE_LISTS_PAGE_SIZE } from '@/features/tierlist/constants';
-import { deleteTierList, deleteTierTemplate, findTierTemplate, loadTierListDetail, loadTierLibrary, loadOwnedTierListStats, loadOwnedTierListsPage, loadTierTemplates, saveTierList, saveTierTemplate } from '@/features/tierlist/lib/tierlistStore';
-import { getEntityTypeLabel, getTierCategoryLabel } from '@/features/tierlist/lib/tierlistLabels';
+import { deleteTierList, deleteTierTemplate, loadTierListDetail, loadTierLibrary, loadOwnedTierListStats, loadOwnedTierListsPage, loadTierTemplates, saveTierList, saveTierTemplate } from '@/features/tierlist/lib/tierlistStore';
 import { fetchCharacterEntitiesByIds, fetchThemeSongEntitiesByIds, toCustomTierEntity } from '@/features/tierlist/lib/tierlistBrowseHelpers';
-import { formatTierDate, isOwnedListByUser, isOwnedTemplateByUser, sortTemplates } from '@/features/tierlist/lib/tierlistPageUtils';
-import { getTemplatePreviewArtworkSource, getTemplatePreviewMediaStyle, normalizeTemplatePreviewFit } from '@/features/tierlist/lib/tierlistPreviewUtils';
-import { Button } from '@/shared/components/ui/Button';
+import { isOwnedListByUser, isOwnedTemplateByUser, sortTemplates } from '@/features/tierlist/lib/tierlistPageUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
@@ -458,344 +460,54 @@ export function TierListManagePage() {
 
   return (
     <div className="tierlist-page">
-      <section className="container tierlist-manage-hero">
-        <div className="tierlist-manage-hero-copy">
-          <span className="tierlist-kicker"><Monitor size={14} /> {pick('พื้นที่จัดการส่วนตัว', 'Personal Workspace')}</span>
-          <h1>{pick('จัดการ Tier List ของฉัน', 'Manage My Tier Lists')}</h1>
-          <p>{pick('รวมเทมเพลตและอันดับที่คุณสร้างไว้ทั้งหมดในที่เดียว เปิดแก้ไขต่อหรือสลับ public/private ได้เร็วขึ้น', 'See every template and ranking you created in one place, then jump back in to edit or switch visibility faster.')}</p>
-        </div>
-        <div className="tierlist-manage-hero-actions">
-          <Link className="tierlist-browse-manage-btn" to="/tierlist">
-            <ChevronLeft size={14} /> {pick('กลับไปหน้ารวม', 'Back to Browse')}
-          </Link>
-          <Link className="tierlist-browse-create-btn" to="/tierlist/create">
-            <Plus size={14} /> {pick('สร้าง Tier List ใหม่', 'Create New Tier List')}
-          </Link>
-        </div>
-        <div className="tierlist-manage-summary-grid">
-          <article className="glass-heavy tierlist-manage-summary-card">
-            <strong>{myTemplates.length}</strong>
-            <span>{pick('เทมเพลตของฉัน', 'My templates')}</span>
-          </article>
-          <article className="glass-heavy tierlist-manage-summary-card">
-            <strong>{myListStats.totalCount}</strong>
-            <span>{pick('ลิสต์ของฉัน', 'My rankings')}</span>
-          </article>
-          <article className="glass-heavy tierlist-manage-summary-card">
-            <strong>{myListStats.publicCount}</strong>
-            <span>{pick('ลิสต์สาธารณะ', 'Public rankings')}</span>
-          </article>
-        </div>
-      </section>
+      <TierListManageHero
+        myListStats={myListStats}
+        myTemplatesCount={myTemplates.length}
+        pick={pick}
+      />
 
-      <section className="container tierlist-section">
-        <div className="tierlist-section-head">
-          <h2>{pick('เทมเพลตของฉัน', 'My Templates')}</h2>
-          <span className="tierlist-count">{myTemplates.length} {pick('รายการ', 'items')}</span>
-        </div>
+      <TierListManageTemplatesSection
+        draftDescription={draftDescription}
+        draftTitle={draftTitle}
+        editingKey={editingKey}
+        isSavingId={isSavingId}
+        linkedCountByTemplateId={linkedCountByTemplateId}
+        locale={locale}
+        myTemplates={myTemplates}
+        onBeginEditing={beginEditing}
+        onDeleteTemplate={handleDeleteTemplate}
+        onDraftDescriptionChange={setDraftDescription}
+        onDraftTitleChange={setDraftTitle}
+        onSaveTemplateMeta={handleSaveTemplateMeta}
+        onStopEditing={stopEditing}
+        onToggleTemplateVisibility={handleToggleTemplateVisibility}
+        pick={pick}
+        templatePreviewEntityMap={templatePreviewEntityMap}
+      />
 
-        {myTemplates.length === 0 ? (
-          <TierListEmptyPanel
-            icon={<Sparkles size={24} />}
-            title={pick('ยังไม่มีเทมเพลตของคุณ', 'No templates yet')}
-            message={pick('เริ่มจากสร้างเทมเพลตแรก แล้วมันจะมารวมที่หน้านี้อัตโนมัติ', 'Create your first template and it will show up here automatically.')}
-            action={(
-              <Link className="btn btn-primary btn-sm" to="/tierlist/create">
-                {pick('เริ่มสร้าง', 'Start Creating')}
-              </Link>
-            )}
-          />
-        ) : (
-          <div className="tierlist-manage-grid">
-            {myTemplates.map((template) => {
-              const savingKey = `template:${template.id}`;
-              const linkedCount = Number(linkedCountByTemplateId[String(template.id)] || 0);
-              const isEditing = editingKey === `template:${template.id}`;
-              const templateCoverFallback = (template.titleIds || [])
-                .map((id) => templatePreviewEntityMap.get(Number(id)))
-                .find(Boolean) || null;
-              const templateCoverArtwork = getTemplatePreviewArtworkSource(template, templateCoverFallback);
-              return (
-                <article key={template.id} className="glass-heavy tierlist-manage-card">
-                  <div
-                    className={`tierlist-manage-card-cover${normalizeTemplatePreviewFit(template.previewArtworkFit) === 'contain' ? ' is-contain' : ''}`}
-                    style={getTemplatePreviewMediaStyle(template)}
-                  >
-                    {templateCoverArtwork ? (
-                      <img
-                        src={templateCoverArtwork}
-                        alt=""
-                        className="tierlist-manage-card-cover-image"
-                        loading="lazy"
-                        decoding="async"
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="tierlist-manage-cover-fallback">
-                        <Sparkles size={30} />
-                      </div>
-                    )}
-                    <div className="tierlist-manage-cover-badges">
-                      <small className="tierlist-chip">{getTierCategoryLabel(template.category, pick)}</small>
-                      <span className={`tierlist-manage-visibility${template.isPublic ? ' is-public' : ''}`}>
-                        {template.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
-                        {template.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="tierlist-manage-card-body">
-                    <h3 className="tierlist-manage-card-title">{template.title}</h3>
-                    {!isEditing && (
-                      <p className="tierlist-manage-description">
-                        {template.description || pick('ยังไม่ได้ใส่คำอธิบาย', 'No description yet.')}
-                      </p>
-                    )}
-                    {!isEditing && (
-                      <div className="tierlist-manage-meta">
-                        <span>{getEntityTypeLabel(template.entityType, pick)}</span>
-                        <span>{template.titleIds.length} {pick('รายการ', 'items')}</span>
-                        {Number(template.plays || 0) > 0 && <span>{Number(template.plays)} {pick('ครั้งเล่น', 'plays')}</span>}
-                        {linkedCount > 0 && <span>{linkedCount} {pick('ลิสต์ที่ผูก', 'linked')}</span>}
-                        <span>{formatTierDate(template.updatedAt, locale)}</span>
-                      </div>
-                    )}
-                    {isEditing && (
-                      <div className="tierlist-manage-edit-form">
-                        <label className="tierlist-field">
-                          <span>{pick('ชื่อเทมเพลต', 'Template name')}</span>
-                          <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
-                        </label>
-                        <label className="tierlist-field">
-                          <span>{pick('คำอธิบาย', 'Description')}</span>
-                          <input value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} />
-                        </label>
-                      </div>
-                    )}
-                    <div className="tierlist-manage-actions">
-                      <Link className="btn btn-primary btn-sm tierlist-manage-action-primary" to={`/tierlist/template/${template.id}`}>
-                        {pick('เปิดเทมเพลต', 'Open')}
-                      </Link>
-                      {isEditing ? (
-                        <div className="tierlist-manage-action-icons">
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            className="tierlist-manage-action-primary"
-                            onClick={() => handleSaveTemplateMeta(template)}
-                            disabled={isSavingId === `template:${template.id}:edit`}
-                          >
-                            {isSavingId === `template:${template.id}:edit` ? pick('บันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={stopEditing}>
-                            {pick('ยกเลิก', 'Cancel')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="tierlist-manage-action-icons">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title={pick('แก้ไขชื่อและคำอธิบาย', 'Edit name & description')}
-                            onClick={() => beginEditing('template', template)}
-                          >
-                            <Pencil size={14} />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title={template.isPublic ? pick('ทำเป็นส่วนตัว', 'Make Private') : pick('เผยแพร่', 'Publish')}
-                            onClick={() => handleToggleTemplateVisibility(template)}
-                            disabled={isSavingId === savingKey}
-                          >
-                            {isSavingId === savingKey ? <Loader2 size={14} className="animate-spin" /> : (template.isPublic ? <EyeOff size={14} /> : <Eye size={14} />)}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="tierlist-manage-icon-danger"
-                            title={linkedCount > 0 ? pick('ลบแล้วลิสต์ที่ผูกจะเปลี่ยนเป็นลิสต์เดี่ยว', 'Deleting converts linked rankings to standalone') : pick('ลบเทมเพลต', 'Delete template')}
-                            onClick={() => handleDeleteTemplate(template)}
-                            disabled={isSavingId === `template:${template.id}:delete`}
-                          >
-                            {isSavingId === `template:${template.id}:delete` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="container tierlist-section">
-        <div className="tierlist-section-head">
-          <h2>{pick('ลิสต์ของฉัน', 'My Rankings')}</h2>
-          <span className="tierlist-count">{myListStats.totalCount} {pick('รายการ', 'items')}</span>
-        </div>
-
-        {myListStats.totalCount === 0 ? (
-          <TierListEmptyPanel
-            icon={<Layers size={24} />}
-            title={pick('ยังไม่มีลิสต์ของคุณ', 'No rankings yet')}
-            message={pick('เล่นจากเทมเพลตสักอันก่อน แล้วลิสต์ของคุณจะกลับมาจัดการต่อได้จากหน้านี้', 'Play a template first and your rankings will be collected here for quick editing later.')}
-            action={(
-              <Link className="btn btn-primary btn-sm" to="/tierlist">
-                {pick('ไปเลือกเทมเพลต', 'Browse Templates')}
-              </Link>
-            )}
-          />
-        ) : (
-          <div className="tierlist-manage-grid">
-            {myLists.map((list) => {
-              const savingKey = `list:${list.id}`;
-              const sourceTemplate = list.templateId ? findTierTemplate(list.templateId, library) : null;
-              const isEditing = editingKey === `list:${list.id}`;
-              const previewRows = list.rows.slice(0, 5);
-              const maxItems = Math.max(1, ...previewRows.map((r) => r.titleIds.length));
-              return (
-                <article key={list.id} className="glass-heavy tierlist-manage-card">
-                  <div className="tierlist-manage-tier-preview">
-                    {previewRows.length > 0 ? previewRows.map((row) => {
-                      const barPct = Math.max(4, (row.titleIds.length / maxItems) * 100);
-                      return (
-                        <div key={row.id} className="tierlist-manage-tier-row" style={row.color ? { '--row-c': row.color } : undefined}>
-                          <span className="tierlist-manage-tier-tag">{row.label}</span>
-                          <div className="tierlist-manage-tier-bar-wrap">
-                            <div className="tierlist-manage-tier-bar" style={{ width: row.titleIds.length > 0 ? `${barPct}%` : '0%' }} />
-                          </div>
-                          <span className="tierlist-manage-tier-n">{row.titleIds.length}</span>
-                        </div>
-                      );
-                    }) : (
-                      <div className="tierlist-manage-tier-empty">
-                        <Layers size={18} />
-                        <span>{pick('ยังไม่มี tier', 'No tiers yet')}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="tierlist-manage-card-body">
-                    <div className="tierlist-manage-card-head">
-                      <small className="tierlist-chip">
-                        {sourceTemplate ? pick('จากเทมเพลต', 'From template') : pick('ลิสต์เดี่ยว', 'Standalone')}
-                      </small>
-                      <span className={`tierlist-manage-visibility${list.isPublic ? ' is-public' : ''}`}>
-                        {list.isPublic ? <Eye size={10} /> : <EyeOff size={10} />}
-                        {list.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}
-                      </span>
-                    </div>
-                    <h3 className="tierlist-manage-card-title">{list.title}</h3>
-                    {!isEditing && (
-                      <div className="tierlist-manage-meta">
-                        <span>{list.rows.length} {pick('tier', 'tiers')}</span>
-                        {Number(list.playCount || 0) > 0 && <span>{Number(list.playCount)} {pick('ครั้งเล่น', 'plays')}</span>}
-                        <span>{formatTierDate(list.updatedAt, locale)}</span>
-                      </div>
-                    )}
-                    {isEditing && (
-                      <div className="tierlist-manage-edit-form">
-                        <label className="tierlist-field">
-                          <span>{pick('ชื่อลิสต์', 'Ranking name')}</span>
-                          <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
-                        </label>
-                        <label className="tierlist-field">
-                          <span>{pick('คำอธิบาย', 'Description')}</span>
-                          <input value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} />
-                        </label>
-                      </div>
-                    )}
-                    <div className="tierlist-manage-actions">
-                      <Link className="btn btn-primary btn-sm tierlist-manage-action-primary" to={`/tierlist/play/${list.id}`}>
-                        {pick('เปิดแก้ไข', 'Open')}
-                      </Link>
-                      {isEditing ? (
-                        <div className="tierlist-manage-action-icons">
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            className="tierlist-manage-action-primary"
-                            onClick={() => handleSaveListMeta(list)}
-                            disabled={isSavingId === `list:${list.id}:edit`}
-                          >
-                            {isSavingId === `list:${list.id}:edit` ? pick('บันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={stopEditing}>
-                            {pick('ยกเลิก', 'Cancel')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="tierlist-manage-action-icons">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title={pick('แก้ไขชื่อ', 'Edit name')}
-                            onClick={() => beginEditing('list', list)}
-                          >
-                            <Pencil size={14} />
-                          </Button>
-                          {sourceTemplate && (
-                            <Link
-                              className="btn btn-ghost btn-sm"
-                              to={`/tierlist/template/${sourceTemplate.id}`}
-                              title={pick('ดูเทมเพลตต้นทาง', 'View source template')}
-                            >
-                              <ArrowRight size={14} />
-                            </Link>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title={list.isPublic ? pick('ทำเป็นส่วนตัว', 'Make Private') : pick('เผยแพร่', 'Publish')}
-                            onClick={() => handleToggleListVisibility(list)}
-                            disabled={isSavingId === savingKey}
-                          >
-                            {isSavingId === savingKey ? <Loader2 size={14} className="animate-spin" /> : (list.isPublic ? <EyeOff size={14} /> : <Eye size={14} />)}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="tierlist-manage-icon-danger"
-                            title={pick('ลบลิสต์', 'Delete ranking')}
-                            onClick={() => handleDeleteList(list)}
-                            disabled={isSavingId === `list:${list.id}:delete`}
-                          >
-                            {isSavingId === `list:${list.id}:delete` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {myListStats.totalCount > MANAGE_LISTS_PAGE_SIZE ? (
-          <div className="tierlist-pagination">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<ChevronLeft size={14} />}
-              disabled={listPage <= 1}
-              onClick={() => setListPage((current) => Math.max(1, current - 1))}
-            >
-              {pick('ก่อนหน้า', 'Previous')}
-            </Button>
-            <span>{listPage} / {totalListPages}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              iconRight={<ChevronRight size={14} />}
-              disabled={listPage >= totalListPages}
-              onClick={() => setListPage((current) => Math.min(totalListPages, current + 1))}
-            >
-              {pick('ถัดไป', 'Next')}
-            </Button>
-          </div>
-        ) : null}
-      </section>
+      <TierListManageRankingsSection
+        draftDescription={draftDescription}
+        draftTitle={draftTitle}
+        editingKey={editingKey}
+        isSavingId={isSavingId}
+        library={library}
+        listPage={listPage}
+        locale={locale}
+        managePageSize={MANAGE_LISTS_PAGE_SIZE}
+        myListStats={myListStats}
+        myLists={myLists}
+        onBeginEditing={beginEditing}
+        onDeleteList={handleDeleteList}
+        onDraftDescriptionChange={setDraftDescription}
+        onDraftTitleChange={setDraftTitle}
+        onNextPage={() => setListPage((current) => Math.min(totalListPages, current + 1))}
+        onPreviousPage={() => setListPage((current) => Math.max(1, current - 1))}
+        onSaveListMeta={handleSaveListMeta}
+        onStopEditing={stopEditing}
+        onToggleListVisibility={handleToggleListVisibility}
+        pick={pick}
+        totalListPages={totalListPages}
+      />
     </div>
   );
 }
