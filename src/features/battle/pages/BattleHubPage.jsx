@@ -506,12 +506,20 @@ export function BattleHub() {
         {/* ── Vibrant Hero ── */}
         <header className="battle-hub-hero">
           <div className="container battle-hub-hero-container">
-            <h1 className="battle-hub-title"><Swords size={32} /> SOLO BATTLE</h1>
-            <p className="battle-hub-tagline">{t('battle.hubTagline')}</p>
+            <div className="battle-hero-badge animate-fade-in-up">
+              <span className="battle-hero-badge-icon"><Swords size={12} fill="currentColor" /></span>
+              อนิเมะ / มังงะ / มันฮวา
+            </div>
+            <h1 className="battle-hub-title animate-fade-in-up">SOLO BATTLE</h1>
+            <p className="battle-hub-tagline animate-fade-in-up" style={{ animationDelay: '0.1s' }}>{t('battle.hubTagline')}</p>
             <div className="battle-hub-hero-actions">
               <Link className="battle-btn-primary action-pulse" to="/battle/build">
                 <Plus size={18} />
                 {t('battle.buildDeck')}
+              </Link>
+              <Link className="battle-btn-secondary highlight" to="/battle/browse">
+                <Globe size={18} />
+                {t('battle.browseMoreStages')}
               </Link>
               <Link className="battle-btn-secondary" to="/battle/decks">
                 <Layers size={18} />
@@ -520,7 +528,7 @@ export function BattleHub() {
             </div>
             
             {/* 3-Step Guide (Less Text, Visual) */}
-            <div className="battle-steps-guide">
+            <div className="battle-steps-guide animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
               <div className="battle-step-item">
                 <div className="battle-step-icon"><Layers size={20}/></div>
                 <span>{t('battle.stepChooseCategory')}</span>

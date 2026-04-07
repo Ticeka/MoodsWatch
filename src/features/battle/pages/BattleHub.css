@@ -13,7 +13,8 @@
 
 /* ── Hero Section (Less Text, More Visuals) ── */
 .battle-hub-hero {
-  padding-top: 2rem;
+  padding-top: 5rem;
+  padding-bottom: 2rem;
   text-align: center;
   position: relative;
 }
@@ -22,21 +23,74 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.5rem;
+}
+
+.battle-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1.1rem;
+  background: rgba(245, 158, 11, 0.1); /* Amber tint */
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.1);
+}
+
+[data-theme="dark"] .battle-hero-badge {
+  background: rgba(249, 115, 22, 0.12); /* Orange/Amber */
+  color: #fbbf24;
+  border-color: rgba(249, 115, 22, 0.25);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.battle-hero-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444; /* Crimson for the icon */
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4));
+  animation: battle-icon-pulse 2s infinite ease-in-out;
+}
+
+@keyframes battle-icon-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.8; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out both;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .battle-hub-title {
   font-family: var(--font-heading);
-  font-size: clamp(3rem, 9vw, 5.4rem);
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: -0.07em;
-  line-height: 0.9;
-  margin: 0 0 0.35rem;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
+  gap: 1rem;
   background: var(--gradient-primary);
   -webkit-background-clip: text;
   background-clip: text;
@@ -63,7 +117,8 @@
   color: var(--text-secondary);
   margin: 0;
   font-weight: 500;
-  max-width: 480px;
+  max-width: 540px;
+  line-height: 1.5;
 }
 
 [data-theme="dark"] .battle-hub-tagline {
@@ -73,7 +128,7 @@
 .battle-hub-hero-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 0.5rem;
@@ -84,7 +139,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1.75rem;
+  padding: 0.85rem 2rem;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent-500), #ec4899);
   color: #ffffff;
@@ -96,7 +151,7 @@
 }
 
 .battle-btn-primary.action-pulse {
-  animation: battle-pulse 2s infinite;
+  animation: battle-pulse 2.5s infinite;
 }
 
 @keyframes battle-pulse {
@@ -115,13 +170,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
+  padding: 0.85rem 1.75rem;
   border-radius: 999px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1rem;
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s, transform 0.15s;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
@@ -130,6 +185,26 @@
 .battle-btn-secondary:hover {
   background: var(--bg-secondary);
   border-color: var(--border-hover);
+  transform: translateY(-2px);
+}
+
+.battle-btn-secondary.highlight {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent);
+  color: var(--text-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+.battle-btn-secondary.highlight svg {
+  color: #ea580c;
+  filter: drop-shadow(0 0 2px rgba(234, 88, 12, 0.2));
+}
+
+.battle-btn-secondary.highlight:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.04));
+  border-color: #f59e0b;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
   transform: translateY(-2px);
 }
 
@@ -143,6 +218,23 @@
   border-color: rgba(255, 186, 123, 0.36);
 }
 
+[data-theme="dark"] .battle-btn-secondary.highlight {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), transparent);
+  color: #fff;
+}
+
+[data-theme="dark"] .battle-btn-secondary.highlight svg {
+  color: #fbbf24;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.3));
+}
+
+[data-theme="dark"] .battle-btn-secondary.highlight:hover {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(251, 191, 36, 0.06));
+  box-shadow: 0 6px 20px rgba(251, 191, 36, 0.2);
+}
+
 @media (max-width: 480px) {
   .battle-btn-primary, .battle-btn-secondary { width: 100%; justify-content: center; }
 }
@@ -152,34 +244,35 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
-  background: var(--bg-elevated);
-  padding: 1rem 2rem;
-  border-radius: var(--radius-2xl);
-  border: 1px solid var(--border-default);
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.05);
-  margin-top: 1rem;
+  gap: 1.25rem;
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04), inset 0 2px 4px rgba(255, 255, 255, 0.05);
+  margin-top: 1.5rem;
 }
 
 [data-theme="dark"] .battle-steps-guide {
-  background: linear-gradient(180deg, rgba(47, 35, 33, 0.92), rgba(31, 24, 23, 0.94));
+  background: linear-gradient(135deg, rgba(47, 35, 33, 0.6), rgba(31, 24, 23, 0.4));
   border-color: rgba(255, 214, 184, 0.1);
-  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05), 0 12px 28px rgba(0,0,0,0.28);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.22);
 }
 
 .battle-step-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.65rem;
 }
 
 .battle-step-icon {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--bg-default);
-  border: 2px solid var(--border-default);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -189,17 +282,22 @@
 }
 
 .battle-steps-guide:hover .battle-step-icon {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   background: var(--accent-500);
   color: #fff;
   border-color: var(--accent-500);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb, 236,72,153), 0.25);
+}
+
+.battle-step-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .battle-step-item span {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
-  text-align: center;
 }
 
 [data-theme="dark"] .battle-step-item span {
@@ -207,9 +305,16 @@
 }
 
 [data-theme="dark"] .battle-step-icon {
-  background: rgba(255, 243, 234, 0.06);
+  background: rgba(255, 243, 234, 0.05);
   border-color: rgba(255, 199, 153, 0.2);
   color: #ffbf7a;
+}
+
+[data-theme="dark"] .battle-steps-guide:hover .battle-step-icon {
+  background: rgba(245, 158, 11, 0.85); /* Amber matching overall theme */
+  border-color: rgba(245, 158, 11, 1);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
 }
 
 .battle-step-divider {
@@ -227,6 +332,7 @@
     flex-direction: column;
     padding: 1.5rem;
     gap: 1rem;
+    border-radius: var(--radius-2xl);
   }
   .battle-step-divider {
     transform: rotate(90deg);
@@ -237,7 +343,7 @@
 .battle-medals-section {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
+  gap: 2.5rem;
 }
 
 .battle-medal-card {
@@ -246,7 +352,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 1.25rem 1.5rem;
+  padding: 1.75rem 2rem;
   border-radius: var(--radius-2xl);
   text-decoration: none;
   overflow: hidden;
@@ -296,7 +402,7 @@
 .battle-medal-content {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.5rem;
   position: relative;
   z-index: 1;
 }
