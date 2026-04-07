@@ -13,6 +13,7 @@ import { AgeGateProvider } from '@/shared/contexts/AgeGateContext';
 
 const Home = lazy(() => import('@/features/titles/pages/Home').then((module) => ({ default: module.Home })));
 const BattleHub = lazy(() => import('@/features/battle/pages/BattleHubPage').then((module) => ({ default: module.BattleHub })));
+const BattleBrowsePage = lazy(() => import('@/features/battle/pages/BattleBrowsePage').then((module) => ({ default: module.BattleBrowsePage })));
 const BattleBuilderPage = lazy(() => import('@/features/battle/pages/BattleBuilderPage').then((module) => ({ default: module.BattleBuilderPage })));
 const BattleDeckLibraryPage = lazy(() => import('@/features/battle/pages/BattleDeckLibraryPage').then((module) => ({ default: module.BattleDeckLibraryPage })));
 const BattleSessionPage = lazy(() => import('@/features/battle/pages/BattleSessionPage').then((module) => ({ default: module.BattleSessionPage })));
@@ -113,6 +114,7 @@ function App() {
                   <Route path="/" element={<Layout />}>
                     <Route index element={<Home />} />
                     <Route path="battle" element={<BattleHub />} />
+                    <Route path="battle/browse" element={<BattleBrowsePage />} />
                     <Route path="battle/build" element={<BattleBuilderPage />} />
                     <Route path="battle/decks" element={<BattleDeckLibraryPage />} />
                     <Route path="battle/leaderboard" element={<BattleLeaderboard />} />

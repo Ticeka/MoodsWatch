@@ -683,6 +683,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.battle-hub-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .battle-hub-section-title {
@@ -774,11 +783,7 @@
 [data-theme="dark"] .game-badge.official { background: #f97316; color: #fff7ef; }
 
 
-/* ── Public Decks (Horizontal Scroll Carousel) ── */
-.public-decks-section {
-  overflow: hidden; /* Hide overflow globally, let container scroll */
-  padding-bottom: 2rem;
-}
+/* ── Shared Horizontal Carousel ── */
 
 .battle-carousel-container {
   margin: 0 -1rem; /* Offset container padding to enable full-bleed scrolling on mobile */
@@ -808,6 +813,11 @@
   pointer-events: none;
 }
 
+.battle-deck-list-grid.is-loading {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* User Card Metadata Link */
 .game-owner-link {
   display: inline-flex;
@@ -823,6 +833,9 @@
   border: 1px solid var(--border-default);
   margin-top: 0.5rem;
   transition: transform 0.15s, border-color 0.15s;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 [data-theme="dark"] .game-owner-link {
@@ -861,6 +874,12 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.battle-pagination-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
 }
 
 .game-page-btn {

@@ -1,7 +1,7 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
+import {
   Crown, 
   CheckCircle2,
   X,
@@ -51,7 +51,7 @@ import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDec
 import './Battle.css';
 
 const RECENT_BATTLE_SESSION_LIMIT = 4;
-const PUBLIC_DECK_PAGE_SIZE = 12; // increased for a better carousel/grid feel
+const PUBLIC_DECK_PAGE_SIZE = 8; // keep community stages to a manageable multi-row page
 const TODAY = new Date().toISOString().slice(0, 10);
 
 function buildOwnerProfilePath(ownerUsername) {
@@ -181,6 +181,9 @@ export function BattleHub() {
   const [dailyChallengeCompleted, setDailyChallengeCompleted] = useState(false);
   const [leaderboardPreview, setLeaderboardPreview] = useState([]);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
+  const officialCarouselRef = useRef(null);
+  const [canScrollOfficialPrev, setCanScrollOfficialPrev] = useState(false);
+  const [canScrollOfficialNext, setCanScrollOfficialNext] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -427,6 +430,30 @@ export function BattleHub() {
     return visibleDecks.filter((deck) => (deck?.titles?.length || deck?.titleIds?.length || 0) >= 8);
   }, [publicDecks, readySavedDecks, showAdult, titleLookup]);
 
+  useEffect(() => {
+    const node = officialCarouselRef.current;
+    if (!node) {
+      setCanScrollOfficialPrev(false);
+      setCanScrollOfficialNext(false);
+      return undefined;
+    }
+
+    const updateScrollState = () => {
+      const maxScrollLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+      setCanScrollOfficialPrev(node.scrollLeft > 8);
+      setCanScrollOfficialNext(node.scrollLeft < maxScrollLeft - 8);
+    };
+
+    updateScrollState();
+    node.addEventListener('scroll', updateScrollState, { passive: true });
+    window.addEventListener('resize', updateScrollState);
+
+    return () => {
+      node.removeEventListener('scroll', updateScrollState);
+      window.removeEventListener('resize', updateScrollState);
+    };
+  }, [readyPresetDecks.length, isPresetsLoading, isComputingPresets]);
+
   const startBattle = async (deck) => {
     if ((deck?.titles?.length || 0) < 8) {
       toast.error(t('battle.needAtLeastEight'));
@@ -454,6 +481,18 @@ export function BattleHub() {
     }
     navigate(`/battle/${session.id}`);
   };
+
+  const handleOfficialCarouselStep = (direction) => {
+    const node = officialCarouselRef.current;
+    if (!node) return;
+    const step = Math.max(node.clientWidth * 0.8, 280);
+    node.scrollBy({
+      left: direction * step,
+      behavior: 'smooth',
+    });
+  };
+
+  const showPublicDeckPagination = (publicDecksPage > 0 || hasNextPublicPage) && !isLoading;
 
   const displayDailyDate = new Date(`${TODAY}T00:00:00`).toLocaleDateString(
     language === 'th' ? 'th-TH' : 'en-US',
@@ -538,94 +577,156 @@ export function BattleHub() {
         <div className="container battle-hub-section">
           <div className="battle-hub-section-header">
             <h2 className="battle-hub-section-title"><Play size={18} fill="currentColor" /> {t('battle.featuredStages')}</h2>
-          </div>
-          {isPresetsLoading || isComputingPresets ? (
-            <div className="battle-preset-grid">
-              {[0, 1, 2, 3].map((i) => <BattlePresetCardSkeleton key={i} />)}
-            </div>
-          ) : readyPresetDecks.length === 0 ? (
-            <p className="battle-hub-empty">{t('battle.noPresetReady')}</p>
-          ) : (
-            <div className="battle-preset-grid">
-              {readyPresetDecks.map(({ preset, deck }) => (
-                <BattleReadyDeckCard
-                  key={preset.id}
-                  title={preset.label}
-                  subtitle={(preset.filters.type || 'all').toUpperCase()}
-                  badge={t('battle.officialStage')}
-                  badgeClassName="game-badge official"
-                  deck={deck}
-                  variant="preset"
-                  disabled={isPresetsLoading}
-                  onStart={() => startBattle(deck)}
-                  actionLabel={t('battle.startGame')}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── Public Decks (Game Modes Carousel) ── */}
-        <div className="container battle-hub-section public-decks-section">
-          <div className="battle-hub-section-header">
-            <h2 className="battle-hub-section-title"><Globe size={18} /> {t('battle.communityStages')}</h2>
-            {(publicDecksPage > 0 || hasNextPublicPage) && !isLoading && (
+            {!isPresetsLoading && !isComputingPresets && readyPresetDecks.length > 1 ? (
               <div className="battle-hub-pagination pagination-gamey">
                 <button
                   type="button"
                   className="game-page-btn"
-                  onClick={() => handlePublicDecksPage(publicDecksPage - 1)}
-                  disabled={publicDecksPage === 0 || isLoadingMore}
-                  aria-label="หน้าก่อนหน้า"
+                  onClick={() => handleOfficialCarouselStep(-1)}
+                  disabled={!canScrollOfficialPrev}
+                  aria-label={t('common.previous')}
                 >
                   <ChevronLeft size={20} strokeWidth={3} />
                 </button>
-                <span className="game-page-indicator">{t('common.page')} {publicDecksPage + 1}</span>
                 <button
                   type="button"
                   className="game-page-btn"
-                  onClick={() => handlePublicDecksPage(publicDecksPage + 1)}
-                  disabled={!hasNextPublicPage || isLoadingMore}
-                  aria-label="หน้าถัดไป"
+                  onClick={() => handleOfficialCarouselStep(1)}
+                  disabled={!canScrollOfficialNext}
+                  aria-label={t('common.next')}
                 >
                   <ChevronRight size={20} strokeWidth={3} />
                 </button>
               </div>
-            )}
+            ) : null}
+          </div>
+          {isPresetsLoading || isComputingPresets ? (
+            <div className="battle-carousel-container battle-carousel-container-official">
+              <div
+                ref={officialCarouselRef}
+                className="battle-preset-carousel battle-preset-carousel-official"
+              >
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="carousel-item">
+                    <BattlePresetCardSkeleton />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : readyPresetDecks.length === 0 ? (
+            <p className="battle-hub-empty">{t('battle.noPresetReady')}</p>
+          ) : (
+            <div className="battle-carousel-container battle-carousel-container-official">
+              <div
+                ref={officialCarouselRef}
+                className="battle-preset-carousel battle-preset-carousel-official"
+              >
+                {readyPresetDecks.map(({ preset, deck }) => (
+                  <div className="carousel-item" key={preset.id}>
+                    <BattleReadyDeckCard
+                      title={preset.label}
+                      subtitle={(preset.filters.type || 'all').toUpperCase()}
+                      badge={t('battle.officialStage')}
+                      badgeClassName="game-badge official"
+                      deck={deck}
+                      variant="preset"
+                      disabled={isPresetsLoading}
+                      onStart={() => startBattle(deck)}
+                      actionLabel={t('battle.startGame')}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Public Decks (Large List) ── */}
+        <div className="container battle-hub-section">
+          <div className="battle-hub-section-header">
+            <h2 className="battle-hub-section-title"><Globe size={18} /> {t('battle.communityStages')}</h2>
+            <div className="battle-hub-section-actions">
+              <Link className="btn btn-secondary btn-sm" to="/battle/browse">
+                <Globe size={14} /> {t('battle.browseMoreStages')}
+              </Link>
+              {showPublicDeckPagination && (
+                <div className="battle-hub-pagination pagination-gamey">
+                  <button
+                    type="button"
+                    className="game-page-btn"
+                    onClick={() => handlePublicDecksPage(publicDecksPage - 1)}
+                    disabled={publicDecksPage === 0 || isLoadingMore}
+                    aria-label="หน้าก่อนหน้า"
+                  >
+                    <ChevronLeft size={20} strokeWidth={3} />
+                  </button>
+                  <span className="game-page-indicator">{t('common.page')} {publicDecksPage + 1}</span>
+                  <button
+                    type="button"
+                    className="game-page-btn"
+                    onClick={() => handlePublicDecksPage(publicDecksPage + 1)}
+                    disabled={!hasNextPublicPage || isLoadingMore}
+                    aria-label="หน้าถัดไป"
+                  >
+                    <ChevronRight size={20} strokeWidth={3} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           
           {isLoading ? (
-            <div className="battle-carousel-container">
-              <div className="battle-preset-carousel">
-                {[0, 1, 2, 3].map((i) => <div key={i} className="carousel-item"><BattlePresetCardSkeleton /></div>)}
-              </div>
+            <div className="battle-deck-list-grid">
+              {[0, 1, 2, 3].map((i) => <BattlePresetCardSkeleton key={i} />)}
             </div>
           ) : publicSavedDecks.length === 0 ? (
             <p className="battle-hub-empty">
               {t('battle.noPublicDeck')} <Link to="/battle/decks" className="battle-hub-empty-link">{t('battle.manageDecks')}</Link>
             </p>
           ) : (
-            <div className={`battle-carousel-container ${isLoadingMore ? 'is-loading' : ''}`}>
-              <div className="battle-preset-carousel">
-                {publicSavedDecks.map((deck) => {
-                  return (
-                    <div className="carousel-item" key={deck.id}>
-                      <BattleReadyDeckCard
-                        title={deck.label}
-                        subtitle={renderOwnerSubtitle(deck, t)}
-                        badge={t('battle.customStage')}
-                        badgeClassName="game-badge community"
-                        deck={deck}
-                        variant="preset"
-                        disabled={isLoading || Boolean(error)}
-                        onStart={() => startBattle(deck)}
-                        actionLabel={t('battle.startGame')}
-                      />
-                    </div>
-                  );
-                })}
+            <>
+              <div className={`battle-deck-list-grid ${isLoadingMore ? 'is-loading' : ''}`}>
+                {publicSavedDecks.map((deck) => (
+                  <BattleReadyDeckCard
+                    key={deck.id}
+                    title={deck.label}
+                    subtitle={renderOwnerSubtitle(deck, t)}
+                    badge={t('battle.customStage')}
+                    badgeClassName="game-badge community"
+                    deck={deck}
+                    variant="preset"
+                    disabled={isLoading || Boolean(error)}
+                    onStart={() => startBattle(deck)}
+                    actionLabel={t('battle.startGame')}
+                  />
+                ))}
               </div>
-            </div>
+              {showPublicDeckPagination ? (
+                <div className="battle-pagination-footer">
+                  <div className="battle-hub-pagination pagination-gamey">
+                    <button
+                      type="button"
+                      className="game-page-btn"
+                      onClick={() => handlePublicDecksPage(publicDecksPage - 1)}
+                      disabled={publicDecksPage === 0 || isLoadingMore}
+                      aria-label="หน้าก่อนหน้า"
+                    >
+                      <ChevronLeft size={20} strokeWidth={3} />
+                    </button>
+                    <span className="game-page-indicator">{t('common.page')} {publicDecksPage + 1}</span>
+                    <button
+                      type="button"
+                      className="game-page-btn"
+                      onClick={() => handlePublicDecksPage(publicDecksPage + 1)}
+                      disabled={!hasNextPublicPage || isLoadingMore}
+                      aria-label="หน้าถัดไป"
+                    >
+                      <ChevronRight size={20} strokeWidth={3} />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </div>

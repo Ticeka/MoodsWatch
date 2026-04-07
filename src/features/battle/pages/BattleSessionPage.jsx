@@ -265,7 +265,8 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
       <article className="battle-card battle-card--media glass-heavy">
         <div className="battle-card-media-wrap">
           <div className="battle-card-media-nonembed battle-card-media-nonembed--song">
-            <img src={posterUrl} alt="" />
+            <div className="battle-card-media-blur-bg" style={{ backgroundImage: `url(${posterUrl})` }} />
+            <img src={posterUrl} alt="" className="battle-card-media-foreground" />
             <div className="battle-card-media-nonembed-overlay battle-card-media-nonembed-overlay--song">
               {hasSongMedia ? (
                 <button
@@ -309,7 +310,8 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
             <iframe className="battle-card-media-frame" src={embedUrl} title={displayName} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
           ) : watchUrl ? (
             <div className="battle-card-media-nonembed">
-              <img src={thumbnailUrl} alt="" />
+              <div className="battle-card-media-blur-bg" style={{ backgroundImage: `url(${thumbnailUrl})` }} />
+              <img src={thumbnailUrl} alt="" className="battle-card-media-foreground" />
               <div className="battle-card-media-nonembed-overlay">
                 <a href={watchUrl} target="_blank" rel="noreferrer" className="battle-card-media-open-btn">
                   <ExternalLink size={18} /><span>ดู {providerBadge}</span>
@@ -317,7 +319,10 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
               </div>
             </div>
           ) : (
-            <img src={thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div className="battle-card-media-nonembed">
+              <div className="battle-card-media-blur-bg" style={{ backgroundImage: `url(${thumbnailUrl})` }} />
+              <img src={thumbnailUrl} alt="" className="battle-card-media-foreground" />
+            </div>
           )}
         </div>
         <div className="battle-card-info">
@@ -669,9 +674,7 @@ export function BattleSessionPage() {
             />
           </section>
 
-          <div className="container battle-play-actions">
-            <Button variant="ghost" size="sm" onClick={handleUndo} disabled={!session.history?.length}>{t('battle.undoVote')}</Button>
-          </div>
+
 
         </>
       ) : (

@@ -1,0 +1,302 @@
+.battle-browse-page {
+  padding-bottom: 4rem;
+}
+
+.battle-browse-shell {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.battle-browse-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 3rem 0 2rem;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.battle-browse-hero::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -5%;
+  width: 40%;
+  height: 140%;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--primary) 8%, transparent), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.battle-browse-hero-copy {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 42rem;
+  min-width: 0;
+}
+
+.battle-browse-hero-copy h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 3.8rem);
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  background: linear-gradient(135deg, var(--text-primary) 30%, var(--primary) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900;
+}
+
+.battle-browse-hero-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  opacity: 0.88;
+}
+
+.battle-browse-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.battle-browse-toolbar {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 20px;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border-strong));
+  box-shadow: 
+    var(--shadow-md),
+    0 4px 20px color-mix(in srgb, var(--primary) 2%, transparent);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.battle-browse-toolbar:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.battle-browse-control-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: 1.2fr auto auto auto auto;
+  align-items: end;
+  min-width: 0;
+}
+
+.battle-browse-control {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.battle-browse-control > span,
+.battle-browse-sorter > span {
+  font-size: 0.725rem;
+  font-weight: 800;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-left: 0.2rem;
+}
+
+
+
+.battle-browse-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg-primary) 40%, var(--bg-elevated));
+  border-radius: 14px;
+  padding: 0.5rem 0.85rem;
+  min-height: 44px;
+  min-width: 0;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.battle-browse-search-field:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: var(--bg-elevated);
+}
+
+.battle-browse-search-field:focus-within {
+  border-color: var(--primary);
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.battle-browse-search-field svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.battle-browse-search-field:focus-within svg:first-child {
+  color: var(--primary);
+  transform: scale(1.1);
+}
+
+.battle-browse-search-field input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.battle-browse-clear .btn {
+  font-weight: 700;
+  border-radius: 16px;
+  transition: all 0.25s ease;
+}
+
+.battle-browse-clear .btn:hover {
+  background: color-mix(in srgb, var(--error) 8%, var(--bg-elevated));
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 20%, transparent);
+}
+
+.battle-browse-search-field svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.battle-browse-search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.battle-browse-search-field input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.battle-browse-select select,
+.battle-browse-sorter select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg-primary) 40%, var(--bg-elevated));
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0 0.85rem;
+  transition: all 0.25s ease;
+}
+
+.battle-browse-select select:hover,
+.battle-browse-sorter select:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: var(--bg-elevated);
+}
+
+.battle-browse-select select:focus,
+.battle-browse-sorter select:focus {
+  border-color: var(--primary);
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.battle-browse-action {
+  min-width: 0;
+}
+
+.battle-browse-action > span {
+  overflow-wrap: anywhere;
+}
+
+.battle-browse-action .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 1180px) {
+  .battle-browse-control-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.battle-browse-results-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.battle-browse-results-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.battle-browse-results-copy strong {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.battle-browse-results-copy span {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+}
+
+.battle-browse-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.battle-browse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 38px;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border-default));
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.battle-browse-chip:hover {
+  background: color-mix(in srgb, var(--primary) 15%, var(--bg-elevated));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 768px) {
+  .battle-browse-hero {
+    align-items: start;
+  }
+
+  .battle-browse-toolbar {
+    padding: 0.9rem;
+  }
+
+  .battle-browse-control-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .battle-browse-search {
+    grid-column: auto;
+  }
+
+  .battle-browse-hero-actions .btn {
+    width: 100%;
+  }
+}

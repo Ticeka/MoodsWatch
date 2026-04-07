@@ -442,6 +442,7 @@
   flex-direction: column;
   gap: 0.45rem;
   z-index: 1;
+  min-width: 0;
 }
 
 .battle-preset-head strong {
@@ -451,6 +452,7 @@
   line-height: 1.15;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .battle-preset-badge {
@@ -485,6 +487,7 @@
   font-size: 0.92rem;
   line-height: 1.45;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .battle-preset-meta {
@@ -500,6 +503,7 @@
   display: grid;
   gap: 0.65rem;
   z-index: 1;
+  min-width: 0;
 }
 
 .battle-deck-meta-row {
@@ -508,6 +512,7 @@
   justify-content: space-between;
   gap: 0.65rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .battle-visibility-pill {
@@ -595,13 +600,24 @@
 }
 
 .battle-deck-card-compact .battle-deck-card-body,
-.battle-deck-card-compact .battle-deck-card-actions {
+.battle-deck-card-compact .battle-deck-card-actions,
+.battle-deck-card-compact .battle-preset-head {
   padding: 0 1.1rem;
+}
+
+.battle-deck-card-compact .battle-preset-head {
+  padding-top: 1rem;
+  padding-bottom: 0.4rem;
 }
 
 .battle-deck-card-compact .battle-deck-card-body {
   padding-top: 0.85rem;
   padding-bottom: 0.6rem;
+}
+
+.battle-deck-card-compact .battle-preset-meta,
+.battle-deck-card-compact p {
+  padding-inline: 1.1rem;
 }
 
 .battle-deck-card-compact .battle-deck-card-actions {
