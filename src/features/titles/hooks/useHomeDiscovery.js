@@ -23,6 +23,7 @@ import {
 } from '@/features/profile/lib/profileStore';
 
 const RESULTS_PAGE_SIZE = 16;
+const RECOMMEND_LIMIT = RESULTS_PAGE_SIZE * 25; // 400 — enough pages, limits filter chain cost
 
 export function useHomeDiscovery({
   watchlist,
@@ -134,7 +135,7 @@ export function useHomeDiscovery({
         moods: effectiveMoodFilters,
         timeOption: timeOption ? { id: timeOption } : null,
         likedTitleIds: favoriteTitleIds,
-        limit: null,
+        limit: RECOMMEND_LIMIT,
         watchlist,
         preferences: effectivePrefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
@@ -210,7 +211,7 @@ export function useHomeDiscovery({
       const recs = await recommend({
         moods: [moodId],
         likedTitleIds: favoriteTitleIds,
-        limit: null,
+        limit: RECOMMEND_LIMIT,
         watchlist,
         preferences: effectivePrefs,
         hiddenTitleIds: hiddenFromRecommendationIds,
@@ -301,6 +302,8 @@ export function useHomeDiscovery({
   }, [showAdult, type]);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchInitial() {
       getAllTitles().catch(() => {});
       try {
@@ -308,21 +311,24 @@ export function useHomeDiscovery({
           getTrendingTitles(8, { showAdult }),
           fetchPublishedHomepageBlocks(),
         ]);
+        if (cancelled) return;
         startTransition(() => {
           setTrending(nextTrending);
           setEditorialBlocks(homepageBlocks);
         });
       } catch (err) {
+        if (cancelled) return;
         console.error('Failed to load trending titles', err);
         startTransition(() => {
           setEditorialBlocks([]);
         });
       } finally {
-        setIsInitialLoad(false);
+        if (!cancelled) setIsInitialLoad(false);
       }
     }
 
     fetchInitial();
+    return () => { cancelled = true; };
   }, [refreshToken, showAdult]);
 
   useEffect(() => {

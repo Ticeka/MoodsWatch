@@ -1103,7 +1103,7 @@ export function PartyTitleGuessBuilderPage() {
       navigate(buildTitleGuessReturnUrl(returnTo, {
         titleGuessSetId: savedSet?.id,
         modeType: 'title-guess',
-      }));
+      }), { viewTransition: true });
     } catch (error) {
       setSaveError(error?.message || pick('บันทึกชุดคำถามไม่สำเร็จ', 'Could not save the set.'));
     } finally {
@@ -1112,13 +1112,13 @@ export function PartyTitleGuessBuilderPage() {
   }, [draftQuestions, meta.description, meta.name, meta.visibility, navigate, pick, returnTo, titleGuessDraftStorageKey, user]);
 
   return (
-    <div className="party-page is-hub">
+    <div className="party-page is-hub party-route-fade">
       <div className="party-templates-page party-title-guess-builder-page">
         <section className="party-builder-mode-switch" aria-label={pick('เลือกรูปแบบการสร้าง', 'Choose what to create')}>
           <button
             type="button"
             className="party-builder-mode-switch-card"
-            onClick={() => navigate(buildPartyBuilderCreateUrl({ returnTo }))}
+            onClick={() => navigate(buildPartyBuilderCreateUrl({ returnTo }), { viewTransition: true })}
           >
             <span className="party-builder-mode-switch-icon"><LayoutGrid size={18} /></span>
             <span className="party-builder-mode-switch-copy">
@@ -1129,7 +1129,7 @@ export function PartyTitleGuessBuilderPage() {
           <button
             type="button"
             className="party-builder-mode-switch-card is-active"
-            onClick={() => navigate(buildPartyBuilderCreateUrl({ mode: 'title-guess', returnTo }))}
+            onClick={() => navigate(buildPartyBuilderCreateUrl({ mode: 'title-guess', returnTo }), { viewTransition: true })}
           >
             <span className="party-builder-mode-switch-icon"><Layers3 size={18} /></span>
             <span className="party-builder-mode-switch-copy">
@@ -1139,16 +1139,20 @@ export function PartyTitleGuessBuilderPage() {
           </button>
         </section>
 
-        <button className="party-back-btn" onClick={() => navigate(returnTo, { replace: true })}>
+        <button className="party-back-btn party-shared-back" onClick={() => navigate(returnTo, { replace: true, viewTransition: true })}>
           <ChevronLeft size={18} />
           {pick('ย้อนกลับ', 'Back')}
         </button>
 
-        <header className="party-templates-header party-title-guess-builder-header">
+        <header className="party-templates-header party-title-guess-builder-header party-shared-hero">
           <div>
-            <span className="party-kicker"><Layers3 size={16} />{pick('ทายชื่อเรื่อง', 'Guess the Title')}</span>
-            <h1>{isEditMode ? pick('แก้ไขชุดสำหรับโหมดทายชื่อเรื่อง', 'Edit a Guess the Title set') : pick('สร้างชุดสำหรับโหมดทายชื่อเรื่อง', 'Create a set for Guess the Title')}</h1>
-            <p>
+            <div className="party-shared-badge">
+              <span className="party-shared-badge-icon"><Layers3 size={12} /></span>
+              {pick('พร้อมใช้ต่อใน Party Lobby', 'Ready for the Party lobby')}
+            </div>
+            <span className="party-kicker party-shared-kicker"><Layers3 size={16} />{pick('ทายชื่อเรื่อง', 'Guess the Title')}</span>
+            <h1 className="party-shared-title">{isEditMode ? pick('แก้ไขชุดสำหรับโหมดทายชื่อเรื่อง', 'Edit a Guess the Title set') : pick('สร้างชุดสำหรับโหมดทายชื่อเรื่อง', 'Create a set for Guess the Title')}</h1>
+            <p className="party-shared-sub">
               {pick(
                 'เลือกเรื่อง แล้ววางตัวละครของเรื่องนั้นลงการ์ด 1-4 เพื่อให้ host ใช้ได้ทันทีใน party lobby เดิม',
                 'Pick a title, drop characters from that title into cards 1-4, and use it right away in the party lobby.',

@@ -91,9 +91,11 @@ export function PublicProfile() {
             Array.isArray(topTitlesPayload[typeId]) ? topTitlesPayload[typeId].map(Number).filter(Boolean) : []
           ))
         )];
-        const titles = titleIds.length ? await getTitlesByIds(titleIds) : [];
+        const [titles, statsRow] = await Promise.all([
+          titleIds.length ? getTitlesByIds(titleIds) : Promise.resolve([]),
+          fetchPublicProfileWatchStats(data.id),
+        ]);
         const titleMap = new Map(titles.map((title) => [Number(title.id), title]));
-        const statsRow = await fetchPublicProfileWatchStats(data.id) || DEFAULT_WATCH_STATS;
 
         const nextSections = TOP_TITLE_TYPE_OPTIONS.map((typeId) => ({
           typeId,
@@ -103,14 +105,15 @@ export function PublicProfile() {
             .filter(Boolean), showAdult),
         }));
 
+        const resolvedStats = statsRow || DEFAULT_WATCH_STATS;
         if (!cancelled) {
           setProfile(data);
           setWatchStats({
-            total: Number(statsRow.total || 0),
-            seen: Number(statsRow.seen || 0),
-            watching: Number(statsRow.watching || 0),
-            reading: Number(statsRow.reading || 0),
-            completed: Number(statsRow.completed || 0),
+            total: Number(resolvedStats.total || 0),
+            seen: Number(resolvedStats.seen || 0),
+            watching: Number(resolvedStats.watching || 0),
+            reading: Number(resolvedStats.reading || 0),
+            completed: Number(resolvedStats.completed || 0),
           });
           setSections(nextSections);
         }

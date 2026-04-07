@@ -162,24 +162,23 @@ export function BattleBrowsePage() {
       setError('');
 
       try {
+        const MAX_DECKS = 480;
+        const BATCH_COUNT = Math.ceil(MAX_DECKS / BROWSE_BATCH_SIZE);
+
         const [allTitles, decks] = await Promise.all([
           getAllTitles({ maxRows: Number.POSITIVE_INFINITY }),
           (async () => {
+            // Fetch all batches in parallel — stop collecting after first partial batch
+            const batches = await Promise.all(
+              Array.from({ length: BATCH_COUNT }, (_, i) =>
+                fetchPublicBattleDecks({ limit: BROWSE_BATCH_SIZE, offset: i * BROWSE_BATCH_SIZE }).catch(() => [])
+              )
+            );
+
             const collected = [];
-            let offset = 0;
-
-            while (true) {
-              const batch = await fetchPublicBattleDecks({ limit: BROWSE_BATCH_SIZE, offset });
+            for (const batch of batches) {
               collected.push(...batch);
-
-              if (batch.length < BROWSE_BATCH_SIZE) {
-                break;
-              }
-
-              offset += BROWSE_BATCH_SIZE;
-              if (offset >= 480) {
-                break;
-              }
+              if (batch.length < BROWSE_BATCH_SIZE) break;
             }
 
             return enrichPublicDeckOwners(collected);
@@ -203,6 +202,8 @@ export function BattleBrowsePage() {
     };
   }, [t]);
 
+  const hiddenSet = useMemo(() => new Set(hiddenTitleIds), [hiddenTitleIds]);
+
   const deckOptions = useMemo(() => ({
     hiddenTitleIds,
     excludeAdult: !showAdult,
@@ -210,8 +211,8 @@ export function BattleBrowsePage() {
   }), [hiddenTitleIds, showAdult]);
 
   const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenTitleIds.includes(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
-    [hiddenTitleIds, showAdult, titles]
+    () => titles.filter((title) => !hiddenSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
+    [hiddenSet, showAdult, titles]
   );
   const visibleCharacterCatalog = useMemo(
     () => getCatalogEntities(visibleCatalogTitles, CHARACTER_ENTITY_TYPE),
@@ -258,18 +259,18 @@ export function BattleBrowsePage() {
       return haystack.includes(normalizedQuery);
     });
 
-    nextDecks = [...nextDecks].sort((a, b) => {
-      if (sortBy === 'oldest') {
-        return new Date(a?.updatedAt || a?.createdAt || 0) - new Date(b?.updatedAt || b?.createdAt || 0);
-      }
-      if (sortBy === 'size') {
-        return (b?.titles?.length || b?.titleIds?.length || 0) - (a?.titles?.length || a?.titleIds?.length || 0);
-      }
-      if (sortBy === 'name') {
-        return String(a?.label || '').localeCompare(String(b?.label || ''));
-      }
-      return new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0);
-    });
+    if (sortBy === 'updated' || sortBy === 'oldest') {
+      const tsMap = new Map(nextDecks.map((d) => [d.id, Date.parse(d?.updatedAt || d?.createdAt || '') || 0]));
+      nextDecks = [...nextDecks].sort((a, b) =>
+        sortBy === 'oldest' ? tsMap.get(a.id) - tsMap.get(b.id) : tsMap.get(b.id) - tsMap.get(a.id)
+      );
+    } else if (sortBy === 'size') {
+      nextDecks = [...nextDecks].sort((a, b) =>
+        (b?.titles?.length || b?.titleIds?.length || 0) - (a?.titles?.length || a?.titleIds?.length || 0)
+      );
+    } else if (sortBy === 'name') {
+      nextDecks = [...nextDecks].sort((a, b) => String(a?.label || '').localeCompare(String(b?.label || '')));
+    }
 
     return nextDecks;
   }, [entityFilter, query, sortBy, typeFilter, visibleDecks]);

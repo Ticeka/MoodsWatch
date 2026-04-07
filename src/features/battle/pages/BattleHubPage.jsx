@@ -243,7 +243,7 @@ export function BattleHub() {
     };
   }, [activeOverlay]);
 
-  const loadDailyChallengePreview = async () => {
+  const loadDailyChallengePreview = async (signal) => {
     if (!supabase) {
       setDailyChallenge(null);
       return;
@@ -251,39 +251,39 @@ export function BattleHub() {
 
     setIsDailyChallengeLoading(true);
     try {
-      const { data: challengeData, error: challengeError } = await supabase
-        .from('daily_challenges')
-        .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
-        .eq('challenge_date', TODAY)
-        .maybeSingle();
-
-      if (challengeError) {
-        throw challengeError;
-      }
-
-      setDailyChallenge(challengeData || null);
-
-      if (user?.id && challengeData) {
-        const { data: completion } = await supabase
-          .from('daily_challenge_completions')
-          .select('id')
-          .eq('user_id', user.id)
+      const [challengeResult, completionResult] = await Promise.all([
+        supabase
+          .from('daily_challenges')
+          .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
           .eq('challenge_date', TODAY)
-          .maybeSingle();
-        setDailyChallengeCompleted(Boolean(completion));
-      } else {
-        setDailyChallengeCompleted(false);
-      }
+          .maybeSingle(),
+        user?.id
+          ? supabase
+              .from('daily_challenge_completions')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('challenge_date', TODAY)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      if (signal?.aborted) return;
+
+      if (challengeResult.error) throw challengeResult.error;
+
+      setDailyChallenge(challengeResult.data || null);
+      setDailyChallengeCompleted(Boolean(completionResult.data));
     } catch (fetchError) {
+      if (signal?.aborted) return;
       console.warn('Failed to load daily challenge preview', fetchError);
       setDailyChallenge(null);
       setDailyChallengeCompleted(false);
     } finally {
-      setIsDailyChallengeLoading(false);
+      if (!signal?.aborted) setIsDailyChallengeLoading(false);
     }
   };
 
-  const loadLeaderboardPreview = async () => {
+  const loadLeaderboardPreview = async (signal) => {
     if (!supabase) {
       setLeaderboardPreview([]);
       return;
@@ -309,9 +309,8 @@ export function BattleHub() {
         .order('elo_score', { ascending: false })
         .range(0, 4);
 
-      if (leaderboardError) {
-        throw leaderboardError;
-      }
+      if (signal?.aborted) return;
+      if (leaderboardError) throw leaderboardError;
 
       const normalized = (data || [])
         .map((row) => ({
@@ -326,20 +325,22 @@ export function BattleHub() {
 
       setLeaderboardPreview(normalized);
     } catch (fetchError) {
+      if (signal?.aborted) return;
       console.warn('Failed to load leaderboard preview', fetchError);
       setLeaderboardPreview([]);
     } finally {
-      setIsLeaderboardLoading(false);
+      if (!signal?.aborted) setIsLeaderboardLoading(false);
     }
   };
 
   const openOverlay = async (type) => {
     setActiveOverlay(type);
+    const controller = new AbortController();
     if (type === 'daily') {
-      await loadDailyChallengePreview();
+      await loadDailyChallengePreview(controller.signal);
     }
     if (type === 'leaderboard') {
-      await loadLeaderboardPreview();
+      await loadLeaderboardPreview(controller.signal);
     }
   };
 
@@ -371,6 +372,8 @@ export function BattleHub() {
     }
   };
 
+  const hiddenSet = useMemo(() => new Set(hiddenTitleIds), [hiddenTitleIds]);
+
   const deckOptions = useMemo(() => ({
     hiddenTitleIds,
     excludeAdult: !showAdult,
@@ -378,8 +381,8 @@ export function BattleHub() {
   }), [hiddenTitleIds, showAdult]);
 
   const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenTitleIds.includes(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
-    [hiddenTitleIds, showAdult, titles]
+    () => titles.filter((title) => !hiddenSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
+    [hiddenSet, showAdult, titles]
   );
   const visibleCharacterCatalog = useMemo(
     () => getCatalogEntities(visibleCatalogTitles, CHARACTER_ENTITY_TYPE),

@@ -967,19 +967,23 @@
   z-index: 1;
   max-width: 900px;
   margin: 0 auto;
-  padding: 2rem 1.25rem 6rem;
+  padding: 3.25rem 1.25rem 6rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3rem;
+  gap: 3.5rem;
 }
 
 /* ── Hero ────────────────────────────────────────────── */
 .pgw-hero {
   text-align: center;
   max-width: 44rem;
-  padding: 2.5rem 0 0;
+  padding: 4.25rem 0 0.5rem;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.15rem;
 }
 
 /* Glow halo behind title */
@@ -1020,12 +1024,35 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
+.pgw-title-stack {
+  position: absolute;
+  inset: 4.8rem 0 auto;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pgw-title-echo {
+  display: block;
+  font-size: clamp(3.4rem, 12vw, 6.6rem);
+  font-weight: 900;
+  letter-spacing: -0.09em;
+  line-height: 0.86;
+  color: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.5),
+    0 18px 30px rgba(var(--primary-rgb), 0.08);
+  transform: translateX(-0.04em);
+}
+
 .pgw-title {
+  position: relative;
+  z-index: 1;
   font-size: clamp(3.2rem, 11vw, 6rem);
   font-weight: 900;
   letter-spacing: -0.07em;
   line-height: 0.86;
-  margin: 0 0 1.1rem;
+  margin: 0;
+  color: var(--text-primary);
   background: var(--gradient-primary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1033,12 +1060,41 @@
   filter: drop-shadow(0 4px 20px rgba(var(--primary-rgb), 0.18));
 }
 
+.pgw-hero-marquee {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  max-width: 34rem;
+  margin-top: 0.25rem;
+}
+
+.pgw-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(var(--primary-rgb), 0.24);
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.08), rgba(var(--accent-rgb), 0.06)),
+    var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.06);
+}
+
 .pgw-tagline {
   font-size: clamp(1rem, 2.5vw, 1.15rem);
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 0.55rem;
+  margin: 0;
   line-height: 1.3;
+  max-width: 32rem;
+  margin-top: 0.35rem;
 }
 
 .pgw-sub {
@@ -1046,6 +1102,7 @@
   color: var(--text-secondary);
   line-height: 1.6;
   margin: 0;
+  max-width: 36rem;
 }
 
 /* ── CTA Area ────────────────────────────────────────── */
@@ -1056,6 +1113,7 @@
   width: 100%;
   max-width: 820px;
   align-items: start;
+  margin-top: 0.5rem;
 }
 
 /* ─ Create Card (primary — pink/rose accent) ─────────── */

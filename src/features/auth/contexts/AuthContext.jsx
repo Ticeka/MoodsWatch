@@ -4,6 +4,7 @@ import {
   updateAuthUserProfile,
 } from '@/features/auth/api';
 import { supabase } from '@/shared/lib/supabase';
+import { queryClient } from '@/app/providers';
 
 const AuthContext = createContext();
 
@@ -77,7 +78,12 @@ export function AuthProvider({ children }) {
     setIsProfileLoading(true);
 
     try {
-      const profile = await ensureAuthUserProfile(authUser.id);
+      const profileQueryKey = ['auth-profile', authUser.id];
+      const profile = await queryClient.fetchQuery({
+        queryKey: profileQueryKey,
+        queryFn: () => ensureAuthUserProfile(authUser.id),
+        staleTime: 5 * 60_000,
+      });
       setUser((prev) => {
         if (!prev || prev.id !== authUser.id) {
           return prev;
@@ -223,6 +229,7 @@ export function AuthProvider({ children }) {
 
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    queryClient.clear();
     setSession(null);
     setUser(null);
     setIsProfileLoading(false);
@@ -234,6 +241,7 @@ export function AuthProvider({ children }) {
     const nextProfile = await updateAuthUserProfile(user.id, updates);
     if (!nextProfile) return user?.profile ?? null;
 
+    queryClient.setQueryData(['auth-profile', user.id], nextProfile);
     setUser((prev) => prev ? { ...prev, profile: { ...(prev.profile || {}), ...nextProfile } } : prev);
     return nextProfile;
   }, [user]);

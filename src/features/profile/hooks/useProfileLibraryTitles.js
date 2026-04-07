@@ -1,54 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 
 export function useProfileLibraryTitles(lookupIds, t) {
-  const [libraryTitles, setLibraryTitles] = useState([]);
-  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
-  const [libraryError, setLibraryError] = useState('');
   const lookupIdsKey = useMemo(() => lookupIds.join(','), [lookupIds]);
+  const requestedIds = useMemo(
+    () => lookupIdsKey ? lookupIdsKey.split(',').map((v) => Number(v)).filter(Boolean) : [],
+    [lookupIdsKey]
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTitles() {
-      const requestedIds = lookupIdsKey
-        ? lookupIdsKey.split(',').map((value) => Number(value)).filter(Boolean)
-        : [];
-
-      if (!requestedIds.length) {
-        setLibraryTitles([]);
-        setLibraryError('');
-        return;
-      }
-
-      setIsLibraryLoading(true);
-      setLibraryError('');
-
-      try {
-        const titles = await getTitlesByIds(requestedIds);
-        if (!cancelled) {
-          setLibraryTitles(titles);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLibraryError(error.message || t('profile.loadingLibraryFailed'));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLibraryLoading(false);
-        }
-      }
-    }
-
-    loadTitles();
-    return () => {
-      cancelled = true;
-    };
-  }, [lookupIdsKey, t]);
+  const { data: libraryTitles = [], isFetching: isLibraryLoading, error } = useQuery({
+    queryKey: ['profile-library-titles', lookupIdsKey],
+    queryFn: () => getTitlesByIds(requestedIds),
+    enabled: requestedIds.length > 0,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+  });
 
   return {
     libraryTitles,
     isLibraryLoading,
-    libraryError,
+    libraryError: error ? (error.message || t('profile.loadingLibraryFailed')) : '',
   };
 }

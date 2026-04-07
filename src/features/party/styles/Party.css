@@ -30,6 +30,214 @@
   padding: 3rem 0 5rem;
 }
 
+.party-page-shell {
+  width: min(100% - 2rem, 1200px);
+  margin: 0 auto;
+}
+
+.party-page-shell--narrow {
+  width: min(100% - 2rem, 900px);
+}
+
+.party-shared-back,
+.party-page .party-back-btn,
+.party-page .pt-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pg-border) 82%, rgba(var(--primary-rgb, 236,72,153), 0.12));
+  background: color-mix(in srgb, var(--pg-surface) 92%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: var(--shadow-xs);
+  transition:
+    transform var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.party-shared-back:hover,
+.party-page .party-back-btn:hover,
+.party-page .pt-btn-back:hover {
+  color: var(--text-primary);
+  border-color: rgba(var(--primary-rgb, 236,72,153), 0.3);
+  background: color-mix(in srgb, rgba(var(--primary-rgb, 236,72,153), 0.08) 65%, var(--pg-surface));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.party-shared-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding-top: 1.5rem;
+}
+
+.party-shared-hero::before {
+  content: '';
+  position: absolute;
+  inset: -1rem auto auto 50%;
+  width: min(38rem, 82vw);
+  height: 13rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, rgba(var(--primary-rgb, 236,72,153), 0.13), transparent 68%);
+  filter: blur(24px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.party-shared-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.party-shared-hero--center {
+  align-items: center;
+  text-align: center;
+}
+
+.party-shared-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1.05rem;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.1);
+}
+
+[data-theme="dark"] .party-shared-badge {
+  background: rgba(249, 115, 22, 0.12);
+  color: #fbbf24;
+  border-color: rgba(249, 115, 22, 0.25);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.party-shared-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4));
+  animation: party-badge-pulse 2s infinite ease-in-out;
+}
+
+@keyframes party-badge-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.82; }
+}
+
+.party-shared-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.party-shared-title {
+  margin: 0;
+  font-family: var(--font-heading, sans-serif);
+  font-size: clamp(2.5rem, 7vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+  background: var(--pg-spectrum);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 20px rgba(var(--primary-rgb, 236,72,153), 0.18));
+}
+
+.party-shared-hero--center .party-shared-title {
+  font-size: clamp(3rem, 10vw, 5.75rem);
+}
+
+.party-shared-sub {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.party-shared-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.party-route-fade {
+  animation: party-route-fade-in 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes party-route-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 300ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@media (max-width: 768px) {
+  .party-page.is-hub {
+    padding-top: 2rem;
+  }
+
+  .party-page-shell,
+  .party-page-shell--narrow {
+    width: min(100% - 1.25rem, 1200px);
+  }
+
+  .party-shared-hero {
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+    padding-top: 1rem;
+  }
+
+  .party-shared-badge {
+    font-size: 0.76rem;
+    padding-inline: 0.9rem;
+  }
+
+  .party-shared-sub {
+    font-size: 0.95rem;
+  }
+}
+
 /* ── Last-3s Countdown Overlay ─────────────────────────────────── */
 /* Fixed to viewport center, non-blocking (pointer-events: none)    */
 .party-end-countdown-overlay {

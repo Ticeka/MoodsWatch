@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/api/partyRemoteApi';
@@ -84,6 +84,10 @@ function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } 
 function sortListingItems(items = [], sortBy = 'recent') {
   const sorted = [...items];
 
+  const tsMap = sortBy === 'recent'
+    ? new Map(items.map((item) => [item, Date.parse(item?.updatedAt || '') || 0]))
+    : null;
+
   sorted.sort((left, right) => {
     if (sortBy === 'popular') {
       const likeDiff = Number(right?.likes || 0) - Number(left?.likes || 0);
@@ -101,7 +105,7 @@ function sortListingItems(items = [], sortBy = 'recent') {
         return nameDiff;
       }
     } else {
-      const updatedDiff = new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime();
+      const updatedDiff = tsMap.get(right) - tsMap.get(left);
       if (updatedDiff !== 0) {
         return updatedDiff;
       }
@@ -218,12 +222,12 @@ export function PartyTemplatesPage() {
 
   const handleCardClick = useCallback((template) => {
     if (template.contentType === 'song-set') {
-      navigate(`/party/templates/${template.contentId}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(filterMode)}` : ''}`);
+      navigate(`/party/templates/${template.contentId}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(filterMode)}` : ''}`, { viewTransition: true });
       return;
     }
 
     if (returnTo) {
-      navigate(buildRoomReturnSelectionUrl(returnTo, template));
+      navigate(buildRoomReturnSelectionUrl(returnTo, template), { viewTransition: true });
       return;
     }
 
@@ -233,7 +237,7 @@ export function PartyTemplatesPage() {
       && !template.isOfficial
       && String(template.ownerUserId || '') === String(user.id)
     ) {
-      navigate(`/party/templates/create?mode=title-guess&edit=${encodeURIComponent(template.contentId)}`);
+      navigate(`/party/templates/create?mode=title-guess&edit=${encodeURIComponent(template.contentId)}`, { viewTransition: true });
       return;
     }
 
@@ -251,22 +255,26 @@ export function PartyTemplatesPage() {
   );
 
   return (
-    <div className="party-page is-hub">
+    <div className="party-page is-hub party-route-fade">
       <div className="party-templates-page">
-        <header className="party-templates-header">
+        <header className="party-templates-header party-shared-hero">
           <div>
-            <button className="party-back-btn" onClick={() => navigate(backDestination, { replace: true })} aria-label={backLabel}>
+            <button className="party-back-btn party-shared-back" onClick={() => navigate(backDestination, { replace: true, viewTransition: true })} aria-label={backLabel}>
               <ChevronLeft size={18} />
               {backLabel}
             </button>
-            <span className="party-kicker"><LibrarySquare size={16} /> {pick('เซ็ตปาร์ตี้', 'Party Sets')}</span>
-            <h1>{pick('เลือกเซ็ตสำหรับปาร์ตี้', 'Choose a set for your party')}</h1>
-            <p>{pick('ดูได้ทั้งชุดเพลงและชุดทายชื่อเรื่อง พร้อมแยกกรองตามรูปแบบการเล่นที่ต้องการ', 'Browse song sets and Guess the Title sets, then filter by the kind of play experience you want.')}</p>
+            <div className="party-shared-badge">
+              <span className="party-shared-badge-icon"><Sparkles size={12} fill="currentColor" /></span>
+              {pick('เลือกแล้วกลับไปเล่นต่อได้เลย', 'Choose and jump back in')}
+            </div>
+            <span className="party-kicker party-shared-kicker"><LibrarySquare size={16} /> {pick('เซ็ตปาร์ตี้', 'Party Sets')}</span>
+            <h1 className="party-shared-title">{pick('เลือกเซ็ตสำหรับปาร์ตี้', 'Choose a set for your party')}</h1>
+            <p className="party-shared-sub">{pick('ดูได้ทั้งชุดเพลงและชุดทายชื่อเรื่อง พร้อมแยกกรองตามรูปแบบการเล่นที่ต้องการ', 'Browse song sets and Guess the Title sets, then filter by the kind of play experience you want.')}</p>
           </div>
           <button
             className="btn-play-now"
             style={{ padding: '0.75rem 1.5rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
-            onClick={() => navigate(createSetUrl)}
+            onClick={() => navigate(createSetUrl, { viewTransition: true })}
           >
             {pick('+ สร้างเซ็ต', '+ Create Set')}
           </button>
@@ -389,7 +397,7 @@ export function PartyTemplatesPage() {
                 : pick('ยังไม่มีเซ็ตในหมวดนี้ ลองสร้างเซ็ตแรกได้เลย', 'There are no sets here yet. Create the first one.')}
             </p>
             {!searchQuery && (
-              <button className="btn-play-now" style={{ display: 'inline-flex', padding: '0.75rem 1.5rem' }} onClick={() => navigate(createSetUrl)}>
+              <button className="btn-play-now" style={{ display: 'inline-flex', padding: '0.75rem 1.5rem' }} onClick={() => navigate(createSetUrl, { viewTransition: true })}>
                 {pick('สร้างเซ็ต', 'Create Set')}
               </button>
             )}

@@ -97,6 +97,12 @@ export function TitleDetail() {
   const [songPage, setSongPage] = useState(0);
   const similarRailRef = useRef(null);
   const castRailRef = useRef(null);
+  const watchlistRef = useRef(watchlist);
+  const prefsRef = useRef(prefs);
+  const hiddenFromRecommendationIdsRef = useRef(hiddenFromRecommendationIds);
+  useEffect(() => { watchlistRef.current = watchlist; }, [watchlist]);
+  useEffect(() => { prefsRef.current = prefs; }, [prefs]);
+  useEffect(() => { hiddenFromRecommendationIdsRef.current = hiddenFromRecommendationIds; }, [hiddenFromRecommendationIds]);
 
   const status = title ? getStatus(title.id) : null;
   const watchlistItem = title ? watchlist.find((item) => item.titleId === title.id) : null;
@@ -153,9 +159,9 @@ export function TitleDetail() {
       try {
         const nextSimilar = await getSimilarTitles(title.id, 8, {
           baseTitleData: title,
-          watchlist,
-          preferences: prefs,
-          hiddenTitleIds: hiddenFromRecommendationIds,
+          watchlist: watchlistRef.current,
+          preferences: prefsRef.current,
+          hiddenTitleIds: hiddenFromRecommendationIdsRef.current,
           showAdult,
         });
 
@@ -172,7 +178,7 @@ export function TitleDetail() {
 
     loadSimilarTitles();
     return () => { cancelled = true; };
-  }, [title, watchlist, prefs, hiddenFromRecommendationIds, showAdult]);
+  }, [title?.id, showAdult]);
 
   useEffect(() => {
     if (castTab !== 'stats' || !title?.id) return undefined;

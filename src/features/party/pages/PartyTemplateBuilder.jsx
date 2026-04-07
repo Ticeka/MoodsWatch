@@ -662,7 +662,7 @@ export function PartyTemplateBuilderPage() {
 
   if (loadingBase) {
     return (
-      <div className="party-page pt-template-builder-bg pt-template-builder-loading">
+      <div className="party-page pt-template-builder-bg pt-template-builder-loading party-route-fade">
         <Loader2 size={40} className="animate-spin pt-template-builder-loading__icon" />
       </div>
     );
@@ -673,17 +673,21 @@ export function PartyTemplateBuilderPage() {
   }
 
   return (
-    <div className="party-page pt-template-builder-bg">
+    <div className="party-page pt-template-builder-bg party-route-fade">
       <div className="pt-builder-container">
         {/* Header Bar */}
-        <header className="pt-builder-header">
+        <header className="pt-builder-header party-shared-hero">
           <div className="pt-builder-title-group">
-            <button className="pt-btn-back" onClick={() => navigate(returnTo, { replace: true })}>
+            <button className="pt-btn-back party-shared-back" onClick={() => navigate(returnTo, { replace: true, viewTransition: true })}>
               &larr; {pick('Back', 'Back')}
             </button>
             <div className="pt-builder-title-text">
-              <h1>{meta.name || pick('ตั้งชื่อเพลย์ลิสต์...', 'Name your playlist...')}</h1>
-              <p>
+              <div className="party-shared-badge">
+                <span className="party-shared-badge-icon"><LayoutGrid size={12} /></span>
+                {pick('เซ็ตพร้อมใช้ทั้ง Quiz และ Vote', 'Ready for Quiz and Vote')}
+              </div>
+              <h1 className="party-shared-title">{meta.name || pick('ตั้งชื่อเพลย์ลิสต์...', 'Name your playlist...')}</h1>
+              <p className="party-shared-sub">
                 {items.length} {pick('เพลงที่เลือก', 'songs selected')}
 	                {!validation.valid && (
 	                  <span className="pt-builder-status-error">
@@ -700,7 +704,7 @@ export function PartyTemplateBuilderPage() {
             <button
               type="button"
               className="party-builder-mode-switch-card is-active"
-              onClick={() => navigate(buildPartyBuilderCreateUrl({ returnTo }))}
+              onClick={() => navigate(buildPartyBuilderCreateUrl({ returnTo }), { viewTransition: true })}
             >
               <span className="party-builder-mode-switch-icon"><LayoutGrid size={18} /></span>
               <span className="party-builder-mode-switch-copy">
@@ -711,7 +715,7 @@ export function PartyTemplateBuilderPage() {
             <button
               type="button"
               className="party-builder-mode-switch-card"
-              onClick={() => navigate(buildPartyBuilderCreateUrl({ mode: 'title-guess', returnTo }))}
+              onClick={() => navigate(buildPartyBuilderCreateUrl({ mode: 'title-guess', returnTo }), { viewTransition: true })}
             >
               <span className="party-builder-mode-switch-icon"><Layers3 size={18} /></span>
               <span className="party-builder-mode-switch-copy">
@@ -1428,6 +1432,5 @@ export function PartyTemplateBuilderPage() {
     </div>
   );
 }
-
 
 

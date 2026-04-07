@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Loader2, Music2, RefreshCw, Search, Vote } from 'lucide-react';
+import { ArrowLeft, Loader2, Music2, RefreshCw, Search, Sparkles, Vote } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -14,6 +14,7 @@ import {
 } from '@/features/party/api/partyRemoteApi';
 import { buildPartyProfile } from '@/features/party/lib/partyRoomUtils';
 import '../styles/PartyRoomDirectory.css';
+import '../styles/Party.css';
 
 const PAGE_SIZE = 20;
 
@@ -154,7 +155,7 @@ export function PartyRoomDirectoryPage() {
       if (record?.status === 'approved') {
         toast.success(pick('ได้รับการอนุมัติแล้ว!', 'Approved!'));
         setPendingRequest(null);
-        navigate(`/party/room/${pendingRequest.room_code}`);
+        navigate(`/party/room/${pendingRequest.room_code}`, { viewTransition: true });
       } else if (record?.status === 'rejected') {
         toast.error(pick('host ปฏิเสธคำขอ', 'Request rejected'));
         setPendingRequest(null);
@@ -189,21 +190,25 @@ export function PartyRoomDirectoryPage() {
   };
 
   return (
-    <div className="prd-page">
+    <div className="prd-page party-route-fade">
       <div className="prd-shell">
 
-        <Link to="/party" className="prd-back">
+        <Link to="/party" viewTransition className="prd-back party-shared-back">
           <ArrowLeft size={14} />
           {pick('กลับ', 'Back')}
         </Link>
 
-        <header className="prd-header">
-          <div className="prd-kicker">
+        <header className="prd-header party-shared-hero">
+          <div className="party-shared-badge">
+            <span className="party-shared-badge-icon"><Sparkles size={12} fill="currentColor" /></span>
+            {pick('พร้อมเข้าเล่นทันที', 'Open right now')}
+          </div>
+          <div className="prd-kicker party-shared-kicker">
             <Music2 size={11} />
             Music Guess Party
           </div>
-          <h1 className="prd-title">{pick('หาห้องเล่น', 'Find a Room')}</h1>
-          <p className="prd-sub">
+          <h1 className="prd-title party-shared-title">{pick('หาห้องเล่น', 'Find a Room')}</h1>
+          <p className="prd-sub party-shared-sub">
             {pick('ห้อง Public ที่รอผู้เล่นอยู่ตอนนี้', 'Public rooms open for players right now')}
           </p>
         </header>

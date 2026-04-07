@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Copy, ListEnd, Music, Loader2, Star, Heart, Eye, Pencil, Video, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
+import { Play, Copy, ListEnd, Music, Loader2, Sparkles, Star, Heart, Eye, Pencil, Video, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { PARTY_PRESETS, getPartyPresetById } from '@/features/party/lib/partyEngine';
@@ -218,15 +218,27 @@ export function PartyTemplateDetailPage() {
     : Boolean(playNowPresetId && templateCompatibility.presetResults[playNowPresetId]?.compatible);
 
   return (
-    <div className="party-page">
+    <div className="party-page party-route-fade">
       <div className="party-templates-page" style={{ paddingTop: '1rem' }}>
         <button
-          className="btn-secondary"
-          style={{ display: 'inline-flex', padding: '0.5rem 1rem', marginBottom: '1rem' }}
-          onClick={() => navigate(backDestination, { replace: true })}
+          className="btn-secondary party-shared-back"
+          style={{ marginBottom: '1rem' }}
+          onClick={() => navigate(backDestination, { replace: true, viewTransition: true })}
         >
           &larr; {backLabel}
         </button>
+
+        <header className="party-shared-hero">
+          <div className="party-shared-badge">
+            <span className="party-shared-badge-icon"><Sparkles size={12} fill="currentColor" /></span>
+            {canPlayNow ? pick('พร้อมเริ่มเล่น', 'Ready to start') : pick('ยังต้องเก็บเพลงเพิ่มอีกนิด', 'Needs a few more songs')}
+          </div>
+          <span className="party-shared-kicker"><Music size={16} />{pick('รายละเอียดเซ็ตปาร์ตี้', 'Party Set Detail')}</span>
+          <h1 className="party-shared-title">{template.name}</h1>
+          <p className="party-shared-sub">
+            {template.description || pick('ดูความพร้อมของเซ็ตนี้ก่อนส่งเข้าห้องหรือคัดลอกไปแก้ต่อ', 'Check compatibility before sending this set into a room or cloning it for edits.')}
+          </p>
+        </header>
 
         <div className="party-template-detail-container">
           {/* Sidebar Info */}
@@ -240,7 +252,7 @@ export function PartyTemplateDetailPage() {
             </div>
 
             <div className="ptd-info-card">
-              <h1 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', lineHeight: '1.2' }}>{template.name}</h1>
+              <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.45rem', lineHeight: '1.2' }}>{template.name}</h2>
 
               {template.tags.length > 0 && (
                 <div className="party-template-tags" style={{ marginBottom: '1rem' }}>

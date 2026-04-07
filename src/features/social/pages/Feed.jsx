@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Loader2, Rss, Users } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { getTitleDisplayName } from '@/features/profile/lib/profileStore';
-import { fetchPostsFeed, fetchSocialActivityFeed, fetchSocialPostById } from '@/features/social/api/socialApi';
+import { fetchSocialPostById } from '@/features/social/api/socialApi';
+import { useSocialPostsFeed, useSocialActivityFeed } from '@/features/social/hooks/useSocialFeed';
 import { PostComposer } from '@/features/social/components/PostComposer';
 import { PostCard } from '@/features/social/components/PostCard';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
@@ -107,19 +108,29 @@ export function Feed() {
   const { user } = useAuth();
   const { language, t } = useLanguage();
   const { showAdult } = useAgeGate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const focusPostId = new URLSearchParams(location.search).get('post') ?? location.state?.focusPostId ?? null;
   const postsSectionRef = useRef(null);
   const [highlightedPostId, setHighlightedPostId] = useState(null);
 
-  const [rawPosts, setRawPosts]         = useState([]);
-  const [postTitleMap, setPostTitleMap] = useState(new Map());
-  const [postsLoading, setPostsLoading] = useState(true);
+  const {
+    data: postsData,
+    isFetching: postsLoading,
+    refetch: refetchPosts,
+  } = useSocialPostsFeed(user?.id);
 
-  const [rawItems, setRawItems]     = useState([]);
-  const [titleMap, setTitleMap]     = useState(new Map());
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [error, setError]           = useState('');
+  const {
+    data: activityData,
+    isFetching: activityLoading,
+    error: activityError,
+  } = useSocialActivityFeed(user?.id);
+
+  const rawPosts = postsData?.feed ?? [];
+  const postTitleMap = postsData?.titleMap ?? new Map();
+  const rawItems = activityData?.feed ?? [];
+  const titleMap = activityData?.titleMap ?? new Map();
+  const error = activityError ? t('social.feedLoadFailed') : '';
 
   const applyAdultFilter = useCallback((feed, map) => {
     if (!map.size) return feed;
@@ -134,45 +145,7 @@ export function Feed() {
   const posts = useMemo(() => applyAdultFilter(rawPosts, postTitleMap), [applyAdultFilter, rawPosts, postTitleMap]);
   const items = useMemo(() => applyAdultFilter(rawItems, titleMap), [applyAdultFilter, rawItems, titleMap]);
 
-  const loadPosts = useCallback(async () => {
-    if (!user?.id) { setPostsLoading(false); return; }
-    setPostsLoading(true);
-    try {
-      const feed = await fetchPostsFeed(user.id, 20, 0);
-      const titleIds = [...new Set(feed.map((p) => p.title_id).filter(Boolean))];
-      if (titleIds.length) {
-        const titles = await getTitlesByIds(titleIds);
-        setPostTitleMap(new Map(titles.map((t) => [Number(t.id), t])));
-      }
-      setRawPosts(feed);
-    } finally {
-      setPostsLoading(false);
-    }
-  }, [user?.id]);
-
-  const loadActivity = useCallback(async () => {
-    if (!user?.id) { setActivityLoading(false); return; }
-    setActivityLoading(true);
-    setError('');
-    try {
-      const feed = await fetchSocialActivityFeed(user.id, 40);
-      const titleIds = [...new Set(feed.map((i) => i.title_id).filter(Boolean))];
-      if (titleIds.length) {
-        const titles = await getTitlesByIds(titleIds);
-        setTitleMap(new Map(titles.map((t) => [Number(t.id), t])));
-      }
-      setRawItems(feed);
-    } catch {
-      setError(t('social.feedLoadFailed'));
-    } finally {
-      setActivityLoading(false);
-    }
-  }, [user?.id, t]);
-
-  useEffect(() => {
-    loadPosts();
-    loadActivity();
-  }, [loadPosts, loadActivity]);
+  const loadPosts = useCallback(() => refetchPosts(), [refetchPosts]);
 
   useEffect(() => {
     if (!focusPostId || postsLoading) return;
@@ -183,9 +156,10 @@ export function Feed() {
       fetchSocialPostById(focusPostId)
         .then((data) => {
           if (data) {
-            setRawPosts((prev) => {
-              if (prev.some((p) => String(p.id) === String(data.id))) return prev;
-              return [data, ...prev];
+            queryClient.setQueryData(['social-posts-feed', user?.id], (prev) => {
+              if (!prev) return prev;
+              if (prev.feed.some((p) => String(p.id) === String(data.id))) return prev;
+              return { ...prev, feed: [data, ...prev.feed] };
             });
           }
         });
@@ -203,7 +177,10 @@ export function Feed() {
   }, [focusPostId, postsLoading, posts]);
 
   function handlePostDeleted(id) {
-    setRawPosts((prev) => prev.filter((p) => p.id !== id));
+    queryClient.setQueryData(['social-posts-feed', user?.id], (prev) => {
+      if (!prev) return prev;
+      return { ...prev, feed: prev.feed.filter((p) => p.id !== id) };
+    });
   }
 
   const isLoading = postsLoading && activityLoading;

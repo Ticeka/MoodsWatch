@@ -17,6 +17,7 @@ import { PARTY_PRESETS, createPartySettings } from '@/features/party/lib/partyEn
 import { createPartyRoom, getPartyBackendHint, joinPartyRoom, readPartyProfile } from '@/features/party/api/partyRemoteApi';
 import { buildPartyProfile } from '@/features/party/lib/partyRoomUtils';
 import '../styles/PartyHub.css';
+import '../styles/Party.css';
 
 export function PartyHubPage() {
   const navigate = useNavigate();
@@ -48,7 +49,7 @@ export function PartyHubPage() {
       const defaultSettings = createPartySettings({ modeType: 'quiz', presetId: PARTY_PRESETS[0].id });
       const room = await createPartyRoom({ profile: partyProfile, settings: defaultSettings, roomName, visibility });
       toast.success(pick('สร้างห้องสำเร็จ', 'Room created'));
-      navigate(`/party/room/${room.room_code}`);
+      navigate(`/party/room/${room.room_code}`, { viewTransition: true });
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
@@ -62,7 +63,7 @@ export function PartyHubPage() {
       setBusyAction('join');
       const room = await joinPartyRoom(joinCode, partyProfile);
       toast.success(pick('เข้าร่วมห้องแล้ว', 'Joined the room'));
-      navigate(`/party/room/${room.room_code}`);
+      navigate(`/party/room/${room.room_code}`, { viewTransition: true });
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
@@ -79,15 +80,22 @@ export function PartyHubPage() {
   ];
 
   return (
-    <div className="pgw-page">
+    <div className="pgw-page party-route-fade">
       <div className="pgw-shell">
         <header className="pgw-hero">
-          <div className="pgw-kicker"><Radio size={11} />{pick('ห้องปาร์ตี้เพลง', 'Party Room')}</div>
-          <h1 className="pgw-title">PARTY</h1>
-          <p className="pgw-tagline">
+          <div className="pgw-title-stack animate-fade-in-up" aria-hidden="true">
+            <span className="pgw-title-echo">PARTY</span>
+          </div>
+          <h1 className="pgw-title animate-fade-in-up">PARTY</h1>
+          <div className="pgw-hero-marquee animate-fade-in-up" style={{ animationDelay: '0.08s' }} aria-label={pick('จุดเด่นของหน้า Party', 'Party highlights')}>
+            <span className="pgw-hero-pill">{pick('สร้างห้องไว', 'Fast room setup')}</span>
+            <span className="pgw-hero-pill">{pick('แชร์โค้ดชวนเพื่อน', 'Share room code')}</span>
+            <span className="pgw-hero-pill">{pick('เริ่มพร้อมกันทั้งห้อง', 'Start together')}</span>
+          </div>
+          <p className="pgw-tagline animate-fade-in-up" style={{ animationDelay: '0.14s' }}>
             {pick('สร้างห้องแล้วตั้งค่าเกมในล็อบบี้', 'Create a room, then finish setup in the lobby')}
           </p>
-          <p className="pgw-sub">
+          <p className="pgw-sub animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             {pick(
               'เริ่มจากสร้างห้องก่อน แล้วค่อยเลือกโหมด ชุดเพลง หรือชุดคำถาม รวมถึงเวลาต่อรอบในล็อบบี้',
               'Start by creating the room, then choose the mode, song set or question set, and round timing in the lobby.',
@@ -95,7 +103,7 @@ export function PartyHubPage() {
           </p>
         </header>
 
-        <div className="pgw-cta-area">
+        <div className="pgw-cta-area animate-fade-in-up" style={{ animationDelay: '0.26s' }}>
           <form className="pgw-create-card" onSubmit={handleCreate}>
             <div className="pgw-card-eyebrow">{pick('สร้างห้องใหม่', 'New Room')}</div>
             <input
@@ -156,7 +164,7 @@ export function PartyHubPage() {
                 {pick('มีโค้ดอยู่แล้ว? เข้าได้ทันที', 'Already have a code? Jump right in')}
               </p>
             </form>
-            <Link to="/party/rooms" className="pgw-find-link">
+            <Link to="/party/rooms" viewTransition className="pgw-find-link">
               <Search size={14} />
               {pick('ดูห้องสาธารณะ', 'Browse Public Rooms')}
             </Link>
