@@ -2,7 +2,7 @@ import React from 'react';
 import { Sparkles } from 'lucide-react';
 import { TIME_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import './Selectors.css';
+import '../styles/Selectors.css';
 
 export function TimeSelector({ selected, onChange }) {
   const { language, t } = useLanguage();

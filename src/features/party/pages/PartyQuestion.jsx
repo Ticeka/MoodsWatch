@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useCurrentPartyRoundAnswers, usePartyLeaderboard } from '@/features/party/lib/usePartyRoomSelectors';
-import { PartyAnswerPanel } from './PartyRoomShared';
+import { PartyAnswerPanel } from '../components/PartyRoomShared';
 import { PartyTitleGuessQuestionStage } from '../components/PartyTitleGuessView';
 
 export const PartyQuestionView = React.memo(function PartyQuestionView({

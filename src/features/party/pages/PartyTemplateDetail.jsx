@@ -12,7 +12,7 @@ import {
   syncPartyTemplateYoutubePlaylist,
   replacePartyTemplateItems,
   deletePartyTemplate,
-} from '@/features/party/lib/partyRemote';
+} from '@/features/party/api/partyRemoteApi';
 import { isYoutubeTemplateItem, getYoutubePlaybackLabel, getYoutubePlaybackStatusClass } from '@/features/party/lib/partyYoutube';
 import { isTemplateItemImportedFromPlaylist } from '@/features/party/lib/partyTemplateUtils';
 import {
@@ -22,9 +22,9 @@ import {
   resolveTemplateCoverUrl,
 } from '@/features/party/lib/partyTemplateUtils';
 import '../components/PartyTemplates.css';
-import '../pages/Party.css';
+import '../styles/Party.css';
 
-function getTemplateCompatibilityCopy(reason, pick) {
+function getTemplateCompatibilityCopy(reason) {
   if (!reason) {
     return '';
   }
@@ -59,7 +59,6 @@ export function PartyTemplateDetailPage() {
   const { pick } = useLanguage();
   const { user } = useAuth();
   const returnTo = searchParams.get('returnTo') || '';
-  const returnMode = searchParams.get('mode') || 'all';
 
   const [template, setTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -306,7 +305,7 @@ export function PartyTemplateDetailPage() {
 	                      <span>
 	                        {result.compatible
 	                          ? pick(`พร้อมสำหรับ ${preset.label}`, `Ready for ${preset.label}`)
-	                          : getTemplateCompatibilityCopy(result.blockingReasons?.[0], pick)}
+	                          : getTemplateCompatibilityCopy(result.blockingReasons?.[0])}
 	                      </span>
 	                    </div>
 	                  );
@@ -316,7 +315,7 @@ export function PartyTemplateDetailPage() {
 	                  <span>
 	                    {templateCompatibility.voteResult.compatible
 	                      ? pick('พร้อมสำหรับ Vote Battle', 'Ready for Vote Battle')
-	                      : getTemplateCompatibilityCopy(templateCompatibility.voteResult.blockingReasons?.[0], pick)}
+	                      : getTemplateCompatibilityCopy(templateCompatibility.voteResult.blockingReasons?.[0])}
 	                  </span>
 	                </div>
 	              </div>
@@ -331,7 +330,6 @@ export function PartyTemplateDetailPage() {
 	                      template.modeScope === 'vote'
 	                        ? templateCompatibility.voteResult.blockingReasons?.[0]
 	                        : templateCompatibility.presetResults[playNowPresetId]?.blockingReasons?.[0],
-	                      pick,
 	                    )
 	                    : undefined}
 	                >

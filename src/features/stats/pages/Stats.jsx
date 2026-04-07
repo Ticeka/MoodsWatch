@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { BarChart2, Clock, Star, TrendingUp } from 'lucide-react';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import './Stats.css';
+import '../styles/Stats.css';
 
 const MONTH_NAMES = {
   th: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'],
@@ -13,12 +13,10 @@ function buildStats(watchlist, watchlistTitles) {
   const titleMap = new Map(watchlistTitles.map((t) => [t.id, t]));
 
   let completedCount = 0;
-  let totalMinutes = 0;
   let scoreSum = 0;
   let scoredCount = 0;
 
   const genreCount = new Map();
-  const genreMinutes = new Map();
   const genreScoreSum = new Map();
   const genreScoreCount = new Map();
   const activityMap = new Map(); // date → count

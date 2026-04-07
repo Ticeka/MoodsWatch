@@ -16,7 +16,7 @@ import {
 export const YOUTUBE_SUPPORT_ENABLED = true;
 
 const YOUTUBE_SOURCE_NOISE_PATTERN = /\b(op|ed|opening|ending|ost|soundtrack|full|ver|version|mv|pv|amv|lyrics?|lyric video|official|creditless|tv size|short ver|long ver|nightcore|cover|reaction)\b/giu;
-const YOUTUBE_SOURCE_BRACKET_NOISE_PATTERN = /[\[(【（](.*?)(op|ed|opening|ending|ost|soundtrack|full|lyrics?|mv|pv|amv|official|creditless|tv size|ver|version)(.*?)[\])】）]/giu;
+const YOUTUBE_SOURCE_BRACKET_NOISE_PATTERN = /[[【（](.*?)(op|ed|opening|ending|ost|soundtrack|full|lyrics?|mv|pv|amv|official|creditless|tv size|ver|version)(.*?)[\])】）]/giu;
 const YOUTUBE_SOURCE_SPLIT_PATTERN = /\s(?:[-|/:~]|by|from)\s/iu;
 
 function toStringArray(value) {
@@ -29,7 +29,7 @@ function normalizeYoutubeCandidateText(value) {
   return String(value || '')
     .normalize('NFKC')
     .replace(YOUTUBE_SOURCE_BRACKET_NOISE_PATTERN, ' ')
-    .replace(/[【】\[\]（）()「」『』]/g, ' ')
+    .replace(/[[\]【】（）()「」『』]/g, ' ')
     .replace(YOUTUBE_SOURCE_NOISE_PATTERN, ' ')
     .replace(/\b\d{1,2}(st|nd|rd|th)\s+(op|ed)\b/giu, ' ')
     .replace(/\bseason\s+\d+\b/giu, ' ')

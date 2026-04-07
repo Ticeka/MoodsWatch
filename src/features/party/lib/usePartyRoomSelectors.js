@@ -5,7 +5,7 @@ import {
   getPartyCurrentRound,
 } from '@/features/party/lib/partyEngine';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
-import { buildHydratedPartyMembers } from '@/features/party/pages/partyRoomUtils';
+import { buildHydratedPartyMembers } from '@/features/party/lib/partyRoomUtils';
 
 export function useHydratedPartyMembers(guestToken, partyProfile) {
   const storeMembers = usePartyRoomStore((state) => state.members);

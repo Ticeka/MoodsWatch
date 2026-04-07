@@ -5,541 +5,62 @@ import {
   TrendingUp, Star, Flame, Clock, CalendarDays, Hash, Users, Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { fetchAniListGraphQL } from '@/shared/lib/anilist';
-import { annotateCharacterIdentities, normalizePresentationGender } from '@/shared/lib/characterIdentity';
+import {
+  ANILIST_CHARACTER_ROLE_OPTIONS,
+  buildFilteredAniListCharStaffMedia,
+  buildStoredCharacterKeySet,
+  fetchAniListCharStaff,
+  isAniListRateLimitError,
+  buildResolvedTrailerPatch,
+  buildAniListTrailerPatch,
+  buildPreferredTitleSearchNames,
+  fetchAdminAniListCharStaffTargets,
+  fetchAdminJikanPage,
+  fetchAdminPornhwaDbPage,
+  fetchAdminPornhwaCharacterTargets,
+  fetchAdminThemeTargets,
+  fetchAdminTrailerTargets,
+  fetchAniListTrailerById,
+  fetchPornhwaDbCharactersViaProxy as fetchPornhwaDbCharactersViaProxyApi,
+  fetchExistingTitleCharStaffState,
+  getOrderedAliasValues,
+  getMediaDisplayTitle,
+  isBoysLovePornhwaEntry,
+  normalizeMedia as normalizeMediaApi,
+  normalizeJikanMangaEntry,
+  normalizePornhwaDbEntry,
+  replaceTitleThemeSongs as replaceTitleThemeSongsApi,
+  resolveAdminTrailerFromFallbackSources,
+  resolveAniListTrailerBySearch,
+  resolveAnimeThemesMatch,
+  updateAdminTitleTrailerPatch,
+  upsertAdminTitleSourceRef,
+  upsertCharStaff as upsertCharStaffApi,
+  upsertJikanTitle as upsertJikanTitleApi,
+  upsertPornhwaDbCharacters as upsertPornhwaDbCharactersApi,
+  upsertPornhwaDbTitle as upsertPornhwaDbTitleApi,
+  upsertTitle as upsertTitleApi,
+} from '@/features/admin/api';
 import { supabase } from '@/shared/lib/supabase';
-import { getAutoDerivableMoods } from '@/shared/data/moods';
+import { fetchAniListGraphQL } from '@/shared/lib/anilist';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { normalizeTrailer } from '@/shared/lib/trailers';
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
-
-function slugify(v) {
-  return String(v || '').toLowerCase().trim().normalize('NFKD')
-    .replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
-}
-function mapStatus(s) {
-  const n = String(s || '').toUpperCase();
-  if (['FINISHED', 'COMPLETED', 'COMPLETE', 'ENDED'].includes(n)) return 'completed';
-  if (['NOT_YET_RELEASED', 'TBA', 'UPCOMING', 'UNRELEASED'].includes(n)) return 'upcoming';
-  if (['HIATUS', 'ON_HIATUS'].includes(n)) return 'hiatus';
-  if (['CANCELLED', 'CANCELED'].includes(n)) return 'cancelled';
-  return 'ongoing';
-}
-function inferSubtype({ mediaType, originCountry, sourceHints = [] }) {
-  if (mediaType === 'anime') return { type: 'anime', subtype: 'anime' };
-  const hints = sourceHints.join(' ').toLowerCase();
-  if (originCountry === 'KR' || hints.includes('manhwa') || hints.includes('webtoon'))
-    return { type: 'manga', subtype: hints.includes('webtoon') ? 'webtoon' : 'manhwa' };
-  if (originCountry === 'CN' || hints.includes('manhua'))
-    return { type: 'manga', subtype: 'manhua' };
-  return { type: 'manga', subtype: 'manga' };
-}
-function deriveMoodIds(parts) {
-  const hay = parts.filter(Boolean).join(' ').toLowerCase();
-  return getAutoDerivableMoods()
-    .filter((mood) => (mood.tags || []).some((tag) => hay.includes(tag.toLowerCase())))
-    .map((mood) => mood.id);
-}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildAniListTrailerPatch(media) {
-  const trailer = normalizeTrailer({
-    trailer_url: media?.trailer?.id
-      ? media.trailer.site === 'youtube'
-        ? `https://www.youtube.com/watch?v=${media.trailer.id}`
-        : media.trailer.site === 'dailymotion'
-          ? `https://www.dailymotion.com/video/${media.trailer.id}`
-          : null
-      : null,
-    trailer_site: media?.trailer?.site || null,
-    trailer_video_id: media?.trailer?.id || null,
-    trailer_thumbnail_url: media?.trailer?.thumbnail || null,
-    trailer_source: media?.trailer?.id ? 'anilist' : null,
-  });
-
-  return {
-    trailer_url: trailer?.url || null,
-    trailer_site: trailer?.site || null,
-    trailer_video_id: trailer?.videoId || null,
-    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
-    trailer_source: trailer?.source || 'anilist',
-  };
-}
-
-function buildResolvedTrailerPatch(trailerInput) {
-  const trailer = normalizeTrailer({
-    trailer_url: trailerInput?.url || trailerInput?.watchUrl || null,
-    trailer_site: trailerInput?.site || trailerInput?.provider || null,
-    trailer_video_id: trailerInput?.videoId || null,
-    trailer_thumbnail_url: trailerInput?.thumbnailUrl || null,
-    trailer_source: trailerInput?.source || null,
-  });
-
-  return {
-    trailer_url: trailer?.url || null,
-    trailer_site: trailer?.site || null,
-    trailer_video_id: trailer?.videoId || null,
-    trailer_thumbnail_url: trailer?.thumbnailUrl || null,
-    trailer_source: trailer?.source || trailerInput?.source || null,
-  };
-}
-
-function getMediaDisplayTitle(media) {
-  return media?.title?.english || media?.title?.romaji || media?.title?.native || `AniList #${media?.id ?? ''}`;
-}
-
-function normalizeMedia(media) {
-  const mediaType = media.type === 'ANIME' ? 'anime' : 'manga';
-  const { type, subtype } = inferSubtype({
-    mediaType, originCountry: media.countryOfOrigin || null,
-    sourceHints: [media.format, ...(media.genres || []), ...(media.tags || []).map((t) => t.name)],
-  });
-  const canonicalTitle = media.title.english || media.title.romaji || media.title.native || `anilist-${media.id}`;
-  const slugBase = media.title.english || media.title.romaji || media.title.native || `${type}-${media.id}`;
-  const originLanguage = media.countryOfOrigin === 'JP' ? 'ja' : media.countryOfOrigin === 'KR' ? 'ko' : media.countryOfOrigin === 'CN' ? 'zh' : null;
-  return {
-    anilistId: String(media.id),
-    displayTitle: canonicalTitle,
-    coverImage: media.coverImage?.large || null,
-    canonical: {
-      slug: `${slugify(slugBase) || type}-${media.id}`,
-      canonical_title: canonicalTitle, type, subtype,
-      origin_country: media.countryOfOrigin || null, origin_language: originLanguage,
-      status: mapStatus(media.status), release_year: media.seasonYear || null,
-      episodes: media.episodes || null, chapters: media.chapters || null,
-      volumes: media.volumes || null, duration_minutes: media.duration || null,
-      is_adult: Boolean(media.isAdult),
-      cover_image: media.coverImage?.extraLarge || media.coverImage?.large || null,
-      banner_image: media.bannerImage || null,
-      synopsis: media.description || null, avg_score: media.averageScore || null,
-      ...buildAniListTrailerPatch(media),
-      popularity_score: media.popularity || null, last_synced_at: new Date().toISOString(),
-    },
-    aliases: [
-      media.title.english && { alias: media.title.english, language_code: 'en', alias_type: 'english', is_primary: true },
-      media.title.romaji && { alias: media.title.romaji, language_code: 'ja-Latn', alias_type: 'romaji', is_primary: !media.title.english },
-      media.title.native && { alias: media.title.native, language_code: null, alias_type: 'native', is_primary: false },
-      ...(media.synonyms || []).filter(Boolean).map((a) => ({ alias: a, language_code: null, alias_type: 'synonym', is_primary: false })),
-    ].filter(Boolean),
-    genres: (media.genres || []).map((genre_name) => ({ genre_name })),
-    tags: (media.tags || []).map((tag) => ({ tag_name: tag.name, weight: tag.rank || null, source_provider: 'anilist' })),
-    moodIds: deriveMoodIds([media.description, ...(media.genres || []), ...(media.tags || []).map((t) => t.name)]),
-    sourceRef: {
-      provider: 'anilist', external_id: String(media.id), external_url: media.siteUrl || null,
-      source_priority: media.type === 'ANIME' ? 10 : subtype === 'manhwa' ? 20 : 10,
-      raw_payload: media,
-    },
-  };
-}
-
 // ─── AniList ─────────────────────────────────────────────────────────────────
 
 const GQL = `query($page:Int!$perPage:Int!$type:MediaType!$sort:[MediaSort!]$formatIn:[MediaFormat!]$status:MediaStatus$countryOfOrigin:CountryCode$averageScoreGreater:Int$popularityGreater:Int){Page(page:$page,perPage:$perPage){pageInfo{currentPage hasNextPage}media(type:$type,sort:$sort,isAdult:false,format_in:$formatIn,status:$status,countryOfOrigin:$countryOfOrigin,averageScore_greater:$averageScoreGreater,popularity_greater:$popularityGreater){id type format status seasonYear episodes duration chapters volumes countryOfOrigin isAdult popularity averageScore description(asHtml:false)siteUrl title{romaji english native}synonyms coverImage{extraLarge large}bannerImage genres tags{name rank} trailer{id site thumbnail}}}}`;
-const ANILIST_TRAILER_GQL = `query($id:Int!){Media(id:$id){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}`;
-const ANILIST_TRAILER_SEARCH_GQL = `query($search:String!$type:MediaType){Page(page:1,perPage:5){media(search:$search,type:$type,isAdult:false){id type siteUrl title{romaji english native} trailer{id site thumbnail}}}}`;
 
 async function fetchAniListPage(vars, signal) {
   const data = await fetchAniListGraphQL(GQL, vars, { signal });
   return data?.Page;
 }
 
-// ─── AniList characters & staff query ────────────────────────────────────────
-
-const ANILIST_CHARACTER_PAGE_SIZE = 25;
-const ANILIST_CHARACTER_PAGE_HARD_LIMIT = 40;
-const ANILIST_CHARACTER_ROLE_OPTIONS = ['MAIN', 'SUPPORTING', 'BACKGROUND'];
-const ANILIST_RATE_LIMIT_MAX_RETRIES = 4;
-const ANILIST_RATE_LIMIT_BASE_DELAY_MS = 2500;
 const ANILIST_RATE_LIMIT_TITLE_COOLDOWN_MS = 8000;
-const CHAR_STAFF_GQL = `query($id:Int!$characterPage:Int!$characterPerPage:Int!){Media(id:$id){characters(page:$characterPage,perPage:$characterPerPage,sort:[ROLE,RELEVANCE]){pageInfo{currentPage hasNextPage}edges{role node{id gender name{full native}image{medium}}voiceActors(language:JAPANESE){id name{full native}image{medium}}}}staff(sort:RELEVANCE,perPage:25){edges{role node{id name{full native}image{medium}}}}}}`;
-
-function isAniListRateLimitError(error) {
-  const message = String(error?.message || '').toLowerCase();
-  return message.includes('429') || message.includes('rate limit');
-}
-
-function getAniListCharacterEdgeKey(edge) {
-  const characterId = edge?.node?.id ?? null;
-  const role = String(edge?.role || '').toUpperCase();
-  return `${characterId ?? 'unknown'}:${role}`;
-}
-
-function getStoredCharacterRowKey(row) {
-  return `${row?.anilist_id ?? row?.name_full ?? 'unknown'}:${String(row?.role || '').toUpperCase()}`;
-}
-
-function buildStoredCharacterKeySet(rows, options = {}) {
-  const allowedRoles = new Set((options.allowedRoles || ANILIST_CHARACTER_ROLE_OPTIONS).map((role) => String(role || '').toUpperCase()));
-  return new Set(
-    (rows || [])
-      .filter((row) => allowedRoles.has(String(row?.role || '').toUpperCase()))
-      .filter((row) => !options.imageOnly || row?.image_url)
-      .map((row) => getStoredCharacterRowKey(row)),
-  );
-}
-
-async function fetchAniListCharStaff(anilistId, signal, options = {}) {
-  const aggregatedEdges = [];
-  const seenCharacterKeys = new Set();
-  let currentPage = 1;
-  let staffEdges = [];
-  let lastMedia = null;
-  let partialCharacterSync = false;
-
-  while (currentPage <= ANILIST_CHARACTER_PAGE_HARD_LIMIT) {
-    let data = null;
-
-    for (let attempt = 0; attempt <= ANILIST_RATE_LIMIT_MAX_RETRIES; attempt += 1) {
-      try {
-        data = await fetchAniListGraphQL(
-          CHAR_STAFF_GQL,
-          { id: anilistId, characterPage: currentPage, characterPerPage: ANILIST_CHARACTER_PAGE_SIZE },
-          { signal },
-        );
-        break;
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        if (!isAniListRateLimitError(error) || attempt === ANILIST_RATE_LIMIT_MAX_RETRIES) {
-          throw error;
-        }
-        const retryDelay = ANILIST_RATE_LIMIT_BASE_DELAY_MS * (2 ** attempt) + Math.round(Math.random() * 400);
-        await sleep(retryDelay);
-      }
-    }
-
-    const media = data?.Media || null;
-    if (!media) {
-      return lastMedia;
-    }
-
-    lastMedia = media;
-    for (const edge of media.characters?.edges || []) {
-      const characterId = edge?.node?.id ?? null;
-      const role = edge?.role ?? '';
-      const dedupeKey = `${characterId ?? 'unknown'}:${role}`;
-      if (seenCharacterKeys.has(dedupeKey)) {
-        continue;
-      }
-      seenCharacterKeys.add(dedupeKey);
-      aggregatedEdges.push(edge);
-    }
-
-    if (currentPage === 1) {
-      staffEdges = media.staff?.edges || [];
-    }
-
-    if (options.targetCharacterCount > 0) {
-      const filteredKeys = new Set(
-        aggregatedEdges.map((edge) => getAniListCharacterEdgeKey(edge)),
-      );
-      for (const existingKey of options.existingCharacterKeys || []) {
-        filteredKeys.add(existingKey);
-      }
-      if (filteredKeys.size >= options.targetCharacterCount) {
-        partialCharacterSync = Boolean(media.characters?.pageInfo?.hasNextPage);
-        break;
-      }
-    }
-
-    if (!media.characters?.pageInfo?.hasNextPage || !(media.characters?.edges || []).length) {
-      break;
-    }
-
-    currentPage += 1;
-    await sleep(500);
-  }
-
-  return {
-    ...lastMedia,
-    characters: {
-      ...lastMedia?.characters,
-      edges: aggregatedEdges,
-    },
-    staff: {
-      ...lastMedia?.staff,
-      edges: staffEdges,
-    },
-    syncMeta: {
-      partialCharacterSync,
-    },
-  };
-}
-
-function filterAniListCharacterEdges(edges, options = {}) {
-  const allowedRoles = new Set((options.allowedRoles || ANILIST_CHARACTER_ROLE_OPTIONS).map((role) => String(role || '').toUpperCase()));
-  let filtered = (edges || []).filter((edge) => allowedRoles.has(String(edge?.role || '').toUpperCase()));
-
-  if (options.imageOnly) {
-    filtered = filtered.filter((edge) => edge?.node?.image?.medium);
-  }
-
-  if (options.maxCharactersPerTitle > 0) {
-    filtered = filtered.slice(0, options.maxCharactersPerTitle);
-  }
-
-  return filtered;
-}
-
-function buildFilteredAniListCharStaffMedia(media, options = {}) {
-  if (!media) return media;
-  return {
-    ...media,
-    characters: {
-      ...media.characters,
-      edges: filterAniListCharacterEdges(media.characters?.edges || [], options),
-    },
-    syncMeta: media.syncMeta,
-  };
-}
-
-function countStoredCharacters(rows) {
-  return Array.isArray(rows) ? rows.length : 0;
-}
-
-function getCharStaffTitleSortValue(ref, sortKey) {
-  const titleRecord = Array.isArray(ref?.canonical_titles) ? ref.canonical_titles[0] : ref?.canonical_titles;
-  switch (sortKey) {
-    case 'rated':
-      return Number(titleRecord?.avg_score || 0);
-    case 'popular':
-      return Number(titleRecord?.popularity_score || 0);
-    case 'latest':
-      return Number(titleRecord?.release_year || 0);
-    case 'az':
-      return String(titleRecord?.canonical_title || '').toLowerCase();
-    case 'id':
-    default:
-      return Number(ref?.canonical_title_id || 0);
-  }
-}
-
-async function fetchAniListTrailerById(anilistId, signal) {
-  const data = await fetchAniListGraphQL(ANILIST_TRAILER_GQL, { id: anilistId }, { signal });
-  return data?.Media || null;
-}
-
-async function searchAniListTrailerByName(search, type, signal) {
-  const data = await fetchAniListGraphQL(ANILIST_TRAILER_SEARCH_GQL, { search, type }, { signal });
-  return data?.Page?.media || [];
-}
-
-async function resolveTrailerFromFallbackSources(titleRecord, preferredSearchName = '') {
-  if (!supabase) return null;
-
-  try {
-    const searchNames = buildPreferredTitleSearchNames(
-      titleRecord,
-      preferredSearchName ? [preferredSearchName] : []
-    );
-
-    const { data, error } = await supabase.functions.invoke('trailer-source-proxy', {
-      body: {
-        title: titleRecord?.canonical_title || '',
-        type: titleRecord?.type || '',
-        subtype: titleRecord?.subtype || '',
-        releaseYear: titleRecord?.release_year || null,
-        searchNames,
-        aliases: getOrderedAliasValues(titleRecord),
-      },
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    return data?.trailer || null;
-  } catch (error) {
-    console.warn('[AdminFetch] trailer fallback lookup failed:', error);
-    return null;
-  }
-}
-
-// ─── Jikan (MyAnimeList) ──────────────────────────────────────────────────────
-
-const JIKAN_BASE = 'https://api.jikan.moe/v4';
-// Genre IDs: Erotica=49, exclude Yaoi=28, Shounen Ai=26
-
-function mapJikanStatus(s) {
-  if (!s) return 'ongoing';
-  const u = s.toLowerCase();
-  if (u.includes('finish')) return 'completed';
-  if (u.includes('hiatus')) return 'hiatus';
-  if (u.includes('discontinu') || u.includes('cancel')) return 'cancelled';
-  return 'ongoing';
-}
-
-function normalizeJikanManga(item) {
-  const title = item.title_english || item.title || `jikan-${item.mal_id}`;
-  const slugBase = item.title_english || item.title || `manhwa-${item.mal_id}`;
-  const allGenreNames = [
-    ...(item.genres || []).map((g) => g.name),
-    ...(item.themes || []).map((th) => th.name),
-    ...(item.demographics || []).map((d) => d.name),
-  ];
-  const releaseYear = item.published?.from ? new Date(item.published.from).getFullYear() : null;
-  return {
-    malId: String(item.mal_id),
-    displayTitle: title,
-    coverImage: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
-    canonical: {
-      slug: `${slugify(slugBase) || 'manhwa'}-mal-${item.mal_id}`,
-      canonical_title: title,
-      type: 'manga', subtype: 'manhwa',
-      origin_country: 'KR', origin_language: 'ko',
-      status: mapJikanStatus(item.status),
-      release_year: releaseYear,
-      chapters: item.chapters || null, volumes: item.volumes || null,
-      episodes: null, duration_minutes: null,
-      is_adult: true,
-      cover_image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
-      banner_image: null,
-      synopsis: item.synopsis || null,
-      avg_score: item.score ? Math.round(item.score * 10) : null,
-      popularity_score: item.scored_by || null,
-      last_synced_at: new Date().toISOString(),
-    },
-    aliases: [
-      item.title_english && { alias: item.title_english, language_code: 'en', alias_type: 'english', is_primary: true },
-      item.title && item.title !== item.title_english && { alias: item.title, language_code: 'ja-Latn', alias_type: 'romaji', is_primary: !item.title_english },
-      item.title_japanese && { alias: item.title_japanese, language_code: null, alias_type: 'native', is_primary: false },
-    ].filter(Boolean),
-    genres: allGenreNames.map((genre_name) => ({ genre_name })),
-    tags: allGenreNames.map((tag_name) => ({ tag_name, weight: null, source_provider: 'jikan' })),
-    moodIds: deriveMoodIds([item.synopsis, ...allGenreNames]),
-    sourceRef: {
-      provider: 'jikan', external_id: String(item.mal_id),
-      external_url: item.url || null, source_priority: 20,
-    },
-  };
-}
-
-async function fetchJikanPage(page, jikanCfg, signal) {
-  const params = new URLSearchParams({
-    type: 'manhwa', genres: '49',
-    genres_exclude: '28,26',
-    limit: String(jikanCfg.perPage),
-    page: String(page),
-    order_by: jikanCfg.sort,
-    sort: 'desc',
-  });
-  const res = await fetch(`${JIKAN_BASE}/manga?${params}`, { signal });
-  if (!res.ok) throw new Error(`Jikan ตอบกลับ ${res.status}`);
-  return res.json();
-}
-
-function normalizePornhwaTag(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function isBoysLovePornhwa(item) {
-  const tags = [item.orientation, ...(item.genreTags || []), ...(item.tags || [])].map(normalizePornhwaTag);
-  return tags.some((tag) => ['yaoi', 'boys love', 'boys-love', 'bl', 'shounen ai', 'shonen ai'].includes(tag));
-}
-
-function normalizePornhwaDbEntry(item) {
-  const title = item.title || `pornhwadb-${item.id}`;
-  const slugBase = item.slug || item.title || `manhwa-${item.id}`;
-  const genreTags = [...new Set((item.genreTags || []).filter(Boolean))];
-  const allTags = [...new Set([...genreTags, item.orientation || null].filter(Boolean))];
-  const averageRating = Number(item.averageRating);
-  const normalizedScore = Number.isFinite(averageRating) ? averageRating * 20 : null;
-
-  return {
-    pornhwaId: String(item.id),
-    displayTitle: title,
-    coverImage: item.coverImage || null,
-    canonical: {
-      slug: `${slugify(slugBase) || 'manhwa'}-pwdb-${item.id}`,
-      canonical_title: title,
-      type: 'manga',
-      subtype: 'manhwa',
-      origin_country: 'KR',
-      origin_language: 'ko',
-      status: mapStatus(item.status),
-      release_year: item.releaseYear || null,
-      chapters: item.totalChapters || item.chapterCount || null,
-      volumes: null,
-      episodes: null,
-      duration_minutes: null,
-      is_adult: true,
-      cover_image: item.coverImage || null,
-      banner_image: null,
-      synopsis: item.description || null,
-      avg_score: normalizedScore,
-      popularity_score: item.totalRatings || null,
-      last_synced_at: new Date().toISOString(),
-    },
-    aliases: title
-      ? [{ alias: title, language_code: 'en', alias_type: 'english', is_primary: true }]
-      : [],
-    genres: genreTags.map((genre_name) => ({ genre_name })),
-    tags: allTags.map((tag_name) => ({ tag_name, weight: null, source_provider: 'pornhwadb' })),
-    moodIds: deriveMoodIds([item.description, ...allTags]),
-    staff: (item.creators || [])
-      .filter((c) => c?.canonicalName)
-      .map((c, i) => ({
-        name_full: c.canonicalName,
-        role: c.role || 'creator',
-        sort_order: i,
-      })),
-    sourceRef: {
-      provider: 'pornhwadb',
-      external_id: String(item.id),
-      external_url: null,
-      source_priority: 15,
-      raw_payload: item,
-    },
-  };
-}
-
-async function fetchPornhwaDbPage(page, pornhwaCfg, signal) {
-  if (!supabase) throw new Error('Supabase unavailable');
-  const { data, error } = await supabase.functions.invoke('pornhwadb-proxy', {
-    body: {
-      apiKey: pornhwaCfg.apiKey || undefined,
-      page,
-      limit: pornhwaCfg.perPage,
-      sort: pornhwaCfg.sort,
-      order: 'desc',
-      status: pornhwaCfg.status || undefined,
-      orientation: pornhwaCfg.orientation || undefined,
-      minRatings: pornhwaCfg.minRatings || undefined,
-      tags: pornhwaCfg.tags || undefined,
-    },
-    signal,
-  });
-  if (error) {
-    if (typeof error.context?.json === 'function') {
-      try {
-        const payload = await error.context.json();
-        throw new Error(payload?.error || payload?.message || error.message || 'PornhwaDB fetch failed');
-      } catch (contextError) {
-        if (contextError instanceof Error && contextError.message) {
-          throw contextError;
-        }
-      }
-    }
-    if (typeof error.context?.text === 'function') {
-      try {
-        const message = await error.context.text();
-        if (message) {
-          throw new Error(message);
-        }
-      } catch (contextError) {
-        if (contextError instanceof Error && contextError.message) {
-          throw contextError;
-        }
-      }
-    }
-    throw new Error(error.message || 'PornhwaDB fetch failed');
-  }
-
-  return data;
-}
 
 function hasPornhwaDbNextPage(pageData, page, perPage) {
   const pagination = pageData?.pagination || {};
@@ -553,636 +74,6 @@ function hasPornhwaDbNextPage(pageData, page, perPage) {
   if (total > 0) return page * perPage < total;
 
   return Array.isArray(pageData?.data) && pageData.data.length >= perPage;
-}
-
-const ANIMETHEMES_BASE = 'https://api.animethemes.moe';
-const ANIMETHEMES_INCLUDE = 'resources,animethemes.song,animethemes.animethemeentries.videos';
-const THEME_SOURCE_PRIORITY = { BD: 4, WEB: 3, DVD: 2, RAW: 1 };
-const ALIAS_TYPE_PRIORITY = { romaji: 0, english: 1, native: 2, synonym: 3, localized: 4, alternate: 5, canonical: 6 };
-
-function normalizeLooseText(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function getSourceRefId(sourceRefs, provider) {
-  const ref = (sourceRefs || []).find((entry) => entry.provider === provider);
-  return ref?.external_id ? String(ref.external_id) : '';
-}
-
-function getOrderedAliasValues(titleRecord) {
-  return [...(titleRecord?.aliases || [])]
-    .sort((a, b) => {
-      const rankA = ALIAS_TYPE_PRIORITY[a.alias_type] ?? 99;
-      const rankB = ALIAS_TYPE_PRIORITY[b.alias_type] ?? 99;
-      if (rankA !== rankB) return rankA - rankB;
-      if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
-      return String(a.alias || '').length - String(b.alias || '').length;
-    })
-    .map((entry) => entry.alias);
-}
-
-function collectUniqueTitleValues(values = []) {
-  const seen = new Set();
-  return values
-    .filter((value) => String(value || '').trim())
-    .filter((value) => {
-      const key = normalizeLooseText(value);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function buildTitleLookupValues(titleRecord, extraValues = []) {
-  return collectUniqueTitleValues([
-    ...extraValues,
-    titleRecord?.canonical_title,
-    titleRecord?.slug,
-    ...getOrderedAliasValues(titleRecord),
-  ]);
-}
-
-function buildPreferredTitleSearchNames(titleRecord, extraNames = []) {
-  return collectUniqueTitleValues([
-    ...extraNames,
-    titleRecord?.canonical_title,
-    ...getOrderedAliasValues(titleRecord),
-  ]).slice(0, 5);
-}
-
-function matchesTrailerTitleQuery(titleRecord, query) {
-  const normalizedQuery = normalizeLooseText(query);
-  if (!normalizedQuery) return true;
-
-  return buildTitleLookupValues(titleRecord).some((value) => (
-    normalizeLooseText(value).includes(normalizedQuery)
-  ));
-}
-
-function mapTitleRecordToAniListMediaType(titleRecord) {
-  return String(titleRecord?.type || '').toLowerCase() === 'anime' ? 'ANIME' : 'MANGA';
-}
-
-function buildAniListMediaCandidateNames(media) {
-  return collectUniqueTitleValues([
-    getMediaDisplayTitle(media),
-    media?.title?.english,
-    media?.title?.romaji,
-    media?.title?.native,
-  ]);
-}
-
-function selectAniListTrailerCandidate(mediaList, searchNames = []) {
-  const normalizedCandidates = new Set(
-    (searchNames || []).map((value) => normalizeLooseText(value)).filter(Boolean)
-  );
-  const isExactMatch = (media) => buildAniListMediaCandidateNames(media)
-    .some((value) => normalizedCandidates.has(normalizeLooseText(value)));
-
-  return mediaList.find((media) => media?.trailer?.id && isExactMatch(media))
-    || mediaList.find((media) => media?.trailer?.id)
-    || mediaList.find((media) => isExactMatch(media))
-    || mediaList[0]
-    || null;
-}
-
-async function resolveAniListTrailerBySearch(titleRecord, signal, preferredSearchName = '') {
-  const searchNames = buildPreferredTitleSearchNames(
-    titleRecord,
-    preferredSearchName ? [preferredSearchName] : []
-  );
-
-  if (!searchNames.length) {
-    return { media: null, searchName: null };
-  }
-
-  const mediaType = mapTitleRecordToAniListMediaType(titleRecord);
-  let fallback = null;
-
-  for (const searchName of searchNames) {
-    const mediaList = await searchAniListTrailerByName(searchName, mediaType, signal);
-    const media = selectAniListTrailerCandidate(mediaList, searchNames);
-
-    if (media?.trailer?.id) {
-      return { media, searchName };
-    }
-
-    if (!fallback && media) {
-      fallback = { media, searchName };
-    }
-  }
-
-  return fallback || { media: null, searchName: null };
-}
-
-function getThemeType(rawType) {
-  if (rawType === 'OP') return 'OP';
-  if (rawType === 'ED') return 'ED';
-  if (rawType === 'IN') return 'INSERT';
-  return 'OTHER';
-}
-
-function pickPreferredThemeVideo(videos) {
-  return [...(videos || [])].sort((left, right) => {
-    if (Boolean(left?.nc) !== Boolean(right?.nc)) return Number(Boolean(right?.nc)) - Number(Boolean(left?.nc));
-    const resolutionDiff = Number(right?.resolution || 0) - Number(left?.resolution || 0);
-    if (resolutionDiff !== 0) return resolutionDiff;
-    const sourceDiff = (THEME_SOURCE_PRIORITY[right?.source] || 0) - (THEME_SOURCE_PRIORITY[left?.source] || 0);
-    if (sourceDiff !== 0) return sourceDiff;
-    return Number(right?.id || 0) - Number(left?.id || 0);
-  })[0] || null;
-}
-
-async function fetchAnimeThemesByName(name, signal) {
-  const params = new URLSearchParams();
-  params.set('filter[name]', name);
-  params.set('include', ANIMETHEMES_INCLUDE);
-  const res = await fetch(`${ANIMETHEMES_BASE}/anime?${params.toString()}`, {
-    headers: { accept: 'application/json' },
-    signal,
-  });
-  if (!res.ok) throw new Error(`AnimeThemes ${res.status}`);
-  const json = await res.json();
-  return json?.anime || [];
-}
-
-function selectAnimeThemesMatch(candidates, titleRecord, queryName) {
-  const anilistId = getSourceRefId(titleRecord?.source_refs, 'anilist');
-  const malId = getSourceRefId(titleRecord?.source_refs, 'jikan');
-  const queryNorm = normalizeLooseText(queryName);
-  const searchNames = new Set(buildPreferredTitleSearchNames(titleRecord).map(normalizeLooseText));
-
-  let best = null;
-
-  for (const candidate of candidates || []) {
-    const resources = candidate?.resources || [];
-    const candidateNorm = normalizeLooseText(candidate?.name);
-    const matchedAniList = Boolean(
-      anilistId && resources.some((resource) => resource?.site === 'AniList' && String(resource?.external_id || '') === anilistId)
-    );
-    const matchedMal = Boolean(
-      malId && resources.some((resource) => resource?.site === 'MyAnimeList' && String(resource?.external_id || '') === malId)
-    );
-    const matchedAlias = Boolean(candidateNorm && searchNames.has(candidateNorm));
-    const matchedQuery = Boolean(candidateNorm && candidateNorm === queryNorm);
-    const matchedYear = Boolean(titleRecord?.release_year && candidate?.year && Number(candidate.year) === Number(titleRecord.release_year));
-
-    const score = (matchedAniList ? 1000 : 0)
-      + (matchedMal ? 900 : 0)
-      + (matchedAlias ? 120 : 0)
-      + (matchedQuery ? 25 : 0)
-      + (matchedYear ? 10 : 0);
-
-    if (!best || score > best.score) {
-      best = {
-        score,
-        queryName,
-        candidate,
-        matchedBy: matchedAniList
-          ? 'anilist'
-          : matchedMal
-            ? 'mal'
-            : matchedAlias
-              ? 'alias'
-              : matchedQuery
-                ? 'query'
-                : matchedYear
-                  ? 'year'
-                  : 'candidate',
-      };
-    }
-  }
-
-  if (!best) return null;
-  if (best.score >= 900) return best;
-  if (best.score >= 120) return best;
-  return null;
-}
-
-async function resolveAnimeThemesMatch(titleRecord, signal) {
-  const searchNames = buildPreferredTitleSearchNames(titleRecord);
-  let best = null;
-
-  for (const name of searchNames) {
-    const candidates = await fetchAnimeThemesByName(name, signal);
-    const matched = selectAnimeThemesMatch(candidates, titleRecord, name);
-    if (matched?.score >= 900) return matched;
-    if (!best || (matched && matched.score > best.score)) best = matched;
-  }
-
-  return best;
-}
-
-function buildThemeSongRows(titleId, matched) {
-  const anime = matched?.candidate;
-  let order = 0;
-
-  return (anime?.animethemes || [])
-    .filter((theme) => ['OP', 'ED'].includes(theme?.type))
-    .flatMap((theme) => {
-      const entries = theme?.animethemeentries?.length ? theme.animethemeentries : [null];
-      return entries.map((entry) => {
-        const video = pickPreferredThemeVideo(entry?.videos || []);
-        const themeType = getThemeType(theme?.type);
-        order += 1;
-        return {
-          canonical_title_id: titleId,
-          source_provider: 'animethemes',
-          theme_key: `${anime?.id || 'anime'}:${theme?.id || 'theme'}:${entry?.id || 'entry'}:${video?.id || 'novideo'}`,
-          source_anime_id: anime?.id ? String(anime.id) : null,
-          source_theme_id: theme?.id ? String(theme.id) : null,
-          source_song_id: theme?.song?.id ? String(theme.song.id) : null,
-          source_entry_id: entry?.id ? String(entry.id) : null,
-          source_video_id: video?.id ? String(video.id) : null,
-          theme_slug: theme?.slug || null,
-          theme_type: themeType,
-          theme_sequence: Number.isFinite(Number(theme?.sequence)) ? Number(theme.sequence) : null,
-          entry_version: Number.isFinite(Number(entry?.version)) ? Number(entry.version) : null,
-          display_order: order,
-          song_title: theme?.song?.title || theme?.slug || `${themeType}${theme?.sequence || ''}`,
-          artist_name: Array.isArray(theme?.song?.artists) && theme.song.artists.length
-            ? theme.song.artists.map((artist) => artist?.name).filter(Boolean).join(', ')
-            : null,
-          episodes_text: entry?.episodes || null,
-          notes: entry?.notes || null,
-          video_url: video?.link || null,
-          video_resolution: Number.isFinite(Number(video?.resolution)) ? Number(video.resolution) : null,
-          video_source: video?.source || null,
-          is_creditless: Boolean(video?.nc),
-          is_nsfw: Boolean(entry?.nsfw),
-          is_spoiler: Boolean(entry?.spoiler),
-          is_subbed: Boolean(video?.subbed),
-          metadata: {
-            matched_query: matched?.queryName || null,
-            matched_by: matched?.matchedBy || null,
-            anime_name: anime?.name || null,
-            anime_slug: anime?.slug || null,
-            video_filename: video?.filename || null,
-            video_tags: video?.tags || null,
-          },
-          fetched_at: new Date().toISOString(),
-        };
-      });
-    });
-}
-
-async function replaceTitleThemeSongs(titleId, matched) {
-  const rows = buildThemeSongRows(titleId, matched);
-  const { error: deleteError } = await supabase.from('title_theme_songs').delete().eq('canonical_title_id', titleId);
-  if (deleteError) throw deleteError;
-
-  if (rows.length) {
-    const { error: insertError } = await supabase.from('title_theme_songs').insert(rows);
-    if (insertError) throw insertError;
-  }
-
-  const { error: titleError } = await supabase
-    .from('canonical_titles')
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq('id', titleId);
-  if (titleError) throw titleError;
-
-  return {
-    rows: rows.length,
-    themes: (matched?.candidate?.animethemes || []).filter((theme) => ['OP', 'ED'].includes(theme?.type)).length,
-  };
-}
-
-// ─── Supabase upsert ─────────────────────────────────────────────────────────
-
-async function upsertTitle(norm, skipDuplicates) {
-  const { data: existingRef } = await supabase.from('title_source_refs').select('canonical_title_id')
-    .eq('provider', 'anilist').eq('external_id', norm.anilistId).maybeSingle();
-  if (existingRef?.canonical_title_id && skipDuplicates) return 'skipped';
-
-  let titleId = existingRef?.canonical_title_id || null;
-  const wasExisting = !!titleId;
-
-  if (!titleId) {
-    const { data: bySlug } = await supabase.from('canonical_titles').select('id').eq('slug', norm.canonical.slug).maybeSingle();
-    if (bySlug?.id && skipDuplicates) return 'skipped';
-    titleId = bySlug?.id || null;
-  }
-
-  if (titleId) {
-    const { error } = await supabase.from('canonical_titles').update(norm.canonical).eq('id', titleId);
-    if (error) throw error;
-  } else {
-    const { data, error } = await supabase.from('canonical_titles').upsert(norm.canonical, { onConflict: 'slug' }).select('id').single();
-    if (error) throw error;
-    titleId = data.id;
-  }
-
-  for (const { table, rows } of [
-    { table: 'title_aliases', rows: norm.aliases.map((a) => ({ canonical_title_id: titleId, source_provider: 'anilist', ...a })) },
-    { table: 'title_genres', rows: norm.genres.map((g) => ({ canonical_title_id: titleId, ...g })) },
-    { table: 'title_tags', rows: norm.tags.map((t) => ({ canonical_title_id: titleId, ...t })) },
-    { table: 'title_moods', rows: norm.moodIds.map((mood_id) => ({ canonical_title_id: titleId, mood_id })) },
-  ]) {
-    const { error: delErr } = await supabase.from(table).delete().eq('canonical_title_id', titleId);
-    if (delErr) throw delErr;
-    if (rows.length) { const { error: insErr } = await supabase.from(table).insert(rows); if (insErr) throw insErr; }
-  }
-
-  const { error: refErr } = await supabase.from('title_source_refs').upsert(
-    { canonical_title_id: titleId, ...norm.sourceRef, last_synced_at: new Date().toISOString(), fetched_at: new Date().toISOString() },
-    { onConflict: 'provider,external_id' },
-  );
-  if (refErr && refErr.code !== 'PGRST205') throw refErr;
-  return wasExisting ? 'updated' : 'imported';
-}
-
-async function upsertCharStaff(titleId, media, options = {}) {
-  const { error: delStaffErr } = await supabase.from('title_staff').delete().eq('canonical_title_id', titleId);
-  if (delStaffErr) throw delStaffErr;
-
-  const rawChars = (media?.characters?.edges || []).map((edge, i) => ({
-    canonical_title_id: titleId,
-    anilist_id: edge.node?.id ?? null,
-    name_full: edge.node?.name?.full ?? null,
-    name_native: edge.node?.name?.native ?? null,
-    image_url: edge.node?.image?.medium ?? null,
-    role: edge.role ?? null,
-    presentation_gender: normalizePresentationGender(edge.node?.gender),
-    voice_actor_name: edge.voiceActors?.[0]?.name?.full ?? null,
-    voice_actor_image: edge.voiceActors?.[0]?.image?.medium ?? null,
-    sort_order: i,
-  }));
-  const chars = annotateCharacterIdentities(rawChars);
-
-  const dedupedChars = [];
-  const seenAniListIds = new Set();
-  for (const character of chars) {
-    const dedupeKey = character.anilist_id ?? `fallback:${character.name_full ?? ''}:${character.role ?? ''}:${character.sort_order}`;
-    if (seenAniListIds.has(dedupeKey)) continue;
-    seenAniListIds.add(dedupeKey);
-    dedupedChars.push(character);
-  }
-
-  const staff = (media?.staff?.edges || []).map((edge, i) => ({
-    canonical_title_id: titleId,
-    anilist_id: edge.node?.id ?? null,
-    name_full: edge.node?.name?.full ?? null,
-    name_native: edge.node?.name?.native ?? null,
-    image_url: edge.node?.image?.medium ?? null,
-    role: edge.role ?? null,
-    sort_order: i,
-  }));
-
-  const { data: existingChars, error: existingCharsErr } = await supabase
-    .from('title_characters')
-    .select('id, anilist_id')
-    .eq('canonical_title_id', titleId);
-  if (existingCharsErr) throw existingCharsErr;
-
-  const existingByAniListId = new Map(
-    (existingChars || [])
-      .filter((row) => row.anilist_id != null)
-      .map((row) => [row.anilist_id, row]),
-  );
-
-  const incomingAniListIds = new Set(dedupedChars.map((row) => row.anilist_id).filter((value) => value != null));
-
-  for (const character of dedupedChars) {
-    const existingRow = character.anilist_id != null ? existingByAniListId.get(character.anilist_id) : null;
-    if (existingRow?.id) {
-      const { error } = await supabase
-        .from('title_characters')
-        .update({
-          name_full: character.name_full,
-          name_native: character.name_native,
-          image_url: character.image_url,
-          role: character.role,
-          presentation_gender: character.presentation_gender,
-          lead_type: character.lead_type,
-          is_primary_protagonist: Boolean(character.is_primary_protagonist),
-          is_primary_heroine: Boolean(character.is_primary_heroine),
-          voice_actor_name: character.voice_actor_name,
-          voice_actor_image: character.voice_actor_image,
-          sort_order: character.sort_order,
-        })
-        .eq('id', existingRow.id);
-      if (error) throw error;
-      continue;
-    }
-
-    const { error } = await supabase.from('title_characters').insert(character);
-    if (error) throw error;
-  }
-
-  if (options.pruneStaleCharacters !== false) {
-    const staleCharIds = (existingChars || [])
-      .filter((row) => row.anilist_id == null || !incomingAniListIds.has(row.anilist_id))
-      .map((row) => row.id);
-
-    if (staleCharIds.length) {
-      const { data: referencedClues, error: referencedCluesErr } = await supabase
-        .from('party_title_guess_clues')
-        .select('character_id')
-        .in('character_id', staleCharIds);
-      if (referencedCluesErr && referencedCluesErr.code !== 'PGRST205') throw referencedCluesErr;
-
-      const referencedIds = new Set((referencedClues || []).map((row) => row.character_id));
-      const deletableCharIds = staleCharIds.filter((id) => !referencedIds.has(id));
-      if (deletableCharIds.length) {
-        const { error } = await supabase.from('title_characters').delete().in('id', deletableCharIds);
-        if (error) throw error;
-      }
-    }
-  }
-
-  if (staff.length) { const { error } = await supabase.from('title_staff').insert(staff); if (error) throw error; }
-  return { chars: dedupedChars.length, staff: staff.length };
-}
-
-async function upsertJikanTitle(norm, skipDuplicates) {
-  const { data: existingRef } = await supabase.from('title_source_refs').select('canonical_title_id')
-    .eq('provider', 'jikan').eq('external_id', norm.malId).maybeSingle();
-  if (existingRef?.canonical_title_id && skipDuplicates) return 'skipped';
-
-  let titleId = existingRef?.canonical_title_id || null;
-  const wasExisting = !!titleId;
-
-  if (!titleId) {
-    const { data: bySlug } = await supabase.from('canonical_titles').select('id').eq('slug', norm.canonical.slug).maybeSingle();
-    if (bySlug?.id && skipDuplicates) return 'skipped';
-    titleId = bySlug?.id || null;
-  }
-
-  if (titleId) {
-    const { error } = await supabase.from('canonical_titles').update(norm.canonical).eq('id', titleId);
-    if (error) throw error;
-  } else {
-    const { data, error } = await supabase.from('canonical_titles').upsert(norm.canonical, { onConflict: 'slug' }).select('id').single();
-    if (error) throw error;
-    titleId = data.id;
-  }
-
-  for (const { table, rows } of [
-    { table: 'title_aliases', rows: norm.aliases.map((a) => ({ canonical_title_id: titleId, source_provider: 'jikan', ...a })) },
-    { table: 'title_genres', rows: norm.genres.map((g) => ({ canonical_title_id: titleId, ...g })) },
-    { table: 'title_tags', rows: norm.tags.map((t) => ({ canonical_title_id: titleId, ...t })) },
-    { table: 'title_moods', rows: norm.moodIds.map((mood_id) => ({ canonical_title_id: titleId, mood_id })) },
-  ]) {
-    const { error: delErr } = await supabase.from(table).delete().eq('canonical_title_id', titleId);
-    if (delErr) throw delErr;
-    if (rows.length) { const { error: insErr } = await supabase.from(table).insert(rows); if (insErr) throw insErr; }
-  }
-
-  const { error: refErr } = await supabase.from('title_source_refs').upsert(
-    { canonical_title_id: titleId, ...norm.sourceRef, last_synced_at: new Date().toISOString(), fetched_at: new Date().toISOString() },
-    { onConflict: 'provider,external_id' },
-  );
-  if (refErr && refErr.code !== 'PGRST205') throw refErr;
-  return wasExisting ? 'updated' : 'imported';
-}
-
-async function fetchPornhwaDbCharactersViaProxy(slug, apiKey, signal) {
-  if (!supabase) throw new Error('Supabase unavailable');
-  const { data, error } = await supabase.functions.invoke('pornhwadb-proxy', {
-    body: { path: 'title-characters', slug, apiKey: apiKey || undefined },
-    signal,
-  });
-  if (error) {
-    if (typeof error.context?.json === 'function') {
-      try {
-        const payload = await error.context.json();
-        throw new Error(payload?.error || payload?.message || error.message || 'PornhwaDB characters fetch failed');
-      } catch (contextError) {
-        if (contextError instanceof Error && contextError.message) throw contextError;
-      }
-    }
-    if (typeof error.context?.text === 'function') {
-      try {
-        const message = await error.context.text();
-        if (message) throw new Error(message);
-      } catch (contextError) {
-        if (contextError instanceof Error && contextError.message) throw contextError;
-      }
-    }
-    throw new Error(error.message || 'PornhwaDB characters fetch failed');
-  }
-  return data;
-}
-
-async function upsertPornhwaDbCharacters(titleId, characters) {
-  const rawRows = (characters || []).map((char, i) => ({
-    canonical_title_id: titleId,
-    anilist_id: null,
-    name_full: char.name || null,
-    name_native: (char.alternativeNames || []).find((n) => /[가-힣]/.test(n)) || null,
-    image_url: char.image || null,
-    role: char.role ? char.role.toUpperCase() : null,
-    presentation_gender: normalizePresentationGender(char.gender),
-    sort_order: i,
-  }));
-  const rows = annotateCharacterIdentities(rawRows);
-
-  const { data: existingChars, error: existingCharsErr } = await supabase
-    .from('title_characters')
-    .select('id, name_full, role')
-    .eq('canonical_title_id', titleId);
-  if (existingCharsErr) throw existingCharsErr;
-
-  const existingByKey = new Map(
-    (existingChars || []).map((row) => [`${row.name_full ?? 'unknown'}:${row.role ?? ''}`, row]),
-  );
-  const incomingKeys = new Set();
-
-  for (const row of rows) {
-    const rowKey = `${row.name_full ?? 'unknown'}:${row.role ?? ''}`;
-    incomingKeys.add(rowKey);
-    const existingRow = existingByKey.get(rowKey);
-    if (existingRow?.id) {
-      const { error } = await supabase
-        .from('title_characters')
-        .update({
-          name_native: row.name_native,
-          image_url: row.image_url,
-          presentation_gender: row.presentation_gender,
-          lead_type: row.lead_type,
-          is_primary_protagonist: Boolean(row.is_primary_protagonist),
-          is_primary_heroine: Boolean(row.is_primary_heroine),
-          sort_order: row.sort_order,
-        })
-        .eq('id', existingRow.id);
-      if (error) throw error;
-      continue;
-    }
-
-    const { error } = await supabase.from('title_characters').insert(row);
-    if (error) throw error;
-  }
-
-  const staleCharIds = (existingChars || [])
-    .filter((row) => !incomingKeys.has(`${row.name_full ?? 'unknown'}:${row.role ?? ''}`))
-    .map((row) => row.id);
-
-  if (staleCharIds.length) {
-    const { data: referencedClues, error: referencedCluesErr } = await supabase
-      .from('party_title_guess_clues')
-      .select('character_id')
-      .in('character_id', staleCharIds);
-    if (referencedCluesErr && referencedCluesErr.code !== 'PGRST205') throw referencedCluesErr;
-
-    const referencedIds = new Set((referencedClues || []).map((row) => row.character_id));
-    const deletableCharIds = staleCharIds.filter((id) => !referencedIds.has(id));
-    if (deletableCharIds.length) {
-      const { error } = await supabase.from('title_characters').delete().in('id', deletableCharIds);
-      if (error) throw error;
-    }
-  }
-  return rows.length;
-}
-
-async function upsertPornhwaDbTitle(norm, skipDuplicates) {
-  const { data: existingRef } = await supabase.from('title_source_refs').select('canonical_title_id')
-    .eq('provider', 'pornhwadb').eq('external_id', norm.pornhwaId).maybeSingle();
-  if (existingRef?.canonical_title_id && skipDuplicates) return 'skipped';
-
-  let titleId = existingRef?.canonical_title_id || null;
-  const wasExisting = !!titleId;
-
-  if (!titleId) {
-    const { data: bySlug } = await supabase.from('canonical_titles').select('id').eq('slug', norm.canonical.slug).maybeSingle();
-    if (bySlug?.id && skipDuplicates) return 'skipped';
-    titleId = bySlug?.id || null;
-  }
-
-  if (titleId) {
-    const { error } = await supabase.from('canonical_titles').update(norm.canonical).eq('id', titleId);
-    if (error) throw error;
-  } else {
-    const { data, error } = await supabase.from('canonical_titles').upsert(norm.canonical, { onConflict: 'slug' }).select('id').single();
-    if (error) throw error;
-    titleId = data.id;
-  }
-
-  for (const { table, rows } of [
-    { table: 'title_aliases', rows: norm.aliases.map((a) => ({ canonical_title_id: titleId, source_provider: 'pornhwadb', ...a })) },
-    { table: 'title_genres', rows: norm.genres.map((g) => ({ canonical_title_id: titleId, ...g })) },
-    { table: 'title_tags', rows: norm.tags.map((t) => ({ canonical_title_id: titleId, ...t })) },
-    { table: 'title_moods', rows: norm.moodIds.map((mood_id) => ({ canonical_title_id: titleId, mood_id })) },
-    { table: 'title_staff', rows: (norm.staff || []).map((s) => ({ canonical_title_id: titleId, ...s })) },
-  ]) {
-    const { error: delErr } = await supabase.from(table).delete().eq('canonical_title_id', titleId);
-    if (delErr) throw delErr;
-    if (rows.length) { const { error: insErr } = await supabase.from(table).insert(rows); if (insErr) throw insErr; }
-  }
-
-  const { error: refErr } = await supabase.from('title_source_refs').upsert(
-    { canonical_title_id: titleId, ...norm.sourceRef, last_synced_at: new Date().toISOString(), fetched_at: new Date().toISOString() },
-    { onConflict: 'provider,external_id' },
-  );
-  if (refErr && refErr.code !== 'PGRST205') throw refErr;
-  return wasExisting ? 'updated' : 'imported';
 }
 
 // ─── Config options ───────────────────────────────────────────────────────────
@@ -1222,23 +113,6 @@ const STATUS_OPTIONS = [
   { value: 'HIATUS', labelKey: 'admin.fetch.statusHiatus' },
   { value: 'CANCELLED', labelKey: 'admin.fetch.statusCancelled' },
 ];
-
-function matchesTrailerCategory(titleRecord, category) {
-  if (category === 'all') return true;
-
-  const subtype = String(titleRecord?.subtype || '').toLowerCase();
-  const type = String(titleRecord?.type || '').toLowerCase();
-
-  if (category === 'anime') {
-    return subtype === 'anime' || type === 'anime';
-  }
-
-  if (category === 'manga') {
-    return subtype === 'manga' || (type === 'manga' && !subtype);
-  }
-
-  return subtype === category;
-}
 
 const LOG_ICON = {
   imported: <CheckCircle2 size={12} />,
@@ -1521,9 +395,9 @@ export function AdminFetch() {
 
         for (const media of items) {
           if (abortRef.current.signal.aborted) break;
-          const norm = normalizeMedia(media);
+          const norm = normalizeMediaApi(media);
           try {
-            const result = await upsertTitle(norm, skipDuplicates);
+            const result = await upsertTitleApi(norm, skipDuplicates);
             setProgress((p) => ({
               ...p, fetched: p.fetched + 1,
               imported: result === 'imported' ? p.imported + 1 : p.imported,
@@ -1571,38 +445,11 @@ export function AdminFetch() {
     try {
       addLog('info', t('admin.fetch.cs.logStart'));
 
-      const { data: refs, error: refsError } = await supabase
-        .from('title_source_refs')
-        .select(`
-          canonical_title_id,
-          external_id,
-          canonical_titles!inner(
-            canonical_title,
-            avg_score,
-            popularity_score,
-            release_year
-          )
-        `)
-        .eq('provider', 'anilist');
-      if (refsError) throw refsError;
-
-      let targets = refs || [];
-
-      if (csConfig.onlyMissing) {
-        const { data: existing } = await supabase.from('title_characters').select('canonical_title_id');
-        const existingSet = new Set((existing || []).map((r) => r.canonical_title_id));
-        targets = targets.filter((r) => !existingSet.has(r.canonical_title_id));
-      }
-
-      const sortedTargets = [...targets].sort((a, b) => {
-        if (csConfig.titleSort === 'az') {
-          return String(getCharStaffTitleSortValue(a, 'az')).localeCompare(String(getCharStaffTitleSortValue(b, 'az')));
-        }
-        return Number(getCharStaffTitleSortValue(b, csConfig.titleSort)) - Number(getCharStaffTitleSortValue(a, csConfig.titleSort));
+      const targets = await fetchAdminAniListCharStaffTargets({
+        onlyMissing: csConfig.onlyMissing,
+        titleSort: csConfig.titleSort,
+        limit: csConfig.limit,
       });
-      targets = sortedTargets;
-
-      if (csConfig.limit > 0) targets = targets.slice(0, csConfig.limit);
 
       addLog('info', t('admin.fetch.cs.logTotal', { count: targets.length }));
       setProgress({ total: targets.length, done: 0, chars: 0, staff: 0, skipped: 0, errors: 0 });
@@ -1614,12 +461,7 @@ export function AdminFetch() {
           const titleName = (Array.isArray(ref.canonical_titles)
             ? ref.canonical_titles[0]
             : ref.canonical_titles)?.canonical_title || `#${ref.canonical_title_id}`;
-          const { data: charRows } = await supabase
-            .from('title_characters')
-            .select('canonical_title_id, anilist_id, name_full, role, image_url, sort_order')
-            .eq('canonical_title_id', ref.canonical_title_id)
-            .order('sort_order', { ascending: true });
-          const existingRows = charRows || [];
+          const { charRows: existingRows, existingStaffCount } = await fetchExistingTitleCharStaffState(ref.canonical_title_id);
           const totalExistingCount = existingRows.length;
           const targetCharacterCount = csConfig.maxCharactersPerTitle > 0 ? csConfig.maxCharactersPerTitle : 0;
           if (rateLimitCooldownMs > 0) {
@@ -1632,10 +474,6 @@ export function AdminFetch() {
               ? csConfig.maxCharactersPerTitle
               : totalExistingCount;
             const charsSatisfied = skipThreshold > 0 && totalExistingCount >= skipThreshold;
-            const { count: existingStaffCount } = await supabase
-              .from('title_staff')
-              .select('*', { count: 'exact', head: true })
-              .eq('canonical_title_id', ref.canonical_title_id);
             const staffSatisfied = (existingStaffCount || 0) >= 25;
 
             if (charsSatisfied && staffSatisfied) {
@@ -1667,7 +505,7 @@ export function AdminFetch() {
           const rawCount = media?.characters?.edges?.length || 0;
           const filteredMedia = buildFilteredAniListCharStaffMedia(media, csConfig);
           const filteredCount = filteredMedia?.characters?.edges?.length || 0;
-          const result = await upsertCharStaff(ref.canonical_title_id, filteredMedia, {
+          const result = await upsertCharStaffApi(ref.canonical_title_id, filteredMedia, {
             pruneStaleCharacters: !filteredMedia?.syncMeta?.partialCharacterSync,
           });
           setProgress((p) => ({ ...p, done: p.done + 1, chars: p.chars + result.chars, staff: p.staff + result.staff }));
@@ -1736,70 +574,13 @@ export function AdminFetch() {
         addLog('info', t('admin.fetch.trailers.logSearchQuery', { query: explicitTitleQuery }));
       }
 
-      let targets = [];
-
-      if (trailerConfig.mode === 'search') {
-        const { data: titleRows, error: titleError } = await supabase
-          .from('canonical_titles')
-          .select(`
-            id,
-            canonical_title,
-            slug,
-            release_year,
-            type,
-            subtype,
-            trailer_url,
-            trailer_video_id,
-            aliases:aliases_cache,
-            source_refs:title_source_refs(provider, external_id)
-          `)
-          .order('id', { ascending: true });
-        if (titleError) throw titleError;
-
-        targets = (titleRows || [])
-          .filter((titleRecord) => matchesTrailerCategory(titleRecord, trailerConfig.category))
-          .filter((titleRecord) => matchesTrailerTitleQuery(titleRecord, explicitTitleQuery))
-          .map((titleRecord) => ({
-            canonical_title_id: titleRecord.id,
-            external_id: getSourceRefId(titleRecord.source_refs, 'anilist') || null,
-            canonical_titles: titleRecord,
-          }));
-      } else {
-        let query = supabase
-          .from('canonical_titles')
-          .select(`
-            id,
-            canonical_title,
-            slug,
-            release_year,
-            type,
-            subtype,
-            trailer_url,
-            trailer_video_id,
-            aliases:aliases_cache,
-            source_refs:title_source_refs(provider, external_id)
-          `)
-          .order('id', { ascending: true });
-
-        if (trailerConfig.onlyMissing) {
-          query = query.is('trailer_url', null).is('trailer_video_id', null);
-        }
-
-        const { data: titleRows, error: titleError } = await query;
-        if (titleError) throw titleError;
-
-        targets = (titleRows || [])
-          .filter((titleRecord) => matchesTrailerCategory(titleRecord, trailerConfig.category))
-          .map((titleRecord) => ({
-            canonical_title_id: titleRecord.id,
-            external_id: getSourceRefId(titleRecord.source_refs, 'anilist') || null,
-            canonical_titles: titleRecord,
-          }));
-      }
-
-      if (trailerConfig.limit > 0) {
-        targets = targets.slice(0, trailerConfig.limit);
-      }
+      const targets = await fetchAdminTrailerTargets({
+        mode: trailerConfig.mode,
+        onlyMissing: trailerConfig.onlyMissing,
+        category: trailerConfig.category,
+        limit: trailerConfig.limit,
+        titleQuery: explicitTitleQuery,
+      });
 
       addLog('info', t('admin.fetch.trailers.logTargets', { count: targets.length }));
       setProgress({ total: targets.length, done: 0, updated: 0, noTrailer: 0, noMatch: 0, errors: 0 });
@@ -1841,27 +622,28 @@ export function AdminFetch() {
           if (abortRef.current.signal.aborted) break;
 
           if (media?.id) {
-            const { error: sourceRefError } = await supabase.from('title_source_refs').upsert(
-              {
-                canonical_title_id: target.canonical_title_id,
-                provider: 'anilist',
-                external_id: String(media.id),
-                external_url: media?.siteUrl || null,
-                source_priority: titleRecord?.type === 'anime' ? 10 : 20,
-                raw_payload: media,
-                last_synced_at: new Date().toISOString(),
-                fetched_at: new Date().toISOString(),
-              },
-              { onConflict: 'provider,external_id' },
-            );
-            if (sourceRefError && sourceRefError.code !== 'PGRST205') throw sourceRefError;
+            await upsertAdminTitleSourceRef({
+              canonical_title_id: target.canonical_title_id,
+              provider: 'anilist',
+              external_id: String(media.id),
+              external_url: media?.siteUrl || null,
+              source_priority: titleRecord?.type === 'anime' ? 10 : 20,
+              raw_payload: media,
+              last_synced_at: new Date().toISOString(),
+              fetched_at: new Date().toISOString(),
+            });
           }
 
           if (!media?.trailer?.id) {
-            resolvedTrailer = await resolveTrailerFromFallbackSources(
+            resolvedTrailer = await resolveAdminTrailerFromFallbackSources({
               titleRecord,
-              trailerConfig.mode === 'search' ? explicitTitleQuery : ''
-            );
+              preferredSearchName: trailerConfig.mode === 'search' ? explicitTitleQuery : '',
+              searchNames: buildPreferredTitleSearchNames(
+                titleRecord,
+                trailerConfig.mode === 'search' ? [explicitTitleQuery] : []
+              ),
+              aliases: getOrderedAliasValues(titleRecord),
+            });
           }
 
           if (!media && !resolvedTrailer) {
@@ -1885,14 +667,7 @@ export function AdminFetch() {
             const updateLabel = media?.trailer?.id
               ? getMediaDisplayTitle(media) || fallbackTitle
               : fallbackTitle;
-            const { error: updateError } = await supabase
-              .from('canonical_titles')
-              .update({
-                ...patch,
-                last_synced_at: new Date().toISOString(),
-              })
-              .eq('id', target.canonical_title_id);
-            if (updateError) throw updateError;
+            await updateAdminTitleTrailerPatch(target.canonical_title_id, patch);
 
             setProgress((current) => ({
               ...current,
@@ -1961,32 +736,10 @@ export function AdminFetch() {
         })
       );
 
-      const { data: titleRows, error: titleError } = await supabase
-        .from('canonical_titles')
-        .select(`
-          id,
-          canonical_title,
-          release_year,
-          type,
-          subtype,
-          aliases:aliases_cache,
-          source_refs:title_source_refs(provider, external_id),
-          themes:title_theme_songs(id)
-        `)
-        .eq('type', 'anime')
-        .order('id', { ascending: true });
-      if (titleError) throw titleError;
-
-      let targets = (titleRows || []).filter((titleRecord) => {
-        if (themeConfig.onlyMissing && Array.isArray(titleRecord.themes) && titleRecord.themes.length > 0) {
-          return false;
-        }
-        return buildPreferredTitleSearchNames(titleRecord).length > 0;
+      const targets = await fetchAdminThemeTargets({
+        onlyMissing: themeConfig.onlyMissing,
+        limit: themeConfig.limit,
       });
-
-      if (themeConfig.limit > 0) {
-        targets = targets.slice(0, themeConfig.limit);
-      }
 
       addLog('info', t('admin.fetch.themes.logTargets', { count: targets.length }));
       setProgress({ total: targets.length, done: 0, synced: 0, rows: 0, noMatch: 0, errors: 0 });
@@ -2013,7 +766,7 @@ export function AdminFetch() {
             }));
             addLog('skipped', t('admin.fetch.themes.logNoMatch', { title: fallbackTitle }));
           } else {
-            const result = await replaceTitleThemeSongs(titleRecord.id, matched);
+            const result = await replaceTitleThemeSongsApi(titleRecord.id, matched);
             setProgress((current) => ({
               ...current,
               done: current.done + 1,
@@ -2075,21 +828,10 @@ export function AdminFetch() {
     try {
       addLog('info', 'เริ่ม fetch Characters สำหรับ PornhwaDB titles...');
 
-      const { data: refs, error: refsError } = await supabase
-        .from('title_source_refs')
-        .select('canonical_title_id, external_id, raw_payload, canonical_titles!inner(canonical_title)')
-        .eq('provider', 'pornhwadb');
-      if (refsError) throw refsError;
-
-      let targets = refs || [];
-
-      if (pornhwaCharsConfig.onlyMissing) {
-        const { data: existing } = await supabase.from('title_characters').select('canonical_title_id');
-        const existingSet = new Set((existing || []).map((r) => r.canonical_title_id));
-        targets = targets.filter((r) => !existingSet.has(r.canonical_title_id));
-      }
-
-      if (pornhwaCharsConfig.limit > 0) targets = targets.slice(0, pornhwaCharsConfig.limit);
+      const targets = await fetchAdminPornhwaCharacterTargets({
+        onlyMissing: pornhwaCharsConfig.onlyMissing,
+        limit: pornhwaCharsConfig.limit,
+      });
 
       addLog('info', `พบ ${targets.length} titles ที่ต้องดึง characters`);
       setProgress({ total: targets.length, done: 0, chars: 0, errors: 0 });
@@ -2106,12 +848,12 @@ export function AdminFetch() {
           continue;
         }
         try {
-          const result = await fetchPornhwaDbCharactersViaProxy(
+          const result = await fetchPornhwaDbCharactersViaProxyApi(
             slug,
             pornhwaConfig.apiKey,
             abortRef.current.signal,
           );
-          const count = await upsertPornhwaDbCharacters(ref.canonical_title_id, result?.data || []);
+          const count = await upsertPornhwaDbCharactersApi(ref.canonical_title_id, result?.data || []);
           setProgress((p) => ({ ...p, done: p.done + 1, chars: p.chars + count }));
           addLog('imported', `${titleName} — ${count} characters`);
         } catch (err) {
@@ -2154,7 +896,7 @@ export function AdminFetch() {
 
         let pageData;
         try {
-          pageData = await fetchJikanPage(page, jikanConfig, abortRef.current.signal);
+          pageData = await fetchAdminJikanPage(page, jikanConfig, abortRef.current.signal);
         } catch (err) {
           if (err.name === 'AbortError') break;
           addLog('error', `Fetch ล้มเหลว: ${err.message}`);
@@ -2166,9 +908,9 @@ export function AdminFetch() {
 
         for (const item of items) {
           if (abortRef.current.signal.aborted) break;
-          const norm = normalizeJikanManga(item);
+          const norm = normalizeJikanMangaEntry(item);
           try {
-            const result = await upsertJikanTitle(norm, skipDuplicates);
+            const result = await upsertJikanTitleApi(norm, skipDuplicates);
             setProgress((p) => ({
               ...p, fetched: p.fetched + 1,
               imported: result === 'imported' ? p.imported + 1 : p.imported,
@@ -2219,7 +961,7 @@ export function AdminFetch() {
 
         let pageData;
         try {
-          pageData = await fetchPornhwaDbPage(page, pornhwaConfig, abortRef.current.signal);
+          pageData = await fetchAdminPornhwaDbPage(page, pornhwaConfig, abortRef.current.signal);
         } catch (err) {
           if (err.name === 'AbortError') break;
           addLog('error', `Fetch ล้มเหลว: ${err.message}`);
@@ -2231,14 +973,14 @@ export function AdminFetch() {
 
         for (const item of items) {
           if (abortRef.current.signal.aborted) break;
-          if (isBoysLovePornhwa(item)) {
+          if (isBoysLovePornhwaEntry(item)) {
             setProgress((p) => ({ ...p, fetched: p.fetched + 1, skipped: p.skipped + 1 }));
             addLog('skipped', `[ข้าม BL/Yaoi] ${item.title || item.id}`);
             continue;
           }
           const norm = normalizePornhwaDbEntry(item);
           try {
-            const result = await upsertPornhwaDbTitle(norm, skipDuplicates);
+            const result = await upsertPornhwaDbTitleApi(norm, skipDuplicates);
             setProgress((p) => ({
               ...p, fetched: p.fetched + 1,
               imported: result === 'imported' ? p.imported + 1 : p.imported,

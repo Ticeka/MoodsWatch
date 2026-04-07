@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import './Selectors.css';
+import '../styles/Selectors.css';
 
 export function MoodSelector({ selected, onChange }) {
   const { language, t } = useLanguage();

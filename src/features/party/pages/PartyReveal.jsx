@@ -4,7 +4,7 @@ import {
   useHydratedPartyMembers,
 } from '@/features/party/lib/usePartyRoomSelectors';
 import { buildPartyLeaderboard } from '@/features/party/lib/partyEngine';
-import { PartyRevealPanel } from './PartyRoomShared';
+import { PartyRevealPanel } from '../components/PartyRoomShared';
 import { PartyTitleGuessRevealStage } from '../components/PartyTitleGuessView';
 
 export const PartyRevealView = React.memo(function PartyRevealView({

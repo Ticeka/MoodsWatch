@@ -4,7 +4,7 @@ import { ArrowUpRight, Image as ImageIcon } from 'lucide-react';
 import { SearchMatchReasons } from '@/features/discover/components/SearchMatchReasons';
 import { SearchHighlightText } from '@/features/discover/components/SearchHighlightText';
 import { collectMatchReasonKeys } from '@/features/discover/lib/searchMatch';
-import './DiscoverPostCard.css';
+import '../styles/DiscoverPostCard.css';
 
 function formatCompactDate(value, locale) {
   if (!value) return '';

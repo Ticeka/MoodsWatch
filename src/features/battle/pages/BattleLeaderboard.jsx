@@ -5,14 +5,14 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { normalizeBattleLeaderboardRows } from '@/features/battle/lib/leaderboard';
 import { Trophy, TrendingUp, Swords, ChevronLeft } from 'lucide-react';
-import './BattleLeaderboard.css';
+import '../styles/BattleLeaderboard.css';
 
 const PAGE_SIZE = 25;
 
 const FILTERS = ['elo', 'wins', 'win_rate'];
 
 export function BattleLeaderboard() {
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
   const { showAdult } = useAgeGate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);

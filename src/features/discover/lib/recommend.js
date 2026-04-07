@@ -1,14 +1,36 @@
 // MoodsWatch recommendation engine backed only by canonical_titles in Supabase
-import { MOODS, isExplicitMood } from '@/shared/data/moods';
 import {
-  CANONICAL_TITLE_BROWSE_SELECT,
-  CANONICAL_TITLE_PREVIEW_SELECT,
-  CANONICAL_TITLE_SEARCH_SELECT,
-  CANONICAL_TITLE_DETAIL_SELECT,
-  CANONICAL_TITLE_LIST_SELECT,
-  mapCanonicalTitle,
-} from '@/shared/lib/catalog';
-import { supabase, isSupabaseConnected } from '@/shared/lib/supabase';
+  fetchDiscoverSearchResults,
+  fetchDiscoverSimilarCandidates,
+  fetchDiscoverTitleById,
+} from '../api/discoverCatalogApi.js';
+import {
+  attachCharactersToTitles as attachCharactersToTitlesApi,
+  clearTitlesCache as clearTitlesCacheApi,
+  fetchTitleCharacters as fetchTitleCharactersApi,
+  fetchTitlesPageFromSupabase,
+  getAllTitles as getAllTitlesApi,
+  getCachedTitlesSnapshot as getCachedTitlesSnapshotApi,
+  getCacheInfo as getCacheInfoApi,
+  getCharactersPage as getCharactersPageApi,
+  getTitleBySlug as getTitleBySlugApi,
+  getTitlePreviewByIds as getTitlePreviewByIdsApi,
+  getTitlesByIds as getTitlesByIdsApi,
+  getTitlesPage as getTitlesPageApi,
+  getTrendingTitles as getTrendingTitlesApi,
+  isCatalogCacheWarm as isCatalogCacheWarmApi,
+} from '../api/discoverTitleCatalogApi.js';
+import {
+  buildReason,
+  buildRecommendationBreakdown,
+  buildTitleSearchCandidates,
+  collapseTitlesByFranchise,
+  filterTitlesForRecommendationPool,
+  resolveWeights,
+  scoreFreshness,
+  scoreQuality,
+  scoreSimilarityAgainstLiked,
+} from './recommendationEngine.js';
 import { sortTitlesCollection } from '@/shared/lib/titleSorting';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import {
@@ -17,655 +39,19 @@ import {
   filterTitlesByRecommendationPreferences,
 } from '@/features/profile/lib/profileStore';
 import { getSearchIntent, sortBySearchRelevance, textMatchesQuery } from '@/features/discover/lib/searchMatch';
-import { buildCharacterCatalog } from '@/shared/lib/catalogEntities';
 
-// Dynamic weights ตาม context ที่มี เพื่อไม่ให้ weight ที่ใช้งานไม่ได้ไป cap คะแนน
-function resolveWeights(hasMoods, hasLikedTitles) {
-  if (hasMoods && hasLikedTitles) {
-    return { moodMatch: 0.35, genreTagMatch: 0.20, similarTitle: 0.20, lengthFit: 0.10, quality: 0.12, freshness: 0.03 };
-  }
-  if (hasMoods) {
-    // ไม่มี liked titles: กระจาย similarTitle weight ให้ mood signals
-    return { moodMatch: 0.48, genreTagMatch: 0.27, similarTitle: 0, lengthFit: 0.12, quality: 0.10, freshness: 0.03 };
-  }
-  if (hasLikedTitles) {
-    // ไม่มี moods: กระจาย mood weight ให้ similarity + quality
-    return { moodMatch: 0, genreTagMatch: 0, similarTitle: 0.60, lengthFit: 0.10, quality: 0.25, freshness: 0.05 };
-  }
-  // ไม่มีทั้งคู่: rank ด้วย quality เป็นหลัก
-  return { moodMatch: 0, genreTagMatch: 0, similarTitle: 0, lengthFit: 0.15, quality: 0.60, freshness: 0.25 };
-}
-
-const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_CATALOG_MAX_ROWS = null;
-const SUPABASE_BATCH_SIZE = 1000;
-const TITLE_CHARACTER_ID_CHUNK_SIZE = 200;
-const TITLE_CHARACTER_SELECT = `
-  id,
-  canonical_title_id,
-  anilist_id,
-  name_full,
-  name_native,
-  image_url,
-  role,
-  is_primary_protagonist,
-  is_primary_heroine,
-  lead_type,
-  presentation_gender,
-  voice_actor_name,
-  voice_actor_image,
-  sort_order
-`;
-
-let cachedTitles = null;
-let cachedTitlesPromise = null;
-let cacheTimestamp = 0;
-let cacheError = null;
-let cachedCatalogLimit = null;
-let cachedDetailedTitles = null;
-let cachedDetailedTitlesPromise = null;
-let detailedCacheTimestamp = 0;
-let detailedCacheError = null;
-let cachedDetailedCatalogLimit = null;
-const titleByIdCache = new Map();
-const titleByIdsRequestCache = new Map();
-const titleBySlugCache = new Map();
-const titleBySlugRequestCache = new Map();
-
-const moodGenres = {};
-MOODS.forEach((mood) => {
-  moodGenres[mood.id] = mood.tags || [];
-});
-
-const EXPLICIT_MOOD_FALLBACKS = {
-  'adult-harem': {
-    tagKeywords: ['harem', 'reverse harem', 'love polygon', 'multiple heroines', 'harem protagonist'],
-    textKeywords: ['harem', 'reverse harem', 'multiple lovers', 'many girls', 'many boys', 'love triangle', 'harem route'],
-  },
-  'adult-ntr': {
-    tagKeywords: ['ntr', 'netorare', 'cheating', 'cuckold', 'affair', 'infidelity', 'adultery'],
-    textKeywords: ['ntr', 'netorare', 'cheating', 'cuckold', 'affair', 'infidelity', 'adultery', 'stolen', 'cheated', 'cheats on'],
-  },
-  'adult-office': {
-    tagKeywords: ['office', 'ceo', 'boss', 'secretary', 'workplace', 'contract marriage', 'contract relationship', 'deal', 'power gap'],
-    textKeywords: ['ceo', 'boss', 'secretary', 'contract marriage', 'contract relationship', 'deal', 'workplace', 'office', 'executive', 'employee', 'master servant', 'power gap', 'arranged marriage'],
-  },
-  'adult-forbidden': {
-    tagKeywords: ['taboo', 'forbidden', 'forbidden love', 'secret relationship', 'affair', 'teacher student', 'hidden relationship'],
-    textKeywords: ['forbidden', 'taboo', 'secret relationship', 'affair', 'scandal', 'cheat', 'cheating', 'hidden love', 'teacher student', 'can never be together', 'must not fall in love'],
-  },
-  'adult-yandere': {
-    tagKeywords: ['yandere', 'obsessive', 'possessive', 'obsession', 'stalker', 'controlling', 'yandere love'],
-    textKeywords: ['yandere', 'obsession', 'obsessed', 'possessive', 'fixated', 'clingy', 'stalker', "can't let go", 'controlling', 'mine alone', 'only for me'],
-  },
-  'adult-femdom': {
-    tagKeywords: ['femdom', 'female dominant', 'dominant woman', 'submissive male', 'female led'],
-    textKeywords: ['femdom', 'female dominant', 'dominant woman', 'submissive man', 'submissive male', 'female led', 'she controls', 'she dominates'],
-  },
-  'adult-revenge': {
-    tagKeywords: ['revenge', 'blackmail', 'manipulation', 'betrayal', 'vengeance', 'grudge'],
-    textKeywords: ['revenge', 'blackmail', 'manipulation', 'betray', 'betrayal', 'vengeance', 'grudge', 'payback', 'get back at', 'use her', 'use him', 'trap'],
-  },
-  'adult-dark': {
-    tagKeywords: ['dark', 'dark romance', 'violence', 'trauma', 'toxic relationship', 'psychological', 'abuse', 'non-consensual'],
-    textKeywords: ['dark', 'violence', 'violent', 'abuse', 'abusive', 'trauma', 'toxic', 'manipulation', 'murder', 'kill', 'blood', 'prison', 'blackmail', 'non-con', 'force', 'forced', 'midnight', 'cursed', 'curse'],
-  },
-};
-
-function normalizeTitleType(title) {
-  if (title.type === 'manga' && /manhwa/i.test(title.title_en || '')) {
-    return { ...title, type: 'manhwa' };
-  }
-
-  return title;
-}
-
-function normalizeFranchiseIdentityPart(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^a-z0-9\u0E00-\u0E7F]+/g, ' ')
-    .trim();
-}
-
-function getTitleFranchiseIdentity(title = {}, fallbackIndex = 0) {
-  const franchiseId = Number(title?.franchise_id || 0);
-  if (franchiseId > 0) {
-    return `franchise-id:${franchiseId}`;
-  }
-
-  const franchiseSlug = normalizeFranchiseIdentityPart(title?.franchise_slug);
-  if (franchiseSlug) {
-    return `franchise-slug:${franchiseSlug}`;
-  }
-
-  const franchiseName = normalizeFranchiseIdentityPart(title?.franchise_name);
-  if (franchiseName) {
-    return `franchise-name:${franchiseName}`;
-  }
-
-  const titleId = Number(title?.id || 0);
-  if (titleId > 0) {
-    return `title-id:${titleId}`;
-  }
-
-  const titleSlug = normalizeFranchiseIdentityPart(title?.slug);
-  if (titleSlug) {
-    return `title-slug:${titleSlug}`;
-  }
-
-  return `title-fallback:${fallbackIndex}`;
-}
-
-export function collapseTitlesByFranchise(titles = []) {
-  const seen = new Set();
-  const deduped = [];
-
-  titles.forEach((title, index) => {
-    const franchiseKey = getTitleFranchiseIdentity(title, index);
-    if (seen.has(franchiseKey)) {
-      return;
-    }
-
-    seen.add(franchiseKey);
-    deduped.push(title);
-  });
-
-  return deduped;
-}
-
-function resolveRequestedRowLimit(maxRows) {
-  if (Number.isFinite(maxRows) && maxRows > 0) {
-    return Math.floor(maxRows);
-  }
-
-  return null;
-}
-
-async function fetchSupabaseTitles({
-  maxRows = DEFAULT_CATALOG_MAX_ROWS,
-  select = CANONICAL_TITLE_BROWSE_SELECT,
-} = {}) {
-  const rowLimit = resolveRequestedRowLimit(maxRows);
-  let allData = [];
-  let lastId = null;
-  let hasMore = true;
-
-  while (hasMore) {
-    const remaining = rowLimit === null ? SUPABASE_BATCH_SIZE : Math.min(SUPABASE_BATCH_SIZE, rowLimit - allData.length);
-    if (rowLimit !== null && remaining <= 0) break;
-
-    let query = supabase
-      .from('canonical_titles')
-      .select(select)
-      .order('id', { ascending: true })
-      .limit(remaining);
-
-    if (lastId !== null) {
-      query = query.gt('id', lastId);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    if (data?.length) {
-      allData = allData.concat(data);
-      lastId = data[data.length - 1].id;
-      if (data.length < remaining) hasMore = false;
-      if (rowLimit !== null && allData.length >= rowLimit) hasMore = false;
-    } else {
-      hasMore = false;
-    }
-  }
-
-  return allData.map((title) => normalizeTitleType(mapCanonicalTitle(title)));
-}
-
-function chunkIds(ids = [], chunkSize = TITLE_CHARACTER_ID_CHUNK_SIZE) {
-  const chunks = [];
-
-  for (let index = 0; index < ids.length; index += chunkSize) {
-    chunks.push(ids.slice(index, index + chunkSize));
-  }
-
-  return chunks;
-}
-
-export async function fetchTitleCharacters(titleIds = []) {
-  const normalizedTitleIds = [...new Set(
-    (Array.isArray(titleIds) ? titleIds : [])
-      .map((id) => Number(id))
-      .filter((id) => Number.isFinite(id) && id > 0)
-  )];
-
-  if (Array.isArray(titleIds) && titleIds.length > 0 && normalizedTitleIds.length === 0) {
-    return [];
-  }
-
-  const idChunks = normalizedTitleIds.length > 0
-    ? chunkIds(normalizedTitleIds)
-    : [null];
-
-  // Fetch all chunks in parallel; pages within each chunk remain sequential
-  const chunkResults = await Promise.all(idChunks.map(async (titleIdChunk) => {
-    const rows = [];
-    let lastRowId = null;
-    let hasMore = true;
-
-    while (hasMore) {
-      let query = supabase
-        .from('title_characters')
-        .select(TITLE_CHARACTER_SELECT)
-        .order('id', { ascending: true })
-        .limit(SUPABASE_BATCH_SIZE);
-
-      if (titleIdChunk) {
-        query = query.in('canonical_title_id', titleIdChunk);
-      }
-
-      if (lastRowId !== null) {
-        query = query.gt('id', lastRowId);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      if (data?.length) {
-        rows.push(...data);
-        lastRowId = data[data.length - 1].id;
-        hasMore = data.length === SUPABASE_BATCH_SIZE;
-      } else {
-        hasMore = false;
-      }
-    }
-
-    return rows;
-  }));
-
-  return chunkResults.flat();
-}
-
-export function attachCharactersToTitles(titles = [], characterRows = []) {
-  if (!Array.isArray(titles) || titles.length === 0) {
-    return [];
-  }
-
-  const charactersByTitleId = new Map();
-
-  (Array.isArray(characterRows) ? characterRows : []).forEach((character) => {
-    const titleId = Number(character?.canonical_title_id || 0);
-    if (!titleId) {
-      return;
-    }
-
-    if (!charactersByTitleId.has(titleId)) {
-      charactersByTitleId.set(titleId, []);
-    }
-
-    charactersByTitleId.get(titleId).push({
-      anilist_id: character.anilist_id,
-      name_full: character.name_full,
-      name_native: character.name_native,
-      image_url: character.image_url,
-      role: character.role,
-      voice_actor_name: character.voice_actor_name,
-      voice_actor_image: character.voice_actor_image,
-      sort_order: character.sort_order,
-    });
-  });
-
-  return titles.map((title) => ({
-    ...title,
-    characters: (charactersByTitleId.get(Number(title.id)) || [])
-      .slice()
-      .sort((left, right) => (left.sort_order || 0) - (right.sort_order || 0)),
-  }));
-}
-
-function ensureSupabaseConnected() {
-  if (!isSupabaseConnected()) {
-    throw new Error('Supabase is not configured');
-  }
-}
-
-function mapRecords(records) {
-  return (records || []).map((title) => normalizeTitleType(mapCanonicalTitle(title)));
-}
-
-function mergeCachedTitleRecord(current = {}, incoming = {}) {
-  const merged = { ...current };
-
-  Object.entries(incoming).forEach(([key, value]) => {
-    if (value !== undefined) {
-      merged[key] = value;
-    }
-  });
-
-  return merged;
-}
-
-function getTitleSignalBag(title = {}) {
-  const tags = [...(title.genres || []), ...(title.tags || [])]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean);
-  const text = [
-    title.title_en,
-    title.title_th,
-    title.title_romaji,
-    title.title_native,
-    title.synopsis,
-  ]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean)
-    .join(' ');
-
-  return { tags, text };
-}
-
-function matchesExplicitMoodFallback(title, moodId) {
-  if (!title?.is_adult) {
-    return false;
-  }
-
-  if ((title.moods || []).includes(moodId)) {
-    return true;
-  }
-
-  const fallback = EXPLICIT_MOOD_FALLBACKS[moodId];
-  if (!fallback) {
-    return false;
-  }
-
-  const { tags, text } = getTitleSignalBag(title);
-  const hasTagMatch = fallback.tagKeywords.some((keyword) => tags.includes(keyword));
-  const hasTextMatch = fallback.textKeywords.some((keyword) => text.includes(keyword));
-
-  return hasTagMatch || hasTextMatch;
-}
-
-export function matchesMoodSelection(title, moodId) {
-  if (!moodId) {
-    return false;
-  }
-
-  // Always honour explicit DB tags regardless of explicit/fuzzy or adult flag
-  if ((title?.moods || []).includes(moodId)) {
-    return true;
-  }
-
-  return isExplicitMood(moodId)
-    ? matchesExplicitMoodFallback(title, moodId)
-    : false;
-}
-
-function storeTitlesInCaches(titles) {
-  if (!titles?.length) {
-    return;
-  }
-
-  titles.forEach((title) => {
-    titleByIdCache.set(title.id, mergeCachedTitleRecord(titleByIdCache.get(title.id), title));
-  });
-
-  if (cachedTitles?.length) {
-    const nextTitlesById = new Map(cachedTitles.map((title) => [title.id, title]));
-    titles.forEach((title) => {
-      nextTitlesById.set(title.id, mergeCachedTitleRecord(nextTitlesById.get(title.id), title));
-    });
-    cachedTitles = Array.from(nextTitlesById.values());
-  }
-}
-
-function applyTypeFilter(query, type) {
-  if (!type || type === 'all') {
-    return query;
-  }
-
-  if (type === 'manhwa') {
-    return query.eq('type', 'manga').eq('subtype', 'manhwa');
-  }
-
-  if (type === 'manga') {
-    return query.eq('type', 'manga').neq('subtype', 'manhwa');
-  }
-
-  return query.eq('type', type);
-}
-
-function applySort(query, sortBy) {
-  if (sortBy === 'score') {
-    return query
-      .order('avg_score', { ascending: false, nullsFirst: false })
-      .order('popularity_score', { ascending: false, nullsFirst: false })
-      .order('id', { ascending: true });
-  }
-
-  if (sortBy === 'year') {
-    return query
-      .order('release_year', { ascending: false, nullsFirst: false })
-      .order('popularity_score', { ascending: false, nullsFirst: false })
-      .order('id', { ascending: true });
-  }
-
-  if (sortBy === 'title') {
-    return query.order('canonical_title', { ascending: true }).order('id', { ascending: true });
-  }
-
-  return query
-    .order('popularity_score', { ascending: false, nullsFirst: false })
-    .order('avg_score', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: true });
-}
-
-async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = {}) {
-  ensureSupabaseConnected();
-
-  const safePage = Math.max(1, page);
-  const safePageSize = Math.max(1, pageSize);
-  const from = (safePage - 1) * safePageSize;
-  const to = from + safePageSize - 1;
-
-  let titleQuery = supabase
-    .from('canonical_titles')
-    .select(CANONICAL_TITLE_BROWSE_SELECT, { count: 'planned' });
-
-  titleQuery = applyTypeFilter(titleQuery, type);
-
-  if (showAdult) {
-    titleQuery = titleQuery.eq('is_adult', true);
-  } else {
-    titleQuery = titleQuery.eq('is_adult', false);
-  }
-
-  const normalizedQuery = query.trim();
-  if (normalizedQuery.length >= 2) {
-    const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
-    titleQuery = titleQuery.or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`);
-  }
-
-  titleQuery = applySort(titleQuery, sortBy);
-
-  const { data, error, count } = await titleQuery.range(from, to);
-  if (error) throw error;
-
-  return {
-    items: mapRecords(data),
-    total: count || 0,
-    page: safePage,
-    pageSize: safePageSize,
-    totalPages: Math.max(1, Math.ceil((count || 0) / safePageSize)),
-  };
-}
-
-export async function getAllTitles({
-  forceRefresh = false,
-  maxRows = DEFAULT_CATALOG_MAX_ROWS,
-  includeCharacters = false,
-} = {}) {
-  ensureSupabaseConnected();
-  const requestedLimit = resolveRequestedRowLimit(maxRows);
-  const cachedCollection = includeCharacters ? cachedDetailedTitles : cachedTitles;
-  const cachedLimit = includeCharacters ? cachedDetailedCatalogLimit : cachedCatalogLimit;
-  const lastCacheTimestamp = includeCharacters ? detailedCacheTimestamp : cacheTimestamp;
-  const inFlightRequest = includeCharacters ? cachedDetailedTitlesPromise : cachedTitlesPromise;
-  const cacheSatisfiesRequest = cachedCollection && (
-    cachedLimit === null ||
-    (requestedLimit !== null && cachedLimit >= requestedLimit)
-  );
-
-  const canUseCachedCatalog =
-    !forceRefresh &&
-    cacheSatisfiesRequest &&
-    (Date.now() - lastCacheTimestamp < CACHE_TTL_MS) &&
-    (requestedLimit === null || cachedCollection.length >= requestedLimit);
-
-  if (canUseCachedCatalog) {
-    return cachedCollection;
-  }
-
-  if (!forceRefresh && inFlightRequest) {
-    return inFlightRequest;
-  }
-
-  const request = (async () => {
-    try {
-      const titles = await fetchSupabaseTitles({
-        maxRows,
-        select: CANONICAL_TITLE_BROWSE_SELECT,
-      });
-      const hydratedTitles = includeCharacters
-        ? attachCharactersToTitles(titles, await fetchTitleCharacters(titles.map((title) => title.id)))
-        : titles;
-
-      storeTitlesInCaches(hydratedTitles);
-
-      if (includeCharacters) {
-        cachedDetailedTitles = hydratedTitles;
-        cachedDetailedCatalogLimit = requestedLimit;
-        detailedCacheTimestamp = Date.now();
-        detailedCacheError = null;
-      } else {
-        cachedTitles = hydratedTitles;
-        cachedCatalogLimit = requestedLimit;
-        cacheTimestamp = Date.now();
-        cacheError = null;
-      }
-
-      return hydratedTitles;
-    } catch (error) {
-      if (includeCharacters) {
-        detailedCacheError = error.message;
-      } else {
-        cacheError = error.message;
-      }
-      throw error;
-    } finally {
-      if (includeCharacters) {
-        cachedDetailedTitlesPromise = null;
-      } else {
-        cachedTitlesPromise = null;
-      }
-    }
-  })();
-
-  if (includeCharacters) {
-    cachedDetailedTitlesPromise = request;
-  } else {
-    cachedTitlesPromise = request;
-  }
-
-  return request;
-}
-
-// Called from main.jsx during idle time to warm the catalog cache so the
-// first search is instant.  Silently swallows errors — the cache will be
-// populated on the next real request instead.
-export function clearTitlesCache() {
-  cachedTitles = null;
-  cachedTitlesPromise = null;
-  cacheTimestamp = 0;
-  cacheError = null;
-  cachedCatalogLimit = null;
-  cachedDetailedTitles = null;
-  cachedDetailedTitlesPromise = null;
-  detailedCacheTimestamp = 0;
-  detailedCacheError = null;
-  cachedDetailedCatalogLimit = null;
-  titleByIdCache.clear();
-  titleByIdsRequestCache.clear();
-  titleBySlugCache.clear();
-  titleBySlugRequestCache.clear();
-}
-
-// Returns true when the full catalog is already cached and usable for
-// client-side search.  Callers can use this to decide between the fast
-// DB-side search path and the richer client-side path.
-export function isCatalogCacheWarm() {
-  return (
-    !!cachedTitles &&
-    cachedTitles.length > 0 &&
-    Date.now() - cacheTimestamp < CACHE_TTL_MS
-  );
-}
-
-export function getCachedTitlesSnapshot() {
-  return [...(cachedTitles || cachedDetailedTitles || [])];
-}
 
 // Fast DB-side search for autocomplete when the catalog cache is cold.
 // Uses the lightweight SEARCH_SELECT (no trailers/banner/tags) and pushes
 // filtering to PostgreSQL so the first search doesn't block on a full
 // catalog download.
 async function fetchSearchResultsFromDB({ query = '', type = 'all', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = false } = {}) {
-  ensureSupabaseConnected();
-
   const safePage = Math.max(1, page);
   const safePageSize = Math.max(1, pageSize);
-  const normalizedQuery = query.trim();
   const chunkSize = Math.max(120, safePageSize * 4);
-  let from = 0;
-  let allRecords = [];
-  let totalCount = 0;
-
-  while (true) {
-    const to = from + chunkSize - 1;
-    let titleQuery = supabase
-      .from('canonical_titles')
-      .select(CANONICAL_TITLE_SEARCH_SELECT, { count: from === 0 ? 'planned' : undefined });
-
-    titleQuery = applyTypeFilter(titleQuery, type);
-
-    if (showAdult) {
-      titleQuery = titleQuery.eq('is_adult', true);
-    } else {
-      titleQuery = titleQuery.eq('is_adult', false);
-    }
-
-    if (normalizedQuery.length >= 2) {
-      const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
-      titleQuery = titleQuery.or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`);
-    }
-
-    titleQuery = applySort(titleQuery, 'popularity');
-
-    const { data, error, count } = await titleQuery.range(from, to);
-    if (error) throw error;
-
-    if (from === 0) {
-      totalCount = count || 0;
-    }
-
-    if (!data?.length) {
-      break;
-    }
-
-    allRecords = allRecords.concat(mapRecords(data));
-    if (data.length < chunkSize || allRecords.length >= totalCount) {
-      break;
-    }
-    from += chunkSize;
-  }
+  const allRecords = await fetchDiscoverSearchResults({ query, type, chunkSize, showAdult });
 
   const dedupedItems = collapseTitlesByFranchise(allRecords);
   const start = (safePage - 1) * safePageSize;
@@ -679,20 +65,6 @@ async function fetchSearchResultsFromDB({ query = '', type = 'all', page = 1, pa
   };
 }
 
-export function getCacheInfo() {
-  return {
-    source: cachedTitles || cachedDetailedTitles ? 'supabase' : null,
-    count: cachedTitles?.length || 0,
-    limit: cachedCatalogLimit,
-    age: cacheTimestamp ? Date.now() - cacheTimestamp : null,
-    detailedCount: cachedDetailedTitles?.length || 0,
-    detailedLimit: cachedDetailedCatalogLimit,
-    detailedAge: detailedCacheTimestamp ? Date.now() - detailedCacheTimestamp : null,
-    isSupabaseConfigured: isSupabaseConnected(),
-    cacheError,
-    detailedCacheError,
-  };
-}
 
 function sortTitles(titles) {
   return [...titles].sort((a, b) => {
@@ -769,123 +141,6 @@ function filterTitlesByTag(titles, tag) {
   });
 }
 
-export function buildTitleSearchCandidates(title, intent = getSearchIntent('')) {
-  return [
-    {
-      weight: 5.3,
-      texts: [title.title_en, title.title_th, title.title_native],
-      allowTypo: true,
-      matchWeights: {
-        exactPhrase: 328,
-        prefixPhrase: 202,
-        containsPhrase: 112,
-        exactToken: 102,
-        wordBoundary: 66,
-        prefixToken: 44,
-        containsToken: 18,
-        typoToken: 18,
-      },
-    },
-    {
-      weight: 4.8,
-      texts: [title.title_romaji, ...(title.aliases || [])],
-      allowTypo: true,
-      matchWeights: {
-        exactPhrase: 304,
-        prefixPhrase: 188,
-        containsPhrase: 104,
-        exactToken: 94,
-        wordBoundary: 60,
-        prefixToken: 40,
-        containsToken: 16,
-        typoToken: 16,
-      },
-    },
-    {
-      weight: 4.6,
-      texts: [title.slug],
-      allowTypo: true,
-      matchWeights: {
-        exactPhrase: 292,
-        prefixPhrase: 184,
-        containsPhrase: 98,
-        exactToken: 94,
-        wordBoundary: 58,
-        prefixToken: 38,
-        containsToken: 16,
-        typoToken: 16,
-      },
-    },
-    {
-      weight: intent.isBroad ? 1.9 : 1.3,
-      texts: [title.type, title.subtype, title.format],
-      matchWeights: {
-        exactPhrase: 204,
-        prefixPhrase: 132,
-        containsPhrase: 74,
-        exactToken: 58,
-        wordBoundary: 36,
-        prefixToken: 22,
-        containsToken: 10,
-      },
-    },
-    {
-      weight: intent.isBroad ? 2.8 : 1.8,
-      texts: title.genres || [],
-      matchWeights: {
-        exactPhrase: 224,
-        prefixPhrase: 138,
-        containsPhrase: 80,
-        exactToken: 66,
-        wordBoundary: 44,
-        prefixToken: 24,
-        containsToken: 12,
-      },
-    },
-    {
-      weight: intent.isBroad ? 2.5 : 1.5,
-      texts: title.tags || [],
-      matchWeights: {
-        exactPhrase: 214,
-        prefixPhrase: 132,
-        containsPhrase: 76,
-        exactToken: 62,
-        wordBoundary: 40,
-        prefixToken: 22,
-        containsToken: 10,
-      },
-    },
-    {
-      weight: intent.isBroad ? 2.2 : 1.35,
-      texts: title.moods || [],
-      matchWeights: {
-        exactPhrase: 196,
-        prefixPhrase: 124,
-        containsPhrase: 72,
-        exactToken: 58,
-        wordBoundary: 36,
-        prefixToken: 20,
-        containsToken: 10,
-      },
-    },
-    {
-      weight: 0.55,
-      texts: [title.synopsis],
-      longTextPenalty: {
-        threshold: 96,
-        floor: 0.22,
-      },
-      matchWeights: {
-        containsPhrase: 54,
-        exactToken: 40,
-        wordBoundary: 24,
-        prefixToken: 14,
-        containsToken: 7,
-      },
-    },
-  ];
-}
-
 export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = {}) {
   const normalizedQuery = query.trim();
   const shouldUseCatalogSearch = tag.trim() || normalizedQuery.length >= 2;
@@ -897,12 +152,12 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
   // Fast path: when the catalog cache is cold and we only have a text query
   // (no tag filter), keep the search DB-side. Do not kick off a background
   // full-catalog download from a simple query.
-  if (!isCatalogCacheWarm() && !tag.trim() && normalizedQuery.length >= 2) {
+  if (!isCatalogCacheWarmApi() && !tag.trim() && normalizedQuery.length >= 2) {
     return fetchSearchResultsFromDB({ query: normalizedQuery, type, page, pageSize, showAdult });
   }
 
   // Rich path: client-side matching with genres/tags/moods (requires cached catalog)
-  let titles = await getAllTitles();
+  let titles = await getAllTitlesApi();
   titles = filterTitlesForAgeGate(titles, showAdult);
   const filtered = sortTitlesCollection(sortTitles(
     filterTitlesByQuery(
@@ -934,227 +189,8 @@ export async function listTitles({ type = 'all', query = '', tag = '', sortBy = 
   };
 }
 
-function scoreMoodMatch(title, moods) {
-  if (!moods || moods.length === 0) return 0;
-  const matched = moods.filter((moodId) => matchesMoodSelection(title, moodId)).length;
-  return matched / moods.length;
-}
-
-function splitRequestedMoods(moods = []) {
-  return moods.reduce((acc, moodId) => {
-    if (isExplicitMood(moodId)) {
-      acc.explicit.push(moodId);
-    } else {
-      acc.fuzzy.push(moodId);
-    }
-
-    return acc;
-  }, { explicit: [], fuzzy: [] });
-}
-
-function matchesRequestedMoods(title, moods) {
-  if (!moods || moods.length === 0) return true;
-
-  const titleMoodIds = new Set(title.moods || []);
-  const { explicit, fuzzy } = splitRequestedMoods(moods);
-
-  if (explicit.some((mood) => matchesMoodSelection(title, mood))) {
-    return true;
-  }
-
-  if (fuzzy.some((mood) => titleMoodIds.has(mood) || matchesMoodSelection(title, mood))) {
-    return true;
-  }
-
-  const wantedTags = fuzzy.flatMap((mood) => moodGenres[mood] || []).map((tag) => tag.toLowerCase());
-  if (wantedTags.length === 0) return false;
-
-  const titleTags = [...(title.genres || []), ...(title.tags || [])].map((tag) => tag.toLowerCase());
-  const matchCount = wantedTags.filter((tag) => titleTags.includes(tag)).length;
-
-  // pool เล็ก (≤3 tags) ต้องตรง 1 ก็พอ, pool ใหญ่ต้องตรงอย่างน้อย 2 เพื่อลด noise
-  const minMatch = wantedTags.length <= 3 ? 1 : 2;
-  return matchCount >= minMatch;
-}
-
-function scoreGenreTagMatch(title, moods) {
-  if (!moods || moods.length === 0) return 0;
-  const titleTags = [...(title.genres || []), ...(title.tags || [])].map((t) => t.toLowerCase());
-  const { fuzzy } = splitRequestedMoods(moods);
-
-  if (fuzzy.length === 0) return 0;
-
-  const moodScores = fuzzy.map((m) => {
-    const tags = (moodGenres[m] || []).map((t) => t.toLowerCase());
-    if (tags.length === 0) return 0;
-    const matched = tags.filter((t) => titleTags.includes(t)).length;
-    return Math.min(matched / tags.length, 1);
-  });
-
-  return moodScores.reduce((a, b) => a + b, 0) / moodScores.length;
-}
-
-function scoreLengthFit(title, timeOption) {
-  if (!timeOption) return 0.5;
-  const id = timeOption.id || timeOption;
-  if (id === 'completed') return 0.5;
-
-  const eps = title.episodes || title.chapters || 0;
-
-  const ranges = {
-    '20min': [0, 1],
-    '30min': [1, 1],
-    '1hour': [1, 3],
-    tonight: [1, 13],
-    short: [1, 13],
-    long: [24, 9999],
-    '10ch': [1, 10],
-    'few-vol': [1, 50],
-  };
-
-  const durationBased = {
-    '20min': title.duration ? title.duration <= 24 : null,
-    '30min': title.duration ? title.duration <= 30 : null,
-    '1hour': title.duration ? title.duration <= 60 : null,
-  };
-
-  const durResult = durationBased[id];
-  if (durResult !== null && durResult !== undefined) {
-    return durResult ? 1 : 0.3;
-  }
-
-  const [min, max] = ranges[id] || [0, 9999];
-  if (eps >= min && eps <= max) return 1;
-  if (eps < min) return Math.max(0, 1 - (min - eps) / min);
-  return Math.max(0, 1 - (eps - max) / max);
-}
-
-function scoreQuality(title) {
-  const s = Number(title.score || 0);
-  const pop = Number(title.popularity || 0);
-  // คะแนน < 60 ถือว่าต่ำ, 95+ คือสูงสุด
-  const qualityScore = s > 0 ? Math.max(0, Math.min((s - 60) / 35, 1)) : 0.25;
-  const popularityScore = pop > 0 ? Math.min(Math.log10(pop + 1) / 6, 1) : 0;
-  return qualityScore * 0.6 + popularityScore * 0.4;
-}
-
-function scoreFreshness(title) {
-  const year = Number(title.year || 0);
-  if (!year) return 0.35;
-
-  const currentYear = new Date().getFullYear();
-  const age = Math.max(0, currentYear - year);
-  // Exponential decay: ปีล่าสุดได้ ~1.0, เก่า 10 ปีได้ ~0.43, เก่ามากแค่ไหนก็ไม่ต่ำกว่า 0.2
-  return Math.max(0.2, Math.exp(-age / 12));
-}
-
-function scoreSimilarityAgainstLiked(title, liked) {
-  if (!liked) return 0;
-
-  const sharedGenres = (title.genres || []).filter((genre) => (liked.genres || []).includes(genre)).length;
-  const genreScore = sharedGenres / Math.max((liked.genres || []).length, 1);
-
-  const sharedTags = (title.tags || []).filter((tag) => (liked.tags || []).includes(tag)).length;
-  const tagScore = sharedTags / Math.max((liked.tags || []).length, 1);
-
-  const sharedMoods = (title.moods || []).filter((mood) => (liked.moods || []).includes(mood)).length;
-  const moodScore = sharedMoods / Math.max((liked.moods || []).length, 1);
-
-  const typeBonus = title.type === liked.type ? 0.05 : 0;
-
-  return Math.min(genreScore * 0.45 + tagScore * 0.30 + moodScore * 0.20 + typeBonus, 1);
-}
-
-function scoreSimilarity(title, likedTitles) {
-  if (!likedTitles?.length) return 0;
-
-  const similarities = likedTitles
-    .map((liked) => scoreSimilarityAgainstLiked(title, liked))
-    .filter((value) => value > 0)
-    .sort((a, b) => b - a);
-
-  if (similarities.length === 0) return 0;
-
-  // Weighted avg: title ที่ใกล้เคียงที่สุดมีน้ำหนักมากที่สุด (1, 0.5, 0.33, ...)
-  let weightedSum = 0;
-  let weightTotal = 0;
-  similarities.forEach((sim, i) => {
-    const w = 1 / (i + 1);
-    weightedSum += sim * w;
-    weightTotal += w;
-  });
-
-  return weightedSum / weightTotal;
-}
-
 function resolveLikedTitleIds(likedTitleId, likedTitleIds = []) {
   return [...new Set([likedTitleId, ...(likedTitleIds || [])].map(Number).filter(Boolean))];
-}
-
-function buildReason(title, moods, timeOption, primaryLikedTitle) {
-  const parts = [];
-
-  if (moods?.length) {
-    const matchedMoodNames = moods
-      .filter((m) => matchesMoodSelection(title, m))
-      .map((m) => MOODS.find((mood) => mood.id === m)?.name_th)
-      .filter(Boolean);
-    if (matchedMoodNames.length > 0) parts.push(`ตรงกับโทนเรื่อง ${matchedMoodNames.join(', ')}`);
-  }
-
-  const eps = title.episodes || title.chapters || 0;
-  if (eps > 0 && eps <= 13) parts.push(`เรื่องสั้น ${eps} ตอน/ตอนอ่าน`);
-
-  if (primaryLikedTitle) {
-    const sharedGenres = (title.genres || []).filter((genre) => (primaryLikedTitle.genres || []).includes(genre));
-    if (sharedGenres.length) parts.push(`คล้าย ${primaryLikedTitle.title_en || primaryLikedTitle.title_th} ด้าน ${sharedGenres.join(', ')}`);
-  }
-
-  if (title.status === 'completed') parts.push('จบแล้ว');
-  if (title.score >= 85) parts.push(`คะแนนสูง ${title.score}/100`);
-
-  return parts.join(' | ') || null;
-}
-
-function buildDebugBreakdown(title, moods, timeOption, likedTitles, primaryLikedTitle, recommendationState, weights) {
-  const moodScore = scoreMoodMatch(title, moods);
-  const genreScore = scoreGenreTagMatch(title, moods);
-  const lengthScore = scoreLengthFit(title, timeOption);
-  const qualityScore = scoreQuality(title);
-  const simScore = scoreSimilarity(title, likedTitles);
-  const freshnessScore = scoreFreshness(title);
-  const matchedMoods = (moods || []).filter((mood) => matchesMoodSelection(title, mood));
-  const sharedGenres = primaryLikedTitle
-    ? (title.genres || []).filter((genre) => (primaryLikedTitle.genres || []).includes(genre))
-    : [];
-  const sharedTags = primaryLikedTitle
-    ? (title.tags || []).filter((tag) => (primaryLikedTitle.tags || []).includes(tag))
-    : [];
-
-  return {
-    total:
-      weights.moodMatch * moodScore +
-      weights.genreTagMatch * genreScore +
-      weights.lengthFit * lengthScore +
-      weights.quality * qualityScore +
-      weights.similarTitle * simScore +
-      weights.freshness * freshnessScore,
-    scores: {
-      moodMatch: moodScore,
-      genreTagMatch: genreScore,
-      lengthFit: lengthScore,
-      quality: qualityScore,
-      similarTitle: simScore,
-      freshness: freshnessScore,
-    },
-    weights,
-    matchedMoods,
-    sharedGenres,
-    sharedTags,
-    progressState: recommendationState.statusByTitleId.get(title.id) || 'untracked',
-    isTracked: recommendationState.trackedTitleIds.has(title.id),
-    isExcluded: recommendationState.excludedTitleIds.has(title.id),
-  };
 }
 
 export async function recommend({
@@ -1170,7 +206,7 @@ export async function recommend({
   debug = false,
   showAdult = true,
 } = {}) {
-  const allTitles = await getAllTitles({ maxRows: DEFAULT_CATALOG_MAX_ROWS });
+  const allTitles = await getAllTitlesApi({ maxRows: DEFAULT_CATALOG_MAX_ROWS });
   const recommendationState = buildRecommendationState(watchlist, preferences, hiddenTitleIds);
   const resolvedLikedTitleIds = resolveLikedTitleIds(likedTitleId, likedTitleIds);
 
@@ -1195,16 +231,7 @@ export async function recommend({
 
   pool = filterTitlesByRecommendationPreferences(pool, recommendationState);
 
-  if (moods.length > 0) {
-    pool = pool.filter((title) => matchesRequestedMoods(title, moods));
-  }
-
-  const timeId = timeOption?.id || timeOption;
-  if (timeId === 'completed') {
-    pool = pool.filter((title) => title.status === 'completed');
-  } else if (timeId === 'ongoing') {
-    pool = pool.filter((title) => title.status !== 'completed');
-  }
+  pool = filterTitlesForRecommendationPool(pool, moods, timeOption);
 
   const weights = resolveWeights(moods.length > 0, resolvedLikedTitleIds.length > 0);
 
@@ -1214,7 +241,7 @@ export async function recommend({
   const primaryLikedTitle = likedTitles[0] || null;
 
   const scored = pool.map((title) => {
-    const breakdown = buildDebugBreakdown(
+    const breakdown = buildRecommendationBreakdown(
       title,
       moods,
       timeOption,
@@ -1227,7 +254,7 @@ export async function recommend({
     return {
       ...title,
       _score: breakdown.total,
-      _reason: buildReason(title, moods, timeOption, primaryLikedTitle),
+      _reason: buildReason(title, moods, primaryLikedTitle),
       ...(debug ? { _debug: breakdown } : {}),
     };
   });
@@ -1254,75 +281,9 @@ export async function searchTitles(query, options = {}) {
   return listTitles({ type, query, page, pageSize, showAdult });
 }
 
-export async function getTitleBySlug(slug) {
-  if (!slug) return null;
-
-  ensureSupabaseConnected();
-
-  if (titleBySlugCache.has(slug)) {
-    return titleBySlugCache.get(slug);
-  }
-
-  if (titleBySlugRequestCache.has(slug)) {
-    return titleBySlugRequestCache.get(slug);
-  }
-
-  const request = (async () => {
-    const { data, error } = await supabase
-      .from('canonical_titles')
-      .select(CANONICAL_TITLE_DETAIL_SELECT)
-      .eq('slug', slug)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    const mapped = data ? normalizeTitleType(mapCanonicalTitle(data)) : null;
-    titleBySlugCache.set(slug, mapped);
-    return mapped;
-  })();
-
-  titleBySlugRequestCache.set(slug, request);
-
-  try {
-    return await request;
-  } finally {
-    titleBySlugRequestCache.delete(slug);
-  }
-}
-
 async function fetchSimilarCandidates(baseTitleId, { genres = [], tags = [], moods = [], showAdult = true, maxCandidates = 150 } = {}) {
   if (genres.length === 0 && tags.length === 0 && moods.length === 0) return [];
-
-  const [genreRows, tagRows, moodRows] = await Promise.all([
-    genres.length > 0
-      ? supabase.from('title_genres').select('canonical_title_id').in('genre_name', genres).neq('canonical_title_id', baseTitleId)
-      : { data: [] },
-    tags.length > 0
-      ? supabase.from('title_tags').select('canonical_title_id').in('tag_name', tags.slice(0, 20)).neq('canonical_title_id', baseTitleId)
-      : { data: [] },
-    moods.length > 0
-      ? supabase.from('title_moods').select('canonical_title_id').in('mood_id', moods).neq('canonical_title_id', baseTitleId)
-      : { data: [] },
-  ]);
-
-  const idSet = new Set([
-    ...(genreRows.data || []).map((r) => r.canonical_title_id),
-    ...(tagRows.data || []).map((r) => r.canonical_title_id),
-    ...(moodRows.data || []).map((r) => r.canonical_title_id),
-  ]);
-
-  const candidateIds = [...idSet].slice(0, maxCandidates);
-  if (candidateIds.length === 0) return [];
-
-  const allFetched = [];
-  for (const chunk of chunkIds(candidateIds, 200)) {
-    let query = supabase.from('canonical_titles').select(CANONICAL_TITLE_BROWSE_SELECT).in('id', chunk);
-    if (!showAdult) query = query.eq('is_adult', false);
-    const { data, error } = await query;
-    if (error) throw error;
-    if (data) allFetched.push(...data.map((t) => normalizeTitleType(mapCanonicalTitle(t))));
-  }
-  return allFetched;
+  return fetchDiscoverSimilarCandidates(baseTitleId, { genres, tags, moods, showAdult, maxCandidates });
 }
 
 function scoreAndRankSimilar(candidates, baseTitle, limit, { showAdult = true, watchlist = [], preferences = DEFAULT_PROFILE_PREFERENCES, hiddenTitleIds = [] } = {}) {
@@ -1368,12 +329,11 @@ function scoreAndRankSimilar(candidates, baseTitle, limit, { showAdult = true, w
 export async function getSimilarTitles(titleId, limit = 6, options = {}) {
   const { showAdult = true, baseTitleData = null, watchlist = [], preferences = DEFAULT_PROFILE_PREFERENCES, hiddenTitleIds = [] } = options;
 
-  // Use passed-in base title data, or look up from ID cache, or fetch individually
-  let base = baseTitleData || titleByIdCache.get(titleId);
+  // Use passed-in base title data, or hydrate one title through the catalog API.
+  let base = baseTitleData || (await getTitlesByIdsApi([titleId], { showAdult: true }))[0] || null;
   if (!base) {
-    const { data } = await supabase.from('canonical_titles').select(CANONICAL_TITLE_BROWSE_SELECT).eq('id', titleId).maybeSingle();
-    if (!data) return [];
-    base = normalizeTitleType(mapCanonicalTitle(data));
+    base = await fetchDiscoverTitleById(titleId);
+    if (!base) return [];
   }
 
   const candidates = await fetchSimilarCandidates(titleId, {
@@ -1389,132 +349,17 @@ export async function getSimilarTitles(titleId, limit = 6, options = {}) {
   return scoreAndRankSimilar(candidates, base, limit, { showAdult, watchlist, preferences, hiddenTitleIds });
 }
 
-export async function getTrendingTitles(limit = 8, { showAdult = true } = {}) {
-  const response = await fetchTitlesPageFromSupabase({ page: 1, pageSize: limit, showAdult });
-  return response.items;
-}
-
-export async function getTitlesPage({ type = 'all', query = '', sortBy = 'popularity', page = 1, pageSize = 30, showAdult = true } = {}) {
-  return fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize, showAdult });
-}
-
-export async function getCharactersPage({ type = 'all', query = '', sortBy = 'popularity', page = 1, pageSize = 30, showAdult = true } = {}) {
-  // Character catalogs are built from title records, so over-fetch titles per page
-  // to avoid sparse/empty character pages when many titles lack character rows.
-  const titleWindowSize = Math.max(pageSize * 4, 120);
-  const result = await fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize: titleWindowSize, showAdult });
-  const titleIds = result.items.map((t) => t.id);
-  const characters = await fetchTitleCharacters(titleIds);
-  const titlesWithChars = attachCharactersToTitles(result.items, characters);
-  const characterItems = buildCharacterCatalog(titlesWithChars);
-  return {
-    items: characterItems.slice(0, pageSize),
-    total: Math.max(characterItems.length, result.total),
-    page: result.page,
-    pageSize: result.pageSize,
-    totalPages: result.totalPages,
-  };
-}
-
-export async function getTitlesByIds(ids, options = {}) {
-  if (!ids?.length) return [];
-
-  const normalizedIds = [...new Set(ids.map((id) => Number(id)).filter(Boolean))];
-  if (normalizedIds.length === 0) {
-    return [];
-  }
-
-  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
-  const applyAgeGateFilter = (titles = []) => (
-    showAdult === null ? titles : filterTitlesForAgeGate(titles, showAdult)
-  );
-
-  const cachedMatches = normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
-  if (cachedMatches.length === normalizedIds.length) {
-    const idMap = new Map(cachedMatches.map((title) => [title.id, title]));
-    return applyAgeGateFilter(normalizedIds.map((id) => idMap.get(id)).filter(Boolean));
-  }
-
-  const missingIds = normalizedIds.filter((id) => !titleByIdCache.has(id));
-  const requestKey = missingIds.slice().sort((a, b) => a - b).join(',');
-
-  ensureSupabaseConnected();
-
-  if (!titleByIdsRequestCache.has(requestKey)) {
-    const request = (async () => {
-      const { data, error } = await supabase
-        .from('canonical_titles')
-        .select(CANONICAL_TITLE_BROWSE_SELECT)
-        .in('id', missingIds);
-
-      if (error) throw error;
-
-      const mapped = mapRecords(data);
-      storeTitlesInCaches(mapped);
-      return mapped;
-    })();
-
-    titleByIdsRequestCache.set(requestKey, request);
-  }
-
-  try {
-    await titleByIdsRequestCache.get(requestKey);
-  } finally {
-    titleByIdsRequestCache.delete(requestKey);
-  }
-
-  return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
-}
-
-export async function getTitlePreviewByIds(ids, options = {}) {
-  if (!ids?.length) return [];
-
-  const normalizedIds = [...new Set(ids.map((id) => Number(id)).filter(Boolean))];
-  if (normalizedIds.length === 0) {
-    return [];
-  }
-
-  const showAdult = typeof options?.showAdult === 'boolean' ? options.showAdult : null;
-  const applyAgeGateFilter = (titles = []) => (
-    showAdult === null ? titles : filterTitlesForAgeGate(titles, showAdult)
-  );
-  const cachedMatches = normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean);
-
-  if (cachedMatches.length === normalizedIds.length) {
-    const idMap = new Map(cachedMatches.map((title) => [title.id, title]));
-    return applyAgeGateFilter(normalizedIds.map((id) => idMap.get(id)).filter(Boolean));
-  }
-
-  const missingIds = normalizedIds.filter((id) => !titleByIdCache.has(id));
-  if (missingIds.length === 0) {
-    return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
-  }
-
-  const requestKey = `preview::${missingIds.slice().sort((a, b) => a - b).join(',')}`;
-
-  ensureSupabaseConnected();
-
-  if (!titleByIdsRequestCache.has(requestKey)) {
-    const request = (async () => {
-      const { data, error } = await supabase
-        .from('canonical_titles')
-        .select(CANONICAL_TITLE_PREVIEW_SELECT)
-        .in('id', missingIds);
-      if (error) throw error;
-
-      const mapped = mapRecords(data);
-      storeTitlesInCaches(mapped);
-      return mapped;
-    })();
-
-    titleByIdsRequestCache.set(requestKey, request);
-  }
-
-  try {
-    await titleByIdsRequestCache.get(requestKey);
-  } finally {
-    titleByIdsRequestCache.delete(requestKey);
-  }
-
-  return applyAgeGateFilter(normalizedIds.map((id) => titleByIdCache.get(id)).filter(Boolean));
-}
+export const getAllTitles = getAllTitlesApi;
+export const clearTitlesCache = clearTitlesCacheApi;
+export const isCatalogCacheWarm = isCatalogCacheWarmApi;
+export const getCachedTitlesSnapshot = getCachedTitlesSnapshotApi;
+export const getCacheInfo = getCacheInfoApi;
+export { buildTitleSearchCandidates, collapseTitlesByFranchise, matchesMoodSelection } from './recommendationEngine.js';
+export const fetchTitleCharacters = fetchTitleCharactersApi;
+export const attachCharactersToTitles = attachCharactersToTitlesApi;
+export const getTitleBySlug = getTitleBySlugApi;
+export const getTrendingTitles = getTrendingTitlesApi;
+export const getTitlesPage = getTitlesPageApi;
+export const getCharactersPage = getCharactersPageApi;
+export const getTitlesByIds = getTitlesByIdsApi;
+export const getTitlePreviewByIds = getTitlePreviewByIdsApi;

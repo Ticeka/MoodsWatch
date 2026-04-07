@@ -11,7 +11,7 @@ import {
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyJoinRequestsPanel } from '@/features/party/components/PartyJoinRequestsPanel';
-import { PartyPlayerList } from './PartyRoomShared';
+import { PartyPlayerList } from '../components/PartyRoomShared';
 
 function getResolvedPoolCopy({
   isTitleGuessMode,

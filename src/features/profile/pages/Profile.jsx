@@ -4,14 +4,15 @@ import toast from 'react-hot-toast';
 import { Camera, Copy, Crown, Edit2, EyeOff, ExternalLink, Grid, GripVertical, Loader2, Medal, MessageSquare, Moon, RotateCcw, Save, Settings, Share2, Sliders, Sun, ToggleLeft, Trash2, Trophy, User, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
+import { useProfileCommentsData } from '@/features/profile/hooks/useProfileCommentsData';
+import { useProfileLibraryTitles } from '@/features/profile/hooks/useProfileLibraryTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
+import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { Button } from '@/shared/components/ui/Button';
 import { TitleCard } from '@/shared/components/ui/Card';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
-import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
-import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { supabase } from '@/shared/lib/supabase';
 import {
   getTitleDisplayName,
@@ -21,81 +22,23 @@ import {
   RECOMMENDATION_TYPE_OPTIONS,
   TOP_TITLE_TYPE_OPTIONS,
 } from '@/features/profile/lib/profileStore';
+import {
+  formatProfileCommentDate,
+  formatProfileDate,
+  normalizeProfileUsername,
+  PROFILE_LENGTH_LABELS,
+  PROFILE_PROGRESS_LABELS,
+  PROFILE_TOP_SECTION_COPY,
+  PROFILE_TYPE_LABELS,
+  PROFILE_USERNAME_REGEX,
+  uniqProfileIds,
+} from '@/features/profile/lib/profilePageUtils';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { AchievementBadges } from '@/features/profile/components/AchievementBadges';
-import './Profile.css';
+import '../styles/Profile.css';
 
 const PAGE_SIZE = 8;
-const TYPE_LABELS = {
-  anime: { en: 'Anime', th: '\u0e2d\u0e19\u0e34\u0e40\u0e21\u0e30' },
-  manga: { en: 'Manga', th: '\u0e21\u0e31\u0e07\u0e07\u0e30' },
-  manhwa: { en: 'Manhwa', th: '\u0e21\u0e31\u0e19\u0e2e\u0e27\u0e32' },
-};
-const LENGTH_LABELS = {
-  any: { th: 'ทุกความยาว', en: 'Any length' },
-  short: { th: 'สั้น', en: 'Short only' },
-  long: { th: 'ยาว', en: 'Long only' },
-};
-const PROGRESS_LABELS = {
-  untracked: { th: 'ยังไม่อยู่ในลิสต์', en: 'Untracked' },
-  planned: { th: 'วางแผน', en: 'Planned' },
-  watching: { th: 'กำลังดู', en: 'Watching' },
-  reading: { th: 'กำลังอ่าน', en: 'Reading' },
-  'on-hold': { th: 'พักไว้', en: 'On Hold' },
-  completed: { th: 'จบแล้ว', en: 'Completed' },
-  dropped: { th: 'ดรอป', en: 'Dropped' },
-};
-
-const TOP_SECTION_COPY = {
-  overviewTitle: { th: 'Top 5 \u0e02\u0e2d\u0e07\u0e09\u0e31\u0e19', en: 'My Top 5' },
-  overviewSubtitle: {
-    th: '\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1b\u0e23\u0e30\u0e40\u0e20\u0e17 \u0e41\u0e25\u0e30\u0e14\u0e39\u0e44\u0e14\u0e49\u0e04\u0e23\u0e1a\u0e43\u0e19\u0e17\u0e35\u0e48\u0e40\u0e14\u0e35\u0e22\u0e27',
-    en: 'Split by format and visible together in one place.',
-  },
-  loading: { th: '\u0e01\u0e33\u0e25\u0e31\u0e07\u0e42\u0e2b\u0e25\u0e14 Top 5...', en: 'Loading Top 5...' },
-  empty: { th: '\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e43\u0e19 Top 5', en: 'No titles pinned in your Top 5 yet.' },
-  emptyHint: {
-    th: 'แตะปุ่ม Top 5 (🏆) บนการ์ดเพื่อปัก/เอาออก',
-    en: 'Tap the Top 5 trophy (🏆) button on a card to pin or remove it.',
-  },
-  sectionHint: {
-    th: '\u0e25\u0e32\u0e01\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e40\u0e1b\u0e25\u0e35\u0e48\u0e22\u0e19\u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a',
-    en: 'Drag to reorder.',
-  },
-  sectionEmptyTitle: {
-    th: '\u0e0a\u0e31\u0e49\u0e19\u0e19\u0e35\u0e49\u0e22\u0e31\u0e07\u0e27\u0e48\u0e32\u0e07',
-    en: 'This shelf is empty',
-  },
-  sectionEmptyHint: {
-    th: 'กดปุ่ม 🏆 บนการ์ดเพื่อเพิ่มเรื่องเข้า Top 5 หมวดนี้',
-    en: 'Press the 🏆 button on any card to add titles to this shelf.',
-  },
-};
-
-const uniq = (...values) => [...new Set(values.flat().map(Number).filter(Boolean))];
-
-const formatDate = (value, locale, withTime = false) => {
-  if (!value) return '-';
-  try {
-    return new Intl.DateTimeFormat(
-      locale,
-      withTime
-        ? { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }
-        : { day: 'numeric', month: 'short', year: 'numeric' }
-    ).format(new Date(value));
-  } catch {
-    return '-';
-  }
-};
-
-const formatCommentDate = (value, locale) => formatDate(value, locale, true);
-
-const USERNAME_REGEX = /^[a-z0-9_]{3,20}$/;
-
-function normalizeUsername(value = '') {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
-}
 
 export function Profile() {
   const { user, isLoading: isAuthLoading, updateUserProfile } = useAuth();
@@ -121,11 +64,8 @@ export function Profile() {
   const [hiddenPage, setHiddenPage] = useState(1);
   const [selectedHidden, setSelectedHidden] = useState([]);
   const [isBulkUnhiding, setIsBulkUnhiding] = useState(false);
-  const [libraryTitles, setLibraryTitles] = useState([]);
-  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
-  const [libraryError, setLibraryError] = useState('');
   const [shareForm, setShareForm] = useState({
-    username: normalizeUsername(profile.username || ''),
+    username: normalizeProfileUsername(profile.username || ''),
     isProfilePublic: Boolean(profile.is_profile_public),
     allowProfileComments: profile.allow_profile_comments !== false,
   });
@@ -133,10 +73,7 @@ export function Profile() {
   const [shareSuccess, setShareSuccess] = useState('');
   const [isSavingShare, setIsSavingShare] = useState(false);
   const [isSharingProfile, setIsSharingProfile] = useState(false);
-  const [profileComments, setProfileComments] = useState([]);
-  const [isProfileCommentsLoading, setIsProfileCommentsLoading] = useState(false);
   const [profileCommentDraft, setProfileCommentDraft] = useState('');
-  const [profileCommentError, setProfileCommentError] = useState('');
   const [profileCommentSuccess, setProfileCommentSuccess] = useState('');
   const [isSubmittingProfileComment, setIsSubmittingProfileComment] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState('');
@@ -148,52 +85,13 @@ export function Profile() {
   useEffect(() => setPrefsDraft(normalizeProfilePreferences(storedPrefs)), [storedPrefs]);
   useEffect(() => {
     setShareForm({
-      username: normalizeUsername(profile.username || ''),
+      username: normalizeProfileUsername(profile.username || ''),
       isProfilePublic: Boolean(profile.is_profile_public),
       allowProfileComments: profile.allow_profile_comments !== false,
     });
     setShareError('');
     setShareSuccess('');
   }, [profile.is_profile_public, profile.username]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProfileComments() {
-      if (!userId || !supabase) {
-        setProfileComments([]);
-        return;
-      }
-
-      setIsProfileCommentsLoading(true);
-      setProfileCommentError('');
-
-      try {
-        const { data, error } = await supabase
-          .from('profile_comments')
-          .select(`
-            id,
-            comment_body,
-            created_at,
-            author_user_id,
-            author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
-          `)
-          .eq('profile_user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(60);
-
-        if (error) throw error;
-        if (!cancelled) setProfileComments(data || []);
-      } catch {
-        if (!cancelled) setProfileCommentError(t('profile.profileCommentsLoadFailed'));
-      } finally {
-        if (!cancelled) setIsProfileCommentsLoading(false);
-      }
-    }
-
-    loadProfileComments();
-    return () => { cancelled = true; };
-  }, [t, userId]);
 
   const watchStats = useMemo(() => watchlist.reduce((acc, item) => {
     acc.total += 1;
@@ -218,46 +116,26 @@ export function Profile() {
     .map((item) => item.titleId), [watchlist]);
 
   const topIds = useMemo(
-    () => uniq(...TOP_TITLE_TYPE_OPTIONS.map((typeId) => prefsDraft.topTitles?.[typeId] || [])),
+    () => uniqProfileIds(...TOP_TITLE_TYPE_OPTIONS.map((typeId) => prefsDraft.topTitles?.[typeId] || [])),
     [prefsDraft.topTitles]
   );
 
   const lookupIds = useMemo(
-    () => uniq(continueIds, topIds, activeTab === 'settings' ? hiddenTitleIds : []),
+    () => uniqProfileIds(continueIds, topIds, activeTab === 'settings' ? hiddenTitleIds : []),
     [activeTab, continueIds, topIds, hiddenTitleIds]
   );
-  const lookupIdsKey = useMemo(() => lookupIds.join(','), [lookupIds]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTitles() {
-      const requestedIds = lookupIdsKey
-        ? lookupIdsKey.split(',').map((value) => Number(value)).filter(Boolean)
-        : [];
-
-      if (!requestedIds.length) {
-        setLibraryTitles([]);
-        setLibraryError('');
-        return;
-      }
-
-      setIsLibraryLoading(true);
-      setLibraryError('');
-
-      try {
-        const titles = await getTitlesByIds(requestedIds);
-        if (!cancelled) setLibraryTitles(titles);
-      } catch (error) {
-        if (!cancelled) setLibraryError(error.message || t('profile.loadingLibraryFailed'));
-      } finally {
-        if (!cancelled) setIsLibraryLoading(false);
-      }
-    }
-
-    loadTitles();
-    return () => { cancelled = true; };
-  }, [lookupIdsKey]);
+  const {
+    libraryTitles,
+    isLibraryLoading,
+    libraryError,
+  } = useProfileLibraryTitles(lookupIds, t);
+  const {
+    profileComments,
+    setProfileComments,
+    isProfileCommentsLoading,
+    profileCommentError,
+    setProfileCommentError,
+  } = useProfileCommentsData(userId, t);
 
   const titleMap = useMemo(() => {
     const next = new Map((watchlistTitles || []).map((title) => [title.id, title]));
@@ -273,7 +151,7 @@ export function Profile() {
     typeId,
     titles: filterTitlesForAgeGate((prefsDraft.topTitles?.[typeId] || []).map((id, index) => {
       const title = titleMap.get(id);
-      return title ? { ...title, _rank: index + 1, _typeLabel: TYPE_LABELS[typeId]?.[language] || typeId } : null;
+      return title ? { ...title, _rank: index + 1, _typeLabel: PROFILE_TYPE_LABELS[typeId]?.[language] || typeId } : null;
     }).filter(Boolean), showAdult),
   })), [language, prefsDraft.topTitles, showAdult, titleMap]);
 
@@ -281,7 +159,7 @@ export function Profile() {
     () => topSections.reduce((count, section) => count + section.titles.length, 0),
     [topSections]
   );
-  const getTypeLabel = (typeId) => TYPE_LABELS[typeId]?.[language] || typeId;
+  const getTypeLabel = (typeId) => PROFILE_TYPE_LABELS[typeId]?.[language] || typeId;
 
   const hiddenPages = Math.max(1, Math.ceil(hiddenTitles.length / PAGE_SIZE));
   useEffect(() => setHiddenPage((page) => Math.min(page, hiddenPages)), [hiddenPages]);
@@ -294,10 +172,10 @@ export function Profile() {
 
   const prefsDirty = JSON.stringify(normalizeProfilePreferences(prefsDraft)) !== JSON.stringify(normalizeProfilePreferences(storedPrefs));
   const userInitial = (form.name || user?.email || 'M').charAt(0).toUpperCase();
-  const normalizedShareUsername = normalizeUsername(shareForm.username);
+  const normalizedShareUsername = normalizeProfileUsername(shareForm.username);
   const sharePath = normalizedShareUsername ? `/u/${normalizedShareUsername}` : '';
   const shareUrl = typeof window !== 'undefined' && sharePath ? `${window.location.origin}${sharePath}` : '';
-  const shareDirty = normalizedShareUsername !== normalizeUsername(profile.username || '')
+  const shareDirty = normalizedShareUsername !== normalizeProfileUsername(profile.username || '')
     || shareForm.isProfilePublic !== Boolean(profile.is_profile_public)
     || shareForm.allowProfileComments !== (profile.allow_profile_comments !== false);
 
@@ -314,7 +192,7 @@ export function Profile() {
       return t('profile.shareUsernameRequired');
     }
 
-    if (!USERNAME_REGEX.test(normalizedShareUsername)) {
+    if (!PROFILE_USERNAME_REGEX.test(normalizedShareUsername)) {
       return t('profile.shareUsernameInvalid');
     }
 
@@ -663,7 +541,7 @@ export function Profile() {
                 <h1>{form.name || initialName || user?.email}</h1>
                 <p>{prefsDraft.bio || t('profile.profileFallbackBio')}</p>
                 <div className="profile-meta-row">
-                  <span>{t('profile.memberSince', { date: formatDate(profile.created_at || user?.created_at, locale) })}</span>
+                  <span>{t('profile.memberSince', { date: formatProfileDate(profile.created_at || user?.created_at, locale) })}</span>
                   <span>{t('profile.titlesInLibrary', { count: watchStats.total })}</span>
                 </div>
               </div>
@@ -701,21 +579,21 @@ export function Profile() {
               <article className="profile-section-card profile-top-stage">
                 <div className="profile-section-heading">
                   <div>
-                    <h2>{TOP_SECTION_COPY.overviewTitle[language]}</h2>
-                    <p>{TOP_SECTION_COPY.overviewSubtitle[language]}</p>
+                    <h2>{PROFILE_TOP_SECTION_COPY.overviewTitle[language]}</h2>
+                    <p>{PROFILE_TOP_SECTION_COPY.overviewSubtitle[language]}</p>
                   </div>
                 </div>
 
                 {isLibraryLoading ? (
                   <div className="profile-empty-state">
                     <Loader2 size={20} className="animate-spin" />
-                    <span>{TOP_SECTION_COPY.loading[language]}</span>
+                    <span>{PROFILE_TOP_SECTION_COPY.loading[language]}</span>
                   </div>
                 ) : (
                   <div className="profile-top-showcase-shell compact">
                     <div className="profile-top-overview-meta">
                       <strong>{language === 'th' ? `ปักแล้ว ${totalPinnedTopTitles} เรื่อง` : `${totalPinnedTopTitles} titles pinned`}</strong>
-                      <span>{TOP_SECTION_COPY.emptyHint[language]}</span>
+                      <span>{PROFILE_TOP_SECTION_COPY.emptyHint[language]}</span>
                     </div>
                     <div className="profile-top-sections structured compact">
                       {topSections.map((section) => (
@@ -723,7 +601,7 @@ export function Profile() {
                           <div className="profile-subheading profile-top-block-heading">
                             <div>
                               <span>{getTypeLabel(section.typeId)}</span>
-                              <p>{TOP_SECTION_COPY.sectionHint[language]}</p>
+                              <p>{PROFILE_TOP_SECTION_COPY.sectionHint[language]}</p>
                             </div>
                             <strong>{section.titles.length} / 5</strong>
                           </div>
@@ -756,8 +634,8 @@ export function Profile() {
                           ) : (
                             <div className="profile-empty-state small profile-shelf-empty-card">
                               <Trophy size={18} />
-                              <strong>{TOP_SECTION_COPY.sectionEmptyTitle[language]}</strong>
-                              <span>{TOP_SECTION_COPY.sectionEmptyHint[language]}</span>
+                              <strong>{PROFILE_TOP_SECTION_COPY.sectionEmptyTitle[language]}</strong>
+                              <span>{PROFILE_TOP_SECTION_COPY.sectionEmptyHint[language]}</span>
                             </div>
                           )}
                         </section>
@@ -827,7 +705,7 @@ export function Profile() {
                           <div className="profile-comment-copy">
                             <div className="profile-comment-meta">
                               <strong>{authorName}</strong>
-                              <span>{formatCommentDate(entry.created_at, locale)}</span>
+                              <span>{formatProfileCommentDate(entry.created_at, locale)}</span>
                             </div>
                             <p>{entry.comment_body}</p>
                           </div>
@@ -871,7 +749,7 @@ export function Profile() {
                       onChange={(event) => {
                         setShareError('');
                         setShareSuccess('');
-                        setShareForm((current) => ({ ...current, username: normalizeUsername(event.target.value) }));
+                        setShareForm((current) => ({ ...current, username: normalizeProfileUsername(event.target.value) }));
                       }}
                       placeholder={t('profile.shareUsernamePlaceholder')}
                       maxLength={20}
@@ -1034,7 +912,7 @@ export function Profile() {
                             className={`profile-chip-btn ${prefsDraft.recommendationProgressStates.includes(stateId) ? 'active' : ''}`}
                             onClick={() => toggleArray('recommendationProgressStates', stateId, RECOMMENDATION_PROGRESS_STATE_OPTIONS)}
                           >
-                            {getLocalizedLabel(LIST_STATUS_OPTIONS.find((option) => option.id === stateId), language) || PROGRESS_LABELS[stateId]?.[language] || stateId}
+                            {getLocalizedLabel(LIST_STATUS_OPTIONS.find((option) => option.id === stateId), language) || PROFILE_PROGRESS_LABELS[stateId]?.[language] || stateId}
                           </button>
                         ))}
                       </div>
@@ -1060,7 +938,7 @@ export function Profile() {
                         >
                           {RECOMMENDATION_LENGTH_OPTIONS.map((option) => (
                             <option key={option} value={option}>
-                              {LENGTH_LABELS[option]?.[language] || option}
+                              {PROFILE_LENGTH_LABELS[option]?.[language] || option}
                             </option>
                           ))}
                         </select>
@@ -1195,7 +1073,7 @@ export function Profile() {
                   </div>
                   <div className="profile-account-item">
                     <span>{t('profile.joined')}</span>
-                    <strong>{formatDate(profile.created_at || user?.created_at, locale)}</strong>
+                    <strong>{formatProfileDate(profile.created_at || user?.created_at, locale)}</strong>
                   </div>
                 </div>
 

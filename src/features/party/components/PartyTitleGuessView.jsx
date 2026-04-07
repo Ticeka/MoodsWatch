@@ -22,7 +22,7 @@ import {
   PartyEndCountdownOverlay,
   PartyIdentityAvatar,
   PartyLeaderboard,
-} from '@/features/party/pages/PartyRoomShared';
+} from '@/features/party/components/PartyRoomShared';
 
 const TITLE_GUESS_CARD_POINTS = [400, 300, 200, 100];
 const TITLE_GUESS_SUGGESTION_LIMIT = 6;

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { listTitles, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
-import { searchPosts, searchProfiles, searchTierlists } from '@/features/discover/lib/entitySearch';
+import { searchPosts, searchProfiles, searchTierlists } from '@/features/discover/api/entitySearchApi';
 import { getAutocompleteSelectionBoost } from '@/features/discover/lib/autocompleteFeedback';
 import { getSearchIntent, scoreSearchCandidates } from '@/features/discover/lib/searchMatch';
 import { expandQuery } from '@/features/discover/lib/searchSynonyms';
-import { trackDiscoverEvent } from '@/features/discover/lib/discoverAnalytics';
+import { trackDiscoverEvent } from '@/features/discover/api/discoverAnalyticsApi';
 
 // ── Module-level score cache ──────────────────────────────────────────────────
 // scoreSearchCandidates is pure and expensive (fuzzy scoring over all fields).

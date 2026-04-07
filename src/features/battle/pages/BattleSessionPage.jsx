@@ -11,13 +11,12 @@ import {
   recordBattleVote,
   restartBattleSession,
   saveBattleSession,
-  undoBattleVote,
 } from '@/features/battle/lib/battleStore';
 import {
   fetchBattleCommunityRollup,
   fetchRemoteBattleSession,
   persistRemoteBattleSession as persistRemoteBattleSessionRemote,
-} from '@/features/battle/lib/battleRemote';
+} from '@/features/battle/api/battleRemoteApi';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -31,7 +30,7 @@ import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TrailerModal } from '@/shared/components/ui/TrailerModal';
-import './Battle.css';
+import '../styles/Battle.css';
 
 const COMMUNITY_ROLLUP_RETRY_DELAYS_MS = [0, 250, 500, 1000, 1500, 2000];
 
@@ -574,7 +573,6 @@ export function BattleSessionPage() {
   };
 
   const handleVote = async (result) => { await updateSession(recordBattleVote(session, result)); };
-  const handleUndo = async () => { await updateSession(undoBattleVote(session)); };
   const handleRestart = async () => { await updateSession(restartBattleSession(session)); };
 
   const handleShare = async () => {

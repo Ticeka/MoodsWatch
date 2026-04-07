@@ -5,10 +5,8 @@ import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
   buildHomepageBlockPayload,
-  HOMEPAGE_BLOCK_SELECT,
-  mapHomepageBlock,
 } from '@/shared/lib/editorial';
-import { supabase } from '@/shared/lib/supabase';
+import { deleteHomepageBlock, fetchHomepageAdminData, saveHomepageBlock } from '@/features/admin/api/homepageAdminApi';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
 
@@ -76,28 +74,12 @@ export function AdminHomepage() {
   );
 
   const fetchData = useCallback(async () => {
-    if (!supabase) {
-      const message = t('admin.homepage.supabaseUnavailable');
-      setErrorMessage(message);
-      toast.error(message);
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const [blocksRes, collectionsRes] = await Promise.all([
-        supabase.from('homepage_content_blocks').select(HOMEPAGE_BLOCK_SELECT).order('position', { ascending: true }),
-        supabase.from('editor_collections').select('id, slug, name, status, visibility').order('updated_at', { ascending: false }),
-      ]);
-
-      if (blocksRes.error) throw blocksRes.error;
-      if (collectionsRes.error) throw collectionsRes.error;
-
-      const nextBlocks = (blocksRes.data || []).map(mapHomepageBlock);
+      const { blocks: nextBlocks, collections: nextCollections } = await fetchHomepageAdminData();
       setBlocks(nextBlocks);
-      setCollections(collectionsRes.data || []);
+      setCollections(nextCollections);
 
       if (nextBlocks.length > 0) {
         const initial = selectedId && nextBlocks.some((item) => item.id === selectedId)
@@ -139,7 +121,6 @@ export function AdminHomepage() {
 
   const handleSave = async (event) => {
     event.preventDefault();
-    if (!supabase) return;
 
     const payload = buildHomepageBlockPayload({
       ...form,
@@ -160,17 +141,7 @@ export function AdminHomepage() {
     setIsSaving(true);
     const toastId = toast.loading(selectedId ? t('admin.homepage.savingBlock') : t('admin.homepage.creatingBlock'));
     try {
-      if (selectedId) {
-        const { error } = await supabase.from('homepage_content_blocks').update(payload).eq('id', selectedId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('homepage_content_blocks').insert({
-          ...payload,
-          created_by: user?.id || null,
-        });
-        if (error) throw error;
-      }
-
+      await saveHomepageBlock(selectedId, payload, user?.id || null);
       toast.success(t('admin.homepage.blockSaved'), { id: toastId });
       await fetchData();
     } catch (error) {
@@ -182,13 +153,11 @@ export function AdminHomepage() {
   };
 
   const handleDelete = async (block) => {
-    if (!supabase) return;
     if (!window.confirm(t('admin.homepage.confirmDelete', { title: block.title }))) return;
 
     const toastId = toast.loading(t('admin.homepage.deletingBlock'));
     try {
-      const { error } = await supabase.from('homepage_content_blocks').delete().eq('id', block.id);
-      if (error) throw error;
+      await deleteHomepageBlock(block.id);
       toast.success(t('admin.homepage.blockDeleted'), { id: toastId });
       await fetchData();
     } catch (error) {

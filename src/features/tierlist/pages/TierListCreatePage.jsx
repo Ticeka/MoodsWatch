@@ -21,7 +21,7 @@ import { getCurrentUsername } from '@/features/tierlist/lib/tierlistPageUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
-import './TierList.css';
+import '../styles/TierList.css';
 
 export function TierListCreatePage() {
   const navigate = useNavigate();

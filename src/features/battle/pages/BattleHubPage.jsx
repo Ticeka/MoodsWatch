@@ -32,7 +32,7 @@ import {
   fetchPublicBattleDecks,
   fetchRemoteBattleSessions,
   persistRemoteBattleSession,
-} from '@/features/battle/lib/battleRemote';
+} from '@/features/battle/api/battleRemoteApi';
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
@@ -48,7 +48,7 @@ import {
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
-import './Battle.css';
+import '../styles/Battle.css';
 
 const RECENT_BATTLE_SESSION_LIMIT = 4;
 const PUBLIC_DECK_PAGE_SIZE = 8; // keep community stages to a manageable multi-row page
@@ -168,7 +168,6 @@ export function BattleHub() {
   const [isPresetsLoading, setIsPresetsLoading] = useState(true);
   const [error, setError] = useState('');
   
-  const [recentSessions, setRecentSessions] = useState([]);
   const [savedDecks, setSavedDecks] = useState([]);
   const [publicDecks, setPublicDecks] = useState([]);
   
@@ -201,7 +200,6 @@ export function BattleHub() {
           const localSessions = getStoredBattleSessions();
           const mergedSessions = mergeRecentBattleSessions(localSessions, remoteSessions);
           mergedSessions.forEach((session) => saveBattleSession(session));
-          setRecentSessions(getStoredBattleSessions());
           setSavedDecks(getStoredBattleDecks());
           
           const hasNext = remotePublicDecks.length > PUBLIC_DECK_PAGE_SIZE;
@@ -220,7 +218,6 @@ export function BattleHub() {
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError.message || t('battle.loadCatalogFailed'));
-          setRecentSessions(getStoredBattleSessions());
           setSavedDecks(getStoredBattleDecks());
           setPublicDecks([]);
           setHasNextPublicPage(false);

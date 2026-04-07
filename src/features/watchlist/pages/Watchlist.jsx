@@ -19,7 +19,7 @@ import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { StarRating } from '@/features/watchlist/components/StarRating';
 import { ShareCardModal } from '@/features/watchlist/components/ShareCardModal';
 import { MoodJournal } from '@/features/watchlist/components/MoodJournal';
-import './Watchlist.css';
+import '../styles/Watchlist.css';
 
 function WatchlistProgressRow({ title, onUpdate }) {
   const isEp = isEpisodeBasedType(title.type);

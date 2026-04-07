@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { searchPartyThemeSongs } from '@/features/party/lib/partyRemote';
+import { searchPartyThemeSongs } from '@/features/party/api/partyRemoteApi';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { supabase } from '@/shared/lib/supabase';
 import '../styles/Admin.css';

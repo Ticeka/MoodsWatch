@@ -4,7 +4,7 @@ import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { CalendarDays, Trophy, CheckCircle2, Swords } from 'lucide-react';
-import './DailyChallenge.css';
+import '../styles/DailyChallenge.css';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -49,7 +49,6 @@ export function DailyChallenge() {
         let streakCount = 0;
         let expectedDate = new Date();
         for (const comp of (recentCompletions || [])) {
-          const compDate = new Date(comp.challenge_date + 'T00:00:00');
           const expected = expectedDate.toISOString().slice(0, 10);
           if (comp.challenge_date === expected) {
             streakCount++;

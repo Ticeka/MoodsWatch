@@ -11,9 +11,9 @@ import {
   requestPartyRoomJoin,
   searchPublicPartyRooms,
   subscribeToPartyRoomJoinRequests,
-} from '@/features/party/lib/partyRemote';
-import { buildPartyProfile } from './partyRoomUtils';
-import './PartyRoomDirectory.css';
+} from '@/features/party/api/partyRemoteApi';
+import { buildPartyProfile } from '@/features/party/lib/partyRoomUtils';
+import '../styles/PartyRoomDirectory.css';
 
 const PAGE_SIZE = 20;
 

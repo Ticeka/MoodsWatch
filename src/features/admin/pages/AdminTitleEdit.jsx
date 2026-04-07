@@ -2,13 +2,19 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, ExternalLink, Loader2, PlayCircle, RefreshCw } from 'lucide-react';
 import {
+  createAdminTitle,
+  fetchAdminTitleMoods,
+  fetchAdminTitleRecord,
+  saveAdminTitleSourceReference,
+  syncAdminTitleRelations,
+  updateAdminTitle,
+} from '@/features/admin/api';
+import {
   buildAliasRows,
   buildCanonicalPayload,
-  CANONICAL_TITLE_SELECT,
   mapCanonicalRecordToAdminForm,
 } from '@/shared/lib/catalog';
 import { fetchAniListGraphQL } from '@/shared/lib/anilist';
-import { supabase } from '@/shared/lib/supabase';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
 import toast from 'react-hot-toast';
@@ -43,7 +49,6 @@ const PLATFORM_OPTIONS = [
   'Other',
 ];
 
-const ADMIN_SAVE_TIMEOUT_MS = 10000;
 const ADMIN_TITLE_DRAFT_PREFIX = 'moodwatch-admin-title-draft';
 const TRAILER_SOURCE_OPTIONS = ['manual', 'anilist', 'tmdb', 'youtube', 'dailymotion'];
 const ANILIST_TRAILER_QUERY = `
@@ -126,28 +131,6 @@ function clearDraft(storageKey) {
   }
 }
 
-function withTimeout(promise, timeoutMs, label) {
-  let timeoutId = null;
-
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-    }
-  });
-}
-
-async function runQuery(request, label) {
-  const result = await withTimeout(request, ADMIN_SAVE_TIMEOUT_MS, label);
-  if (result?.error) {
-    throw result.error;
-  }
-  return result;
-}
-
 function sortByJsonValue(items = []) {
   return [...items].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
@@ -182,10 +165,6 @@ function buildRelationSnapshot({ titleId, formData, selectedMoods, genreInput, t
     tags: normalizeStringList(tagInput),
     availability: normalizePlatformLinks(platformLinks),
   };
-}
-
-function areRelationEntriesEqual(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function normalizeTitleCandidate(value = '') {
@@ -291,20 +270,9 @@ export function AdminTitleEdit() {
   );
 
   const fetchTitleDetails = useCallback(async () => {
-    if (!supabase) {
-      toast.error(t('admin.titleEdit.supabaseUnavailable'));
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     try {
-      const { data: moodsData, error: moodsError } = await runQuery(
-        supabase.from('moods').select('*').order('name_en'),
-        'Load moods'
-      );
-      if (moodsError) throw moodsError;
-      setAvailableMoods(moodsData || []);
+      setAvailableMoods(await fetchAdminTitleMoods());
 
       if (isNew) {
         const draft = loadDraft(draftStorageKey);
@@ -321,16 +289,7 @@ export function AdminTitleEdit() {
         return;
       }
 
-      const { data, error } = await runQuery(
-        supabase
-          .from('canonical_titles')
-          .select(CANONICAL_TITLE_SELECT)
-          .eq('id', id)
-          .single(),
-        'Load title details'
-      );
-
-      if (error) throw error;
+      const data = await fetchAdminTitleRecord(id);
       if (!data) return;
 
       const nextFormData = mapCanonicalRecordToAdminForm(data);
@@ -368,7 +327,11 @@ export function AdminTitleEdit() {
       }));
     } catch (error) {
       console.error('Error fetching title details:', error);
-      toast.error(t('admin.titleEdit.unableToLoad'));
+      toast.error(
+        error?.message === 'Supabase client is not available'
+          ? t('admin.titleEdit.supabaseUnavailable')
+          : t('admin.titleEdit.unableToLoad')
+      );
       navigate('/admin/titles');
     } finally {
       setIsLoading(false);
@@ -526,11 +489,6 @@ export function AdminTitleEdit() {
   const handleSave = async (event) => {
     event?.preventDefault();
 
-    if (!supabase) {
-      toast.error(t('admin.titleEdit.supabaseUnavailable'));
-      return;
-    }
-
     if (!formData.title_en || !formData.slug) {
       toast.error(t('admin.titleEdit.titleSlugRequired'));
       return;
@@ -544,34 +502,14 @@ export function AdminTitleEdit() {
       let titleId = id;
 
       if (isNew) {
-        const { data: inserted, error } = await runQuery(
-          supabase.from('canonical_titles').insert([payload]).select().single(),
-          'Create title'
-        );
-        if (error) throw error;
+        const inserted = await createAdminTitle(payload);
         titleId = inserted.id;
       } else {
-        const { error } = await runQuery(
-          supabase.from('canonical_titles').update(payload).eq('id', id),
-          'Update title'
-        );
-        if (error) throw error;
+        await updateAdminTitle(id, payload);
       }
 
       if (pendingSourceRef?.external_id) {
-        const { error } = await runQuery(
-          supabase.from('title_source_refs').upsert(
-            {
-              canonical_title_id: titleId,
-              ...pendingSourceRef,
-              last_synced_at: new Date().toISOString(),
-              fetched_at: new Date().toISOString(),
-            },
-            { onConflict: 'provider,external_id' },
-          ),
-          'Save AniList source reference'
-        );
-        if (error) throw error;
+        await saveAdminTitleSourceReference(titleId, pendingSourceRef);
         setPendingSourceRef(null);
       }
 
@@ -583,86 +521,7 @@ export function AdminTitleEdit() {
         tagInput,
         platformLinks,
       });
-      const previousRelations = initialRelations;
-      const relationOperations = [];
-
-      if (!previousRelations || !areRelationEntriesEqual(previousRelations.aliases, nextRelations.aliases)) {
-        relationOperations.push(async () => {
-          await runQuery(supabase.from('title_aliases').delete().eq('canonical_title_id', titleId), 'Delete aliases');
-          if (nextRelations.aliases.length) {
-            await runQuery(
-              supabase.from('title_aliases').insert(
-                nextRelations.aliases.map((item) => ({ canonical_title_id: titleId, ...item }))
-              ),
-              'Insert aliases'
-            );
-          }
-        });
-      }
-
-      if (!previousRelations || !areRelationEntriesEqual(previousRelations.moods, nextRelations.moods)) {
-        relationOperations.push(async () => {
-          await runQuery(supabase.from('title_moods').delete().eq('canonical_title_id', titleId), 'Delete moods');
-          if (nextRelations.moods.length) {
-            await runQuery(
-              supabase.from('title_moods').insert(
-                nextRelations.moods.map((moodId) => ({ canonical_title_id: titleId, mood_id: moodId }))
-              ),
-              'Insert moods'
-            );
-          }
-        });
-      }
-
-      if (!previousRelations || !areRelationEntriesEqual(previousRelations.genres, nextRelations.genres)) {
-        relationOperations.push(async () => {
-          await runQuery(supabase.from('title_genres').delete().eq('canonical_title_id', titleId), 'Delete genres');
-          if (nextRelations.genres.length) {
-            await runQuery(
-              supabase.from('title_genres').insert(
-                nextRelations.genres.map((genreName) => ({ canonical_title_id: titleId, genre_name: genreName }))
-              ),
-              'Insert genres'
-            );
-          }
-        });
-      }
-
-      if (!previousRelations || !areRelationEntriesEqual(previousRelations.tags, nextRelations.tags)) {
-        relationOperations.push(async () => {
-          await runQuery(supabase.from('title_tags').delete().eq('canonical_title_id', titleId), 'Delete tags');
-          if (nextRelations.tags.length) {
-            await runQuery(
-              supabase.from('title_tags').insert(
-                nextRelations.tags.map((tagName) => ({ canonical_title_id: titleId, tag_name: tagName }))
-              ),
-              'Insert tags'
-            );
-          }
-        });
-      }
-
-      if (!previousRelations || !areRelationEntriesEqual(previousRelations.availability, nextRelations.availability)) {
-        relationOperations.push(async () => {
-          await runQuery(supabase.from('title_availability').delete().eq('canonical_title_id', titleId), 'Delete availability');
-          if (nextRelations.availability.length) {
-            await runQuery(
-              supabase.from('title_availability').insert(
-                nextRelations.availability.map((platform) => ({
-                  canonical_title_id: titleId,
-                  platform_name: platform.platform_name,
-                  region_code: platform.region_code,
-                  url: platform.url,
-                  is_official: true,
-                }))
-              ),
-              'Insert availability'
-            );
-          }
-        });
-      }
-
-      await Promise.all(relationOperations.map((operation) => operation()));
+      await syncAdminTitleRelations(titleId, nextRelations, initialRelations);
       setInitialRelations(nextRelations);
       clearDraft(draftStorageKey);
 
@@ -670,7 +529,12 @@ export function AdminTitleEdit() {
       navigate('/admin/titles');
     } catch (error) {
       console.error('Error saving title:', error);
-      toast.error(error.message || t('admin.titleEdit.saveFailed'), { id: toastId });
+      toast.error(
+        error?.message === 'Supabase client is not available'
+          ? t('admin.titleEdit.supabaseUnavailable')
+          : (error.message || t('admin.titleEdit.saveFailed')),
+        { id: toastId }
+      );
     } finally {
       setIsSaving(false);
     }

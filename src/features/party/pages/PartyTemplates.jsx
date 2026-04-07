@@ -4,11 +4,11 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/lib/partyRemote';
+import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/api/partyRemoteApi';
 import { PartyTemplateCard } from '../components/PartyTemplateCard';
 import { PartyTemplateFilters } from '../components/PartyTemplateFilters';
 import '../components/PartyTemplates.css';
-import '../pages/Party.css';
+import '../styles/Party.css';
 
 const PAGE_SIZE = 12;
 const FETCH_LIMIT = 200;

@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { CANONICAL_TITLE_BROWSE_SELECT, mapCanonicalTitle } from '@/shared/lib/catalog';
+import { mapCanonicalTitle } from '@/shared/lib/catalog';
 import {
   appendStoredHistoryItem,
   createHistoryEvent,
@@ -9,344 +9,33 @@ import {
   saveStoredTitleHistory,
 } from '@/features/profile/lib/profileStore';
 import { isChapterBasedType, isEpisodeBasedType } from '@/shared/lib/titleType';
+import {
+  deleteRemoteWatchlistItem,
+  fetchRemoteWatchlist,
+  fetchRemoteWatchlistHistory,
+  fetchRemoteWatchlistTitles,
+  insertRemoteConsumptionSession,
+  insertRemoteUserActivity,
+  insertRemoteWatchlistHistory,
+  updateRemoteWatchlistItem,
+  upsertRemoteWatchlistItem,
+} from '@/features/watchlist/api/watchlistApi';
+import {
+  areWatchlistsEqual,
+  buildConsumptionSessionPayload,
+  buildProgressUpdate,
+  buildTargetCatchUpUpdate,
+  loadStoredWatchlist,
+  mergeWatchlists,
+  normalizeWatchlistItem,
+  persistWatchlistSnapshot,
+  saveStoredWatchlist,
+  scheduleWhenIdle,
+  WATCHLIST_REQUEST_TIMEOUT_MS,
+  withTimeout,
+} from '@/features/watchlist/lib/watchlistStore';
 
 const WatchlistContext = createContext();
-const WATCHLIST_STORAGE_KEY = 'moodtoon-watchlist';
-const WATCHLIST_REQUEST_TIMEOUT_MS = 20000;
-
-function scheduleWhenIdle(callback, timeout = 1500) {
-  if (typeof window === 'undefined') {
-    return () => {};
-  }
-
-  if (typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout });
-    return () => window.cancelIdleCallback(handle);
-  }
-
-  const handle = window.setTimeout(callback, Math.min(timeout, 400));
-  return () => window.clearTimeout(handle);
-}
-
-function getWatchlistStorageKey(userId) {
-  return userId ? `${WATCHLIST_STORAGE_KEY}:${userId}` : WATCHLIST_STORAGE_KEY;
-}
-
-function normalizeWatchlistItem(item = {}) {
-  return {
-    titleId: item.titleId,
-    status: item.status || 'planned',
-    progressEpisode: item.progressEpisode ?? null,
-    progressChapter: item.progressChapter ?? null,
-    score: item.score ?? null,
-    note: item.note ?? '',
-    addedAt: item.addedAt ?? item.createdAt ?? null,
-    updatedAt: item.updatedAt ?? item.addedAt ?? item.createdAt ?? null,
-    lastConsumedAt: item.lastConsumedAt ?? null,
-    targetEpisode: item.targetEpisode ?? null,
-    targetChapter: item.targetChapter ?? null,
-    rewatchCount: item.rewatchCount ?? 0,
-    metadata: item.metadata ?? {},
-  };
-}
-
-function getWatchlistItemTimestamp(item = {}) {
-  const rawValue = item.updatedAt ?? item.addedAt ?? item.createdAt ?? null;
-  if (!rawValue) {
-    return 0;
-  }
-
-  const timestamp = new Date(rawValue).getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function mergeWatchlists(localItems = [], remoteItems = []) {
-  const mergedByTitleId = new Map();
-
-  [...remoteItems, ...localItems].forEach((item) => {
-    const normalizedItem = normalizeWatchlistItem(item);
-    if (!normalizedItem.titleId) {
-      return;
-    }
-
-    const existingItem = mergedByTitleId.get(normalizedItem.titleId);
-    if (!existingItem || getWatchlistItemTimestamp(normalizedItem) >= getWatchlistItemTimestamp(existingItem)) {
-      mergedByTitleId.set(normalizedItem.titleId, normalizedItem);
-    }
-  });
-
-  return [...mergedByTitleId.values()];
-}
-
-function areWatchlistsEqual(leftItems = [], rightItems = []) {
-  if (leftItems.length !== rightItems.length) {
-    return false;
-  }
-
-  const leftMap = new Map(leftItems.map((item) => [item.titleId, normalizeWatchlistItem(item)]));
-  const rightMap = new Map(rightItems.map((item) => [item.titleId, normalizeWatchlistItem(item)]));
-
-  if (leftMap.size !== rightMap.size) {
-    return false;
-  }
-
-  for (const [titleId, leftItem] of leftMap.entries()) {
-    const rightItem = rightMap.get(titleId);
-    if (!rightItem) {
-      return false;
-    }
-
-    if (JSON.stringify(leftItem) !== JSON.stringify(rightItem)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function withTimeout(promise, timeoutMs, label) {
-  let timeoutId = null;
-
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => {
-      reject(new Error(`${label} timeout`));
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-    }
-  });
-}
-
-function toUserListRow(userId, item) {
-  return {
-    user_id: userId,
-    title_id: item.titleId,
-    list_status: item.status,
-    progress_episode: item.progressEpisode,
-    progress_chapter: item.progressChapter,
-    score: item.score,
-    note: item.note,
-    created_at: item.addedAt || item.updatedAt || new Date().toISOString(),
-    updated_at: item.updatedAt || item.addedAt || new Date().toISOString(),
-    last_consumed_at: item.lastConsumedAt,
-    target_episode: item.targetEpisode,
-    target_chapter: item.targetChapter,
-    rewatch_count: item.rewatchCount,
-    metadata: item.metadata || {},
-  };
-}
-
-async function persistWatchlistSnapshot(userId, items = []) {
-  if (!userId || !supabase || items.length === 0) {
-    return;
-  }
-
-  const rows = items.map((item) => toUserListRow(userId, normalizeWatchlistItem(item)));
-
-  for (let i = 0; i < rows.length; i += 100) {
-    const chunk = rows.slice(i, i + 100);
-    const { error } = await withTimeout(
-      supabase.from('user_lists').upsert(chunk, { onConflict: 'user_id, title_id' }),
-      WATCHLIST_REQUEST_TIMEOUT_MS,
-      'Watchlist sync'
-    );
-
-    if (error) {
-      throw error;
-    }
-  }
-}
-
-function clampProgressValue(value, total) {
-  const numericValue = Number(value || 0);
-  if (!Number.isFinite(numericValue) || numericValue < 0) {
-    return 0;
-  }
-
-  if (Number.isFinite(total) && total > 0) {
-    return Math.min(numericValue, total);
-  }
-
-  return numericValue;
-}
-
-function buildProgressUpdate(title, listItem, incrementBy = 1) {
-  if (!title || !listItem) {
-    return null;
-  }
-
-  const currentStatus = listItem.status;
-  const nextStep = Math.max(1, Number(incrementBy) || 1);
-
-  if (isEpisodeBasedType(title.type)) {
-    const nextProgressEpisode = clampProgressValue((listItem.progressEpisode || 0) + nextStep, title.episodes);
-    return {
-      progressEpisode: nextProgressEpisode,
-      lastConsumedAt: new Date().toISOString(),
-      metadata: {
-        ...(listItem.metadata || {}),
-        sessionSource: 'quick-progress',
-      },
-      status: title.episodes && nextProgressEpisode >= title.episodes
-        ? 'completed'
-        : currentStatus === 'planned' || currentStatus === 'on-hold'
-          ? 'watching'
-          : currentStatus,
-    };
-  }
-
-  if (isChapterBasedType(title.type)) {
-    const nextProgressChapter = clampProgressValue((listItem.progressChapter || 0) + nextStep, title.chapters);
-    return {
-      progressChapter: nextProgressChapter,
-      lastConsumedAt: new Date().toISOString(),
-      metadata: {
-        ...(listItem.metadata || {}),
-        sessionSource: 'quick-progress',
-      },
-      status: title.chapters && nextProgressChapter >= title.chapters
-        ? 'completed'
-        : currentStatus === 'planned' || currentStatus === 'on-hold'
-          ? 'reading'
-          : currentStatus,
-    };
-  }
-
-  return null;
-}
-
-function buildTargetCatchUpUpdate(title, listItem) {
-  if (!title || !listItem) {
-    return null;
-  }
-
-  if (isEpisodeBasedType(title.type)) {
-    const targetEpisode = Number(listItem.targetEpisode || 0);
-    if (targetEpisode <= Number(listItem.progressEpisode || 0)) {
-      return null;
-    }
-
-    return {
-      progressEpisode: clampProgressValue(targetEpisode, title.episodes),
-      lastConsumedAt: new Date().toISOString(),
-      metadata: {
-        ...(listItem.metadata || {}),
-        sessionSource: 'catch-up-target',
-      },
-      status: title.episodes && targetEpisode >= title.episodes ? 'completed' : 'watching',
-    };
-  }
-
-  if (isChapterBasedType(title.type)) {
-    const targetChapter = Number(listItem.targetChapter || 0);
-    if (targetChapter <= Number(listItem.progressChapter || 0)) {
-      return null;
-    }
-
-    return {
-      progressChapter: clampProgressValue(targetChapter, title.chapters),
-      lastConsumedAt: new Date().toISOString(),
-      metadata: {
-        ...(listItem.metadata || {}),
-        sessionSource: 'catch-up-target',
-      },
-      status: title.chapters && targetChapter >= title.chapters ? 'completed' : 'reading',
-    };
-  }
-
-  return null;
-}
-
-function buildConsumptionSessionPayload(title, previousItem, updates, timestamp) {
-  if (!title || !previousItem) {
-    return null;
-  }
-
-  if (updates.progressEpisode !== undefined) {
-    const previousProgress = Number(previousItem.progressEpisode || 0);
-    const nextProgress = Number(updates.progressEpisode || 0);
-    const delta = Math.max(0, nextProgress - previousProgress);
-
-    if (delta <= 0) {
-      return null;
-    }
-
-    return {
-      title_id: title.id,
-      list_status: updates.status ?? previousItem.status,
-      consumption_type: 'episode',
-      source: updates.metadata?.sessionSource || 'manual',
-      delta,
-      previous_progress: previousProgress,
-      next_progress: nextProgress,
-      target_progress: previousItem.targetEpisode ?? null,
-      session_started_at: updates.lastConsumedAt || timestamp,
-      session_ended_at: updates.lastConsumedAt || timestamp,
-      metadata: {
-        title_type: title.type,
-        title_slug: title.slug,
-        ...updates.metadata,
-      },
-      created_at: updates.lastConsumedAt || timestamp,
-    };
-  }
-
-  if (updates.progressChapter !== undefined) {
-    const previousProgress = Number(previousItem.progressChapter || 0);
-    const nextProgress = Number(updates.progressChapter || 0);
-    const delta = Math.max(0, nextProgress - previousProgress);
-
-    if (delta <= 0) {
-      return null;
-    }
-
-    return {
-      title_id: title.id,
-      list_status: updates.status ?? previousItem.status,
-      consumption_type: 'chapter',
-      source: updates.metadata?.sessionSource || 'manual',
-      delta,
-      previous_progress: previousProgress,
-      next_progress: nextProgress,
-      target_progress: previousItem.targetChapter ?? null,
-      session_started_at: updates.lastConsumedAt || timestamp,
-      session_ended_at: updates.lastConsumedAt || timestamp,
-      metadata: {
-        title_type: title.type,
-        title_slug: title.slug,
-        ...updates.metadata,
-      },
-      created_at: updates.lastConsumedAt || timestamp,
-    };
-  }
-
-  return null;
-}
-function loadStoredWatchlist(userId = null) {
-  try {
-    const primaryKey = getWatchlistStorageKey(userId);
-    const fallbackKey = userId ? WATCHLIST_STORAGE_KEY : null;
-    const saved = localStorage.getItem(primaryKey) ?? (fallbackKey ? localStorage.getItem(fallbackKey) : null);
-    return saved ? JSON.parse(saved).map(normalizeWatchlistItem) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveStoredWatchlist(userId = null, items = []) {
-  try {
-    localStorage.setItem(
-      getWatchlistStorageKey(userId),
-      JSON.stringify((items || []).map(normalizeWatchlistItem))
-    );
-  } catch {
-    // Ignore storage failures
-  }
-}
-
 const loadGuestWatchlist = () => loadStoredWatchlist();
 
 export function WatchlistProvider({ children }) {
@@ -379,27 +68,7 @@ export function WatchlistProvider({ children }) {
     }
 
     try {
-      const { error } = await withTimeout(
-        supabase.from('user_title_history').insert({
-          user_id: userId,
-          title_id: historyItem.titleId,
-          event_type: historyItem.eventType,
-          from_status: historyItem.fromStatus,
-          to_status: historyItem.toStatus,
-          progress_episode: historyItem.progressEpisode,
-          progress_chapter: historyItem.progressChapter,
-          score: historyItem.score,
-          note: historyItem.note,
-          metadata: historyItem.metadata,
-          created_at: historyItem.createdAt,
-        }),
-        WATCHLIST_REQUEST_TIMEOUT_MS,
-        'History insert'
-      );
-
-      if (error) {
-        throw error;
-      }
+      await insertRemoteWatchlistHistory(userId, historyItem, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
     } catch (error) {
       console.warn('Failed to persist title history:', error.message);
     }
@@ -408,12 +77,7 @@ export function WatchlistProvider({ children }) {
   const recordActivity = useCallback(async (actionType, titleId, metadata = {}) => {
     if (!userId || !supabase || !titleId) return;
     try {
-      await supabase.from('user_activity').insert({
-        user_id: userId,
-        action_type: actionType,
-        title_id: titleId,
-        metadata,
-      });
+      await insertRemoteUserActivity(userId, actionType, titleId, metadata);
     } catch (err) {
       console.warn('Failed to record activity:', err.message);
     }
@@ -425,18 +89,7 @@ export function WatchlistProvider({ children }) {
     }
 
     try {
-      const { error } = await withTimeout(
-        supabase.from('user_consumption_sessions').insert({
-          user_id: userId,
-          ...payload,
-        }),
-        WATCHLIST_REQUEST_TIMEOUT_MS,
-        'Consumption session insert'
-      );
-
-      if (error) {
-        throw error;
-      }
+      await insertRemoteConsumptionSession(userId, payload, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
     } catch (error) {
       console.warn('Failed to persist consumption session:', error.message);
     }
@@ -463,32 +116,7 @@ export function WatchlistProvider({ children }) {
           setWatchlist(localWatchlist);
         }
 
-        const { data, error } = await withTimeout(
-          supabase
-            .from('user_lists')
-            .select(`
-              title_id,
-              list_status,
-              progress_episode,
-              progress_chapter,
-              score,
-              note,
-              created_at,
-              updated_at,
-              last_consumed_at,
-              target_episode,
-              target_chapter,
-              rewatch_count,
-              metadata
-            `)
-            .eq('user_id', userId),
-          WATCHLIST_REQUEST_TIMEOUT_MS,
-          'Watchlist fetch'
-        );
-
-        if (error) {
-          throw error;
-        }
+        const data = await fetchRemoteWatchlist(userId, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
 
         if (data && !cancelled) {
           const remoteWatchlist = data.map(item => normalizeWatchlistItem({
@@ -527,17 +155,7 @@ export function WatchlistProvider({ children }) {
               cancelIdleWork?.();
               cancelIdleWork = scheduleWhenIdle(async () => {
                 try {
-                  const { data: titlesData, error: titlesError } = await withTimeout(
-                    supabase
-                      .from('canonical_titles')
-                      .select(CANONICAL_TITLE_BROWSE_SELECT)
-                      .in('id', titleIds),
-                    WATCHLIST_REQUEST_TIMEOUT_MS,
-                    'Watchlist titles fetch'
-                  );
-                  if (titlesError) {
-                    throw titlesError;
-                  }
+                  const titlesData = await fetchRemoteWatchlistTitles(titleIds, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
                   if (!cancelled && titlesData) {
                     setWatchlistTitles(titlesData.map(mapCanonicalTitle));
                   }
@@ -587,16 +205,7 @@ export function WatchlistProvider({ children }) {
     const fetchHistory = async () => {
       setIsHistoryLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('user_title_history')
-          .select('id, title_id, event_type, from_status, to_status, progress_episode, progress_chapter, score, note, metadata, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (error) {
-          throw error;
-        }
+        const data = await fetchRemoteWatchlistHistory(userId);
 
         if (!cancelled) {
           const formatted = (data || []).map((item) => ({
@@ -678,22 +287,13 @@ export function WatchlistProvider({ children }) {
 
     try {
       if (userId && supabase) {
-        // Update Database
-        const { error } = await withTimeout(
-          supabase.from('user_lists').upsert({
-            user_id: userId,
-            title_id: titleId,
-            list_status: status,
-            updated_at: timestamp,
-            metadata: previousItem?.metadata || {},
-          }, { onConflict: 'user_id, title_id' }),
-          WATCHLIST_REQUEST_TIMEOUT_MS,
-          'Watchlist add'
-        );
-
-        if (error) {
-          throw error;
-        }
+        await upsertRemoteWatchlistItem(userId, {
+          user_id: userId,
+          title_id: titleId,
+          list_status: status,
+          updated_at: timestamp,
+          metadata: previousItem?.metadata || {},
+        }, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
       }
 
       const historyItem = previousItem
@@ -732,19 +332,7 @@ export function WatchlistProvider({ children }) {
 
     try {
       if (userId && supabase) {
-        const { error } = await withTimeout(
-          supabase
-            .from('user_lists')
-            .delete()
-            .eq('user_id', userId)
-            .eq('title_id', titleId),
-          WATCHLIST_REQUEST_TIMEOUT_MS,
-          'Watchlist delete'
-        );
-
-        if (error) {
-          throw error;
-        }
+        await deleteRemoteWatchlistItem(userId, titleId, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
       }
 
       void recordHistory(createHistoryEvent({
@@ -781,20 +369,8 @@ export function WatchlistProvider({ children }) {
         if (updates.rewatchCount !== undefined) dbUpdates.rewatch_count = updates.rewatchCount;
         if (updates.metadata !== undefined) dbUpdates.metadata = updates.metadata;
         dbUpdates.updated_at = timestamp;
-        
-        const { error } = await withTimeout(
-          supabase
-            .from('user_lists')
-            .update(dbUpdates)
-            .eq('user_id', userId)
-            .eq('title_id', titleId),
-          WATCHLIST_REQUEST_TIMEOUT_MS,
-          'Watchlist update'
-        );
 
-        if (error) {
-          throw error;
-        }
+        await updateRemoteWatchlistItem(userId, titleId, dbUpdates, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
       }
 
       if (!previousItem) {

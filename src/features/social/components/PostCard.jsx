@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, MessageCircle, Send, Trash2 } from 'lucide-react';
-import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import './PostCard.css';
+import {
+  createSocialPostComment,
+  deleteSocialPost,
+  fetchSocialPostComments,
+  likeSocialPost,
+  unlikeSocialPost,
+} from '@/features/social/api/socialApi';
+import '../styles/PostCard.css';
 
 function formatRelativeTime(value, language) {
   if (!value) return '';
@@ -46,20 +52,24 @@ export function PostCard({ post, titleMap, onDelete, isHighlighted = false }) {
   const typeLabel = title?.type ? title.type.charAt(0).toUpperCase() + title.type.slice(1) : '';
 
   async function toggleLike() {
-    if (!user || !supabase) return;
+    if (!user) return;
     const next = !liked;
     setLiked(next);
     setLikeCount((c) => c + (next ? 1 : -1));
-    if (next) {
-      await supabase.from('post_likes').insert({ post_id: post.id, user_id: user.id });
-    } else {
-      await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', user.id);
+    try {
+      if (next) {
+        await likeSocialPost(post.id, user.id);
+      } else {
+        await unlikeSocialPost(post.id, user.id);
+      }
+    } catch {
+      setLiked(!next);
+      setLikeCount((c) => c + (next ? -1 : 1));
     }
   }
 
   async function loadComments() {
-    if (!supabase) return;
-    const { data } = await supabase.rpc('get_post_comments', { p_post_id: post.id });
+    const data = await fetchSocialPostComments(post.id);
     setComments(data || []);
   }
 
@@ -72,18 +82,20 @@ export function PostCard({ post, titleMap, onDelete, isHighlighted = false }) {
   async function submitComment(e) {
     e.preventDefault();
     const body = commentText.trim();
-    if (!body || !user || !supabase) return;
+    if (!body || !user) return;
     setSubmitting(true);
-    await supabase.from('post_comments').insert({ post_id: post.id, user_id: user.id, content: body });
-    const { data: fresh } = await supabase.rpc('get_post_comments', { p_post_id: post.id });
-    setComments(fresh || []);
-    setCommentText('');
-    setSubmitting(false);
+    try {
+      await createSocialPostComment({ postId: post.id, userId: user.id, content: body });
+      const fresh = await fetchSocialPostComments(post.id);
+      setComments(fresh || []);
+      setCommentText('');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleDelete() {
-    if (!supabase) return;
-    await supabase.from('social_posts').delete().eq('id', post.id);
+    await deleteSocialPost(post.id);
     onDelete?.(post.id);
   }
 

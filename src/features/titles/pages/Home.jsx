@@ -14,7 +14,7 @@ import { HomeResultsSection } from '@/features/titles/components/HomeResultsSect
 import { HomeTrendingSection } from '@/features/titles/components/HomeTrendingSection';
 import { useHomeContinueWatching } from '@/features/titles/hooks/useHomeContinueWatching';
 import { useHomeDiscovery } from '@/features/titles/hooks/useHomeDiscovery';
-import './Home.css';
+import '../styles/Home.css';
 
 export function Home() {
   const { language, t } = useLanguage();

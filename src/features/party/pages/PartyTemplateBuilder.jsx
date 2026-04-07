@@ -20,13 +20,12 @@ import {
   fetchPartyTemplateDetail,
   uploadPartyTemplateCover,
   resolvePartyYoutubeUrl,
-} from '@/features/party/lib/partyRemote';
+} from '@/features/party/api/partyRemoteApi';
 import {
   analyzePartyTemplateCompatibility,
   catalogSongToTemplateItem,
   getTemplateResolvedSource,
   resolveTemplateCoverUrl,
-  getTemplatePlayableCount,
   isTemplateItemPlayable,
   mapTemplateItemFromDb,
   sanitizeTemplateCoverUrl,
@@ -56,7 +55,7 @@ import {
 } from '@/features/party/lib/partyTemplateSchema';
 import { PartyYouTubePlayer } from '@/features/party/components/PartyYouTubePlayer';
 import '../components/PartyTemplates.css';
-import '../pages/Party.css';
+import '../styles/Party.css';
 
 function useDebounce(value, delay = 400) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -65,34 +64,6 @@ function useDebounce(value, delay = 400) {
     return () => clearTimeout(timer);
   }, [value, delay]);
   return debouncedValue;
-}
-
-function getTemplateCompatibilityCopy(reason) {
-  if (!reason) {
-    return '';
-  }
-
-  if (reason.code === 'insufficient_playable_songs') {
-    return `${reason.label} needs at least ${reason.requiredCount} playable songs, but this template only has ${reason.actualCount}.`;
-  }
-
-  if (reason.code === 'insufficient_distinct_sources') {
-    return `${reason.label} needs at least ${reason.requiredCount} distinct source titles, but this template only has ${reason.actualCount}.`;
-  }
-
-  if (reason.code === 'insufficient_answerable_songs') {
-    return reason.message;
-  }
-
-  if (reason.code === 'missing_source_metadata') {
-    return `${reason.actualCount} playable song${reason.actualCount === 1 ? '' : 's'} still need a usable source title.`;
-  }
-
-  if (reason.code === 'missing_song_titles') {
-    return `${reason.actualCount} playable song${reason.actualCount === 1 ? '' : 's'} still need a song title.`;
-  }
-
-  return reason.message;
 }
 
 function buildPartyBuilderCreateUrl(params = {}) {
@@ -671,7 +642,6 @@ export function PartyTemplateBuilderPage() {
 
   const validation = validateTemplateForMode(items, meta.modeScope);
   const templateCompatibility = useMemo(() => analyzePartyTemplateCompatibility(items), [items]);
-  const playableCount = getTemplatePlayableCount(items);
   const coverPreviewSrc = coverPreviewUrl || resolveTemplateCoverUrl(meta.coverUrl, items);
   const filteredItems = useMemo(() => items.filter((item) => {
     if (itemFilter === 'all') {
@@ -1458,9 +1428,6 @@ export function PartyTemplateBuilderPage() {
     </div>
   );
 }
-
-
-
 
 
 

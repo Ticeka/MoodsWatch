@@ -28,7 +28,7 @@ import {
   fetchPartyTitleGuessCharacters,
   uploadPartyTemplateCover,
   updatePartyTitleGuessSet,
-} from '@/features/party/lib/partyRemote';
+} from '@/features/party/api/partyRemoteApi';
 import {
   clearPartyDraft,
   getPartyTitleGuessBuilderDraftKey,
@@ -36,7 +36,7 @@ import {
   writePartyDraft,
 } from '@/features/party/lib/partyDraftStorage';
 import '../components/PartyTemplates.css';
-import './Party.css';
+import '../styles/Party.css';
 
 const TITLE_GUESS_SLOT_POINTS = [400, 300, 200, 100];
 const TITLE_GUESS_SLOT_COUNT = 4;

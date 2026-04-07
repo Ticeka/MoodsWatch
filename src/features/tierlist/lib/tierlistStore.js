@@ -23,7 +23,7 @@ export {
   loadTierListDetail,
   loadTierTemplateDetail,
   loadTierTemplates,
-} from './tierlistStoreRemoteQueries';
+} from '../api/tierlistRemoteQueriesApi.js';
 
 export {
   cleanupDuplicateTierLists,
@@ -32,4 +32,4 @@ export {
   saveTierLibrary,
   saveTierList,
   saveTierTemplate,
-} from './tierlistStoreRemoteMutations';
+} from '../api/tierlistRemoteMutationsApi.js';

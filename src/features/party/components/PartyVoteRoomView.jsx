@@ -6,10 +6,10 @@ import {
   startPartyVoteAmbient,
   stopPartyVoteAmbient,
 } from '@/features/party/lib/partyAudio';
-import { submitPartyLiveChatMessage, submitPartySkipVote, submitPartyVote } from '@/features/party/lib/partyRemote';
+import { submitPartyLiveChatMessage, submitPartySkipVote, submitPartyVote } from '@/features/party/api/partyRemoteApi';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 import { usePartyVoteStore } from '@/features/party/stores/partyVoteStore';
-import { getCountdownSeconds, readPartyAudioVolume } from '../pages/partyRoomUtils';
+import { getCountdownSeconds, readPartyAudioVolume } from '../lib/partyRoomUtils';
 import { PartyLobbyView } from '../pages/PartyLobby';
 import {
   BattleCountdown,

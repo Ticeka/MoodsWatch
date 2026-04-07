@@ -1,0 +1,53 @@
+import { lazy } from 'react';
+
+function lazyFeatureExport(factory, exportName) {
+  return lazy(() => factory().then((module) => ({ default: module[exportName] })));
+}
+
+export const HomePage = lazyFeatureExport(() => import('@/features/titles'), 'Home');
+export const BattleHubPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleHub');
+export const BattleBrowsePage = lazyFeatureExport(() => import('@/features/battle'), 'BattleBrowsePage');
+export const BattleBuilderPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleBuilderPage');
+export const BattleDeckLibraryPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleDeckLibraryPage');
+export const BattleSessionPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleSessionPage');
+export const BattleLeaderboardPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleLeaderboard');
+export const DailyChallengePage = lazyFeatureExport(() => import('@/features/battle'), 'DailyChallenge');
+export const PartyHubPage = lazyFeatureExport(() => import('@/features/party'), 'PartyHubPage');
+export const PartyRoomPage = lazyFeatureExport(() => import('@/features/party'), 'PartyRoomPage');
+export const PartyRoomDirectoryPage = lazyFeatureExport(() => import('@/features/party'), 'PartyRoomDirectoryPage');
+export const PartyTemplatesPage = lazyFeatureExport(() => import('@/features/party'), 'PartyTemplatesPage');
+export const PartyTemplateDetailPage = lazyFeatureExport(() => import('@/features/party'), 'PartyTemplateDetailPage');
+export const PartyTemplateBuilderPage = lazyFeatureExport(() => import('@/features/party'), 'PartyTemplateBuilderPage');
+export const TierListBrowsePage = lazyFeatureExport(() => import('@/features/tierlist'), 'TierListBrowsePage');
+export const TierListManagePage = lazyFeatureExport(() => import('@/features/tierlist'), 'TierListManagePage');
+export const TierListCreatePage = lazyFeatureExport(() => import('@/features/tierlist'), 'TierListCreatePage');
+export const TierListPlayPage = lazyFeatureExport(() => import('@/features/tierlist'), 'TierListPlayPage');
+export const TierListTemplatePage = lazyFeatureExport(() => import('@/features/tierlist'), 'TierListTemplatePage');
+export const SongTierListPage = lazyFeatureExport(() => import('@/features/tierlist'), 'SongTierListPage');
+export const SongTierListBrowsePage = lazyFeatureExport(() => import('@/features/tierlist'), 'SongTierListBrowsePage');
+export const DiscoverPage = lazyFeatureExport(() => import('@/features/discover'), 'Discover');
+export const TitleDetailPage = lazyFeatureExport(() => import('@/features/titles'), 'TitleDetail');
+export const WatchlistPage = lazyFeatureExport(() => import('@/features/watchlist'), 'Watchlist');
+export const ProfilePage = lazyFeatureExport(() => import('@/features/profile'), 'Profile');
+export const PublicProfilePage = lazyFeatureExport(() => import('@/features/profile'), 'PublicProfile');
+export const FeedPage = lazyFeatureExport(() => import('@/features/social'), 'Feed');
+export const StatsPage = lazyFeatureExport(() => import('@/features/stats'), 'Stats');
+export const AuthPage = lazyFeatureExport(() => import('@/features/auth'), 'Auth');
+export const AdminLayoutPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminLayout');
+export const AdminDashboardPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminDashboard');
+export const AdminTitlesPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminTitles');
+export const AdminTitleEditPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminTitleEdit');
+export const AdminMoodsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminMoods');
+export const AdminUsersPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminUsers');
+export const AdminAnalyticsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminAnalytics');
+export const AdminContentReportsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminContentReports');
+export const AdminDuplicatesPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminDuplicates');
+export const AdminCollectionsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminCollections');
+export const AdminHomepagePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminHomepage');
+export const AdminRecommendationPreviewPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminRecommendationPreview');
+export const AdminFetchPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminFetch');
+export const AdminGuidePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminGuide');
+export const AdminLinksPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminLinks');
+export const AdminDailyChallengePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminDailyChallenge');
+export const AdminTierlistsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminTierlists');
+export const AdminPartyPresetsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminPartyPresets');

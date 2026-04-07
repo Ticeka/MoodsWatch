@@ -5,11 +5,11 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { getTitleDisplayName } from '@/features/profile/lib/profileStore';
-import { supabase } from '@/shared/lib/supabase';
+import { fetchPostsFeed, fetchSocialActivityFeed, fetchSocialPostById } from '@/features/social/api/socialApi';
 import { PostComposer } from '@/features/social/components/PostComposer';
 import { PostCard } from '@/features/social/components/PostCard';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import './Feed.css';
+import '../styles/Feed.css';
 
 const ACTION_ICONS = {
   added: '📋',
@@ -135,15 +135,10 @@ export function Feed() {
   const items = useMemo(() => applyAdultFilter(rawItems, titleMap), [applyAdultFilter, rawItems, titleMap]);
 
   const loadPosts = useCallback(async () => {
-    if (!user?.id || !supabase) { setPostsLoading(false); return; }
+    if (!user?.id) { setPostsLoading(false); return; }
     setPostsLoading(true);
     try {
-      const { data } = await supabase.rpc('get_posts_feed', {
-        p_user_id: user.id,
-        p_limit: 20,
-        p_offset: 0,
-      });
-      const feed = data || [];
+      const feed = await fetchPostsFeed(user.id, 20, 0);
       const titleIds = [...new Set(feed.map((p) => p.title_id).filter(Boolean))];
       if (titleIds.length) {
         const titles = await getTitlesByIds(titleIds);
@@ -156,16 +151,11 @@ export function Feed() {
   }, [user?.id]);
 
   const loadActivity = useCallback(async () => {
-    if (!user?.id || !supabase) { setActivityLoading(false); return; }
+    if (!user?.id) { setActivityLoading(false); return; }
     setActivityLoading(true);
     setError('');
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_social_feed', {
-        p_user_id: user.id,
-        p_limit: 40,
-      });
-      if (rpcError) throw rpcError;
-      const feed = data || [];
+      const feed = await fetchSocialActivityFeed(user.id, 40);
       const titleIds = [...new Set(feed.map((i) => i.title_id).filter(Boolean))];
       if (titleIds.length) {
         const titles = await getTitlesByIds(titleIds);
@@ -188,14 +178,10 @@ export function Feed() {
     if (!focusPostId || postsLoading) return;
 
     const inFeed = posts.some((p) => String(p.id) === String(focusPostId));
-    if (!inFeed && supabase) {
+    if (!inFeed) {
       // Post not in feed — fetch it directly and prepend
-      supabase
-        .from('social_posts')
-        .select('id, user_id, content, image_url, title_id, created_at')
-        .eq('id', focusPostId)
-        .single()
-        .then(({ data }) => {
+      fetchSocialPostById(focusPostId)
+        .then((data) => {
           if (data) {
             setRawPosts((prev) => {
               if (prev.some((p) => String(p.id) === String(data.id))) return prev;

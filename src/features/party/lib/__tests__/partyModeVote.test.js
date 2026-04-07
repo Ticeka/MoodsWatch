@@ -126,11 +126,6 @@ describe('buildPartyVoteSnapshot', () => {
 // ─── Phase transition order ──────────────────────────────────────────────────
 
 describe('advancePartyVoteMatch — phase transitions', () => {
-  function buildMatchAt(phase, overrides = {}) {
-    const snap = buildPartyVoteSnapshot(FOUR_SONGS, {});
-    return { ...snap, phase, ...overrides };
-  }
-
   const PHASE_ORDER = ['countdown', 'intro-a', 'play-a', 'intro-b', 'play-b', 'vote'];
 
   test('phases advance in the correct sequence', () => {
@@ -187,8 +182,6 @@ describe('advancePartyVoteMatch — phase transitions', () => {
 describe('advancePartyVoteMatch — vote resolution', () => {
   function makeMatchAtVote(songA_votes, songB_votes) {
     const snap = buildPartyVoteSnapshot(FOUR_SONGS, {});
-    const songA = snap.currentBattle.songA;
-    const songB = snap.currentBattle.songB;
     return {
       ...snap,
       phase: 'vote',

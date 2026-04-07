@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import './AchievementBadges.css';
+import '../styles/AchievementBadges.css';
 
 export function AchievementBadges({ userId }) {
   const { user } = useAuth();

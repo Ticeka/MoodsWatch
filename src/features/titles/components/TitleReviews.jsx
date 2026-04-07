@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { MessageSquare, AlertTriangle, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
+import { deleteTitleReview, fetchTitleReviews, saveTitleReview } from '@/features/titles/api/titleReviewsApi';
 
 const MAX_LEN = 500;
 
@@ -117,26 +117,13 @@ function ReviewForm({ titleId, existingReview, userScore, onSaved, onCancel }) {
     if (!valid || !user) return;
     setSaving(true);
     try {
-      const payload = {
-        title_id: titleId,
-        user_id: user.id,
+      await saveTitleReview({
+        reviewId: existingReview?.id || null,
+        titleId,
+        userId: user.id,
         body: body.trim(),
         spoiler,
-      };
-
-      const { error } = existingReview
-        ? await supabase.from('title_reviews').update({ body: payload.body, spoiler: payload.spoiler }).eq('id', existingReview.id)
-        : await supabase.from('title_reviews').insert(payload);
-
-      if (error) throw error;
-      if (!existingReview) {
-        void supabase.from('user_activity').insert({
-          user_id: user.id,
-          action_type: 'reviewed',
-          title_id: titleId,
-          metadata: {},
-        });
-      }
+      });
       toast.success(t(existingReview ? 'reviews.updated' : 'reviews.posted'));
       onSaved();
     } catch (err) {
@@ -209,34 +196,10 @@ export function TitleReviews({ titleId }) {
   const userScore = getItem(titleId)?.score ?? null;
 
   const fetchReviews = useCallback(async () => {
-    if (!supabase) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('title_reviews')
-        .select('id, user_id, body, spoiler, score, created_at')
-        .eq('title_id', titleId)
-        .order('created_at', { ascending: false })
-        .limit(30);
-
-      if (error) throw error;
-      const rows = data || [];
-
-      const userIds = [...new Set(rows.map((r) => r.user_id))];
-      let usernameMap = {};
-      if (userIds.length) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, username, avatar_url')
-          .in('id', userIds);
-        (profiles || []).forEach((p) => { usernameMap[p.id] = { username: p.username, avatar_url: p.avatar_url }; });
-      }
-
-      setReviews(rows.map((r) => ({
-        ...r,
-        username: usernameMap[r.user_id]?.username || null,
-        avatar_url: usernameMap[r.user_id]?.avatar_url || null,
-      })));
+      const rows = await fetchTitleReviews(titleId, 30);
+      setReviews(rows);
     } catch (err) {
       console.warn('Failed to load reviews:', err.message);
     } finally {
@@ -251,11 +214,10 @@ export function TitleReviews({ titleId }) {
   const handleDelete = async (reviewId) => {
     if (!window.confirm(t('reviews.confirmDelete'))) return;
     try {
-      const { error } = await supabase.from('title_reviews').delete().eq('id', reviewId);
-      if (error) throw error;
+      await deleteTitleReview(reviewId);
       toast.success(t('reviews.deleted'));
       setReviews((prev) => prev.filter((r) => r.id !== reviewId));
-    } catch (err) {
+    } catch {
       toast.error(t('reviews.deleteFailed'));
     }
   };

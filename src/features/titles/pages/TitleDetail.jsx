@@ -9,19 +9,25 @@ import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
 import { useTopTitles } from '@/features/profile/hooks/useTopTitles';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
-import { buildContentReportPayload, CONTENT_REPORT_ISSUE_OPTIONS } from '@/shared/lib/contentReports';
+import { CONTENT_REPORT_ISSUE_OPTIONS } from '@/shared/lib/contentReports';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { TrailerModal } from '@/shared/components/ui/TrailerModal';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { LIST_STATUS_OPTIONS, getLocalizedLabel } from '@/shared/data/moods';
 import { matchesAgeGateMode } from '@/shared/lib/ageGate';
-import { supabase } from '@/shared/lib/supabase';
 import { getTitleTypeMeta } from '@/shared/lib/titleType';
 import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Loader2, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
-import './TitleDetail.css';
+import {
+  createTitleAvailabilityLink,
+  deleteTitleAvailabilityLink,
+  fetchTitleStatusCounts,
+  fetchTitleThemeSongs,
+  submitTitleContentReport,
+} from '@/features/titles/api/titleDetailApi';
+import '../styles/TitleDetail.css';
 
 const PLATFORM_OPTIONS = [
   'Netflix', 'Bilibili', 'iQIYI', 'Crunchyroll', 'Disney+', 'YouTube',
@@ -175,16 +181,8 @@ export function TitleDetail() {
     async function fetchStats() {
       setStatsLoading(true);
       try {
-        const { data, error } = await supabase
-          .rpc('get_title_status_counts', { p_title_id: title.id });
-        if (error) throw error;
-        if (!cancelled && data) {
-          const counts = {};
-          data.forEach((row) => {
-            counts[row.list_status] = Number(row.count);
-          });
-          setTitleStats(counts);
-        }
+        const counts = await fetchTitleStatusCounts(title.id);
+        if (!cancelled) setTitleStats(counts);
       } catch (err) {
         console.error('Failed to load title stats:', err);
         if (!cancelled) setTitleStats({});
@@ -202,17 +200,7 @@ export function TitleDetail() {
     let cancelled = false;
 
     async function fetchThemeSongs() {
-      const { data, error } = await supabase
-        .from('title_theme_songs')
-        .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
-        .eq('canonical_title_id', title.id)
-        .order('display_order')
-        .limit(100);
-
-      if (error) {
-        console.error('[ThemeSongs] fetch error:', error);
-        return;
-      }
+      const data = await fetchTitleThemeSongs(title.id);
       if (!cancelled) {
         setThemeSongs(data || []);
         setSongPage(0);
@@ -429,14 +417,12 @@ export function TitleDetail() {
 
     setIsSavingLink(true);
     try {
-      const { error } = await supabase.from('title_availability').insert({
-        canonical_title_id: title.id,
-        platform_name: addLinkForm.platform_name,
+      await createTitleAvailabilityLink({
+        titleId: title.id,
+        platformName: addLinkForm.platform_name,
         url: addLinkForm.url,
-        region_code: addLinkForm.region_code || null,
-        is_official: true,
+        regionCode: addLinkForm.region_code || null,
       });
-      if (error) throw error;
 
       toast.success(t('titleDetail.linkSaved'));
       setShowAddLinkForm(false);
@@ -451,13 +437,11 @@ export function TitleDetail() {
 
   const handleDeleteLink = async (platform) => {
     try {
-      const { error } = await supabase
-        .from('title_availability')
-        .delete()
-        .eq('canonical_title_id', title.id)
-        .eq('platform_name', platform.name)
-        .eq('url', platform.url);
-      if (error) throw error;
+      await deleteTitleAvailabilityLink({
+        titleId: title.id,
+        platformName: platform.name,
+        url: platform.url,
+      });
 
       toast.success(t('titleDetail.linkDeleted'));
       setTitle(await getTitleBySlug(slug));
@@ -476,17 +460,9 @@ export function TitleDetail() {
       return;
     }
 
-    if (!supabase) {
-      toast.error(t('titleDetail.reportServiceUnavailable'));
-      return;
-    }
-
     setIsSubmittingReport(true);
     try {
-      const { error } = await supabase
-        .from('content_reports')
-        .insert(buildContentReportPayload(reportForm, user.id, title.id, 'title_detail'));
-      if (error) throw error;
+      await submitTitleContentReport(reportForm, user.id, title.id);
 
       toast.success(t('titleDetail.reportSubmitted'));
       setReportForm({ issueType: 'metadata', description: '' });

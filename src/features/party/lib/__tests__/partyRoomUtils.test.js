@@ -6,7 +6,7 @@ import {
   getPartyPrefetchRound,
   isPartyPlaybackReady,
   shouldPartyForceMediaLoad,
-} from '../../pages/partyRoomUtils.js';
+} from '../partyRoomUtils.js';
 
 describe('partyRoomUtils', () => {
   it('calculates buffered preview time from the active range', () => {

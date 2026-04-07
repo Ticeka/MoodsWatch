@@ -496,7 +496,6 @@ export const CrossLaneNote = {
     />
   ),
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
     // Cross-lane note should include the query and the lane name
     const note = canvasElement.querySelector('[aria-live="polite"]');
     expect(note).toBeTruthy();

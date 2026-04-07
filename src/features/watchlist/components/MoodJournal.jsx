@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { MOODS, getLocalizedMoodName } from '@/shared/data/moods';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { fetchMoodJournalEntries, saveMoodJournalEntry } from '@/features/watchlist/api/moodJournalApi';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -39,21 +39,14 @@ export function MoodJournal() {
   const moodMap = new Map(MOODS.map((m) => [m.id, m]));
 
   const fetchEntries = useCallback(async () => {
-    if (!user || !supabase) {
+    if (!user) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
       const thirtyDaysAgo = getLast30Days()[0];
-      const { data, error } = await supabase
-        .from('mood_journal')
-        .select('id, mood_id, note, logged_at')
-        .eq('user_id', user.id)
-        .gte('logged_at', thirtyDaysAgo)
-        .order('logged_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await fetchMoodJournalEntries(user.id, thirtyDaysAgo);
       setEntries(data || []);
 
       const todayEntry = (data || []).find((e) => toLocalDate(e.logged_at) === TODAY);
@@ -73,16 +66,15 @@ export function MoodJournal() {
   }, [fetchEntries]);
 
   const handleSave = async () => {
-    if (!todayMoodId || !user || !supabase) return;
+    if (!todayMoodId || !user) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('mood_journal')
-        .upsert(
-          { user_id: user.id, mood_id: todayMoodId, note: todayNote || null, logged_at: TODAY },
-          { onConflict: 'user_id, logged_at' }
-        );
-      if (error) throw error;
+      await saveMoodJournalEntry({
+        userId: user.id,
+        moodId: todayMoodId,
+        note: todayNote || null,
+        loggedAt: TODAY,
+      });
       toast.success(t('moodJournal.saved'));
       await fetchEntries();
     } catch (err) {

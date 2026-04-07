@@ -6,7 +6,7 @@ import { getTitleFormatBadge, getTitleTypeMeta } from '@/shared/lib/titleType';
 import { SearchMatchReasons } from '@/features/discover/components/SearchMatchReasons';
 import { SearchHighlightText } from '@/features/discover/components/SearchHighlightText';
 import { collectMatchReasonKeys } from '@/features/discover/lib/searchMatch';
-import './DiscoverTitleCard.css';
+import '../styles/DiscoverTitleCard.css';
 
 function formatCompactNumber(value, locale) {
   const number = Number(value || 0);

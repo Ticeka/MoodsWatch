@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  ensureAuthUserProfile,
+  updateAuthUserProfile,
+} from '@/features/auth/api';
 import { supabase } from '@/shared/lib/supabase';
 
 const AuthContext = createContext();
-const PROFILE_REQUEST_TIMEOUT_MS = 15000;
-
-const profileRequestCache = new Map();
 
 function mergeAuthUser(previousUser, nextAuthUser) {
   if (!nextAuthUser) {
@@ -20,20 +21,6 @@ function mergeAuthUser(previousUser, nextAuthUser) {
     ...nextAuthUser,
     profile: previousUser.profile ?? nextAuthUser.profile,
   };
-}
-
-function withTimeout(promise, timeoutMs, label) {
-  let timeoutId = null;
-
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-    }
-  });
 }
 
 function parseOAuthHashSession() {
@@ -57,64 +44,6 @@ function parseOAuthHashSession() {
     access_token: accessToken,
     refresh_token: refreshToken,
   };
-}
-
-async function fetchUserProfile(userId) {
-  if (!userId || !supabase) return null;
-
-  if (profileRequestCache.has(userId)) {
-    return profileRequestCache.get(userId);
-  }
-
-  const request = withTimeout(
-    supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle(),
-    PROFILE_REQUEST_TIMEOUT_MS,
-    'Profile fetch'
-  )
-    .then(({ data, error }) => {
-      if (error) {
-        console.warn('Error fetching user profile:', error.message);
-        return null;
-      }
-      return data ?? null;
-    })
-    .finally(() => {
-      profileRequestCache.delete(userId);
-    });
-
-  profileRequestCache.set(userId, request);
-  return request;
-}
-
-async function ensureUserProfile(userId) {
-  if (!userId || !supabase) return null;
-
-  const profile = await fetchUserProfile(userId);
-  if (profile) return profile;
-
-  const { data, error } = await withTimeout(
-    supabase
-      .from('user_profiles')
-      .insert({ id: userId, is_profile_public: true })
-      .select('*')
-      .maybeSingle(),
-    PROFILE_REQUEST_TIMEOUT_MS,
-    'Profile create'
-  );
-
-  if (error) {
-    if (error.code === '23505') {
-      return fetchUserProfile(userId);
-    }
-    console.warn('Error creating user profile:', error.message);
-    return null;
-  }
-
-  return data ?? { id: userId };
 }
 
 async function validateAuthSession(session) {
@@ -148,7 +77,7 @@ export function AuthProvider({ children }) {
     setIsProfileLoading(true);
 
     try {
-      const profile = await ensureUserProfile(authUser.id);
+      const profile = await ensureAuthUserProfile(authUser.id);
       setUser((prev) => {
         if (!prev || prev.id !== authUser.id) {
           return prev;
@@ -302,25 +231,9 @@ export function AuthProvider({ children }) {
   const updateUserProfile = useCallback(async (updates) => {
     if (!user?.id || !supabase) throw new Error('User not available');
 
-    const payload = Object.fromEntries(
-      Object.entries(updates || {}).filter(([, value]) => value !== undefined)
-    );
+    const nextProfile = await updateAuthUserProfile(user.id, updates);
+    if (!nextProfile) return user?.profile ?? null;
 
-    if (Object.keys(payload).length === 0) return user?.profile ?? null;
-
-    const { data, error } = await withTimeout(
-      supabase
-        .from('user_profiles')
-        .upsert({ id: user.id, ...payload }, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle(),
-      PROFILE_REQUEST_TIMEOUT_MS,
-      'Profile update'
-    );
-
-    if (error) throw error;
-
-    const nextProfile = data ?? { ...(user.profile || {}), ...payload };
     setUser((prev) => prev ? { ...prev, profile: { ...(prev.profile || {}), ...nextProfile } } : prev);
     return nextProfile;
   }, [user]);

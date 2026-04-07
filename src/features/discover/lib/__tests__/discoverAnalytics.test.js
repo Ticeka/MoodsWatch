@@ -28,7 +28,7 @@ vi.mock('@/shared/lib/supabase', () => ({
 }));
 
 // Import AFTER mocks are in place.
-import { getDiscoverSessionId, trackDiscoverEvent } from '../discoverAnalytics';
+import { getDiscoverSessionId, trackDiscoverEvent } from '../../api/discoverAnalyticsApi';
 
 // ── sessionStorage stub ────────────────────────────────────────────────────
 

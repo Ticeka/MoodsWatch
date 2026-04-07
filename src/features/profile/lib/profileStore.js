@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '@/shared/lib/supabase';
+import { fetchUserProfile, upsertUserProfile, uploadUserProfileAvatar } from '@/features/profile/api/profileApi';
 
 const PROFILE_PREFERENCES_STORAGE_KEY = 'moodtoon-profile-preferences';
 const FAVORITE_TITLES_STORAGE_KEY = 'moodtoon-favorite-titles';
@@ -436,21 +436,14 @@ export const useProfileStore = create((set) => ({
   error: '',
 
   fetchProfile: async (userId) => {
-    if (!userId || !supabase) {
+    if (!userId) {
       set({ profile: null, loading: false });
       return null;
     }
 
     set({ loading: true, error: '' });
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-
+      const data = await fetchUserProfile(userId);
       set({ profile: data || null, loading: false });
       return data || null;
     } catch (loadError) {
@@ -460,19 +453,13 @@ export const useProfileStore = create((set) => ({
   },
 
   updateProfile: async (userId, updates) => {
-    if (!userId || !supabase) {
+    if (!userId) {
       return { success: false, error: new Error('User is not available') };
     }
 
     set({ loading: true, error: '' });
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .upsert({ id: userId, ...updates }, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle();
-
-      if (error) throw error;
+      const data = await upsertUserProfile(userId, updates);
 
       set((current) => ({
         profile: { ...(current.profile || {}), ...(data || updates) },
@@ -487,38 +474,13 @@ export const useProfileStore = create((set) => ({
   },
 
   uploadAvatar: async (userId, file) => {
-    if (!userId || !file || !supabase) {
+    if (!userId || !file) {
       return { success: false, error: new Error('Avatar upload is not available') };
     }
 
     set({ uploading: true, error: '' });
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `avatar-${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      const avatarUrl = publicUrlData?.publicUrl ? `${publicUrlData.publicUrl}?t=${Date.now()}` : '';
-      if (!avatarUrl) {
-        throw new Error('Could not resolve avatar URL');
-      }
-
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .upsert({ id: userId, avatar_url: avatarUrl }, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle();
-
-      if (error) throw error;
+      const { data, avatarUrl } = await uploadUserProfileAvatar(userId, file);
 
       set((current) => ({
         profile: { ...(current.profile || {}), ...(data || {}), avatar_url: avatarUrl },

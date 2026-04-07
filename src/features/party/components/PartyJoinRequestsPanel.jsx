@@ -6,7 +6,7 @@ import {
   fetchPartyRoomJoinRequests,
   rejectPartyRoomJoin,
   subscribeToPartyRoomJoinRequests,
-} from '@/features/party/lib/partyRemote';
+} from '@/features/party/api/partyRemoteApi';
 import { usePartyRoomStore } from '@/features/party/lib/partyRoomStore';
 
 function timeAgo(isoString, pick) {

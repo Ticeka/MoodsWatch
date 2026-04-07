@@ -27,8 +27,8 @@ import {
 import {
   fetchPublicBattleDecks,
   persistRemoteBattleSession,
-} from '@/features/battle/lib/battleRemote';
-import './Battle.css';
+} from '@/features/battle/api/battleRemoteApi';
+import '../styles/Battle.css';
 
 const BROWSE_BATCH_SIZE = 96;
 const BROWSE_PAGE_SIZE = 12;

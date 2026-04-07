@@ -86,7 +86,7 @@ vi.mock('@/shared/lib/supabase', () => ({
   },
 }));
 
-import { persistRemoteBattleSession } from '../battleRemote.js';
+import { persistRemoteBattleSession } from '../../api/battleRemoteApi.js';
 
 describe('battleRemote persistence hardening', () => {
   beforeEach(() => {

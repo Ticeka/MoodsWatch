@@ -10,7 +10,7 @@ import {
 import {
   deleteRemotePublicBattleDeck,
   persistRemotePublicBattleDeck,
-} from '@/features/battle/lib/battleRemote';
+} from '@/features/battle/api/battleRemoteApi';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
 import { getBattleDeckSubtitle } from '@/features/battle/lib/battleDeckPresentation';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -18,7 +18,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
-import './Battle.css';
+import '../styles/Battle.css';
 
 export function BattleDeckLibraryPage() {
   const navigate = useNavigate();

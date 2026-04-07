@@ -1,10 +1,9 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { getMoodOptionsForAgeGate } from '@/shared/data/moods';
-import { HOMEPAGE_BLOCK_PUBLIC_SELECT, mapHomepagePublicBlock } from '@/shared/lib/editorial';
-import { supabase } from '@/shared/lib/supabase';
 import { sortTitlesCollection } from '@/shared/lib/titleSorting';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
+import { fetchPublishedHomepageBlocks } from '@/features/titles/api/homepageApi';
 import {
   clearTitlesCache,
   getAllTitles,
@@ -307,17 +306,7 @@ export function useHomeDiscovery({
       try {
         const [nextTrending, homepageBlocks] = await Promise.all([
           getTrendingTitles(8, { showAdult }),
-          (async () => {
-            if (!supabase) return [];
-            const { data, error } = await supabase
-              .from('homepage_content_blocks')
-              .select(HOMEPAGE_BLOCK_PUBLIC_SELECT)
-              .eq('status', 'published')
-              .eq('visibility', 'public')
-              .order('position', { ascending: true });
-            if (error) throw error;
-            return (data || []).map(mapHomepagePublicBlock);
-          })(),
+          fetchPublishedHomepageBlocks(),
         ]);
         startTransition(() => {
           setTrending(nextTrending);

@@ -13,7 +13,7 @@ import {
   playPartyWinAlert,
   readPartyAudioVolume,
   shouldPartyForceMediaLoad,
-} from '../pages/partyRoomUtils';
+} from '../lib/partyRoomUtils';
 
 export function BattleCountdown({ battleIndex, totalBattles, currentMatch, secondsLeft, pick }) {
   const [audioCtx] = useState(() => typeof window !== 'undefined' && window.AudioContext ? new (window.AudioContext || window.webkitAudioContext)() : null);

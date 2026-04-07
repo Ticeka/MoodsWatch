@@ -18,7 +18,7 @@ import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, pag
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
-import './TierList.css';
+import '../styles/TierList.css';
 
 export function TierListBrowsePage() {
   const navigate = useNavigate();

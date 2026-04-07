@@ -7,7 +7,7 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import lightThemeBg from '@/assets/light-theme.webp';
 import darkThemeBg from '@/assets/dark-theme.webp';
 import { useTheme } from '@/shared/contexts/ThemeContext';
-import './Auth.css';
+import '../styles/Auth.css';
 
 export function Auth() {
   const { signInWithEmail, signUpWithEmail, signInWithProvider, user, isLoading } = useAuth();

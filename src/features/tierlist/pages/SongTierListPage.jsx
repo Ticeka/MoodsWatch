@@ -9,7 +9,7 @@ import { fetchSongsForTitle } from '@/features/tierlist/lib/tierlistBrowseHelper
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { THEME_SONG_ENTITY_TYPE, getCatalogEntityName, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
-import './TierList.css';
+import '../styles/TierList.css';
 
 export function SongTierListPage() {
   const { titleSlug } = useParams();

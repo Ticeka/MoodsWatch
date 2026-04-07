@@ -26,14 +26,16 @@ import {
 } from 'lucide-react';
 import { buildTitleSearchCandidates, listTitles, getCacheInfo, clearTitlesCache, getCachedTitlesSnapshot, isCatalogCacheWarm } from '@/features/discover/lib/recommend';
 import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
-import { clearEntitySearchCache, searchPosts, searchProfiles, searchTierlists } from '@/features/discover/lib/entitySearch';
+import { clearEntitySearchCache, searchPosts, searchProfiles, searchTierlists } from '@/features/discover/api/entitySearchApi';
+import { DiscoverProfileCard } from '@/features/discover/components/DiscoverProfileCard';
 import { DiscoverPostCard } from '@/features/discover/components/DiscoverPostCard';
-import { SearchMatchReasons } from '@/features/discover/components/SearchMatchReasons';
-import { SearchHighlightText } from '@/features/discover/components/SearchHighlightText';
+import { DiscoverSection } from '@/features/discover/components/DiscoverSection';
+import { DiscoverTierlistCard } from '@/features/discover/components/DiscoverTierlistCard';
 import { DiscoverTitleCard } from '@/features/discover/components/DiscoverTitleCard';
-import { collectMatchReasonKeys, getSearchIntent, scoreSearchCandidates, sortBySearchRelevance } from '@/features/discover/lib/searchMatch';
+import { getDisplayTitle } from '@/features/discover/lib/discoverPageUtils';
+import { getSearchIntent, scoreSearchCandidates, sortBySearchRelevance } from '@/features/discover/lib/searchMatch';
 import { useDiscoverSavedSearches } from '@/features/discover/hooks/useDiscoverSavedSearches';
-import { trackDiscoverEvent } from '@/features/discover/lib/discoverAnalytics';
+import { trackDiscoverEvent } from '@/features/discover/api/discoverAnalyticsApi';
 import {
   MAX_RECENT_SEARCHES,
   areSearchPresetsEqual,
@@ -56,17 +58,14 @@ import {
   prioritizeUnseenTitles,
 } from '@/features/profile/lib/profileStore';
 import { TITLE_SORT_OPTIONS } from '@/shared/lib/titleSorting';
-import { SkeletonGrid } from '@/shared/components/ui/SkeletonGrid';
-import { ErrorState } from '@/shared/components/ui/ErrorState';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
-import { SectionHeader } from '@/shared/components/ui/SectionHeader';
 import { Button } from '@/shared/components/ui/Button';
 import { SearchAutocomplete } from '@/shared/components/ui/SearchAutocomplete';
 import { useSearchAutocomplete } from '@/features/discover/hooks/useSearchAutocomplete';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
-import './Discover.css';
+import '../styles/Discover.css';
 
 const SEARCH_SCOPE_TABS = [
   { id: 'all', labelKey: 'discover.scopeAll', icon: Compass },
@@ -157,167 +156,6 @@ function describeSearchPreset(preset, t) {
   return parts.join(' · ') || t('discover.scopeAll');
 }
 
-function formatCompactDate(value, locale) {
-  if (!value) return '';
-
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(value));
-  } catch {
-    return '';
-  }
-}
-
-function getDisplayTitle(title) {
-  return title?.title_en || title?.title_th || title?.title_romaji || title?.title_native || title?.slug || '';
-}
-
-function DiscoverProfileCard({ profile, locale, t, query = '', onOpen = null }) {
-  const Component = profile?.username ? Link : 'article';
-  const componentProps = profile?.username ? { to: `/u/${profile.username}`, onClick: onOpen } : {};
-  const avatarInitial = (profile?.name || profile?.username || '?').charAt(0).toUpperCase();
-  const moods = Array.isArray(profile?.favorite_moods) ? profile.favorite_moods.slice(0, 3) : [];
-  const matchReasonKeys = collectMatchReasonKeys(query, [
-    { reasonKey: 'matchReasonAuthor', texts: [profile?.name, profile?.username] },
-    { reasonKey: 'matchReasonBio', texts: [profile?.bio] },
-    { reasonKey: 'matchReasonMood', texts: profile?.favorite_moods || [] },
-  ]);
-
-  return (
-    <Component className="discover-entity-card discover-profile-card" {...componentProps}>
-      <div className="discover-profile-head">
-        {profile?.avatar_url ? (
-          <img src={profile.avatar_url} alt="" className="discover-profile-avatar" loading="lazy" />
-        ) : (
-          <span className="discover-profile-avatar discover-profile-avatar-fallback" aria-hidden="true">
-            {avatarInitial}
-          </span>
-        )}
-        <div className="discover-profile-copy">
-          <strong><SearchHighlightText text={profile?.name || profile?.username || t('discover.unknownUser')} query={query} /></strong>
-          {profile?.username ? <span>@<SearchHighlightText text={profile.username} query={query} /></span> : null}
-        </div>
-      </div>
-      <p className="discover-entity-description">
-        {profile?.bio ? <SearchHighlightText text={profile.bio} query={query} /> : t('discover.peopleCardFallback')}
-      </p>
-      <SearchMatchReasons reasonKeys={matchReasonKeys} t={t} />
-      <div className="discover-entity-meta">
-        <span className="discover-entity-pill">{t('discover.scopePeople')}</span>
-        {profile?.created_at ? <span>{formatCompactDate(profile.created_at, locale)}</span> : null}
-      </div>
-      {moods.length > 0 ? (
-        <div className="discover-inline-tags">
-          {moods.map((moodId) => (
-            <span key={moodId} className="discover-inline-tag">
-              <SearchHighlightText text={moodId} query={query} />
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </Component>
-  );
-}
-
-function DiscoverTierlistCard({ item, locale, t, query = '', onOpen = null }) {
-  const hasCover = Boolean(item.coverUrl);
-  const matchReasonKeys = collectMatchReasonKeys(query, [
-    { reasonKey: 'matchReasonTitle', texts: [item.title] },
-    { reasonKey: 'matchReasonDescription', texts: [item.description] },
-    { reasonKey: 'matchReasonAuthor', texts: [item.ownerName, item.ownerUsername] },
-    { reasonKey: 'matchReasonCategory', texts: [item.category, item.kind] },
-  ]);
-  return (
-    <Link to={item.href} className={`discover-entity-card discover-tierlist-card ${hasCover ? 'has-cover' : ''}`} onClick={onOpen}>
-      {hasCover && (
-        <div className="discover-tierlist-bg">
-          <img src={item.coverUrl} alt="" className="discover-tierlist-image" loading="lazy" />
-          <div className="discover-tierlist-overlay" />
-        </div>
-      )}
-      <div className="discover-tierlist-content">
-        <div className="discover-tierlist-head">
-          <span className={`discover-kind-pill ${item.kind === 'template' ? 'is-template' : 'is-list'}`}>
-            {item.kind === 'template' ? t('discover.tierlistTemplate') : t('discover.tierlistList')}
-          </span>
-          <span className={`discover-privacy-pill ${item.isPublic ? 'is-public' : 'is-private'}`}>
-            {item.isPublic ? t('discover.publicLabel') : t('discover.privateLabel')}
-          </span>
-        </div>
-        <div className="discover-tierlist-copy">
-          <h3><SearchHighlightText text={item.title} query={query} /></h3>
-          <p className="discover-entity-description">
-            {item.description ? <SearchHighlightText text={item.description} query={query} /> : t('discover.tierlistCardFallback')}
-          </p>
-        </div>
-        <SearchMatchReasons reasonKeys={matchReasonKeys} t={t} />
-        <div className="discover-entity-meta">
-          <span>{t('discover.tierlistItems', { count: item.itemCount || 0 })}</span>
-          <span>{t('discover.tierlistPlays', { count: item.playCount || 0 })}</span>
-        </div>
-        <div className="discover-tierlist-foot">
-          <span>{item.ownerName || item.ownerUsername || t('discover.communityLabel')}</span>
-          {item.updatedAt ? <span>{formatCompactDate(item.updatedAt, locale)}</span> : null}
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function EntityGridSkeleton() {
-  return (
-    <div className="discover-entity-grid">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="discover-entity-skeleton" aria-hidden="true" />
-      ))}
-    </div>
-  );
-}
-
-function DiscoverSection({
-  title,
-  subtitle,
-  action,
-  isLoading,
-  error,
-  onRetry,
-  hasItems,
-  emptyTitle,
-  emptyMessage,
-  emptyAction,
-  children,
-  emptyIcon,
-  loadingVariant = 'entity',
-}) {
-  return (
-    <section className="discover-result-section">
-      <SectionHeader
-        title={title}
-        subtitle={<p className="discover-section-subtitle">{subtitle}</p>}
-        action={action}
-        level="h2"
-      />
-      {error ? (
-        <ErrorState message={error} onRetry={onRetry} />
-      ) : isLoading ? (
-        loadingVariant === 'titles' ? <SkeletonGrid /> : <EntityGridSkeleton />
-      ) : hasItems ? (
-        children
-      ) : (
-        <EmptyState
-          className="discover-empty-state"
-          icon={emptyIcon}
-          title={emptyTitle}
-          message={emptyMessage}
-          action={emptyAction}
-        />
-      )}
-    </section>
-  );
-}
 
 export function Discover() {
   const location = useLocation();

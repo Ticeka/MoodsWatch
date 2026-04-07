@@ -5,18 +5,24 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
+import {
+  formatProfileCommentDate,
+  formatProfileDate,
+  PROFILE_TYPE_LABELS,
+} from '@/features/profile/lib/profilePageUtils';
 import { getTitleDisplayName, TOP_TITLE_TYPE_OPTIONS } from '@/features/profile/lib/profileStore';
-import { supabase } from '@/shared/lib/supabase';
+import {
+  createProfileNotification,
+  createPublicProfileComment,
+  fetchPublicProfileByUsername,
+  fetchPublicProfileComments,
+  fetchPublicProfileWatchStats,
+  fetchWatchlistOverlap,
+} from '@/features/profile/api/publicProfileApi';
 import { FollowButton } from '@/features/social/components/FollowButton';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
-import './PublicProfile.css';
-
-const TYPE_LABELS = {
-  anime: { en: 'Anime', th: 'อนิเมะ' },
-  manga: { en: 'Manga', th: 'มังงะ' },
-  manhwa: { en: 'Manhwa', th: 'มันฮวา' },
-};
+import '../styles/PublicProfile.css';
 
 const DEFAULT_WATCH_STATS = {
   total: 0,
@@ -25,30 +31,6 @@ const DEFAULT_WATCH_STATS = {
   reading: 0,
   completed: 0,
 };
-
-function formatJoinDate(value, locale) {
-  if (!value) return '-';
-  try {
-    return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
-  } catch {
-    return '-';
-  }
-}
-
-function formatCommentDate(value, locale) {
-  if (!value) return '-';
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(value));
-  } catch {
-    return '-';
-  }
-}
 
 export function PublicProfile() {
   const { user } = useAuth();
@@ -95,21 +77,8 @@ export function PublicProfile() {
         return;
       }
 
-      if (!supabase) {
-        setErrorMessage(t('profile.publicLoadFailed'));
-        setIsLoading(false);
-        return;
-      }
-
       try {
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('id, name, avatar_url, bio, username, top_titles, favorite_moods, created_at, allow_profile_comments')
-          .eq('username', normalizedUsername)
-          .eq('is_profile_public', true)
-          .maybeSingle();
-
-        if (error) throw error;
+        const data = await fetchPublicProfileByUsername(normalizedUsername);
 
         if (!data) {
           if (!cancelled) setNotFound(true);
@@ -124,16 +93,11 @@ export function PublicProfile() {
         )];
         const titles = titleIds.length ? await getTitlesByIds(titleIds) : [];
         const titleMap = new Map(titles.map((title) => [Number(title.id), title]));
-        const { data: statsRows, error: statsError } = await supabase.rpc('get_public_profile_watch_stats', {
-          p_profile_user_id: data.id,
-        });
-
-        if (statsError) throw statsError;
-        const statsRow = Array.isArray(statsRows) ? (statsRows[0] || DEFAULT_WATCH_STATS) : (statsRows || DEFAULT_WATCH_STATS);
+        const statsRow = await fetchPublicProfileWatchStats(data.id) || DEFAULT_WATCH_STATS;
 
         const nextSections = TOP_TITLE_TYPE_OPTIONS.map((typeId) => ({
           typeId,
-          label: TYPE_LABELS[typeId]?.[language] || typeId,
+          label: PROFILE_TYPE_LABELS[typeId]?.[language] || typeId,
           titles: filterTitlesForAgeGate((topTitlesPayload[typeId] || [])
             .map((titleId) => titleMap.get(Number(titleId)))
             .filter(Boolean), showAdult),
@@ -165,7 +129,7 @@ export function PublicProfile() {
     let cancelled = false;
 
     async function loadComments() {
-      if (!profile?.id || !profile.allow_profile_comments || !supabase) {
+      if (!profile?.id || !profile.allow_profile_comments) {
         setComments([]);
         return;
       }
@@ -173,21 +137,7 @@ export function PublicProfile() {
       setIsCommentsLoading(true);
       setCommentError('');
       try {
-        const { data, error } = await supabase
-          .from('profile_comments')
-          .select(`
-            id,
-            comment_body,
-            created_at,
-            author_user_id,
-            parent_comment_id,
-            author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
-          `)
-          .eq('profile_user_id', profile.id)
-          .order('created_at', { ascending: true })
-          .limit(100);
-
-        if (error) throw error;
+        const data = await fetchPublicProfileComments(profile.id);
         if (!cancelled) setComments(data || []);
       } catch {
         if (!cancelled) setCommentError(t('profile.publicCommentLoadFailed'));
@@ -203,15 +153,10 @@ export function PublicProfile() {
   useEffect(() => {
     let cancelled = false;
     async function loadOverlap() {
-      if (!user?.id || !profile?.id || user.id === profile.id || !supabase) return;
+      if (!user?.id || !profile?.id || user.id === profile.id) return;
       setIsOverlapLoading(true);
       try {
-        const { data, error } = await supabase.rpc('get_watchlist_overlap', {
-          p_user_a: user.id,
-          p_user_b: profile.id,
-        });
-        if (error) throw error;
-        const rows = data || [];
+        const rows = await fetchWatchlistOverlap(user.id, profile.id);
         if (cancelled) return;
         setOverlap(rows);
         const ids = [...new Set(rows.map((r) => r.title_id).filter(Boolean))];
@@ -241,7 +186,7 @@ export function PublicProfile() {
     const actorName = user?.profile?.name || user?.profile?.username || t('profile.publicCommentAnonymous');
     const notifInserts = [];
     if (profile.id !== user.id) {
-      notifInserts.push(supabase.from('notifications').insert({
+      notifInserts.push(createProfileNotification({
         user_id: profile.id,
         type: savedParentEntry ? 'comment_reply' : 'profile_comment',
         reference_id: profile.username,
@@ -252,7 +197,7 @@ export function PublicProfile() {
       }));
     }
     if (savedParentEntry?.author_user_id && savedParentEntry.author_user_id !== user.id && savedParentEntry.author_user_id !== profile.id) {
-      notifInserts.push(supabase.from('notifications').insert({
+      notifInserts.push(createProfileNotification({
         user_id: savedParentEntry.author_user_id,
         type: 'comment_reply',
         reference_id: profile.username,
@@ -265,7 +210,7 @@ export function PublicProfile() {
 
   const submitComment = async (event) => {
     event.preventDefault();
-    if (!canPostComment || !supabase) return;
+    if (!canPostComment) return;
 
     const commentBody = String(commentDraft || '').trim();
     if (!commentBody) {
@@ -283,25 +228,12 @@ export function PublicProfile() {
     setCommentError('');
     setCommentSuccess('');
     try {
-      const { data, error } = await supabase
-        .from('profile_comments')
-        .insert({
-          profile_user_id: profile.id,
-          author_user_id: user.id,
-          parent_comment_id: null,
-          comment_body: commentBody,
-        })
-        .select(`
-          id,
-          comment_body,
-          created_at,
-          author_user_id,
-          parent_comment_id,
-          author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
-        `)
-        .single();
-
-      if (error) throw error;
+      const data = await createPublicProfileComment({
+        profileUserId: profile.id,
+        authorUserId: user.id,
+        parentCommentId: null,
+        commentBody,
+      });
       setComments((current) => [...current, data]);
       setCommentDraft('');
       setCommentSuccess(t('profile.publicCommentSuccess'));
@@ -315,30 +247,18 @@ export function PublicProfile() {
 
   const submitReply = async (event, parentEntry) => {
     event.preventDefault();
-    if (!canPostComment || !supabase) return;
+    if (!canPostComment) return;
     const body = String(replyDraft || '').trim();
     if (!body || body.length > 500) { setReplyError(t('profile.publicCommentTooLong')); return; }
     setIsSubmittingComment(true);
     setReplyError('');
     try {
-      const { data, error } = await supabase
-        .from('profile_comments')
-        .insert({
-          profile_user_id: profile.id,
-          author_user_id: user.id,
-          parent_comment_id: parentEntry.id,
-          comment_body: body,
-        })
-        .select(`
-          id,
-          comment_body,
-          created_at,
-          author_user_id,
-          parent_comment_id,
-          author_profile:user_profiles!profile_comments_author_user_id_fkey(id, name, username, avatar_url)
-        `)
-        .single();
-      if (error) throw error;
+      const data = await createPublicProfileComment({
+        profileUserId: profile.id,
+        authorUserId: user.id,
+        parentCommentId: parentEntry.id,
+        commentBody: body,
+      });
       setComments((current) => [...current, data]);
       setReplyDraft('');
       setActiveReplyId(null);
@@ -423,7 +343,7 @@ export function PublicProfile() {
             <p className="public-profile-username">@{profile.username}</p>
             <p>{profile.bio || t('profile.publicNoBio')}</p>
             <div className="public-profile-meta">
-              <span>{t('profile.memberSince', { date: formatJoinDate(profile.created_at, locale) })}</span>
+              <span>{t('profile.memberSince', { date: formatProfileDate(profile.created_at, locale) })}</span>
               <span>{t('profile.publicPinnedCount', { count: totalPinned })}</span>
             </div>
             <FollowButton profileUserId={profile.id} profileUsername={profile.username} />
@@ -603,7 +523,7 @@ export function PublicProfile() {
                             {author.username
                               ? <Link to={`/u/${author.username}`} className="public-profile-comment-author-link"><strong>{authorName}</strong></Link>
                               : <strong>{authorName}</strong>}
-                            <span>{formatCommentDate(entry.created_at, locale)}</span>
+                            <span>{formatProfileCommentDate(entry.created_at, locale)}</span>
                           </div>
                           <p>{entry.comment_body}</p>
                           {user?.id && (
@@ -651,7 +571,7 @@ export function PublicProfile() {
                                         {rAuthor.username
                                           ? <Link to={`/u/${rAuthor.username}`} className="public-profile-comment-author-link"><strong>{rAuthorName}</strong></Link>
                                           : <strong>{rAuthorName}</strong>}
-                                        <span>{formatCommentDate(reply.created_at, locale)}</span>
+                                        <span>{formatProfileCommentDate(reply.created_at, locale)}</span>
                                       </div>
                                       <p>{reply.comment_body}</p>
                                     </div>

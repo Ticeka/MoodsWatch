@@ -202,7 +202,7 @@ import {
   togglePartyMemberReady,
   updatePartyRoomSettings,
   uploadPartyTemplateCover,
-} from '../partyRemote.js';
+} from '../../api/partyRemoteApi.js';
 
 describe('partyRemote realtime optimizations', () => {
   beforeEach(() => {
@@ -323,9 +323,9 @@ describe('partyRemote realtime optimizations', () => {
   });
 
   it('updates room settings for the host while the room is still in the lobby', async () => {
-    const originalWindow = global.window;
+    const originalWindow = globalThis.window;
     const storage = new Map();
-    global.window = {
+    globalThis.window = {
       localStorage: {
         getItem: (key) => storage.get(key) ?? null,
         setItem: (key, value) => {
@@ -367,7 +367,7 @@ describe('partyRemote realtime optimizations', () => {
         { type: 'eq', column: 'updated_at', value: '2026-03-29T10:00:01.000Z' },
       ]));
     } finally {
-      global.window = originalWindow;
+      globalThis.window = originalWindow;
     }
   });
 

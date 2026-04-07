@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import { useSearchAutocomplete } from '@/features/discover/hooks/useSearchAutocomplete';
 import { recordAutocompleteSelection } from '@/features/discover/lib/autocompleteFeedback';
-import { trackDiscoverEvent } from '@/features/discover/lib/discoverAnalytics';
+import { trackDiscoverEvent } from '@/features/discover/api/discoverAnalyticsApi';
 import { readRecentSearches, removeRecentSearch, writeRecentSearches } from '@/features/discover/lib/discoverSearchState';
 import { SearchAutocomplete } from '@/shared/components/ui/SearchAutocomplete';
 import { useLanguage } from '@/shared/contexts/LanguageContext';

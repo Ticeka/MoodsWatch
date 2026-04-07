@@ -10,7 +10,7 @@ import {
   fetchBattleTitlesPage,
   fetchBattleThemeSongsPage,
   hydrateBattleEntriesByIds,
-} from '@/features/battle/lib/battleCatalog';
+} from '@/features/battle/api/battleCatalogApi';
 import {
   createBattleSession,
   createStoredBattleDeck,
@@ -22,7 +22,8 @@ import {
   deleteRemotePublicBattleDeck,
   persistRemoteBattleSession,
   persistRemotePublicBattleDeck,
-} from '@/features/battle/lib/battleRemote';
+} from '@/features/battle/api/battleRemoteApi';
+import { fetchBattleTitleThemeSongs } from '@/features/battle/api/battleThemeSongsApi';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { Button } from '@/shared/components/ui/Button';
@@ -38,11 +39,10 @@ import {
   isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
-import { supabase } from '@/shared/lib/supabase';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import './Battle.css';
+import '../styles/Battle.css';
 
 const TYPE_OPTIONS = [
   { value: 'all', label: 'All entries' },
@@ -260,14 +260,10 @@ export function BattleBuilderPage() {
           return;
         }
 
-        const { data: songData, error: songError } = await supabase
-          .from('title_theme_songs')
-          .select('id, theme_type, theme_sequence, song_title, artist_name, episodes_text, video_url, is_creditless, is_spoiler, is_nsfw')
-          .eq('canonical_title_id', sourceTitle.id)
-          .order('display_order');
+        const songData = await fetchBattleTitleThemeSongs(sourceTitle.id);
 
         if (cancelled) return;
-        if (songError || !songData || songData.length < 2) {
+        if (!songData || songData.length < 2) {
           setError('เพลงไม่เพียงพอสำหรับ Battle (ต้องมีอย่างน้อย 2 เพลง) / Not enough songs for battle (need at least 2)');
           setIsLoading(false);
           return;

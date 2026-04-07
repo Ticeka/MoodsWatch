@@ -10,7 +10,7 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { getCatalogEntityName } from '@/shared/lib/catalogEntities';
-import './TierList.css';
+import '../styles/TierList.css';
 
 export function SongTierListBrowsePage() {
   const { pick } = useLanguage();

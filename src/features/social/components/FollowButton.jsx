@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { UserCheck, UserPlus } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import { supabase } from '@/shared/lib/supabase';
-import './FollowButton.css';
+import { fetchFollowState, followUser, unfollowUser } from '@/features/social/api/socialApi';
+import '../styles/FollowButton.css';
 
 export function FollowButton({ profileUserId, profileUsername, onCountChange }) {
   const { user } = useAuth();
@@ -19,28 +19,16 @@ export function FollowButton({ profileUserId, profileUsername, onCountChange }) 
     let cancelled = false;
 
     async function load() {
-      if (!profileUserId || !supabase) { setIsLoading(false); return; }
+      if (!profileUserId) { setIsLoading(false); return; }
 
       try {
-        const [countsResult, followResult] = await Promise.all([
-          supabase.rpc('get_follow_counts', { p_user_id: profileUserId }),
-          user?.id
-            ? supabase.from('user_follows')
-                .select('id')
-                .eq('follower_id', user.id)
-                .eq('following_id', profileUserId)
-                .maybeSingle()
-            : Promise.resolve({ data: null }),
-        ]);
-
+        const summary = await fetchFollowState(profileUserId, user?.id || null);
         if (cancelled) return;
-
-        const row = Array.isArray(countsResult.data) ? countsResult.data[0] : countsResult.data;
-        const fc = Number(row?.followers_count ?? 0);
-        const fg = Number(row?.following_count ?? 0);
+        const fc = Number(summary.followersCount ?? 0);
+        const fg = Number(summary.followingCount ?? 0);
         setFollowersCount(fc);
         setFollowingCount(fg);
-        setIsFollowing(Boolean(followResult.data));
+        setIsFollowing(Boolean(summary.isFollowing));
         onCountChange?.({ followersCount: fc, followingCount: fg });
       } catch {
         // silently ignore
@@ -54,7 +42,7 @@ export function FollowButton({ profileUserId, profileUsername, onCountChange }) 
   }, [profileUserId, user?.id, onCountChange]);
 
   const toggle = useCallback(async () => {
-    if (!user?.id || isBusy || !supabase) return;
+    if (!user?.id || isBusy) return;
 
     setIsBusy(true);
     const wasFollowing = isFollowing;
@@ -65,23 +53,9 @@ export function FollowButton({ profileUserId, profileUsername, onCountChange }) 
 
     try {
       if (wasFollowing) {
-        const { error } = await supabase
-          .from('user_follows')
-          .delete()
-          .eq('follower_id', user.id)
-          .eq('following_id', profileUserId);
-        if (error) throw error;
+        await unfollowUser(user.id, profileUserId);
       } else {
-        const { error } = await supabase
-          .from('user_follows')
-          .insert({ follower_id: user.id, following_id: profileUserId });
-        if (error) throw error;
-        void supabase.from('user_activity').insert({
-          user_id: user.id,
-          action_type: 'followed',
-          title_id: null,
-          metadata: { followed_user_id: profileUserId, followed_username: profileUsername ?? null },
-        });
+        await followUser(user.id, profileUserId, profileUsername ?? null);
       }
     } catch {
       // Revert on failure

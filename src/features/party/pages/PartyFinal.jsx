@@ -3,8 +3,8 @@ import { Crown, RotateCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
 import { usePartyLeaderboard } from '@/features/party/lib/usePartyRoomSelectors';
-import { PartyLeaderboard } from './PartyRoomShared';
-import { formatFastest } from './partyRoomUtils';
+import { PartyLeaderboard } from '../components/PartyRoomShared';
+import { formatFastest } from '@/features/party/lib/partyRoomUtils';
 import { PartyTitleGuessFinalStage } from '../components/PartyTitleGuessView';
 
 export const PartyFinalView = React.memo(function PartyFinalView({

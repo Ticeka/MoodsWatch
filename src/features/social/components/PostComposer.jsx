@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Image, Loader2, Search, Send, X } from 'lucide-react';
-import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
-import './PostComposer.css';
+import { createSocialPost, searchSocialPostTitles, uploadSocialPostImage } from '@/features/social/api/socialApi';
+import '../styles/PostComposer.css';
 
 const MAX_CHARS = 1000;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -35,13 +35,13 @@ export function PostComposer({ onPosted }) {
 
   async function handleTitleSearch(q) {
     setTitleSearch(q);
-    if (!q.trim() || !supabase) { setSearchResults([]); return; }
-    const { data } = await supabase
-      .from('canonical_titles')
-      .select('id, canonical_title, slug, cover_image, banner_image, type')
-      .ilike('canonical_title', `%${q}%`)
-      .limit(6);
-    setSearchResults(data || []);
+    if (!q.trim()) { setSearchResults([]); return; }
+    try {
+      const data = await searchSocialPostTitles(q, 6);
+      setSearchResults(data || []);
+    } catch {
+      setSearchResults([]);
+    }
   }
 
   function selectTitle(title) {
@@ -77,23 +77,22 @@ export function PostComposer({ onPosted }) {
   }
 
   async function uploadPhoto(userId) {
-    if (!imageFile || !supabase) return null;
+    if (!imageFile) return null;
     setUploadingPhoto(true);
-    const ext  = imageFile.name.split('.').pop() || 'jpg';
-    const path = `${userId}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('post-images')
-      .upload(path, imageFile, { cacheControl: '31536000', upsert: false });
-    setUploadingPhoto(false);
-    if (error) { toast.error(error.message); return null; }
-    const { data } = supabase.storage.from('post-images').getPublicUrl(path);
-    return data.publicUrl;
+    try {
+      return await uploadSocialPostImage(userId, imageFile);
+    } catch (error) {
+      toast.error(error.message);
+      return null;
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     const body = content.trim();
-    if ((!body && !imageFile) || !user || !supabase) return;
+    if ((!body && !imageFile) || !user) return;
     setSubmitting(true);
 
     let imageUrl = null;
@@ -102,20 +101,19 @@ export function PostComposer({ onPosted }) {
       if (!imageUrl) { setSubmitting(false); return; }
     }
 
-    const { error } = await supabase
-      .from('social_posts')
-      .insert({
-        user_id:   user.id,
-        content:   body,
-        title_id:  taggedTitle?.id ?? null,
-        image_url: imageUrl,
+    try {
+      await createSocialPost({
+        userId: user.id,
+        content: body,
+        titleId: taggedTitle?.id ?? null,
+        imageUrl,
       });
-
-    if (!error) {
       setContent('');
       setTaggedTitle(null);
       removePhoto();
       onPosted?.();
+    } catch (error) {
+      toast.error(error.message || t('post.postFailed'));
     }
     setSubmitting(false);
   }

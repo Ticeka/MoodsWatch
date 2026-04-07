@@ -15,6 +15,11 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
+import {
+  deleteAdminTierlistRecord,
+  fetchAdminTierlistData,
+  updateAdminTierlistVisibility,
+} from '@/features/admin/api';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
@@ -23,12 +28,8 @@ import {
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
 } from '@/shared/lib/catalogEntities';
-import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
-
-const TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, created_at, updated_at';
-const LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, created_at, updated_at';
 const TEMPLATE_CATEGORY_CHARACTER_PREFIX = 'character::';
 const TEMPLATE_CATEGORY_THEME_SONG_PREFIX = 'theme_song::';
 
@@ -137,17 +138,6 @@ function formatCompactNumber(value, locale) {
   }).format(Number(value || 0));
 }
 
-function chunkItems(items = [], size = 50) {
-  const chunkSize = Math.max(1, Number(size) || 1);
-  const chunks = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    chunks.push(items.slice(index, index + chunkSize));
-  }
-
-  return chunks;
-}
-
 function getOwnerLabel(profile, fallbackName, fallbackUsername, pick) {
   return profile?.name || profile?.username || fallbackName || fallbackUsername || pick('ไม่ระบุ', 'Unknown');
 }
@@ -199,86 +189,23 @@ export function AdminTierlists() {
   });
 
   const fetchTierlistData = useCallback(async () => {
-    if (!supabase) {
-      const message = pick('ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'Supabase is unavailable');
-      setErrorMessage(message);
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      const [
-        templateCountResult,
-        listCountResult,
-        commentCountResult,
-        templateResult,
-        listResult,
-      ] = await Promise.all([
-        supabase.from('tierlist_templates').select('*', { count: 'estimated', head: true }),
-        supabase.from('tierlist_lists').select('*', { count: 'estimated', head: true }),
-        supabase.from('tierlist_comments').select('*', { count: 'estimated', head: true }),
-        supabase.from('tierlist_templates').select(TEMPLATE_SELECT).order('updated_at', { ascending: false }),
-        supabase.from('tierlist_lists').select(LIST_SELECT).order('updated_at', { ascending: false }),
-      ]);
-
-      if (templateCountResult.error) throw templateCountResult.error;
-      if (listCountResult.error) throw listCountResult.error;
-      if (commentCountResult.error) throw commentCountResult.error;
-      if (templateResult.error) throw templateResult.error;
-      if (listResult.error) throw listResult.error;
-
-      const templateRows = templateResult.data || [];
-      const listRows = listResult.data || [];
-      const listIds = listRows.map((row) => row.id);
-
-      const commentsChunks = listIds.length > 0
-        ? await Promise.all(
-            chunkItems(listIds, 40).map((idChunk) => (
-              supabase.from('tierlist_comments').select('list_id').in('list_id', idChunk)
-            ))
-          )
-        : [];
-
-      const [rowsResult, poolResult] = listIds.length > 0
-        ? await Promise.all([
-            supabase.from('tierlist_list_rows').select('id, list_id, position, label, color, title_ids').in('list_id', listIds),
-            supabase.from('tierlist_list_pool_items').select('list_id, title_id, position').in('list_id', listIds),
-          ])
-        : [
-            { data: [], error: null },
-            { data: [], error: null },
-          ];
-
-      if (rowsResult.error) throw rowsResult.error;
-      if (poolResult.error) throw poolResult.error;
-      commentsChunks.forEach((result) => {
-        if (result.error) {
-          throw result.error;
-        }
-      });
-
-      const ownerIds = [
-        ...new Set([
-          ...templateRows.map((row) => row.owner_user_id).filter(Boolean),
-          ...listRows.map((row) => row.owner_user_id).filter(Boolean),
-        ]),
-      ];
-
-      let profileMap = new Map();
-      if (ownerIds.length > 0) {
-        const { data: profileRows, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('id, name, username')
-          .in('id', ownerIds);
-        if (profileError) throw profileError;
-        profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
-      }
+      const {
+        counts,
+        templateRows,
+        listRows,
+        commentRows,
+        listRowsData,
+        listPoolData,
+        profileRows,
+      } = await fetchAdminTierlistData();
+      const profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
 
       const rowMap = new Map();
-      (rowsResult.data || []).forEach((row) => {
+      (listRowsData || []).forEach((row) => {
         const currentRows = rowMap.get(row.list_id) || [];
         currentRows.push({
           id: row.id,
@@ -291,7 +218,7 @@ export function AdminTierlists() {
       });
 
       const poolMap = new Map();
-      (poolResult.data || []).forEach((row) => {
+      (listPoolData || []).forEach((row) => {
         const currentPool = poolMap.get(row.list_id) || [];
         currentPool.push({
           titleId: Number(row.title_id),
@@ -301,11 +228,9 @@ export function AdminTierlists() {
       });
 
       const commentCountMap = new Map();
-      commentsChunks.forEach((result) => {
-        (result.data || []).forEach((row) => {
-          const key = String(row.list_id || '');
-          commentCountMap.set(key, Number(commentCountMap.get(key) || 0) + 1);
-        });
+      (commentRows || []).forEach((row) => {
+        const key = String(row.list_id || '');
+        commentCountMap.set(key, Number(commentCountMap.get(key) || 0) + 1);
       });
 
       const baseTemplates = templateRows.map((row) => {
@@ -402,15 +327,19 @@ export function AdminTierlists() {
       setTemplates(mappedTemplates);
       setLists(mappedLists);
       setSummary({
-        templateCount: Number(templateCountResult.count || mappedTemplates.length),
+        templateCount: Number(counts.templateCount || mappedTemplates.length),
         publicTemplateCount: mappedTemplates.filter((item) => item.isPublic).length,
-        listCount: Number(listCountResult.count || mappedLists.length),
+        listCount: Number(counts.listCount || mappedLists.length),
         publicListCount: mappedLists.filter((item) => item.isPublic).length,
-        commentCount: Number(commentCountResult.count || 0),
+        commentCount: Number(counts.commentCount || 0),
       });
     } catch (error) {
       console.error('Failed to load admin tierlists:', error);
-      setErrorMessage(error?.message || pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'));
+      setErrorMessage(
+        error?.message === 'Supabase client is not available'
+          ? pick('ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'Supabase is unavailable')
+          : (error?.message || pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'))
+      );
       toast.error(pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'));
     } finally {
       setIsLoading(false);
@@ -501,16 +430,13 @@ export function AdminTierlists() {
   };
 
   const handleToggleVisibility = async () => {
-    if (!supabase || !selectedRecord) return;
+    if (!selectedRecord) return;
 
     const nextValue = !selectedRecord.isPublic;
-    const table = selectedRecord.kind === 'template' ? 'tierlist_templates' : 'tierlist_lists';
 
     setIsActing(true);
     try {
-      const { error } = await supabase.from(table).update({ is_public: nextValue }).eq('id', selectedRecord.id);
-      if (error) throw error;
-
+      await updateAdminTierlistVisibility(selectedRecord.kind, selectedRecord.id, nextValue);
       toast.success(nextValue ? pick('อัปเดตเป็นสาธารณะแล้ว', 'Marked as public') : pick('อัปเดตเป็นส่วนตัวแล้ว', 'Marked as private'));
       await fetchTierlistData();
     } catch (error) {
@@ -522,7 +448,7 @@ export function AdminTierlists() {
   };
 
   const handleDeleteRecord = async () => {
-    if (!supabase || !selectedRecord) return;
+    if (!selectedRecord) return;
 
     if (selectedRecord.kind === 'template' && selectedRecord.linkedListCount > 0) {
       toast.error(
@@ -544,24 +470,7 @@ export function AdminTierlists() {
 
     setIsActing(true);
     try {
-      if (selectedRecord.kind === 'template') {
-        const { error } = await supabase.from('tierlist_templates').delete().eq('id', selectedRecord.id);
-        if (error) throw error;
-      } else {
-        const [commentsDelete, rowsDelete, poolDelete] = await Promise.all([
-          supabase.from('tierlist_comments').delete().eq('list_id', selectedRecord.id),
-          supabase.from('tierlist_list_rows').delete().eq('list_id', selectedRecord.id),
-          supabase.from('tierlist_list_pool_items').delete().eq('list_id', selectedRecord.id),
-        ]);
-
-        if (commentsDelete.error) throw commentsDelete.error;
-        if (rowsDelete.error) throw rowsDelete.error;
-        if (poolDelete.error) throw poolDelete.error;
-
-        const { error } = await supabase.from('tierlist_lists').delete().eq('id', selectedRecord.id);
-        if (error) throw error;
-      }
-
+      await deleteAdminTierlistRecord(selectedRecord.kind, selectedRecord.id);
       toast.success(pick('ลบรายการเรียบร้อยแล้ว', 'Tierlist record deleted'));
       await fetchTierlistData();
     } catch (error) {
