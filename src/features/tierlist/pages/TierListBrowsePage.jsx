@@ -18,6 +18,7 @@ import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, pag
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { supabase } from '@/shared/lib/supabase';
 import '../styles/TierList.css';
 
 export function TierListBrowsePage() {
@@ -44,6 +45,7 @@ export function TierListBrowsePage() {
   const [hydrationRetryKey, setHydrationRetryKey] = useState(0);
   const [browseVisibility, setBrowseVisibility] = useState(() => createEmptyBrowseVisibility());
   const [loadError, setLoadError] = useState('');
+  const [ownerProfiles, setOwnerProfiles] = useState(() => new Map());
 
   useEffect(() => () => {
     isBrowseMountedRef.current = false;
@@ -63,6 +65,7 @@ export function TierListBrowsePage() {
       setLoadError('');
       setTitles([]);
       setSongEntities([]);
+      setOwnerProfiles(new Map());
       setBrowseVisibility(createEmptyBrowseVisibility());
       // Step 1: load library fast (no full catalog needed) and show content immediately
       const fastTemplatesPromise = loadTierTemplates([], {
@@ -101,11 +104,27 @@ export function TierListBrowsePage() {
   }, [pick, showAdult, user?.id, isAuthLoading]);
 
   const publicTemplates = useMemo(
-    () => dedupeTierTemplatesByIdentity(library.templates.filter((template) => (
-      template.isPublic &&
-      matchesTemplateMetadataAgeGate(template, showAdult)
-    ))),
-    [library.templates, showAdult]
+    () => dedupeTierTemplatesByIdentity(
+      library.templates
+        .filter((template) => (
+          template.isPublic &&
+          matchesTemplateMetadataAgeGate(template, showAdult)
+        ))
+        .map((template) => {
+          const profile = ownerProfiles.get(String(template?.ownerUserId || ''));
+          if (!profile) {
+            return template;
+          }
+
+          return {
+            ...template,
+            ownerName: profile.name || template.ownerName,
+            ownerUsername: profile.username || template.ownerUsername,
+            ownerAvatarUrl: profile.avatar_url || template.ownerAvatarUrl || '',
+          };
+        })
+    ),
+    [library.templates, ownerProfiles, showAdult]
   );
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -137,6 +156,49 @@ export function TierListBrowsePage() {
     ).slice(0, 8),
     [library.lists, showAdult]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOwnerProfiles() {
+      const ownerIds = [...new Set(
+        [
+          ...communityPreviewCandidates.map((list) => list?.ownerUserId),
+          ...library.templates.map((template) => template?.ownerUserId),
+        ]
+          .map((ownerId) => String(ownerId || '').trim())
+          .filter(Boolean)
+      )];
+
+      if (!ownerIds.length) {
+        setOwnerProfiles(new Map());
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('id, username, name, avatar_url')
+          .in('id', ownerIds);
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        setOwnerProfiles(new Map(
+          (data || []).map((profile) => [String(profile.id), profile])
+        ));
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to load tierlist owner profiles:', error?.message || error);
+        }
+      }
+    }
+
+    loadOwnerProfiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [communityPreviewCandidates, library.templates]);
   const previewHydrationEntries = useMemo(() => {
     const seen = new Set();
     return [
@@ -281,8 +343,22 @@ export function TierListBrowsePage() {
     [browseVisibility, communityPreviewCandidates, entityMaps, isCatalogHydrating, showAdult]
   );
   const recentCommunityLists = useMemo(
-    () => sortListsByRecentAndPopularity(publicLists).slice(0, 8),
-    [publicLists]
+    () => sortListsByRecentAndPopularity(publicLists)
+      .slice(0, 8)
+      .map((list) => {
+        const profile = ownerProfiles.get(String(list?.ownerUserId || ''));
+        if (!profile) {
+          return list;
+        }
+
+        return {
+          ...list,
+          ownerName: profile.name || list.ownerName,
+          ownerUsername: profile.username || list.ownerUsername,
+          ownerAvatarUrl: profile.avatar_url || list.ownerAvatarUrl || '',
+        };
+      }),
+    [ownerProfiles, publicLists]
   );
 
   const handlePlayTemplate = async (template) => {

@@ -6,6 +6,14 @@ import { getOwnerDisplayName, getTierRowFallbackLabel } from '@/features/tierlis
 import { getTierListPreviewTitles } from '@/features/tierlist/lib/tierlistPageUtils';
 import { TierListArtworkImage } from './TierListArtworkImage';
 
+function buildOwnerProfilePath(ownerUsername) {
+  const normalized = String(ownerUsername || '').trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+    return '';
+  }
+  return `/u/${normalized}`;
+}
+
 export function TierListCommunityCard({
   list,
   titleById,
@@ -17,6 +25,10 @@ export function TierListCommunityCard({
   onSecondaryClick,
 }) {
   const coverTitles = getTierListPreviewTitles(list, titleById);
+  const ownerLabel = getOwnerDisplayName(list.ownerName, list.ownerUsername, pick);
+  const ownerProfilePath = buildOwnerProfilePath(list.ownerUsername);
+  const ownerInitial = String(ownerLabel || '?').trim().charAt(0).toUpperCase() || '?';
+  const hasOwnerMeta = Boolean(list.ownerAvatarUrl || list.ownerUsername || list.ownerName);
   const previewRows = list.rows
     .map((row, index) => ({
       id: row.id,
@@ -60,22 +72,43 @@ export function TierListCommunityCard({
         )}
       </div>
       <div className="tierlist-browse-card-body">
-        <small className="tierlist-chip">
-          {pick('โดย', 'by')}{' '}
-          {(() => {
-            const slug = list.ownerUsername || list.ownerName;
-            const label = getOwnerDisplayName(list.ownerName, list.ownerUsername, pick);
-            return slug && slug !== 'You' ? (
-              <Link to={`/u/${slug}`} className="tierlist-owner-link" onClick={(event) => event.stopPropagation()}>
-                {label}
-              </Link>
-            ) : label;
-          })()}
-        </small>
         <h3>{list.title}</h3>
         <small className="tierlist-meta">
           {list.rows.length} {pick('ชั้น', 'tiers')} • {list.playCount || 0} {pick('ครั้งเล่น', 'plays')}
         </small>
+        {hasOwnerMeta ? (
+          <div className="tierlist-community-owner">
+            {ownerProfilePath ? (
+              <Link to={ownerProfilePath} className="tierlist-community-owner-link" onClick={(event) => event.stopPropagation()}>
+                {list.ownerAvatarUrl ? (
+                  <img src={list.ownerAvatarUrl} alt="" className="tierlist-community-owner-avatar" loading="lazy" />
+                ) : (
+                  <span className="tierlist-community-owner-avatar tierlist-community-owner-avatar-fallback" aria-hidden="true">
+                    {ownerInitial}
+                  </span>
+                )}
+                <span className="tierlist-community-owner-copy">
+                  <strong>{ownerLabel}</strong>
+                  <span>@{list.ownerUsername}</span>
+                </span>
+              </Link>
+            ) : (
+              <div className="tierlist-community-owner-link is-static">
+                {list.ownerAvatarUrl ? (
+                  <img src={list.ownerAvatarUrl} alt="" className="tierlist-community-owner-avatar" loading="lazy" />
+                ) : (
+                  <span className="tierlist-community-owner-avatar tierlist-community-owner-avatar-fallback" aria-hidden="true">
+                    {ownerInitial}
+                  </span>
+                )}
+                <span className="tierlist-community-owner-copy">
+                  <strong>{ownerLabel}</strong>
+                  <span>{pick('ผู้เล่นชุมชน', 'Community member')}</span>
+                </span>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
       <div className="tierlist-browse-card-actions">
         {primaryTo ? (

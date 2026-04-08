@@ -1,4 +1,358 @@
 /* ============================================
+   TIER LIST BROWSE — Hero Section
+   ============================================ */
+
+/* ── Page-level shell ── */
+.tierlist-page {
+  overflow-x: hidden;
+  --tierlist-brand: var(--primary-600);
+  --tierlist-brand-strong: var(--rose-600);
+  --tierlist-brand-soft: var(--primary-500);
+  --tierlist-accent: var(--accent-500);
+  --tierlist-brand-shadow: rgba(219, 39, 119, 0.22);
+}
+
+/* ── Hero wrapper ── */
+.tl-hero {
+  position: relative;
+  padding-top: 5rem;
+  padding-bottom: 2.25rem;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* decorative glow behind the hero */
+.tl-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% -10%, color-mix(in srgb, var(--primary-500) 14%, transparent), transparent),
+    radial-gradient(ellipse 50% 40% at 80% 80%, color-mix(in srgb, var(--accent-500) 9%, transparent), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="dark"] .tl-hero::before {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% -10%, color-mix(in srgb, var(--primary-500) 20%, transparent), transparent),
+    radial-gradient(ellipse 50% 40% at 80% 80%, color-mix(in srgb, var(--accent-500) 12%, transparent), transparent);
+}
+
+/* ── Floating tier labels in background ── */
+.tl-hero-tiers-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.tl-hero-tier-float {
+  position: absolute;
+  font-family: var(--font-heading);
+  font-size: clamp(4rem, 10vw, 8rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  color: var(--tier-color, var(--primary-500));
+  opacity: 0.055;
+  user-select: none;
+  animation: tl-float-drift 6s ease-in-out infinite;
+  line-height: 1;
+}
+
+[data-theme="dark"] .tl-hero-tier-float {
+  opacity: 0.08;
+}
+
+.tl-hero-tier-float:nth-child(1) { top: 8%; left: 2%; }
+.tl-hero-tier-float:nth-child(2) { top: 18%; left: 18%; }
+.tl-hero-tier-float:nth-child(3) { top: 10%; right: 22%; }
+.tl-hero-tier-float:nth-child(4) { bottom: 12%; right: 8%; }
+.tl-hero-tier-float:nth-child(5) { bottom: 8%; left: 8%; }
+
+@keyframes tl-float-drift {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+
+/* ── Container ── */
+.tl-hero-container {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+/* ── Badge ── */
+.tl-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.48rem 1.1rem;
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+  color: var(--primary-600, var(--primary-500));
+  border: 1px solid color-mix(in srgb, var(--primary-500) 22%, transparent);
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+
+[data-theme="dark"] .tl-hero-badge {
+  background: color-mix(in srgb, var(--primary-500) 14%, transparent);
+  color: var(--primary-500);
+  border-color: color-mix(in srgb, var(--primary-500) 28%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.tl-hero-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-500);
+  animation: tl-badge-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes tl-badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+/* ── Title ── */
+.tl-hero-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(2.8rem, 9vw, 5.5rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  /* Gradient text — use violet→primary-pink as TierList identity (distinct from battle's crimson) */
+  background: linear-gradient(135deg, var(--tierlist-brand) 0%, var(--tierlist-brand-soft) 46%, var(--tierlist-accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 4px 20px color-mix(in srgb, var(--tierlist-brand) 22%, transparent));
+}
+
+[data-theme="dark"] .tl-hero-title {
+  background: linear-gradient(135deg, var(--tierlist-brand-soft) 0%, color-mix(in srgb, var(--tierlist-brand-soft) 78%, white) 48%, color-mix(in srgb, var(--tierlist-accent) 84%, white) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 4px 24px color-mix(in srgb, var(--tierlist-brand-soft) 28%, transparent));
+}
+
+/* ── Tagline ── */
+.tl-hero-tagline {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  max-width: 480px;
+  line-height: 1.55;
+}
+
+[data-theme="dark"] .tl-hero-tagline {
+  color: color-mix(in srgb, var(--text-primary) 78%, #e0d4f8);
+}
+
+/* ── CTA Actions ── */
+.tl-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.tl-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 2rem;
+  border-radius: 999px;
+  /* violet→pink gradient — TierList palette */
+  background: linear-gradient(135deg, var(--tierlist-brand), var(--tierlist-accent));
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 1rem;
+  text-decoration: none;
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--tierlist-brand) 28%, transparent);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.tl-btn-primary.action-pulse {
+  animation: tl-btn-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes tl-btn-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tierlist-brand) 38%, transparent); }
+  70% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--tierlist-brand) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tierlist-brand) 0%, transparent); }
+}
+
+.tl-btn-primary:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--tierlist-brand) 38%, transparent);
+  color: #ffffff;
+}
+
+.tl-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.96rem;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.tl-btn-secondary:hover {
+  background: var(--bg-secondary);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 26%, var(--border-default));
+  transform: translateY(-2px);
+}
+
+[data-theme="dark"] .tl-btn-secondary {
+  background: rgba(40, 30, 50, 0.85);
+  border-color: rgba(200, 180, 255, 0.14);
+  color: #f0e8ff;
+}
+
+[data-theme="dark"] .tl-btn-secondary:hover {
+  background: rgba(55, 40, 70, 0.92);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 34%, transparent);
+}
+
+@media (max-width: 480px) {
+  .tl-btn-primary,
+  .tl-btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── 3-Step Guide ── */
+.tl-hero-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.8rem 1.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.04);
+  margin-top: 0.5rem;
+}
+
+[data-theme="dark"] .tl-hero-steps {
+  background: linear-gradient(135deg, rgba(30, 20, 45, 0.65), rgba(20, 14, 35, 0.45));
+  border-color: rgba(180, 150, 255, 0.1);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.26);
+}
+
+.tl-step-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.tl-step-item span {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .tl-step-item span {
+  color: #f0e8ff;
+}
+
+.tl-step-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tierlist-accent) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--tierlist-brand-soft) 18%, var(--border-default));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tierlist-brand);
+  flex-shrink: 0;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+[data-theme="dark"] .tl-step-icon {
+  background: color-mix(in srgb, var(--tierlist-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 22%, transparent);
+  color: color-mix(in srgb, var(--tierlist-brand-soft) 84%, white);
+}
+
+.tl-hero-steps:hover .tl-step-icon {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, var(--tierlist-brand), var(--tierlist-accent));
+  color: #fff;
+  border-color: color-mix(in srgb, var(--tierlist-brand) 80%, var(--tierlist-accent));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--tierlist-brand) 24%, transparent);
+}
+
+[data-theme="dark"] .tl-hero-steps:hover .tl-step-icon {
+  background: linear-gradient(135deg, var(--tierlist-brand-soft), var(--tierlist-accent));
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 70%, var(--tierlist-accent));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--tierlist-brand-soft) 28%, transparent);
+}
+
+.tl-step-sep {
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .tl-step-sep {
+  color: rgba(200, 180, 255, 0.6);
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .tl-hero-steps {
+    flex-direction: column;
+    padding: 1.25rem 1.5rem;
+    border-radius: var(--radius-2xl);
+    gap: 0.85rem;
+  }
+
+  .tl-step-sep {
+    transform: rotate(90deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .tl-hero {
+    padding-top: 3.5rem;
+  }
+}
+
+/* ============================================
    BROWSE PAGE — header + filter bar
    ============================================ */
 
@@ -262,13 +616,23 @@
 }
 
 .tierlist-browse-tab:hover {
-  color: var(--text-primary);
+  color: var(--primary-600, #e11d48);
 }
 
+/* Active tab: rose identity */
 .tierlist-browse-tab.is-active {
-  color: var(--primary-500);
-  border-bottom-color: var(--primary-500);
-  font-weight: 600;
+  color: var(--primary-600, #e11d48);
+  border-bottom-color: var(--primary-500, #f43f5e);
+  font-weight: 700;
+}
+
+[data-theme="dark"] .tierlist-browse-tab:hover {
+  color: color-mix(in srgb, var(--primary-400, #fb7185) 90%, white);
+}
+
+[data-theme="dark"] .tierlist-browse-tab.is-active {
+  color: color-mix(in srgb, var(--primary-400, #fb7185) 90%, white);
+  border-bottom-color: var(--primary-400, #fb7185);
 }
 
 /* ============================================
@@ -665,30 +1029,42 @@
 
 .tierlist-browse-search-bar input {
   width: 100%;
-  height: 42px;
-  padding: 0 2.5rem 0 1rem;
+  height: 44px;
+  padding: 0 2.8rem 0 1.1rem;
   border-radius: 999px;
   border: 1px solid var(--border-default);
   background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 0.88rem;
   transition: border-color 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
+/* Rose focus ring */
 .tierlist-browse-search-bar input:focus {
   outline: none;
-  border-color: var(--primary-500);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-500) 14%, transparent);
+  border-color: var(--primary-500, #f43f5e);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-500, #f43f5e) 14%, transparent);
+}
+
+[data-theme="dark"] .tierlist-browse-search-bar input:focus {
+  border-color: var(--primary-400, #fb7185);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-400, #fb7185) 16%, transparent);
 }
 
 .tierlist-browse-search-icon {
   all: unset;
   position: absolute;
-  right: 0.85rem;
+  right: 0.9rem;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--text-tertiary);
+  color: var(--primary-500, #f43f5e);
   pointer-events: none;
+  opacity: 0.7;
+}
+
+[data-theme="dark"] .tierlist-browse-search-icon {
+  color: var(--primary-400, #fb7185);
 }
 
 /* ============================================
@@ -737,71 +1113,118 @@
    BROWSE CARD GRID (Explorer style)
    ============================================ */
 
+/* Grid: 2 columns on desktop, stack on mobile */
 .tierlist-browse-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  align-items: start;
   content-visibility: auto;
   contain-intrinsic-size: 960px;
 }
 
+/* ══════════════════════════════════════════════
+   TIER-LIST EXPLORER CARD — Vertical Edition
+   Unique identity: tier-bar + portrait + info
+   ══════════════════════════════════════════════ */
 .tierlist-explorer-card {
   background: var(--bg-elevated);
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  border: 1px solid color-mix(in srgb, var(--border-default) 62%, transparent);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--paper-shadow) 12%, transparent);
-  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--paper-shadow) 7%, transparent);
+  transition:
+    transform 230ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease,
+    border-color 200ms ease;
 }
 
 .tierlist-explorer-card:hover {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--primary-500) 24%, transparent);
-  box-shadow: 0 18px 36px color-mix(in srgb, var(--paper-shadow) 18%, transparent);
+  transform: translateY(-4px) scale(1.01);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 28%, transparent);
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--paper-shadow) 16%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--tierlist-brand-soft) 12%, transparent);
 }
 
+[data-theme="dark"] .tierlist-explorer-card:hover {
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 32%, transparent);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.44),
+    0 0 0 1px color-mix(in srgb, var(--tierlist-brand-soft) 14%, transparent);
+}
+
+/* ── Cover ── */
 .tierlist-explorer-card-cover {
-  aspect-ratio: 16 / 9;
+  position: relative;
   overflow: hidden;
   background: color-mix(in srgb, var(--bg-tertiary) 80%, transparent);
-  flex-shrink: 0;
-  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 196px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 40%, transparent);
 }
 
-.tierlist-explorer-card-count {
+.tierlist-explorer-card-cover::after {
+  content: '';
   position: absolute;
-  top: 0.65rem;
-  right: 0.65rem;
-  background: rgba(15, 23, 42, 0.76);
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.26rem 0.62rem;
-  border-radius: 999px;
-  backdrop-filter: blur(10px);
-  line-height: 1.4;
+  inset: auto 0 0 0;
+  height: 42%;
+  background: linear-gradient(180deg, transparent 0%, rgba(25, 17, 15, 0.68) 100%);
+  pointer-events: none;
 }
 
 .tierlist-explorer-card-cover img {
   width: 100%;
   height: 100%;
-  object-fit: var(--tierlist-cover-fit);
-  object-position: calc(50% + var(--tierlist-cover-offset-x)) calc(50% + var(--tierlist-cover-offset-y));
-  transform: scale(var(--tierlist-cover-scale));
+  object-fit: var(--tierlist-cover-fit, cover);
+  object-position: calc(50% + var(--tierlist-cover-offset-x, 0px)) calc(50% + var(--tierlist-cover-offset-y, 0px));
+  transform: scale(var(--tierlist-cover-scale, 1));
   transform-origin: center center;
   display: block;
-  transition: transform 350ms ease, object-position 200ms ease;
+  transition: transform 350ms ease;
+}
+
+.tierlist-explorer-card:hover .tierlist-explorer-card-cover img {
+  transform: scale(calc(var(--tierlist-cover-scale, 1) * 1.07));
 }
 
 .tierlist-explorer-card-cover-empty {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg,
-    color-mix(in srgb, var(--primary-500) 14%, var(--bg-tertiary)),
-    color-mix(in srgb, var(--accent-500) 10%, var(--bg-tertiary))
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--tierlist-brand-soft) 18%, transparent) 0%,
+    color-mix(in srgb, var(--tierlist-brand) 12%, transparent) 56%,
+    color-mix(in srgb, var(--tierlist-accent) 14%, transparent) 100%
   );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tierlist-explorer-card-cover-empty::after {
+  content: '?';
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--tierlist-brand) 26%, transparent);
+  font-family: var(--font-heading);
+  line-height: 1;
+  user-select: none;
+}
+
+.tierlist-explorer-card-cover-badges {
+  position: absolute;
+  top: 0.8rem;
+  left: 0.8rem;
+  right: 0.8rem;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  pointer-events: none;
 }
 
 @keyframes tierlist-cover-shimmer {
@@ -813,133 +1236,231 @@
   width: 100%;
   height: 100%;
   background: linear-gradient(
-    90deg,
+    180deg,
     var(--bg-tertiary) 25%,
-    color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-tertiary)) 50%,
+    color-mix(in srgb, var(--tierlist-accent) 8%, var(--bg-tertiary)) 50%,
     var(--bg-tertiary) 75%
   );
-  background-size: 200% 100%;
+  background-size: 100% 200%;
   animation: tierlist-cover-shimmer 1.4s ease-in-out infinite;
 }
 
+/* ── 3. Info + actions panel ── */
 .tierlist-explorer-card-body {
-  padding: 0.95rem 1rem 1rem;
-  display: grid;
-  gap: 0.55rem;
-  flex: 1;
+  padding: 1rem 1rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
-.tierlist-explorer-card-meta {
-  display: grid;
-  gap: 0.35rem;
-}
-
+/* Warm berry chip — category identity */
 .tierlist-explorer-card-tag {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  padding: 0.22rem 0.58rem;
+  padding: 0.2rem 0.58rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--primary-500) 18%, transparent);
-  background: color-mix(in srgb, var(--primary-500) 9%, var(--bg-secondary));
-  color: var(--primary-600, var(--accent-700));
+  border: 1px solid color-mix(in srgb, white 22%, transparent);
+  background: rgba(53, 31, 31, 0.72);
+  color: #fff4ea;
+  box-shadow: 0 8px 20px rgba(16, 10, 9, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   font-size: 0.66rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
+[data-theme="dark"] .tierlist-explorer-card-tag {
+  border-color: color-mix(in srgb, white 16%, transparent);
+  background: rgba(26, 18, 21, 0.74);
+  color: #fff2df;
+}
+
 .tierlist-explorer-card-stat {
-  font-size: 0.74rem;
-  color: var(--text-secondary);
+  font-size: 0.76rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
 }
 
 .tierlist-explorer-card-body h3 {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: 1.08rem;
   font-weight: 800;
-  line-height: 1.28;
+  line-height: 1.34;
   color: var(--text-primary);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  letter-spacing: -0.015em;
+}
+
+.tierlist-explorer-owner {
+  margin-top: 0.15rem;
+}
+
+.tierlist-explorer-owner-link {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.tierlist-explorer-owner-link.is-static {
+  cursor: default;
+}
+
+.tierlist-explorer-owner-avatar {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--border-default) 58%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--paper-shadow) 10%, transparent);
+}
+
+.tierlist-explorer-owner-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-500) 20%, transparent), color-mix(in srgb, var(--primary-500) 34%, transparent));
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.tierlist-explorer-owner-copy {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.tierlist-explorer-owner-copy strong {
+  font-size: 0.89rem;
+  line-height: 1.18;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.tierlist-explorer-owner-copy span {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.tierlist-explorer-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
 }
 
 .tierlist-explorer-card-description {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   line-height: 1.45;
   color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.tierlist-explorer-card-actions {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: auto;
+  flex: 1;
 }
 
 .tierlist-explorer-btn-rank {
-  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-  background: var(--primary-500);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--tierlist-brand), var(--tierlist-accent));
   color: white;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
   border: none;
   cursor: pointer;
-  transition: background 150ms ease;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--tierlist-brand) 24%, transparent);
 }
 
 .tierlist-explorer-btn-rank:hover {
-  background: var(--primary-600, color-mix(in srgb, var(--primary-500) 85%, black));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--tierlist-brand) 28%, transparent);
 }
 
 .tierlist-explorer-btn-view {
-  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
   background: transparent;
-  color: var(--primary-500);
-  font-size: 0.82rem;
-  font-weight: 600;
-  border: 1px solid var(--primary-500);
+  color: var(--tierlist-brand);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--tierlist-brand-soft) 34%, transparent);
   text-decoration: none;
   cursor: pointer;
-  transition: background 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
 }
 
 .tierlist-explorer-btn-view:hover {
-  background: color-mix(in srgb, var(--primary-500) 8%, transparent);
+  background: color-mix(in srgb, var(--tierlist-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--tierlist-brand) 46%, transparent);
+  transform: translateY(-1px);
 }
 
-/* Legacy browse card (community cards still use these) */
+[data-theme="dark"] .tierlist-explorer-btn-view {
+  color: color-mix(in srgb, var(--tierlist-accent) 74%, white);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 28%, transparent);
+}
+
+[data-theme="dark"] .tierlist-explorer-btn-view:hover {
+  background: color-mix(in srgb, var(--tierlist-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--tierlist-accent) 34%, transparent);
+}
+
+/* Community card */
 .tierlist-browse-card {
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  transition: transform 200ms ease, box-shadow 200ms ease;
+  display: flex;
+  flex-direction: column;
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, border-color 200ms ease;
   cursor: default;
   border: 1px solid color-mix(in srgb, var(--border-default) 50%, transparent);
+  background: var(--bg-elevated);
 }
 
 .tierlist-browse-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 24px 48px color-mix(in srgb, var(--paper-shadow) 28%, transparent);
-  border-color: color-mix(in srgb, var(--primary-500) 30%, transparent);
+  box-shadow:
+    0 24px 48px color-mix(in srgb, var(--paper-shadow) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--tierlist-brand-soft) 12%, transparent);
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 24%, transparent);
+}
+
+[data-theme="dark"] .tierlist-browse-card:hover {
+  border-color: color-mix(in srgb, var(--tierlist-brand-soft) 26%, transparent);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.42),
+    0 0 0 1px color-mix(in srgb, var(--tierlist-brand-soft) 12%, transparent);
 }
 
 /* Cover strip (horizontal images) */
@@ -989,24 +1510,64 @@
    ============================================ */
 
 .tierlist-browse-sidebar {
-  width: 280px;
+  width: 290px;
   flex-shrink: 0;
 }
 
+/* Sidebar card with rose identity accent */
 .tierlist-browse-sidebar-card {
-  background: var(--bg-elevated);
-  border-radius: 14px;
-  padding: 1.25rem;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--paper-shadow) 12%, transparent);
+  background:
+    radial-gradient(ellipse 80% 50% at 80% 0%, color-mix(in srgb, var(--primary-500) 8%, transparent), transparent),
+    var(--bg-elevated);
+  border-radius: 18px;
+  padding: 1.35rem;
+  border: 1px solid color-mix(in srgb, var(--primary-500) 14%, transparent);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
   position: sticky;
   top: 1.5rem;
 }
 
+[data-theme="dark"] .tierlist-browse-sidebar-card {
+  background:
+    radial-gradient(ellipse 80% 50% at 80% 0%, color-mix(in srgb, var(--primary-500) 10%, transparent), transparent),
+    rgba(30, 18, 22, 0.96);
+  border-color: color-mix(in srgb, var(--primary-400) 18%, transparent);
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Sidebar heading with rose accent bar */
 .tierlist-browse-sidebar-card h3 {
   margin: 0 0 1rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--primary-600, #e11d48);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tierlist-browse-sidebar-card h3::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, var(--primary-500, #f43f5e), var(--accent-500, #f97316));
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .tierlist-browse-sidebar-card h3 {
+  color: color-mix(in srgb, var(--primary-400, #fb7185) 90%, white);
+}
+
+[data-theme="dark"] .tierlist-browse-sidebar-card h3::before {
+  background: linear-gradient(to bottom, var(--primary-400, #fb7185), var(--accent-400, #fb923c));
 }
 
 .tierlist-trending-list {
@@ -1036,37 +1597,44 @@
   opacity: 0.75;
 }
 
+/* Rank number — rose/amber for top 3 */
 .tierlist-trending-rank {
-  width: 1.2rem;
-  font-size: 0.82rem;
-  font-weight: 600;
+  width: 1.4rem;
+  font-size: 0.8rem;
+  font-weight: 800;
   color: var(--text-tertiary);
   flex-shrink: 0;
+  text-align: center;
 }
 
+.tierlist-trending-list li:nth-child(1) .tierlist-trending-rank { color: var(--primary-500, #f43f5e); }
+.tierlist-trending-list li:nth-child(2) .tierlist-trending-rank { color: color-mix(in srgb, var(--primary-500) 72%, var(--accent-500)); }
+.tierlist-trending-list li:nth-child(3) .tierlist-trending-rank { color: color-mix(in srgb, var(--primary-400) 60%, var(--text-secondary)); }
+
 .tierlist-trending-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   object-fit: var(--tierlist-cover-fit);
   object-position: calc(50% + var(--tierlist-cover-offset-x)) calc(50% + var(--tierlist-cover-offset-y));
   transform: scale(var(--tierlist-cover-scale));
   transform-origin: center center;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--bg-tertiary) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
 }
 
 .tierlist-trending-thumb-empty {
   display: block;
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--primary-500) 14%, var(--bg-tertiary)),
-    color-mix(in srgb, var(--accent-500) 10%, var(--bg-tertiary))
+    color-mix(in srgb, var(--primary-500) 16%, transparent),
+    color-mix(in srgb, var(--accent-500) 12%, transparent)
   );
 }
 
 .tierlist-trending-name {
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -1085,60 +1653,57 @@
 }
 
 .tierlist-community-preview {
-  height: 200px;
+  height: 224px;
   display: grid;
   gap: 0;
   overflow: hidden;
-  padding: 0.4rem;
+  padding: 0.55rem 0.55rem 0.4rem;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 64%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, transparent));
   border-bottom: 1px solid color-mix(in srgb, var(--border-default) 40%, transparent);
   align-content: start;
+  gap: 0.28rem;
 }
 
 .tierlist-community-preview-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  min-height: 50px;
-  margin-bottom: 0.2rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 36%, transparent);
+  grid-template-columns: 52px minmax(0, 1fr);
+  height: 48px;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-default) 25%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-default) 22%, transparent);
+  flex-shrink: 0;
 }
 
 .tierlist-community-preview-row:last-child {
-  border-bottom: none;
   margin-bottom: 0;
 }
 
 .tierlist-community-preview-label {
   display: grid;
   place-items: center;
-  padding: 0.35rem;
-  border-right: 1px solid color-mix(in srgb, var(--border-default) 36%, transparent);
+  padding: 0.3rem 0.25rem;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 900;
   line-height: 1;
-  color: rgba(24, 24, 24, 0.82);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .tierlist-community-preview-strip {
   display: flex;
-  min-width: 0;
   overflow: hidden;
   background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
 }
 
 .tierlist-community-preview-strip img {
-  width: 100%;
-  max-width: 52px;
-  min-width: 0;
-  height: 50px;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
-  flex: 1 1 0;
   border-right: 1px solid color-mix(in srgb, var(--border-default) 28%, transparent);
 }
 
@@ -1147,32 +1712,94 @@
 }
 
 .tierlist-browse-card-body {
-  padding: 1.1rem 1.1rem 0.65rem;
+  padding: 1rem 1.2rem 0.65rem;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   min-width: 0;
 }
 
 .tierlist-browse-card-body h3 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.12rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.25;
   overflow-wrap: anywhere;
   color: var(--text-primary);
 }
 
+.tierlist-community-owner {
+  margin-top: 0.3rem;
+}
+
+.tierlist-community-owner-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.tierlist-community-owner-link.is-static {
+  cursor: default;
+}
+
+.tierlist-community-owner-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--paper-shadow) 12%, transparent);
+}
+
+.tierlist-community-owner-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-500) 28%, transparent), color-mix(in srgb, var(--primary-500) 42%, transparent));
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.tierlist-community-owner-copy {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.tierlist-community-owner-copy strong {
+  font-size: 0.92rem;
+  line-height: 1.2;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.tierlist-community-owner-copy span {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .tierlist-browse-card-actions {
   display: flex;
-  gap: 0.4rem;
-  padding: 0 1.1rem 1rem;
+  gap: 0.5rem;
+  padding: 0 1.2rem 1rem;
   flex-wrap: wrap;
+}
+
+.tierlist-browse-card-actions > * {
+  flex: 1 1 10rem;
+  min-width: 0;
 }
 
 @media (min-width: 960px) {
   .tierlist-browse-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
+    align-items: start;
   }
 
   .tierlist-browse-cover {
@@ -1182,6 +1809,21 @@
   .tierlist-browse-cover img,
   .tierlist-community-preview {
     height: 220px;
+  }
+
+  .tierlist-community-preview-strip img {
+    width: 54px;
+    height: 52px;
+  }
+
+  .tierlist-community-preview-row {
+    height: 52px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .tierlist-browse-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1270,8 +1912,8 @@
   }
 
   .tierlist-browse-grid {
-    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
   }
 
   .tierlist-browse-cover {
@@ -1283,15 +1925,34 @@
   }
 
   .tierlist-explorer-card-body {
-    padding: 0.65rem 0.75rem;
+    padding: 0.85rem 0.9rem;
   }
 
   .tierlist-explorer-card-body h3 {
-    font-size: 0.88rem;
+    font-size: 0.98rem;
   }
 
-  .tierlist-explorer-card-description {
-    font-size: 0.72rem;
+  .tierlist-explorer-card-cover {
+    min-height: 172px;
+    aspect-ratio: 4 / 3;
+  }
+
+  .tierlist-explorer-card-stat {
+    font-size: 0.74rem;
+  }
+
+  .tierlist-explorer-card-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tierlist-explorer-btn-rank,
+  .tierlist-explorer-btn-view {
+    min-height: 2.5rem;
+    font-size: 0.86rem;
+  }
+
+  .tierlist-browse-card-actions > * {
+    flex-basis: 100%;
   }
 
   .tierlist-browse-songs-section .tierlist-songs-banner {
@@ -1299,4 +1960,3 @@
     text-align: center;
   }
 }
-

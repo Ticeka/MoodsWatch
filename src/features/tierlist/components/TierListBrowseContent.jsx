@@ -9,10 +9,19 @@ import {
   getTemplatePreviewMediaStyle,
   normalizeTemplatePreviewFit,
 } from '@/features/tierlist/lib/tierlistPreviewUtils';
+import { getOwnerDisplayName } from '@/features/tierlist/lib/tierlistLabels';
 import { Button } from '@/shared/components/ui/Button';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { TierListCommunityCard } from './TierListCommunityCard';
 import { TierListEmptyPanel } from './TierListPanels';
+
+function buildOwnerProfilePath(ownerUsername) {
+  const normalized = String(ownerUsername || '').trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+    return '';
+  }
+  return `/u/${normalized}`;
+}
 
 export function TierListBrowseContent({
   entityMaps,
@@ -99,6 +108,10 @@ export function TierListBrowseContent({
                 .filter(Boolean);
               const coverArtwork = getTemplatePreviewArtworkSource(template, cover[0]);
               const explorerSummary = getTemplateExplorerSummary(template, pick);
+              const ownerLabel = getOwnerDisplayName(template.ownerName, template.ownerUsername, pick);
+              const ownerProfilePath = buildOwnerProfilePath(template.ownerUsername);
+              const ownerInitial = String(ownerLabel || '?').trim().charAt(0).toUpperCase() || '?';
+              const hasOwnerMeta = Boolean(template.ownerAvatarUrl || template.ownerUsername || template.ownerName);
 
               return (
                 <article key={template.id} className="tierlist-explorer-card">
@@ -120,17 +133,46 @@ export function TierListBrowseContent({
                     ) : (
                       <div className="tierlist-explorer-card-cover-empty" />
                     )}
-                    <span className="tierlist-explorer-card-count">
-                      {template.titleIds.length} {pick('เรื่อง', 'titles')}
-                    </span>
+                    <div className="tierlist-explorer-card-cover-badges">
+                      <span className="tierlist-explorer-card-tag">{explorerSummary.categoryLabel}</span>
+                    </div>
                   </div>
                   <div className="tierlist-explorer-card-body">
-                    <div className="tierlist-explorer-card-meta">
-                      <span className="tierlist-explorer-card-tag">{explorerSummary.categoryLabel}</span>
-                      <span className="tierlist-explorer-card-stat">{explorerSummary.statLine}</span>
-                    </div>
                     <h3>{template.title}</h3>
-                    <p className="tierlist-explorer-card-description">{explorerSummary.playsLabel}</p>
+                    <span className="tierlist-explorer-card-stat">{explorerSummary.statLine}</span>
+                    {hasOwnerMeta ? (
+                      <div className="tierlist-explorer-owner">
+                        {ownerProfilePath ? (
+                          <Link to={ownerProfilePath} className="tierlist-explorer-owner-link">
+                            {template.ownerAvatarUrl ? (
+                              <img src={template.ownerAvatarUrl} alt="" className="tierlist-explorer-owner-avatar" loading="lazy" />
+                            ) : (
+                              <span className="tierlist-explorer-owner-avatar tierlist-explorer-owner-avatar-fallback" aria-hidden="true">
+                                {ownerInitial}
+                              </span>
+                            )}
+                            <span className="tierlist-explorer-owner-copy">
+                              <strong>{ownerLabel}</strong>
+                              <span>@{template.ownerUsername}</span>
+                            </span>
+                          </Link>
+                        ) : (
+                          <div className="tierlist-explorer-owner-link is-static">
+                            {template.ownerAvatarUrl ? (
+                              <img src={template.ownerAvatarUrl} alt="" className="tierlist-explorer-owner-avatar" loading="lazy" />
+                            ) : (
+                              <span className="tierlist-explorer-owner-avatar tierlist-explorer-owner-avatar-fallback" aria-hidden="true">
+                                {ownerInitial}
+                              </span>
+                            )}
+                            <span className="tierlist-explorer-owner-copy">
+                              <strong>{ownerLabel}</strong>
+                              <span>{pick('เทมเพลตชุมชน', 'Community template')}</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="tierlist-explorer-card-actions">
                       <Button size="sm" variant="primary" className="tierlist-explorer-btn-rank" onClick={() => handlePlayTemplate(template)}>
                         {pick('จัดอันดับ', 'Rank')}
