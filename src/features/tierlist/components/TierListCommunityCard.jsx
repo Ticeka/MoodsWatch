@@ -89,7 +89,6 @@ export function TierListCommunityCard({
                 )}
                 <span className="tierlist-community-owner-copy">
                   <strong>{ownerLabel}</strong>
-                  <span>@{list.ownerUsername}</span>
                 </span>
               </Link>
             ) : (
@@ -103,7 +102,6 @@ export function TierListCommunityCard({
                 )}
                 <span className="tierlist-community-owner-copy">
                   <strong>{ownerLabel}</strong>
-                  <span>{pick('ผู้เล่นชุมชน', 'Community member')}</span>
                 </span>
               </div>
             )}

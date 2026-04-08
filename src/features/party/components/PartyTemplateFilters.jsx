@@ -38,7 +38,7 @@ export function PartyTemplateFilters({
         ))}
       </div>
 
-      <div className="party-template-search-filters">
+      <div className="party-template-search-filters" role="group" aria-label={pick('ตัวกรองรายการเซ็ต', 'Set filters')}>
         <div className="party-search-box">
           <Search size={18} className="search-icon" />
           <input

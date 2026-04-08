@@ -15,11 +15,13 @@ import {
   createBattleSession,
   createStoredBattleDeck,
   getStoredBattleDecks,
+  incrementStoredBattleDeckPlayCount,
   saveBattleSession,
   saveStoredBattleDeck,
 } from '@/features/battle/lib/battleStore';
 import {
   deleteRemotePublicBattleDeck,
+  incrementRemotePublicBattleDeckPlayCount,
   persistRemoteBattleSession,
   persistRemotePublicBattleDeck,
 } from '@/features/battle/api/battleRemoteApi';
@@ -650,7 +652,12 @@ export function BattleBuilderPage() {
     setIsSaving(true);
     try {
       const baseDeck = createStoredBattleDeck({ ...battleDeck, label: deckName.trim() || battleDeck.label, isPublic });
-      let storedDeck = saveStoredBattleDeck({ ...baseDeck, id: editingDeck?.id || baseDeck.id, createdAt: editingDeck?.createdAt || baseDeck.createdAt });
+      let storedDeck = saveStoredBattleDeck({
+        ...baseDeck,
+        id: editingDeck?.id || baseDeck.id,
+        createdAt: editingDeck?.createdAt || baseDeck.createdAt,
+        playCount: editingDeck?.playCount ?? baseDeck.playCount,
+      });
       if (editingDeck?.isPublic && !storedDeck.isPublic && user?.id) {
         try { await deleteRemotePublicBattleDeck(user.id, storedDeck.id); } catch (e) { console.warn(e); }
       }
@@ -664,6 +671,13 @@ export function BattleBuilderPage() {
         }
       }
       if (startAfterSave) {
+        if (storedDeck?.id) {
+          storedDeck = incrementStoredBattleDeckPlayCount(storedDeck.id) || storedDeck;
+          if (storedDeck.isPublic) {
+            incrementRemotePublicBattleDeckPlayCount(storedDeck.id);
+          }
+        }
+
         let session = saveBattleSession(createBattleSession(storedDeck, {
           catalogCount: visibleCatalogCount,
           hiddenExcludedCount,

@@ -11,9 +11,12 @@ import {
   DUPLICATE_STATUS_OPTIONS,
   mapDuplicateCandidate,
 } from '@/shared/lib/duplicates';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
+
+const PAGE_SIZE = 40;
 
 const TITLE_SCAN_SELECT = `
   id,
@@ -29,6 +32,35 @@ const TITLE_SCAN_SELECT = `
   source_refs:title_source_refs(provider, external_id)
 `;
 
+async function resolveMatchingDuplicateTitleIds(searchTerm) {
+  if (!supabase) return [];
+
+  const normalized = searchTerm.trim();
+  if (!normalized) return [];
+
+  const wildcard = `%${normalized}%`;
+  const [titleRes, aliasRes] = await Promise.all([
+    supabase
+      .from('canonical_titles')
+      .select('id')
+      .or(`canonical_title.ilike.${wildcard},slug.ilike.${wildcard}`)
+      .limit(150),
+    supabase
+      .from('title_aliases')
+      .select('canonical_title_id')
+      .ilike('alias', wildcard)
+      .limit(150),
+  ]);
+
+  if (titleRes.error) throw titleRes.error;
+  if (aliasRes.error) throw aliasRes.error;
+
+  const ids = new Set();
+  (titleRes.data || []).forEach((item) => ids.add(item.id));
+  (aliasRes.data || []).forEach((item) => ids.add(item.canonical_title_id));
+  return [...ids];
+}
+
 export function AdminDuplicates() {
   const { t, language } = useLanguage();
   const locale = language === 'th' ? 'th-TH' : 'en-US';
@@ -38,16 +70,21 @@ export function AdminDuplicates() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCandidates, setTotalCandidates] = useState(0);
+  const [summary, setSummary] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, merged: 0 });
   const [filters, setFilters] = useState({
     searchTerm: '',
     status: 'pending',
     adultFilter: 'all',
   });
+  const debouncedSearchTerm = useDebouncedValue(filters.searchTerm, 300);
   const [editorState, setEditorState] = useState({
     status: 'pending',
     reviewNote: '',
     primaryTitleId: '',
   });
+  const totalPages = Math.max(1, Math.ceil(totalCandidates / PAGE_SIZE));
 
   const selectedCandidate = useMemo(
     () => candidates.find((candidate) => candidate.id === selectedId) || null,
@@ -77,9 +114,13 @@ export function AdminDuplicates() {
     setIsLoading(true);
     setErrorMessage('');
     try {
+      const matchingTitleIds = debouncedSearchTerm.trim()
+        ? await resolveMatchingDuplicateTitleIds(debouncedSearchTerm)
+        : null;
+
       let query = supabase
         .from('duplicate_candidates')
-        .select(DUPLICATE_CANDIDATE_SELECT)
+        .select(DUPLICATE_CANDIDATE_SELECT, { count: 'planned' })
         .order('confidence', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -87,46 +128,104 @@ export function AdminDuplicates() {
         query = query.eq('status', filters.status);
       }
 
+      if (matchingTitleIds) {
+        if (matchingTitleIds.length === 0) {
+          setCandidates([]);
+          setSelectedId(null);
+          setSummary({ total: 0, pending: 0, approved: 0, rejected: 0, merged: 0 });
+          setTotalCandidates(0);
+          syncEditorState(null);
+          setIsLoading(false);
+          return;
+        }
+        query = query.or(`title_a_id.in.(${matchingTitleIds.join(',')}),title_b_id.in.(${matchingTitleIds.join(',')})`);
+      }
+
+      if (filters.adultFilter === 'all') {
+        const from = (currentPage - 1) * PAGE_SIZE;
+        const buildStatusCountQuery = (statusValue) => {
+          let statusQuery = supabase.from('duplicate_candidates').select('id', { count: 'planned', head: true });
+          if (statusValue !== 'all') {
+            statusQuery = statusQuery.eq('status', statusValue);
+          }
+          if (matchingTitleIds) {
+            statusQuery = statusQuery.or(`title_a_id.in.(${matchingTitleIds.join(',')}),title_b_id.in.(${matchingTitleIds.join(',')})`);
+          }
+          return statusQuery;
+        };
+
+        const [{ data, count, error }, pendingRes, approvedRes, rejectedRes, mergedRes] = await Promise.all([
+          query.range(from, from + PAGE_SIZE - 1),
+          buildStatusCountQuery(filters.status === 'all' ? 'pending' : filters.status === 'pending' ? 'pending' : 'none'),
+          buildStatusCountQuery(filters.status === 'all' ? 'approved' : filters.status === 'approved' ? 'approved' : 'none'),
+          buildStatusCountQuery(filters.status === 'all' ? 'rejected' : filters.status === 'rejected' ? 'rejected' : 'none'),
+          buildStatusCountQuery(filters.status === 'all' ? 'merged' : filters.status === 'merged' ? 'merged' : 'none'),
+        ]);
+
+        if (error) throw error;
+        [pendingRes, approvedRes, rejectedRes, mergedRes].forEach((result) => {
+          if (result.error) throw result.error;
+        });
+
+        const mapped = (data || []).map(mapDuplicateCandidate);
+        const pendingCount = filters.status === 'all' || filters.status === 'pending' ? Number(pendingRes.count || 0) : 0;
+        const approvedCount = filters.status === 'all' || filters.status === 'approved' ? Number(approvedRes.count || 0) : 0;
+        const rejectedCount = filters.status === 'all' || filters.status === 'rejected' ? Number(rejectedRes.count || 0) : 0;
+        const mergedCount = filters.status === 'all' || filters.status === 'merged' ? Number(mergedRes.count || 0) : 0;
+        setCandidates(mapped);
+        setTotalCandidates(count || 0);
+        setSummary({
+          total: filters.status === 'all' ? Number(count || 0) : Number(count || 0),
+          pending: pendingCount,
+          approved: approvedCount,
+          rejected: rejectedCount,
+          merged: mergedCount,
+        });
+
+        if (mapped.length === 0) {
+          setSelectedId(null);
+          syncEditorState(null);
+          return;
+        }
+
+        const nextSelectedId = mapped.some((candidate) => candidate.id === selectedId)
+          ? selectedId
+          : mapped[0].id;
+        setSelectedId(nextSelectedId);
+        syncEditorState(mapped.find((candidate) => candidate.id === nextSelectedId));
+        return;
+      }
+
       const { data, error } = await query;
       if (error) throw error;
 
       let mapped = (data || []).map(mapDuplicateCandidate);
-
-      const searchTerm = filters.searchTerm.trim().toLowerCase();
-      if (searchTerm) {
-        mapped = mapped.filter((candidate) => {
-          const haystack = [
-            candidate.titleA.name,
-            candidate.titleA.slug,
-            candidate.titleA.canonicalTitle,
-            candidate.titleB.name,
-            candidate.titleB.slug,
-            candidate.titleB.canonicalTitle,
-            candidate.reason,
-          ].join(' ').toLowerCase();
-          return haystack.includes(searchTerm);
-        });
-      }
-
       if (filters.adultFilter === 'adult') {
-        mapped = mapped.filter((c) => c.titleA.isAdult || c.titleB.isAdult);
+        mapped = mapped.filter((candidate) => candidate.titleA.isAdult || candidate.titleB.isAdult);
       } else if (filters.adultFilter === 'sfw') {
-        mapped = mapped.filter((c) => !c.titleA.isAdult && !c.titleB.isAdult);
+        mapped = mapped.filter((candidate) => !candidate.titleA.isAdult && !candidate.titleB.isAdult);
       }
 
-      setCandidates(mapped);
+      const pagedCandidates = mapped.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+      setCandidates(pagedCandidates);
+      setTotalCandidates(mapped.length);
+      setSummary(mapped.reduce((acc, candidate) => {
+        acc.total += 1;
+        acc[candidate.status] += 1;
+        return acc;
+      }, { total: 0, pending: 0, approved: 0, rejected: 0, merged: 0 }));
 
-      if (mapped.length === 0) {
+      if (pagedCandidates.length === 0) {
         setSelectedId(null);
         syncEditorState(null);
         return;
       }
 
-      const nextSelectedId = mapped.some((candidate) => candidate.id === selectedId)
+      const nextSelectedId = pagedCandidates.some((candidate) => candidate.id === selectedId)
         ? selectedId
-        : mapped[0].id;
+        : pagedCandidates[0].id;
       setSelectedId(nextSelectedId);
-      syncEditorState(mapped.find((candidate) => candidate.id === nextSelectedId));
+      syncEditorState(pagedCandidates.find((candidate) => candidate.id === nextSelectedId));
     } catch (error) {
       console.error('Failed to load duplicate candidates:', error);
       setErrorMessage(error.message || t('admin.duplicates.loadFailed'));
@@ -134,23 +233,25 @@ export function AdminDuplicates() {
     } finally {
       setIsLoading(false);
     }
-  }, [filters.adultFilter, filters.searchTerm, filters.status, selectedId, syncEditorState, t]);
+  }, [currentPage, debouncedSearchTerm, filters.adultFilter, filters.status, selectedId, syncEditorState, t]);
 
   useEffect(() => {
     fetchCandidates();
   }, [fetchCandidates]);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, filters.adultFilter, filters.status]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
     syncEditorState(selectedCandidate);
   }, [selectedCandidate, syncEditorState]);
-
-  const summary = useMemo(() => {
-    return candidates.reduce((acc, candidate) => {
-      acc.total += 1;
-      acc[candidate.status] += 1;
-      return acc;
-    }, { total: 0, pending: 0, approved: 0, rejected: 0, merged: 0 });
-  }, [candidates]);
 
   const handleRunScan = async () => {
     if (!supabase) return;
@@ -367,7 +468,7 @@ export function AdminDuplicates() {
                 <ListCollapse size={20} color="var(--primary-500)" />
                 {t('admin.duplicates.queueTitle')}
               </h2>
-              <p>{t('admin.duplicates.queueHint')}</p>
+              <p>{t('admin.duplicates.queueHint')} {totalCandidates ? `(${totalCandidates.toLocaleString(locale)})` : ''}</p>
             </div>
           </div>
 
@@ -378,33 +479,47 @@ export function AdminDuplicates() {
           ) : candidates.length === 0 ? (
             <EmptyState title={t('admin.duplicates.noResults')} message={t('admin.duplicates.noFilterResults')} />
           ) : (
-            <div className="admin-list-stack">
-              {candidates.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  className={`admin-record-card ${selectedId === candidate.id ? 'active' : ''}`}
-                  onClick={() => setSelectedId(candidate.id)}
-                >
-                  <div className="admin-record-main">
-                    <strong className="admin-queue-card-title">{candidate.titleA.name}</strong>
-                    <span className="admin-queue-card-subtitle">{candidate.titleB.name}</span>
-                    <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
-                      <span className={`admin-queue-pill status-${candidate.status}`}>{candidate.statusLabel}</span>
-                      <span className="admin-queue-pill">{candidate.confidence.toFixed(0)} {t('admin.duplicates.confidenceSuffix')}</span>
-                      {candidate.heuristicFlags.slice(0, 2).map((flag) => (
-                        <span key={flag} className="admin-queue-pill subtle">{flag}</span>
-                      ))}
+            <>
+              <div className="admin-list-stack">
+                {candidates.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    className={`admin-record-card ${selectedId === candidate.id ? 'active' : ''}`}
+                    onClick={() => setSelectedId(candidate.id)}
+                  >
+                    <div className="admin-record-main">
+                      <strong className="admin-queue-card-title">{candidate.titleA.name}</strong>
+                      <span className="admin-queue-card-subtitle">{candidate.titleB.name}</span>
+                      <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
+                        <span className={`admin-queue-pill status-${candidate.status}`}>{candidate.statusLabel}</span>
+                        <span className="admin-queue-pill">{candidate.confidence.toFixed(0)} {t('admin.duplicates.confidenceSuffix')}</span>
+                        {candidate.heuristicFlags.slice(0, 2).map((flag) => (
+                          <span key={flag} className="admin-queue-pill subtle">{flag}</span>
+                        ))}
+                      </div>
+                      <span className="admin-clamp-2">{candidate.reason || t('admin.duplicates.noHeuristicDetail')}</span>
                     </div>
-                    <span className="admin-clamp-2">{candidate.reason || t('admin.duplicates.noHeuristicDetail')}</span>
-                  </div>
-                  <div className="admin-record-meta">
-                    <span>#{candidate.id}</span>
-                    <span>{new Date(candidate.createdAt).toLocaleDateString(locale)}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="admin-record-meta">
+                      <span>#{candidate.id}</span>
+                      <span>{new Date(candidate.createdAt).toLocaleDateString(locale)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {totalPages > 1 ? (
+                <div className="admin-pagination">
+                  <button className="action-btn" disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                    {t('common.previous')}
+                  </button>
+                  <span className="admin-list-summary">{t('common.page')} {currentPage} / {totalPages}</span>
+                  <button className="action-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>
+                    {t('common.next')}
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
 

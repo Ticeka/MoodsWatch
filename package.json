@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node scripts/verify-phase3.mjs",
+    "test:bench:data-loading": "node scripts/benchmark-data-loading.mjs",
     "test:op-mc": "node scripts/verify-op-mc-curation.mjs",
     "test:tierlist": "node scripts/verify-tierlist-smoke.mjs",
     "db:push": "supabase db push",

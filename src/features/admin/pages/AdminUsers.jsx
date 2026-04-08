@@ -1,31 +1,34 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { ErrorState } from '@/shared/components/ui/ErrorState';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { supabase } from '@/shared/lib/supabase';
 import '../styles/Admin.css';
 
+const PAGE_SIZE = 50;
+
 export function AdminUsers() {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const roleLabelMap = {
     user: t('admin.users.roleUser'),
     editor: t('admin.users.roleEditor'),
     admin: t('admin.users.roleAdmin'),
   };
+  const totalPages = Math.max(1, Math.ceil(totalUsers / PAGE_SIZE));
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  async function fetchUsers() {
+  const fetchUsers = useCallback(async () => {
     if (!supabase) {
       const message = t('admin.users.supabaseUnavailable');
       setErrorMessage(message);
@@ -38,13 +41,42 @@ export function AdminUsers() {
     setErrorMessage('');
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, name, email, role, avatar_url, created_at', { count: 'planned' });
+
+      if (roleFilter !== 'all') {
+        query = query.eq('role', roleFilter);
+      }
+
+      const normalizedSearchTerm = debouncedSearchTerm.trim();
+      if (normalizedSearchTerm) {
+        const searchClauses = [
+          `name.ilike.%${normalizedSearchTerm}%`,
+          `email.ilike.%${normalizedSearchTerm}%`,
+        ];
+
+        if (/^[0-9a-f-]{32,36}$/i.test(normalizedSearchTerm)) {
+          searchClauses.push(`id.eq.${normalizedSearchTerm}`);
+        }
+
+        query = query.or(searchClauses.join(','));
+      }
+
+      if (sortBy === 'oldest') {
+        query = query.order('created_at', { ascending: true });
+      } else if (sortBy === 'name') {
+        query = query.order('name', { ascending: true, nullsFirst: false });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      const from = (currentPage - 1) * PAGE_SIZE;
+      const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1);
 
       if (error) throw error;
       setUsers(data || []);
+      setTotalUsers(count || 0);
     } catch (err) {
       console.warn('Error fetching users:', err);
       const message = err?.message
@@ -55,7 +87,21 @@ export function AdminUsers() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [currentPage, debouncedSearchTerm, roleFilter, sortBy, t]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, roleFilter, sortBy]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   async function handleRoleChange(userId, userName, newRole) {
     if (!supabase) {
@@ -77,7 +123,7 @@ export function AdminUsers() {
       if (error) throw error;
 
       toast.success(t('admin.users.roleChanged', { role: roleLabel }), { id: toastId });
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       console.error('Role change error:', err);
       toast.error(
@@ -87,42 +133,13 @@ export function AdminUsers() {
     }
   }
 
-  const visibleUsers = useMemo(() => {
-    const loweredSearchTerm = searchTerm.trim().toLowerCase();
-    const filtered = users.filter((entry) => {
-      const matchesSearch = !loweredSearchTerm || (
-        (entry.name || '').toLowerCase().includes(loweredSearchTerm) ||
-        (entry.id || '').toLowerCase().includes(loweredSearchTerm) ||
-        (entry.email || '').toLowerCase().includes(loweredSearchTerm)
-      );
-      const matchesRole = roleFilter === 'all' || (entry.role || 'user') === roleFilter;
-      return matchesSearch && matchesRole;
-    });
-
-    if (sortBy === 'oldest') {
-      return [...filtered].sort((left, right) => (
-        new Date(left.created_at || 0).getTime() - new Date(right.created_at || 0).getTime()
-      ));
-    }
-
-    if (sortBy === 'name') {
-      return [...filtered].sort((left, right) => (
-        String(left.name || '').localeCompare(String(right.name || ''), language === 'th' ? 'th' : 'en')
-      ));
-    }
-
-    return [...filtered].sort((left, right) => (
-      new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime()
-    ));
-  }, [users, searchTerm, roleFilter, sortBy, language]);
-
   return (
     <div className="admin-page-content animate-fade-in">
       <div className="admin-header">
         <div>
           <h1 style={{ fontSize: '2rem', marginBottom: 'var(--space-2)' }}>{t('admin.users.pageTitle')}</h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {t('admin.users.pageSubtitle', { count: users.length })}
+            {t('admin.users.pageSubtitle', { count: totalUsers })}
           </p>
         </div>
         <button className="action-btn" onClick={fetchUsers} type="button">{t('admin.common.refresh')}</button>
@@ -161,7 +178,7 @@ export function AdminUsers() {
           <div style={{ padding: 'var(--space-10)', textAlign: 'center' }}>{t('admin.users.loading')}</div>
         ) : errorMessage ? (
           <ErrorState message={errorMessage} onRetry={fetchUsers} className="admin-users-error-state" />
-        ) : visibleUsers.length === 0 ? (
+        ) : users.length === 0 ? (
           <EmptyState
             className="empty-state"
             title={t('admin.users.noUsers')}
@@ -179,7 +196,7 @@ export function AdminUsers() {
               </tr>
             </thead>
             <tbody>
-              {visibleUsers.map((entry) => (
+              {users.map((entry) => (
                 <tr key={entry.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -207,7 +224,7 @@ export function AdminUsers() {
                     </span>
                   </td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                    {entry.created_at ? new Date(entry.created_at).toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
+                    {entry.created_at ? new Date(entry.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <select
@@ -228,6 +245,20 @@ export function AdminUsers() {
           </table>
         )}
       </div>
+
+      {!isLoading && !errorMessage && totalPages > 1 ? (
+        <div className="admin-pagination">
+          <button className="action-btn" disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+            {t('common.previous')}
+          </button>
+          <span className="admin-list-summary">
+            {t('common.page')} {currentPage} / {totalPages}
+          </span>
+          <button className="action-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>
+            {t('common.next')}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -9,8 +9,10 @@ import { getSearchIntent, sortBySearchRelevance, textMatchesQuery } from '@/feat
 
 const PROFILE_SELECT = 'id, name, username, avatar_url, bio, favorite_moods, created_at';
 const POST_AUTHOR_SELECT = 'id, name, username, avatar_url';
-const TIERLIST_DB_FETCH_LIMIT = 24; // over-fetch before ranking/slice
-const POST_DEFAULT_SAMPLE_LIMIT = 24;
+const POST_DEFAULT_SAMPLE_LIMIT = 18;
+const TIERLIST_FOCUSED_FETCH_LIMIT = 10;
+const TIERLIST_STANDARD_FETCH_LIMIT = 14;
+const TIERLIST_BROAD_FETCH_LIMIT = 18;
 const POST_SELECT = `
   id,
   user_id,
@@ -68,9 +70,36 @@ function sanitizeSearchTerm(value) {
 const TEMPLATE_SELECT = 'id, title, description, category, is_public, is_system, plays, title_ids, updated_at';
 const LIST_SEARCH_SELECT = 'id, title, description, is_public, play_count, owner_name, owner_username, updated_at';
 
+function buildTierlistRequestPlan(normalizedQuery) {
+  const intent = getSearchIntent(normalizedQuery);
+
+  if (intent.isBroad) {
+    return {
+      templateLimit: TIERLIST_BROAD_FETCH_LIMIT,
+      publicListLimit: TIERLIST_BROAD_FETCH_LIMIT,
+      ownListLimit: 9,
+    };
+  }
+
+  if (normalizedQuery.length >= 5) {
+    return {
+      templateLimit: TIERLIST_FOCUSED_FETCH_LIMIT,
+      publicListLimit: TIERLIST_FOCUSED_FETCH_LIMIT,
+      ownListLimit: 5,
+    };
+  }
+
+  return {
+    templateLimit: TIERLIST_STANDARD_FETCH_LIMIT,
+    publicListLimit: TIERLIST_STANDARD_FETCH_LIMIT,
+    ownListLimit: 7,
+  };
+}
+
 async function _fetchTierlists(query, userId) {
   if (!supabase) return [];
   const wildcard = `%${query}%`;
+  const { templateLimit, publicListLimit, ownListLimit } = buildTierlistRequestPlan(query);
 
   const [templateRes, publicListRes, ownListRes] = await Promise.all([
     supabase
@@ -79,21 +108,21 @@ async function _fetchTierlists(query, userId) {
       .eq('is_public', true)
       .or(`title.ilike.${wildcard},description.ilike.${wildcard}`)
       .order('plays', { ascending: false })
-      .limit(TIERLIST_DB_FETCH_LIMIT),
+      .limit(templateLimit),
     supabase
       .from('tierlist_lists')
       .select(LIST_SEARCH_SELECT)
       .eq('is_public', true)
       .or(`title.ilike.${wildcard},description.ilike.${wildcard},owner_name.ilike.${wildcard},owner_username.ilike.${wildcard}`)
       .order('play_count', { ascending: false })
-      .limit(TIERLIST_DB_FETCH_LIMIT),
+      .limit(publicListLimit),
     userId
       ? supabase
           .from('tierlist_lists')
           .select(LIST_SEARCH_SELECT)
           .eq('owner_user_id', userId)
           .or(`title.ilike.${wildcard},description.ilike.${wildcard}`)
-          .limit(Math.ceil(TIERLIST_DB_FETCH_LIMIT / 2))
+          .limit(ownListLimit)
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -139,23 +168,67 @@ async function _fetchTierlists(query, userId) {
 
 // Fixed sample sizes match the max any surface will request, so the cached
 // result is always large enough to slice for both header and discover limits.
-const PROFILE_SAMPLE = 24;
-const POST_SAMPLE    = 90;
+const PROFILE_FOCUSED_SAMPLE_LIMIT = 18;
+const PROFILE_FALLBACK_SAMPLE_LIMIT = 12;
+const POST_FOCUSED_CONTENT_LIMIT = 36;
+const POST_FOCUSED_RECENT_LIMIT = 18;
+const POST_BROAD_RECENT_LIMIT = 24;
+
+function buildProfileRequestPlan(normalizedQuery) {
+  const intent = getSearchIntent(normalizedQuery);
+
+  if (normalizedQuery.length < 2) {
+    return { recentLimit: PROFILE_FALLBACK_SAMPLE_LIMIT, targetedLimit: 0 };
+  }
+
+  if (intent.isBroad) {
+    return {
+      recentLimit: PROFILE_FALLBACK_SAMPLE_LIMIT,
+      targetedLimit: PROFILE_FALLBACK_SAMPLE_LIMIT,
+    };
+  }
+
+  return { recentLimit: 0, targetedLimit: PROFILE_FOCUSED_SAMPLE_LIMIT };
+}
+
+function buildPostRequestPlan(normalizedQuery) {
+  const intent = getSearchIntent(normalizedQuery);
+
+  if (normalizedQuery.length < 2) {
+    return { recentLimit: POST_DEFAULT_SAMPLE_LIMIT, targetedContentLimit: 0 };
+  }
+
+  if (intent.isBroad) {
+    return {
+      recentLimit: POST_BROAD_RECENT_LIMIT,
+      targetedContentLimit: POST_DEFAULT_SAMPLE_LIMIT,
+    };
+  }
+
+  return {
+    recentLimit: POST_FOCUSED_RECENT_LIMIT,
+    targetedContentLimit: POST_FOCUSED_CONTENT_LIMIT,
+  };
+}
 
 async function _fetchProfiles(normalizedQuery) {
   if (!supabase) return [];
 
-  const sampleLimit = normalizedQuery.length >= 2 ? PROFILE_SAMPLE : 12;
-  const requests = [
-    supabase
-      .from('user_profiles')
-      .select(PROFILE_SELECT)
-      .eq('is_profile_public', true)
-      .order('created_at', { ascending: false })
-      .limit(sampleLimit),
-  ];
+  const { recentLimit, targetedLimit } = buildProfileRequestPlan(normalizedQuery);
+  const requests = [];
 
-  if (normalizedQuery.length >= 2) {
+  if (recentLimit > 0) {
+    requests.push(
+      supabase
+        .from('user_profiles')
+        .select(PROFILE_SELECT)
+        .eq('is_profile_public', true)
+        .order('created_at', { ascending: false })
+        .limit(recentLimit)
+    );
+  }
+
+  if (targetedLimit > 0) {
     requests.push(
       supabase
         .from('user_profiles')
@@ -163,7 +236,7 @@ async function _fetchProfiles(normalizedQuery) {
         .eq('is_profile_public', true)
         .or(`username.ilike.%${normalizedQuery}%,name.ilike.%${normalizedQuery}%,bio.ilike.%${normalizedQuery}%`)
         .order('created_at', { ascending: false })
-        .limit(sampleLimit)
+        .limit(targetedLimit)
     );
   }
 
@@ -398,24 +471,27 @@ async function _fetchPosts(normalizedQuery) {
   if (!supabase) return [];
 
   const intent = getSearchIntent(normalizedQuery);
-  const sampleLimit = normalizedQuery.length >= 2 ? POST_SAMPLE : POST_DEFAULT_SAMPLE_LIMIT;
+  const { recentLimit, targetedContentLimit } = buildPostRequestPlan(normalizedQuery);
+  const requests = [];
 
-  const requests = [
-    supabase
-      .from('social_posts')
-      .select(POST_SELECT)
-      .order('created_at', { ascending: false })
-      .limit(sampleLimit),
-  ];
+  if (recentLimit > 0) {
+    requests.push(
+      supabase
+        .from('social_posts')
+        .select(POST_SELECT)
+        .order('created_at', { ascending: false })
+        .limit(recentLimit)
+    );
+  }
 
-  if (normalizedQuery.length >= 2) {
+  if (targetedContentLimit > 0) {
     requests.push(
       supabase
         .from('social_posts')
         .select(POST_SELECT)
         .ilike('content', `%${normalizedQuery}%`)
         .order('created_at', { ascending: false })
-        .limit(sampleLimit)
+        .limit(targetedContentLimit)
     );
   }
 
@@ -438,7 +514,9 @@ async function _fetchPosts(normalizedQuery) {
     });
   });
 
-  const authorProfiles = await getProfilesByIds(mergedRows.map((row) => row.user_id));
+  const authorProfiles = mergedRows.length > 0
+    ? await getProfilesByIds(mergedRows.map((row) => row.user_id))
+    : new Map();
   const posts = mergedRows
     .map((row) => ({
       id: row.id,

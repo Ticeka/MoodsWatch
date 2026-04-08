@@ -1,6 +1,31 @@
 import { supabase } from '@/shared/lib/supabase';
 
 export const PROFILE_REQUEST_TIMEOUT_MS = 15000;
+const AUTH_USER_PROFILE_SELECT = `
+  id,
+  name,
+  username,
+  avatar_url,
+  bio,
+  role,
+  is_profile_public,
+  allow_profile_comments,
+  favorite_moods,
+  hide_seen_by_default,
+  prioritize_unseen,
+  exclude_completed_from_recs,
+  exclude_dropped_from_recs,
+  hide_adult_content,
+  recommendation_types,
+  recommendation_subtypes,
+  recommendation_progress_states,
+  force_unseen_only,
+  min_recommendation_score,
+  recommendation_length,
+  top_titles,
+  created_at,
+  updated_at
+`;
 
 const profileRequestCache = new Map();
 
@@ -28,7 +53,7 @@ export async function fetchAuthUserProfile(userId) {
   const request = withTimeout(
     supabase
       .from('user_profiles')
-      .select('*')
+      .select(AUTH_USER_PROFILE_SELECT)
       .eq('id', userId)
       .maybeSingle(),
     PROFILE_REQUEST_TIMEOUT_MS,
@@ -60,7 +85,7 @@ export async function ensureAuthUserProfile(userId) {
     supabase
       .from('user_profiles')
       .insert({ id: userId, is_profile_public: true })
-      .select('*')
+      .select(AUTH_USER_PROFILE_SELECT)
       .maybeSingle(),
     PROFILE_REQUEST_TIMEOUT_MS,
     'Profile create'
@@ -93,7 +118,7 @@ export async function updateAuthUserProfile(userId, updates) {
     supabase
       .from('user_profiles')
       .upsert({ id: userId, ...payload }, { onConflict: 'id' })
-      .select('*')
+      .select(AUTH_USER_PROFILE_SELECT)
       .maybeSingle(),
     PROFILE_REQUEST_TIMEOUT_MS,
     'Profile update'

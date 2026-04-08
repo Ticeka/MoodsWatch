@@ -1,7 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 
-const TEMPLATE_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, created_at, updated_at';
-const LIST_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, owner_username, created_at, updated_at';
+const TEMPLATE_DETAIL_SELECT = 'id, owner_user_id, title, description, category, title_ids, default_rows, is_public, is_system, plays, created_at, updated_at';
+const LIST_DETAIL_SELECT = 'id, owner_user_id, template_id, title, description, is_public, play_count, owner_name, created_at, updated_at';
 
 function ensureSupabase() {
   if (!supabase) {
@@ -9,99 +9,105 @@ function ensureSupabase() {
   }
 }
 
-function chunkItems(items = [], size = 50) {
-  const chunkSize = Math.max(1, Number(size) || 1);
-  const chunks = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    chunks.push(items.slice(index, index + chunkSize));
+function maybeThrow(result) {
+  if (result.error) {
+    throw result.error;
   }
-
-  return chunks;
+  return result.data;
 }
 
-export async function fetchAdminTierlistData() {
+export async function fetchAdminTierlistOverview() {
   ensureSupabase();
 
-  const [
-    templateCountResult,
-    listCountResult,
-    commentCountResult,
-    templateResult,
-    listResult,
-  ] = await Promise.all([
-    supabase.from('tierlist_templates').select('*', { count: 'estimated', head: true }),
-    supabase.from('tierlist_lists').select('*', { count: 'estimated', head: true }),
-    supabase.from('tierlist_comments').select('*', { count: 'estimated', head: true }),
-    supabase.from('tierlist_templates').select(TEMPLATE_SELECT).order('updated_at', { ascending: false }),
-    supabase.from('tierlist_lists').select(LIST_SELECT).order('updated_at', { ascending: false }),
-  ]);
+  const result = await supabase.rpc('admin_get_tierlist_overview');
+  const data = maybeThrow(result);
 
-  if (templateCountResult.error) throw templateCountResult.error;
-  if (listCountResult.error) throw listCountResult.error;
-  if (commentCountResult.error) throw commentCountResult.error;
-  if (templateResult.error) throw templateResult.error;
-  if (listResult.error) throw listResult.error;
+  return data?.[0] || {
+    template_count: 0,
+    public_template_count: 0,
+    template_issue_count: 0,
+    list_count: 0,
+    public_list_count: 0,
+    broken_public_list_count: 0,
+    comment_count: 0,
+  };
+}
 
-  const templateRows = templateResult.data || [];
-  const listRows = listResult.data || [];
-  const listIds = listRows.map((row) => row.id);
+export async function fetchAdminTierlistTemplates() {
+  ensureSupabase();
 
-  const commentsChunks = listIds.length > 0
-    ? await Promise.all(
-      chunkItems(listIds, 40).map((idChunk) => (
-        supabase.from('tierlist_comments').select('list_id').in('list_id', idChunk)
-      ))
-    )
-    : [];
+  const result = await supabase.rpc('admin_get_tierlist_template_summaries');
+  return maybeThrow(result) || [];
+}
 
-  const [rowsResult, poolResult] = listIds.length > 0
-    ? await Promise.all([
-      supabase.from('tierlist_list_rows').select('id, list_id, position, label, color, title_ids').in('list_id', listIds),
-      supabase.from('tierlist_list_pool_items').select('list_id, title_id, position').in('list_id', listIds),
-    ])
-    : [
-      { data: [], error: null },
-      { data: [], error: null },
-    ];
+export async function fetchAdminTierlistLists() {
+  ensureSupabase();
 
-  if (rowsResult.error) throw rowsResult.error;
-  if (poolResult.error) throw poolResult.error;
-  commentsChunks.forEach((result) => {
-    if (result.error) {
-      throw result.error;
-    }
-  });
+  const result = await supabase.rpc('admin_get_tierlist_list_summaries');
+  return maybeThrow(result) || [];
+}
 
-  const ownerIds = [
-    ...new Set([
-      ...templateRows.map((row) => row.owner_user_id).filter(Boolean),
-      ...listRows.map((row) => row.owner_user_id).filter(Boolean),
-    ]),
-  ];
+export async function fetchAdminTierlistRecordDetail(kind, recordId) {
+  ensureSupabase();
 
-  let profileRows = [];
-  if (ownerIds.length > 0) {
-    const profileResult = await supabase
-      .from('user_profiles')
-      .select('id, name, username')
-      .in('id', ownerIds);
-    if (profileResult.error) throw profileResult.error;
-    profileRows = profileResult.data || [];
+  if (!recordId) {
+    return null;
   }
 
+  if (kind === 'template') {
+    const detailResult = await supabase
+      .from('tierlist_templates')
+      .select(TEMPLATE_DETAIL_SELECT)
+      .eq('id', recordId)
+      .maybeSingle();
+
+    const detail = maybeThrow(detailResult);
+    if (!detail) return null;
+
+    return {
+      kind: 'template',
+      defaultRows: Array.isArray(detail.default_rows) ? detail.default_rows : [],
+      titleIds: Array.isArray(detail.title_ids) ? detail.title_ids : [],
+    };
+  }
+
+  const [detailResult, rowsResult, poolResult] = await Promise.all([
+    supabase
+      .from('tierlist_lists')
+      .select(LIST_DETAIL_SELECT)
+      .eq('id', recordId)
+      .maybeSingle(),
+    supabase
+      .from('tierlist_list_rows')
+      .select('id, list_id, position, label, color, title_ids')
+      .eq('list_id', recordId)
+      .order('position', { ascending: true }),
+    supabase
+      .from('tierlist_list_pool_items')
+      .select('list_id, title_id, position')
+      .eq('list_id', recordId)
+      .order('position', { ascending: true }),
+  ]);
+
+  const detail = maybeThrow(detailResult);
+  const rows = maybeThrow(rowsResult) || [];
+  const pool = maybeThrow(poolResult) || [];
+
+  if (!detail) return null;
+
   return {
-    counts: {
-      templateCount: Number(templateCountResult.count || templateRows.length),
-      listCount: Number(listCountResult.count || listRows.length),
-      commentCount: Number(commentCountResult.count || 0),
-    },
-    templateRows,
-    listRows,
-    commentRows: commentsChunks.flatMap((result) => result.data || []),
-    listRowsData: rowsResult.data || [],
-    listPoolData: poolResult.data || [],
-    profileRows,
+    kind: 'list',
+    rows: rows.map((row) => ({
+      id: row.id,
+      label: row.label || '',
+      color: row.color || '',
+      position: Number(row.position || 0),
+      titleIds: Array.isArray(row.title_ids) ? row.title_ids : [],
+    })),
+    poolItems: pool.map((row) => ({
+      titleId: Number(row.title_id),
+      position: Number(row.position || 0),
+    })),
   };
 }
 

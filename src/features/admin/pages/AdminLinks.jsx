@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Pencil, Plus, Trash2, X, Check, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
@@ -183,6 +184,8 @@ export function AdminLinks() {
   const [noLinkPage, setNoLinkPage] = useState(1);
   const [noLinkSearch, setNoLinkSearch] = useState('');
   const [noLinkType, setNoLinkType] = useState('all');
+  const debouncedSearchTitle = useDebouncedValue(searchTitle, 300);
+  const debouncedNoLinkSearch = useDebouncedValue(noLinkSearch, 300);
 
   const linksTotalPages = Math.max(1, Math.ceil(linksTotal / PAGE_SIZE));
   const noLinkTotalPages = Math.max(1, Math.ceil(noLinkTotal / PAGE_SIZE));
@@ -190,84 +193,67 @@ export function AdminLinks() {
   const fetchLinks = useCallback(async () => {
     setLinksLoading(true);
     try {
-      let titleIdFilter = null;
-      if (searchTitle.trim()) {
-        const { data: matched } = await supabase
-          .from('canonical_titles')
-          .select('id')
-          .ilike('canonical_title', `%${searchTitle.trim()}%`);
-        titleIdFilter = (matched || []).map((item) => item.id);
-        if (titleIdFilter.length === 0) {
-          setLinks([]);
-          setLinksTotal(0);
-          setLinksLoading(false);
-          return;
-        }
-      }
-
-      let query = supabase
-        .from('title_availability')
-        .select('id, platform_name, url, region_code, is_official, canonical_title_id', { count: 'planned' })
-        .order('platform_name', { ascending: true });
-
-      if (filterPlatform !== 'all') query = query.eq('platform_name', filterPlatform);
-      if (titleIdFilter !== null) query = query.in('canonical_title_id', titleIdFilter);
-
-      const from = (linksPage - 1) * PAGE_SIZE;
-      query = query.range(from, from + PAGE_SIZE - 1);
-
-      const { data, count, error } = await query;
+      const { data, error } = await supabase.rpc('admin_get_title_links', {
+        p_search_title: debouncedSearchTitle.trim(),
+        p_platform: filterPlatform,
+        p_page: linksPage,
+        p_page_size: PAGE_SIZE,
+      });
       if (error) throw error;
 
-      const uniqueIds = [...new Set((data || []).map((row) => row.canonical_title_id))];
-      let titlesMap = {};
-      if (uniqueIds.length > 0) {
-        const { data: titleData } = await supabase.from('canonical_titles').select('id, canonical_title, slug, type').in('id', uniqueIds);
-        titlesMap = Object.fromEntries((titleData || []).map((item) => [item.id, item]));
-      }
+      const mappedLinks = (data || []).map((row) => ({
+        id: row.id,
+        platform_name: row.platform_name,
+        url: row.url,
+        region_code: row.region_code,
+        is_official: row.is_official,
+        canonical_title_id: row.canonical_title_id,
+        canonical_titles: {
+          id: row.canonical_title_id,
+          canonical_title: row.canonical_title,
+          slug: row.slug,
+          type: row.title_type,
+        },
+      }));
 
-      setLinks((data || []).map((row) => ({ ...row, canonical_titles: titlesMap[row.canonical_title_id] || null })));
-      setLinksTotal(count || 0);
+      setLinks(mappedLinks);
+      setLinksTotal(Number(data?.[0]?.total_count || 0));
     } catch (error) {
       toast.error(error.message || t('admin.links.loadFailed'));
     } finally {
       setLinksLoading(false);
     }
-  }, [filterPlatform, linksPage, searchTitle, t]);
+  }, [debouncedSearchTitle, filterPlatform, linksPage, t]);
 
   const fetchNoLinks = useCallback(async () => {
     setNoLinkLoading(true);
     try {
-      const { data: hasLinks } = await supabase.from('title_availability').select('canonical_title_id');
-      const linkedIds = [...new Set((hasLinks || []).map((row) => row.canonical_title_id))];
-
-      let query = supabase
-        .from('canonical_titles')
-        .select('id, canonical_title, slug, type, subtype', { count: 'planned' })
-        .order('canonical_title', { ascending: true });
-
-      if (linkedIds.length > 0) query = query.not('id', 'in', `(${linkedIds.join(',')})`);
-      if (noLinkType !== 'all') query = query.eq('subtype', noLinkType);
-      if (noLinkSearch.trim()) query = query.ilike('canonical_title', `%${noLinkSearch.trim()}%`);
-
-      const from = (noLinkPage - 1) * PAGE_SIZE;
-      query = query.range(from, from + PAGE_SIZE - 1);
-
-      const { data, count, error } = await query;
+      const { data, error } = await supabase.rpc('admin_get_titles_without_links', {
+        p_search_title: debouncedNoLinkSearch.trim(),
+        p_title_type: noLinkType,
+        p_page: noLinkPage,
+        p_page_size: PAGE_SIZE,
+      });
       if (error) throw error;
-      setNoLinkTitles(data || []);
-      setNoLinkTotal(count || 0);
+      setNoLinkTitles((data || []).map((row) => ({
+        id: row.id,
+        canonical_title: row.canonical_title,
+        slug: row.slug,
+        type: row.title_type,
+        subtype: row.title_type,
+      })));
+      setNoLinkTotal(Number(data?.[0]?.total_count || 0));
     } catch (error) {
       toast.error(error.message || t('admin.links.loadFailed'));
     } finally {
       setNoLinkLoading(false);
     }
-  }, [noLinkPage, noLinkSearch, noLinkType, t]);
+  }, [debouncedNoLinkSearch, noLinkPage, noLinkType, t]);
 
   useEffect(() => { if (activeTab === 'links') fetchLinks(); }, [activeTab, fetchLinks]);
   useEffect(() => { if (activeTab === 'nolinks') fetchNoLinks(); }, [activeTab, fetchNoLinks]);
-  useEffect(() => { setLinksPage(1); }, [filterPlatform, searchTitle]);
-  useEffect(() => { setNoLinkPage(1); }, [noLinkSearch, noLinkType]);
+  useEffect(() => { setLinksPage(1); }, [debouncedSearchTitle, filterPlatform]);
+  useEffect(() => { setNoLinkPage(1); }, [debouncedNoLinkSearch, noLinkType]);
 
   useEffect(() => {
     if (!addForm.titleSearch.trim() || addForm.titleId) {

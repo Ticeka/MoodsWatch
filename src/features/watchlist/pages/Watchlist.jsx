@@ -114,6 +114,7 @@ export function Watchlist() {
     setConsumptionTarget,
     catchUpToTarget,
     isLoading: isWatchlistLoading,
+    isTitleMetadataLoading: isWatchlistTitleMetadataLoading,
   } = useWatchlist();
   const { favoriteTitleIds, isLoading: isFavoritesLoading, error: favoritesError } = useFavoriteTitles();
   const { prefs, savePreferences } = useProfilePreferences();
@@ -178,7 +179,7 @@ export function Watchlist() {
 
   const isPageLoading =
     isWatchlistLoading ||
-    (titleIds.length > 0 && isTitlesLoading) ||
+    ((titleIds.length > 0 || isWatchlistTitleMetadataLoading) && isTitlesLoading && mergedTitleMap.size === 0) ||
     (watchlist.length > 0 && mergedTitleMap.size === 0);
 
   const populatedList = useMemo(() => {

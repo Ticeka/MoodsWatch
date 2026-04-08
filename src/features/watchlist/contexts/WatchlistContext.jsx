@@ -37,6 +37,26 @@ import {
 
 const WatchlistContext = createContext();
 const loadGuestWatchlist = () => loadStoredWatchlist();
+const WATCHLIST_TITLE_HYDRATION_BATCH_SIZE = 120;
+
+function mergeMappedTitles(previousTitles = [], nextTitles = [], allowedIds = []) {
+  const allowedIdSet = new Set((allowedIds || []).map((id) => Number(id)).filter(Boolean));
+  const merged = new Map();
+
+  previousTitles.forEach((title) => {
+    const titleId = Number(title?.id || 0);
+    if (!titleId || !allowedIdSet.has(titleId)) return;
+    merged.set(titleId, title);
+  });
+
+  nextTitles.forEach((title) => {
+    const titleId = Number(title?.id || 0);
+    if (!titleId || !allowedIdSet.has(titleId)) return;
+    merged.set(titleId, title);
+  });
+
+  return [...merged.values()];
+}
 
 export function WatchlistProvider({ children }) {
   const { user } = useAuth();
@@ -46,6 +66,7 @@ export function WatchlistProvider({ children }) {
   const [watchlist, setWatchlist] = useState(loadGuestWatchlist);
   const [watchlistTitles, setWatchlistTitles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isTitleMetadataLoading, setIsTitleMetadataLoading] = useState(false);
   const [history, setHistory] = useState(() => loadStoredTitleHistory(userId));
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
@@ -101,6 +122,7 @@ export function WatchlistProvider({ children }) {
       Promise.resolve().then(() => {
         setWatchlist(loadStoredWatchlist());
         setWatchlistTitles([]);
+        setIsTitleMetadataLoading(false);
       });
       return;
     }
@@ -147,22 +169,40 @@ export function WatchlistProvider({ children }) {
               });
           }
 
-          const titleIds = mergedWatchlist.map((item) => item.titleId).filter(Boolean);
+          const titleIds = [...new Set(mergedWatchlist.map((item) => Number(item.titleId)).filter(Boolean))];
           if (!cancelled) {
             if (titleIds.length === 0) {
               setWatchlistTitles([]);
+              setIsTitleMetadataLoading(false);
             } else {
+              setWatchlistTitles((current) => mergeMappedTitles(current, [], titleIds));
               cancelIdleWork?.();
               cancelIdleWork = scheduleWhenIdle(async () => {
+                if (!cancelled) {
+                  setIsTitleMetadataLoading(true);
+                }
                 try {
-                  const titlesData = await fetchRemoteWatchlistTitles(titleIds, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
-                  if (!cancelled && titlesData) {
-                    setWatchlistTitles(titlesData.map(mapCanonicalTitle));
+                  for (let index = 0; index < titleIds.length; index += WATCHLIST_TITLE_HYDRATION_BATCH_SIZE) {
+                    const batchIds = titleIds.slice(index, index + WATCHLIST_TITLE_HYDRATION_BATCH_SIZE);
+                    const titlesData = await fetchRemoteWatchlistTitles(batchIds, WATCHLIST_REQUEST_TIMEOUT_MS, withTimeout);
+
+                    if (cancelled) {
+                      return;
+                    }
+
+                    if (titlesData?.length) {
+                      setWatchlistTitles((current) => (
+                        mergeMappedTitles(current, titlesData.map(mapCanonicalTitle), titleIds)
+                      ));
+                    }
                   }
                 } catch (titlesLoadError) {
                   if (!cancelled) {
                     console.warn('Failed to load watchlist titles:', titlesLoadError.message);
-                    setWatchlistTitles([]);
+                  }
+                } finally {
+                  if (!cancelled) {
+                    setIsTitleMetadataLoading(false);
                   }
                 }
               }, 2500);
@@ -173,6 +213,7 @@ export function WatchlistProvider({ children }) {
       console.warn('Failed to load watchlist from Supabase:', error.message);
       if (!cancelled) {
         setWatchlistTitles([]);
+        setIsTitleMetadataLoading(false);
         const fallback = loadStoredWatchlist(userId);
         if (fallback.length > 0) {
           setWatchlist(fallback);
@@ -498,12 +539,14 @@ export function WatchlistProvider({ children }) {
     setConsumptionTarget,
     catchUpToTarget,
     isLoading,
+    isTitleMetadataLoading,
     isHistoryLoading,
   }), [
     watchlist,
     watchlistTitles,
     history,
     isLoading,
+    isTitleMetadataLoading,
     isHistoryLoading,
     // action callbacks are now stable refs — excluded from deps intentionally
     addToList,

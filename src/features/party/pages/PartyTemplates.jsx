@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music, Plus } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/api/partyRemoteApi';
@@ -149,13 +149,12 @@ export function PartyTemplatesPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
   const loadTemplates = useCallback(() => {
     let ignore = false;
-    setLoading(true);
-    setFetchError(null);
 
     Promise.all([
       fetchPartyTemplates({
@@ -196,13 +195,9 @@ export function PartyTemplatesPage() {
   }, [currentTab, debouncedSearch, user?.id]);
 
   useEffect(() => {
-    setPage(1);
-  }, [currentTab, debouncedSearch, filterMode, setType, sortBy]);
-
-  useEffect(() => {
     const cleanup = loadTemplates();
     return cleanup;
-  }, [loadTemplates]);
+  }, [loadTemplates, reloadKey]);
 
   const filteredItems = useMemo(
     () => sortListingItems(filterListingItems(items, { setType, filterMode }), sortBy),
@@ -211,14 +206,11 @@ export function PartyTemplatesPage() {
 
   const total = filteredItems.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
   const visibleItems = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
+    const start = (currentPage - 1) * PAGE_SIZE;
     return filteredItems.slice(start, start + PAGE_SIZE);
-  }, [filteredItems, page]);
-
-  useEffect(() => {
-    setPage((current) => Math.min(current, totalPages));
-  }, [totalPages]);
+  }, [currentPage, filteredItems]);
 
   const handleCardClick = useCallback((template) => {
     if (template.contentType === 'song-set') {
@@ -242,7 +234,7 @@ export function PartyTemplatesPage() {
     }
 
     toast(pick('ชุดทายชื่อเรื่องสามารถเลือกใช้ได้ตอนตั้งค่าห้อง', 'Guess the Title sets can be selected from the room setup flow.'));
-  }, [filterMode, navigate, pick, returnTo, user?.id]);
+  }, [filterMode, navigate, pick, returnTo, user]);
 
   const backDestination = returnTo || '/party';
   const backLabel = returnTo ? pick('กลับไปห้อง', 'Back to room') : pick('ย้อนกลับ', 'Back');
@@ -253,40 +245,52 @@ export function PartyTemplatesPage() {
     (setId) => `/party/templates/create?mode=title-guess&edit=${encodeURIComponent(setId)}`,
     [],
   );
+  const triggerReload = useCallback(() => {
+    setLoading(true);
+    setFetchError(null);
+    setReloadKey((current) => current + 1);
+  }, []);
 
   return (
     <div className="party-page is-hub party-route-fade">
       <div className="party-templates-page">
-        <header className="party-templates-header party-shared-hero">
-          <div>
+        <header className="party-templates-header party-templates-header--minimal">
+          <div className="party-templates-header-copy">
             <button className="party-back-btn party-shared-back" onClick={() => navigate(backDestination, { replace: true, viewTransition: true })} aria-label={backLabel}>
               <ChevronLeft size={18} />
               {backLabel}
             </button>
-            <div className="party-shared-badge">
-              <span className="party-shared-badge-icon"><Sparkles size={12} fill="currentColor" /></span>
-              {pick('เลือกแล้วกลับไปเล่นต่อได้เลย', 'Choose and jump back in')}
-            </div>
-            <span className="party-kicker party-shared-kicker"><LibrarySquare size={16} /> {pick('เซ็ตปาร์ตี้', 'Party Sets')}</span>
-            <h1 className="party-shared-title">{pick('เลือกเซ็ตสำหรับปาร์ตี้', 'Choose a set for your party')}</h1>
-            <p className="party-shared-sub">{pick('ดูได้ทั้งชุดเพลงและชุดทายชื่อเรื่อง พร้อมแยกกรองตามรูปแบบการเล่นที่ต้องการ', 'Browse song sets and Guess the Title sets, then filter by the kind of play experience you want.')}</p>
+            <span className="party-kicker party-templates-kicker"><LibrarySquare size={16} /> {pick('เซ็ตปาร์ตี้', 'Party Sets')}</span>
+            <h1 className="party-templates-title">{pick('เลือกเซ็ตที่อยากใช้', 'Pick a set to use')}</h1>
+            <p className="party-templates-subtitle">{pick('ค้นหา กรอง แล้วเลือกได้เลย ทั้งชุดเพลงและชุดทายชื่อเรื่องอยู่ในที่เดียว', 'Search, filter, and choose in one place. Song sets and Guess the Title sets live together here.')}</p>
           </div>
           <button
-            className="btn-play-now"
-            style={{ padding: '0.75rem 1.5rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+            className="party-templates-create-btn"
             onClick={() => navigate(createSetUrl, { viewTransition: true })}
           >
-            {pick('+ สร้างเซ็ต', '+ Create Set')}
+            <Plus size={16} />
+            {pick('สร้างเซ็ต', 'Create set')}
           </button>
         </header>
 
         <PartyTemplateFilters
           currentTab={currentTab}
-          onTabChange={setCurrentTab}
+          onTabChange={(nextTab) => {
+            setPage(1);
+            setLoading(true);
+            setFetchError(null);
+            setCurrentTab(nextTab);
+          }}
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={(nextQuery) => {
+            setPage(1);
+            setLoading(true);
+            setFetchError(null);
+            setSearchQuery(nextQuery);
+          }}
           filterMode={filterMode}
           onFilterModeChange={(nextMode) => {
+            setPage(1);
             setFilterMode(nextMode);
             if (nextMode === 'title-guess') {
               setSetType('title-guess');
@@ -294,6 +298,7 @@ export function PartyTemplatesPage() {
           }}
           setType={setType}
           onSetTypeChange={(nextType) => {
+            setPage(1);
             setSetType(nextType);
             if (nextType === 'title-guess' && filterMode !== 'title-guess') {
               setFilterMode('title-guess');
@@ -302,19 +307,22 @@ export function PartyTemplatesPage() {
             }
           }}
           sortBy={sortBy}
-          onSortByChange={setSortBy}
+          onSortByChange={(nextSort) => {
+            setPage(1);
+            setSortBy(nextSort);
+          }}
         />
 
         {loading ? (
-          <div style={{ padding: '4rem', textAlign: 'center' }}>
+          <div className="party-templates-feedback">
             <Loader2 size={32} className="animate-spin" style={{ opacity: 0.4, margin: '0 auto' }} />
           </div>
         ) : fetchError ? (
-          <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--color-surface-hover)', borderRadius: '12px' }}>
+          <div className="party-templates-feedback party-templates-feedback--panel">
             <AlertTriangle size={40} style={{ opacity: 0.4, marginBottom: '1rem', color: 'var(--color-error, #E53E3E)' }} />
             <h3>{pick('โหลดรายการเซ็ตไม่สำเร็จ', 'Could not load sets')}</h3>
-            <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>{fetchError}</p>
-            <button className="btn-secondary" onClick={loadTemplates}>
+            <p className="party-templates-feedback-copy">{fetchError}</p>
+            <button className="btn-secondary" onClick={triggerReload}>
               {pick('ลองใหม่', 'Try again')}
             </button>
           </div>
@@ -342,15 +350,15 @@ export function PartyTemplatesPage() {
               <div className="party-templates-pagination">
                 <button
                   className="pt-page-btn"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, Math.min(totalPages, p) - 1))}
+                  disabled={currentPage === 1}
                   aria-label="Previous page"
                 >
                   <ChevronLeft size={16} />
                 </button>
 
                 {Array.from({ length: totalPages }, (_, index) => index + 1)
-                  .filter((pageNumber) => pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - page) <= 2)
+                  .filter((pageNumber) => pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 2)
                   .reduce((acc, pageNumber, index, pages) => {
                     if (index > 0 && pageNumber - pages[index - 1] > 1) {
                       acc.push('...');
@@ -364,7 +372,7 @@ export function PartyTemplatesPage() {
                       : (
                         <button
                           key={pageItem}
-                          className={`pt-page-btn ${pageItem === page ? 'is-active' : ''}`}
+                          className={`pt-page-btn ${pageItem === currentPage ? 'is-active' : ''}`}
                           onClick={() => setPage(pageItem)}
                         >
                           {pageItem}
@@ -374,8 +382,8 @@ export function PartyTemplatesPage() {
 
                 <button
                   className="pt-page-btn"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, Math.min(totalPages, p) + 1))}
+                  disabled={currentPage === totalPages}
                   aria-label="Next page"
                 >
                   <ChevronRight size={16} />
@@ -388,16 +396,17 @@ export function PartyTemplatesPage() {
             )}
           </>
         ) : (
-          <div style={{ padding: '4rem', textAlign: 'center', background: 'var(--color-surface-hover)', borderRadius: '12px' }}>
+          <div className="party-templates-feedback party-templates-feedback--panel">
             <Music size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
             <h3>{pick('ยังไม่พบเซ็ตที่ตรงกัน', 'No sets found')}</h3>
-            <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+            <p className="party-templates-feedback-copy">
               {searchQuery
                 ? pick('ลองเปลี่ยนคำค้นหา ตัวกรองประเภทชุด หรือการเรียงลำดับ', 'Try a different search, set type filter, or sort option.')
                 : pick('ยังไม่มีเซ็ตในหมวดนี้ ลองสร้างเซ็ตแรกได้เลย', 'There are no sets here yet. Create the first one.')}
             </p>
             {!searchQuery && (
-              <button className="btn-play-now" style={{ display: 'inline-flex', padding: '0.75rem 1.5rem' }} onClick={() => navigate(createSetUrl, { viewTransition: true })}>
+              <button className="party-templates-create-btn" onClick={() => navigate(createSetUrl, { viewTransition: true })}>
+                <Plus size={16} />
                 {pick('สร้างเซ็ต', 'Create Set')}
               </button>
             )}

@@ -1732,16 +1732,53 @@
 }
 
 .tierlist-community-owner-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  min-width: 0;
+  max-width: 100%;
+  padding: 0.45rem 0.65rem;
+  border-radius: 999px;
   text-decoration: none;
   color: inherit;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    color 180ms ease;
+}
+
+.tierlist-community-owner-link:hover,
+.tierlist-community-owner-link:focus-visible {
+  background: color-mix(in srgb, var(--paper-tint) 88%, var(--bg-secondary));
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--paper-shadow) 10%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary-500) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.tierlist-community-owner-link:focus-visible {
+  outline: none;
+}
+
+.tierlist-community-owner-link:hover .tierlist-community-owner-copy strong,
+.tierlist-community-owner-link:focus-visible .tierlist-community-owner-copy strong {
+  color: color-mix(in srgb, var(--primary-700, var(--accent-700)) 84%, var(--text-primary));
+}
+
+.tierlist-community-owner-link:hover .tierlist-community-owner-avatar,
+.tierlist-community-owner-link:focus-visible .tierlist-community-owner-avatar {
+  border-color: color-mix(in srgb, var(--primary-500) 30%, transparent);
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--paper-shadow) 16%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--primary-500) 12%, transparent);
 }
 
 .tierlist-community-owner-link.is-static {
+  padding: 0;
   cursor: default;
+  border-radius: 0;
+  transform: none;
+  box-shadow: none;
 }
 
 .tierlist-community-owner-avatar {
@@ -1765,21 +1802,16 @@
 }
 
 .tierlist-community-owner-copy {
-  display: grid;
-  gap: 0.08rem;
+  display: flex;
+  align-items: center;
   min-width: 0;
+  padding-right: 0.15rem;
 }
 
 .tierlist-community-owner-copy strong {
   font-size: 0.92rem;
   line-height: 1.2;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-
-.tierlist-community-owner-copy span {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 

@@ -1,856 +1,897 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, CopyPlus, Flag, Layers, Library, RefreshCw, Search } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  BarChart3, CopyPlus, Flag, Layers, Library,
+  RefreshCw, Search, TrendingUp, Zap, AlertTriangle,
+  Eye, MousePointer, CheckCircle, XCircle, Clock,
+} from 'lucide-react';
 import { fetchAdminAnalyticsData } from '@/features/admin/api';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
-import {
-  CONTENT_REPORT_ISSUE_OPTIONS,
-  CONTENT_REPORT_STATUS_OPTIONS,
-} from '@/shared/lib/contentReports';
+import { CONTENT_REPORT_ISSUE_OPTIONS, CONTENT_REPORT_STATUS_OPTIONS } from '@/shared/lib/contentReports';
 import { DUPLICATE_STATUS_OPTIONS } from '@/shared/lib/duplicates';
 import { getTitleTypeMeta } from '@/shared/lib/titleType';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
 
-function getPercent(part, total) {
+// ─── helpers ───────────────────────────────────────────────────────────────
+
+function pct(part, total) {
   if (!total) return 0;
-  return Math.round((part / total) * 100);
-}
-
-function formatDate(value, locale = 'en-US') {
-  if (!value) return '-';
-  return new Date(value).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function formatDateTime(value, locale = 'en-US') {
-  if (!value) return '-';
-  return new Date(value).toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function isWithinRange(value, dateFrom, dateTo) {
-  if (!value) return false;
-
-  const current = new Date(value);
-  if (Number.isNaN(current.getTime())) return false;
-
-  if (dateFrom) {
-    const from = new Date(`${dateFrom}T00:00:00`);
-    if (current < from) return false;
-  }
-
-  if (dateTo) {
-    const to = new Date(`${dateTo}T23:59:59`);
-    if (current > to) return false;
-  }
-
-  return true;
+  return Math.min(100, Math.round((part / total) * 100));
 }
 
 function buildCountMap(rows, key, options) {
-  return options.reduce((acc, option) => {
-    acc[option.value] = rows.filter((row) => row[key] === option.value).length;
+  return options.reduce((acc, o) => {
+    acc[o.value] = rows.filter((r) => r[key] === o.value).length;
     return acc;
   }, {});
 }
 
-function buildTopItems(items = [], getKey) {
+function buildTopItems(items = [], getKey, limit = 8) {
   const counts = new Map();
-
   items.forEach((item) => {
-    const key = String(getKey(item) || '').trim();
-    if (!key) return;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const k = String(getKey(item) || '').trim();
+    if (!k) return;
+    counts.set(k, (counts.get(k) || 0) + 1);
   });
-
   return [...counts.entries()]
     .map(([label, count]) => ({ label, count }))
-    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
-    .slice(0, 6);
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
 }
 
-function MetricCard({ label, value, hint, tone = 'var(--primary-600)' }) {
+function groupByDay(rows, getDate, daysBack = 14) {
+  const buckets = {};
+  const now = Date.now();
+  for (let i = daysBack - 1; i >= 0; i--) {
+    const d = new Date(now - i * 86400000);
+    buckets[d.toISOString().slice(0, 10)] = 0;
+  }
+  rows.forEach((r) => {
+    const d = getDate(r)?.slice(0, 10);
+    if (d && d in buckets) buckets[d] += 1;
+  });
+  return Object.entries(buckets).map(([date, count]) => ({ date, count }));
+}
+
+// ─── chart primitives ──────────────────────────────────────────────────────
+
+function BarChart({ data, color = 'var(--primary-500)', height = 120, label }) {
+  if (!data?.length) return <div className="an-chart-empty">No data</div>;
+  const max = Math.max(...data.map((d) => d.count), 1);
+
   return (
-    <div className="stat-card">
-      <h3 className="stat-title">{label}</h3>
-      <p className="stat-value" style={{ color: tone }}>{value}</p>
-      {hint ? <p className="admin-analytics-card-note">{hint}</p> : null}
+    <div className="an-bar-chart" style={{ '--bar-color': color }}>
+      {label && <div className="an-chart-label">{label}</div>}
+      <div className="an-bar-chart-inner" style={{ height }}>
+        {data.map((d, i) => (
+          <div key={i} className="an-bar-col" title={`${d.label}: ${d.count}`}>
+            <div className="an-bar-val">{d.count > 0 && d.count}</div>
+            <div
+              className="an-bar-fill"
+              style={{ height: `${pct(d.count, max)}%` }}
+            />
+            <div className="an-bar-tick">{d.label}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-export function AdminAnalytics() {
-  const { t, language } = useLanguage();
-  const locale = language === 'th' ? 'th-TH' : 'en-US';
-  const [data, setData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [filters, setFilters] = useState({
-    dateFrom: '',
-    dateTo: '',
-    editorialStatus: 'all',
-    reportStatus: 'all',
-    reportIssueType: 'all',
-    duplicateStatus: 'all',
-    blockType: 'all',
+function HorizontalBar({ data, color = 'var(--primary-500)', maxLabel = 8 }) {
+  if (!data?.length) return <div className="an-chart-empty">No data</div>;
+  const max = Math.max(...data.map((d) => d.count), 1);
+
+  return (
+    <div className="an-hbar-list">
+      {data.slice(0, maxLabel).map((d, i) => (
+        <div key={i} className="an-hbar-row" title={`${d.label}: ${d.count}`}>
+          <span className="an-hbar-rank">{i + 1}</span>
+          <span className="an-hbar-label">{d.label}</span>
+          <div className="an-hbar-track">
+            <div
+              className="an-hbar-fill"
+              style={{ width: `${pct(d.count, max)}%`, background: color }}
+            />
+          </div>
+          <span className="an-hbar-count">{d.count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Sparkline({ data, color = 'var(--primary-500)', height = 52 }) {
+  if (!data?.length) return null;
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const w = 200;
+  const h = height;
+  const pts = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - (d.count / max) * (h - 4) - 2;
+    return `${x},${y}`;
   });
+  const area = `0,${h} ${pts.join(' ')} ${w},${h}`;
 
-  const EDITORIAL_STATUS_OPTIONS = useMemo(() => ([
-    { value: 'all', label: t('admin.analytics.allStatuses') },
-    { value: 'draft', label: t('admin.analytics.statusDraft') },
-    { value: 'published', label: t('admin.analytics.statusPublished') },
-    { value: 'archived', label: t('admin.analytics.statusArchived') },
-  ]), [t]);
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="an-sparkline">
+      <defs>
+        <linearGradient id={`sg-${color.replace(/[^a-z0-9]/gi, '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon
+        points={area}
+        fill={`url(#sg-${color.replace(/[^a-z0-9]/gi, '')})`}
+      />
+      <polyline
+        points={pts.join(' ')}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
-  const HOMEPAGE_BLOCK_TYPE_OPTIONS = useMemo(() => ([
-    { value: 'all', label: t('admin.analytics.allBlockTypes') },
-    { value: 'hero', label: t('admin.analytics.blockHero') },
-    { value: 'collection', label: t('admin.analytics.blockCollection') },
-    { value: 'manual_list', label: t('admin.analytics.blockManualList') },
-    { value: 'recommendation', label: t('admin.analytics.blockRecommendation') },
-    { value: 'continue', label: t('admin.analytics.blockContinue') },
-    { value: 'trending', label: t('admin.analytics.blockTrending') },
-  ]), [t]);
+function DonutChart({ segments, size = 120 }) {
+  const total = segments.reduce((s, g) => s + g.value, 0);
+  if (!total) return <div className="an-chart-empty">No data</div>;
 
-  const fetchAnalytics = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
+  const r = 38;
+  const cx = 60;
+  const circ = 2 * Math.PI * r;
+  const { arcs } = segments.reduce((acc, seg) => {
+    const fraction = seg.value / total;
+    const dash = fraction * circ;
+    acc.arcs.push({ ...seg, dash, gap: circ - dash, offset: acc.offset });
+    acc.offset += dash;
+    return acc;
+  }, { arcs: [], offset: 0 });
 
-    try {
-      setData(await fetchAdminAnalyticsData());
-    } catch (err) {
-      console.error('Analytics fetch error:', err);
-      setErrorMessage(
-        err.message === 'Supabase client is not available'
-          ? t('admin.analytics.supabaseUnavailable')
-          : (err.message || t('admin.analytics.loadFailed'))
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [t]);
+  return (
+    <div className="an-donut-wrap">
+      <svg width={size} height={size} viewBox="0 0 120 120">
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke="var(--border-default)" strokeWidth="16" />
+        {arcs.map((arc, i) => (
+          <circle
+            key={i}
+            cx={cx} cy={cx} r={r}
+            fill="none"
+            stroke={arc.color}
+            strokeWidth="16"
+            strokeDasharray={`${arc.dash} ${arc.gap}`}
+            strokeDashoffset={-arc.offset}
+            strokeLinecap="butt"
+            style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cx}px` }}
+          >
+            <title>{arc.label}: {arc.value}</title>
+          </circle>
+        ))}
+        <text x={cx} y={cx + 1} textAnchor="middle" dominantBaseline="middle" fontSize="16" fontWeight="800" fill="var(--text-primary)">
+          {total.toLocaleString()}
+        </text>
+        <text x={cx} y={cx + 14} textAnchor="middle" dominantBaseline="middle" fontSize="7" fill="var(--text-tertiary)" textLength="50" lengthAdjust="spacing">
+          total
+        </text>
+      </svg>
+      <div className="an-donut-legend">
+        {arcs.map((arc, i) => (
+          <div key={i} className="an-legend-item">
+            <span className="an-legend-dot" style={{ background: arc.color }} />
+            <span className="an-legend-label">{arc.label}</span>
+            <span className="an-legend-val">{arc.value}</span>
+            <span className="an-legend-pct">{pct(arc.value, total)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [fetchAnalytics]);
+function FunnelChart({ steps }) {
+  if (!steps?.length) return <div className="an-chart-empty">No data</div>;
+  const max = steps[0]?.value || 1;
+
+  return (
+    <div className="an-funnel">
+      {steps.map((step, i) => {
+        const width = pct(step.value, max);
+        const dropPct = i > 0 ? 100 - pct(step.value, steps[i - 1].value) : null;
+        return (
+          <div key={i} className="an-funnel-step">
+            <div className="an-funnel-meta">
+              <span className="an-funnel-name">{step.label}</span>
+              {dropPct !== null && (
+                <span className="an-funnel-drop" style={{ color: dropPct > 30 ? '#ef4444' : '#f59e0b' }}>
+                  −{dropPct}%
+                </span>
+              )}
+            </div>
+            <div className="an-funnel-track">
+              <div className="an-funnel-fill" style={{ width: `${width}%`, background: step.color || 'var(--primary-500)' }} />
+            </div>
+            <span className="an-funnel-val">{step.value.toLocaleString()}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatChip({ label, value, color, icon: Icon }) {
+  return (
+    <div className="an-stat-chip" style={{ '--chip-color': color }}>
+      {Icon && <Icon size={14} className="an-chip-icon" />}
+      <div>
+        <div className="an-chip-value">{value}</div>
+        <div className="an-chip-label">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, subtitle, accent = 'var(--primary-500)' }) {
+  return (
+    <div className="an-section-head" style={{ '--section-accent': accent }}>
+      <div className="an-section-icon"><Icon size={18} /></div>
+      <div>
+        <h2 className="an-section-title">{title}</h2>
+        {subtitle && <p className="an-section-sub">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Panel({ children, className = '' }) {
+  return <div className={`an-panel ${className}`}>{children}</div>;
+}
+
+function PanelTitle({ children }) {
+  return <h3 className="an-panel-title">{children}</h3>;
+}
+
+// ─── main component ────────────────────────────────────────────────────────
+
+export function AdminAnalytics() {
+  const { language } = useLanguage();
+  const locale = language === 'th' ? 'th-TH' : 'en-US';
+  const [activeTab, setActiveTab] = useState('search');
+
+  const analyticsQuery = useQuery({
+    queryKey: ['admin-analytics-summary'],
+    queryFn: fetchAdminAnalyticsData,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+  const data = analyticsQuery.data || null;
+  const isRefreshing = analyticsQuery.isFetching && !analyticsQuery.isLoading;
+
+  // ─── derived metrics ──────────────────────────────────────────────────────
 
   const derived = useMemo(() => {
     if (!data) return null;
 
-    const filteredCollections = data.editorial.collections.filter((collection) => (
-      (filters.editorialStatus === 'all' || collection.status === filters.editorialStatus) &&
-      isWithinRange(collection.updated_at || collection.created_at, filters.dateFrom, filters.dateTo)
-    ));
+    const events = data.discoverEvents || [];
+    const reports = data.reports || [];
+    const dupes = data.duplicates || [];
 
-    const filteredBlocks = data.editorial.blocks.filter((block) => (
-      (filters.editorialStatus === 'all' || block.status === filters.editorialStatus) &&
-      (filters.blockType === 'all' || block.block_type === filters.blockType) &&
-      isWithinRange(block.updated_at || block.created_at, filters.dateFrom, filters.dateTo)
-    ));
+    // Event types
+    const searchViews = events.filter((e) => e.event_type === 'search_view');
+    const resultClicks = events.filter((e) => e.event_type === 'result_click');
+    const noResults = events.filter((e) => e.event_type === 'no_results_view');
+    const presetApplies = events.filter((e) => e.event_type === 'preset_apply');
+    const submits = events.filter((e) => e.event_type === 'search_submit');
+    const abandons = events.filter((e) => e.event_type === 'search_abandon');
+    const autocompletes = events.filter((e) => e.event_type === 'autocomplete_select');
+    const recoveries = events.filter((e) => e.event_type === 'recovery_apply');
 
-    const filteredReports = data.reports.filter((report) => (
-      (filters.reportStatus === 'all' || report.status === filters.reportStatus) &&
-      (filters.reportIssueType === 'all' || report.issueType === filters.reportIssueType) &&
-      isWithinRange(report.createdAt, filters.dateFrom, filters.dateTo)
-    ));
+    // Rates
+    const ctrRate = searchViews.length ? pct(resultClicks.length, searchViews.length) : null;
+    const zeroResultRate = searchViews.length ? pct(noResults.length, searchViews.length) : null;
+    const submitRate = (submits.length + abandons.length) > 0 ? pct(submits.length, submits.length + abandons.length) : null;
+    const autocompleteRate = searchViews.length ? pct(autocompletes.length, searchViews.length) : null;
 
-    const filteredDiscoverEvents = data.discoverEvents.filter((event) => (
-      isWithinRange(event.created_at, filters.dateFrom, filters.dateTo)
-    ));
+    const noResultSessions = new Set(noResults.map((e) => e.session_id).filter(Boolean));
+    const recoverySessions = new Set(recoveries.map((e) => e.session_id).filter(Boolean));
+    const recoveredCount = [...recoverySessions].filter((id) => noResultSessions.has(id)).length;
+    const recoveryRate = noResultSessions.size > 0 ? pct(recoveredCount, noResultSessions.size) : null;
 
-    const filteredDuplicates = data.duplicates.filter((candidate) => (
-      (filters.duplicateStatus === 'all' || candidate.status === filters.duplicateStatus) &&
-      isWithinRange(candidate.createdAt, filters.dateFrom, filters.dateTo)
-    ));
+    // Timeseries
+    const searchTimeseries = groupByDay(searchViews, (e) => e.created_at);
+    const clickTimeseries = groupByDay(resultClicks, (e) => e.created_at);
+    const reportTimeseries = groupByDay(reports, (e) => e.createdAt);
 
-    const reportStatusCounts = buildCountMap(filteredReports, 'status', CONTENT_REPORT_STATUS_OPTIONS);
-    const reportIssueCounts = buildCountMap(filteredReports, 'issueType', CONTENT_REPORT_ISSUE_OPTIONS);
-    const duplicateStatusCounts = buildCountMap(filteredDuplicates, 'status', DUPLICATE_STATUS_OPTIONS);
-    const blockTypeCounts = buildCountMap(filteredBlocks, 'block_type', HOMEPAGE_BLOCK_TYPE_OPTIONS.filter((option) => option.value !== 'all'));
+    // Top items
+    const topQueries = buildTopItems(searchViews, (e) => e.normalized_query || e.query);
+    const noResultQueries = buildTopItems(noResults, (e) => e.normalized_query || e.query);
+    const clickTypes = buildTopItems(resultClicks, (e) => e.result_type);
+    const presetSources = buildTopItems(presetApplies, (e) => e.preset_source || 'manual');
+    const distinctQueries = new Set(searchViews.map((e) => String(e.normalized_query || e.query || '').trim()).filter(Boolean)).size;
 
-    const oldestOpenReport = filteredReports
-      .filter((report) => report.status === 'open')
-      .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))[0] || null;
+    // Reports
+    const reportStatusCounts = buildCountMap(reports, 'status', CONTENT_REPORT_STATUS_OPTIONS);
+    const reportIssueCounts = buildCountMap(reports, 'issueType', CONTENT_REPORT_ISSUE_OPTIONS);
+    const oldestOpen = reports.filter((r) => r.status === 'open').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0] || null;
 
-    const averageDuplicateConfidence = filteredDuplicates.length
-      ? Math.round(filteredDuplicates.reduce((sum, candidate) => sum + candidate.confidence, 0) / filteredDuplicates.length)
-      : 0;
+    // Duplicates
+    const dupeStatusCounts = buildCountMap(dupes, 'status', DUPLICATE_STATUS_OPTIONS);
+    const avgConfidence = dupes.length ? Math.round(dupes.reduce((s, d) => s + d.confidence, 0) / dupes.length) : 0;
+    const confidenceBuckets = [
+      { label: 'High ≥80%', value: dupes.filter((d) => d.confidence >= 80).length, color: '#10b981' },
+      { label: 'Mid 60–79%', value: dupes.filter((d) => d.confidence >= 60 && d.confidence < 80).length, color: '#f59e0b' },
+      { label: 'Low <60%', value: dupes.filter((d) => d.confidence < 60).length, color: '#ef4444' },
+    ];
 
-    const confidenceBuckets = {
-      high: filteredDuplicates.filter((candidate) => candidate.confidence >= 80).length,
-      medium: filteredDuplicates.filter((candidate) => candidate.confidence >= 60 && candidate.confidence < 80).length,
-      low: filteredDuplicates.filter((candidate) => candidate.confidence < 60).length,
-    };
+    // Catalog type split
+    const { totalAnime, totalManga, totalManhwa } = data.catalog;
+    const catalogSplit = [
+      { label: 'Anime', value: totalAnime, color: '#6366f1' },
+      { label: 'Manga', value: totalManga, color: '#ec4899' },
+      { label: 'Manhwa', value: totalManhwa, color: '#14b8a6' },
+    ];
 
-    const discoverSearchViews = filteredDiscoverEvents.filter((event) => event.event_type === 'search_view');
-    const discoverSearchSubmits = filteredDiscoverEvents.filter((event) => event.event_type === 'search_submit');
-    const discoverSearchAbandons = filteredDiscoverEvents.filter((event) => event.event_type === 'search_abandon');
-    const discoverResultClicks = filteredDiscoverEvents.filter((event) => event.event_type === 'result_click');
-    const discoverPresetApplies = filteredDiscoverEvents.filter((event) => event.event_type === 'preset_apply');
-    const discoverNoResults = filteredDiscoverEvents.filter((event) => event.event_type === 'no_results_view');
-    const discoverRecoveries = filteredDiscoverEvents.filter((event) => event.event_type === 'recovery_apply');
-    const discoverAutocompleteSelects = filteredDiscoverEvents.filter((event) => event.event_type === 'autocomplete_select');
+    // Collections status split
+    const colSplit = [
+      { label: 'Published', value: data.editorial.collections.filter((c) => c.status === 'published').length, color: '#10b981' },
+      { label: 'Draft', value: data.editorial.collections.filter((c) => c.status === 'draft').length, color: '#f59e0b' },
+      { label: 'Archived', value: data.editorial.collections.filter((c) => c.status === 'archived').length, color: '#94a3b8' },
+    ];
 
-    const discoverClickTypeCounts = buildTopItems(discoverResultClicks, (event) => event.result_type);
-    const discoverPresetSourceCounts = buildTopItems(discoverPresetApplies, (event) => event.preset_source || 'manual');
-    const topQueries = buildTopItems(discoverSearchViews, (event) => event.normalized_query || event.query);
-    const noResultQueries = buildTopItems(discoverNoResults, (event) => event.normalized_query || event.query);
-    const topAutocompleteClicks = buildTopItems(discoverAutocompleteSelects, (event) => event.result_id || event.result_type || 'unknown');
-    const distinctQueryCount = new Set(discoverSearchViews.map((event) => String(event.normalized_query || event.query || '').trim()).filter(Boolean)).size;
+    const blockTypeCounts = buildTopItems(data.editorial.blocks, (b) => b.block_type);
 
-    // Recovery rate = recoveries / no-result sessions (sessions that got no_results_view)
-    const noResultSessionIds = new Set(discoverNoResults.map((e) => e.session_id).filter(Boolean));
-    const recoverySessionIds = new Set(discoverRecoveries.map((e) => e.session_id).filter(Boolean));
-    const recoveredCount = [...recoverySessionIds].filter((id) => noResultSessionIds.has(id)).length;
-    const recoveryRate = noResultSessionIds.size > 0
-      ? Math.round((recoveredCount / noResultSessionIds.size) * 100)
-      : null;
+    // Search funnel
+    const searchFunnel = [
+      { label: 'Search Opened', value: searchViews.length, color: '#6366f1' },
+      { label: 'Result Clicked', value: resultClicks.length, color: '#8b5cf6' },
+      { label: 'Submit / Save', value: submits.length, color: '#a78bfa' },
+      { label: 'No Results', value: noResults.length, color: '#ef4444' },
+    ];
 
-    // KPI rates
-    const autocompleteCtaRate = discoverSearchViews.length > 0
-      ? Math.round((discoverAutocompleteSelects.length / discoverSearchViews.length) * 100)
-      : null;
-    const submitPlusAbandon = discoverSearchSubmits.length + discoverSearchAbandons.length;
-    const submitRate = submitPlusAbandon > 0
-      ? Math.round((discoverSearchSubmits.length / submitPlusAbandon) * 100)
-      : null;
-    const zeroResultRate = discoverSearchViews.length > 0
-      ? Math.round((discoverNoResults.length / discoverSearchViews.length) * 100)
-      : null;
+    // Report funnel
+    const reportFunnel = [
+      { label: 'Total Reports', value: reports.length, color: '#f59e0b' },
+      { label: 'Open', value: reportStatusCounts.open || 0, color: '#ef4444' },
+      { label: 'In Review', value: reportStatusCounts.in_review || 0, color: '#3b82f6' },
+      { label: 'Resolved', value: reportStatusCounts.resolved || 0, color: '#10b981' },
+    ];
 
-    // Header vs Discover autocomplete split (metadata.surface)
-    const headerAutocompleteSelects = discoverAutocompleteSelects.filter((e) => e.metadata?.surface === 'header').length;
-    const discoverSurfaceAutocompleteSelects = discoverAutocompleteSelects.filter((e) => e.metadata?.surface !== 'header').length;
+    // Dupe funnel
+    const dupeFunnel = [
+      { label: 'All Candidates', value: dupes.length, color: '#6366f1' },
+      { label: 'Pending', value: dupeStatusCounts.pending || 0, color: '#f59e0b' },
+      { label: 'Approved', value: dupeStatusCounts.approved || 0, color: '#3b82f6' },
+      { label: 'Merged', value: dupeStatusCounts.merged || 0, color: '#10b981' },
+    ];
 
     return {
-      filteredDiscoverEvents,
-      discoverSearchViews,
-      discoverSearchSubmits,
-      discoverSearchAbandons,
-      discoverResultClicks,
-      discoverPresetApplies,
-      discoverNoResults,
-      discoverRecoveries,
-      discoverAutocompleteSelects,
-      discoverClickTypeCounts,
-      discoverPresetSourceCounts,
-      topQueries,
-      noResultQueries,
-      topAutocompleteClicks,
-      distinctQueryCount,
-      recoveryRate,
-      autocompleteCtaRate,
-      submitRate,
-      zeroResultRate,
-      headerAutocompleteSelects,
-      discoverSurfaceAutocompleteSelects,
-      filteredCollections,
-      filteredBlocks,
-      filteredReports,
-      filteredDuplicates,
-      reportStatusCounts,
-      reportIssueCounts,
-      duplicateStatusCounts,
-      blockTypeCounts,
-      oldestOpenReport,
-      averageDuplicateConfidence,
-      confidenceBuckets,
+      searchViews, resultClicks, noResults, presetApplies, submits, abandons, autocompletes,
+      ctrRate, zeroResultRate, submitRate, autocompleteRate, recoveryRate, recoveredCount,
+      searchTimeseries, clickTimeseries, reportTimeseries,
+      topQueries, noResultQueries, clickTypes, presetSources, distinctQueries,
+      reportStatusCounts, reportIssueCounts, oldestOpen,
+      dupeStatusCounts, avgConfidence, confidenceBuckets,
+      catalogSplit, colSplit, blockTypeCounts,
+      searchFunnel, reportFunnel, dupeFunnel,
     };
-  }, [HOMEPAGE_BLOCK_TYPE_OPTIONS, data, filters]);
+  }, [data]);
 
-  if (isLoading) {
+  const TABS = [
+    { key: 'search', label: 'Search & Discovery', icon: Search },
+    { key: 'catalog', label: 'Catalog', icon: Library },
+    { key: 'editorial', label: 'Editorial', icon: Layers },
+    { key: 'moderation', label: 'Moderation', icon: Flag },
+    { key: 'duplicates', label: 'Duplicates', icon: CopyPlus },
+  ];
+
+  if (analyticsQuery.isLoading) {
     return (
-      <div className="admin-page-content" style={{ padding: 'var(--space-10)' }}>
-        <AdminStatePanel title={t('admin.analytics.loadingTitle')} description={t('admin.analytics.loadingHint')} />
+      <div className="admin-page-content an-loading-state">
+        <div className="an-loading-grid">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="an-loading-panel">
+              <div className="an-loading-bar" style={{ width: '40%', height: 14 }} />
+              <div className="an-loading-bar" style={{ width: '60%', height: 80, marginTop: 12 }} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
-  if (!data || !derived) {
+  if (analyticsQuery.error || !data || !derived) {
     return (
       <div className="admin-page-content" style={{ padding: 'var(--space-10)' }}>
         <AdminStatePanel
-          title={t('admin.analytics.errorTitle')}
-          description={errorMessage || t('admin.analytics.errorHint')}
-          actionLabel={t('common.retry')}
-          onAction={fetchAnalytics}
+          title="Failed to load analytics"
+          description={analyticsQuery.error?.message || 'Something went wrong'}
+          actionLabel="Retry"
+          onAction={() => analyticsQuery.refetch()}
           tone="error"
         />
       </div>
     );
   }
 
-  const editorialPublishedRatio = getPercent(
-    derived.filteredCollections.filter((collection) => collection.status === 'published').length,
-    derived.filteredCollections.length
-  );
-  const blocksPublishedRatio = getPercent(
-    derived.filteredBlocks.filter((block) => block.status === 'published').length,
-    derived.filteredBlocks.length
-  );
-
   return (
-    <div className="admin-page-content animate-fade-in">
-      <div className="admin-header">
+    <div className="admin-page-content animate-fade-in an-root">
+
+      {/* ─── Page header ─── */}
+      <div className="an-page-header">
         <div>
-          <h1 style={{ fontSize: '2rem', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            <BarChart3 size={30} color="var(--primary-500)" />
-            {t('admin.analytics.pageTitle')}
-          </h1>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            {t('admin.analytics.pageSubtitle')}
+          <div className="an-page-badge">
+            <BarChart3 size={13} /> Analytics
+          </div>
+          <h1 className="an-page-title">Product Analytics</h1>
+          <p className="an-page-sub">
+            Deep-dive into search, catalog, editorial, and moderation health
+            {data.freshness?.windowDays ? ` · last ${data.freshness.windowDays} days` : ''}
+            {isRefreshing ? ' · refreshing in background' : ''}
           </p>
         </div>
-        <button className="action-btn" onClick={fetchAnalytics} type="button">
-          <RefreshCw size={16} style={{ marginRight: 8 }} />
-          {t('admin.common.refresh')}
+        <button
+          className="action-btn"
+          onClick={() => analyticsQuery.refetch()}
+          type="button"
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          disabled={analyticsQuery.isFetching}
+        >
+          <RefreshCw size={14} className={analyticsQuery.isFetching ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 
-      <section className="glass-panel admin-analytics-filter-panel" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="admin-panel-heading" style={{ marginBottom: 'var(--space-4)' }}>
-          <div>
-            <h2>{t('admin.analytics.filtersTitle')}</h2>
-            <p>{t('admin.analytics.filtersHint')}</p>
+      {/* ─── Global KPI ribbon ─── */}
+      <div className="an-kpi-ribbon">
+        <StatChip label="Search Views" value={derived.searchViews.length.toLocaleString()} color="#6366f1" icon={Eye} />
+        <StatChip label="Result Clicks" value={derived.resultClicks.length.toLocaleString()} color="#8b5cf6" icon={MousePointer} />
+        <StatChip label="CTR" value={derived.ctrRate !== null ? `${derived.ctrRate}%` : '—'} color="#10b981" icon={TrendingUp} />
+        <StatChip label="Zero-Result" value={derived.zeroResultRate !== null ? `${derived.zeroResultRate}%` : '—'} color="#ef4444" icon={AlertTriangle} />
+        <StatChip label="Open Reports" value={derived.reportStatusCounts.open || 0} color="#f59e0b" icon={Flag} />
+        <StatChip label="Pending Dupes" value={derived.dupeStatusCounts.pending || 0} color="#ec4899" icon={CopyPlus} />
+        <StatChip label="Recovery Rate" value={derived.recoveryRate !== null ? `${derived.recoveryRate}%` : '—'} color="#14b8a6" icon={CheckCircle} />
+        <StatChip label="Auto-complete%" value={derived.autocompleteRate !== null ? `${derived.autocompleteRate}%` : '—'} color="#a78bfa" icon={Zap} />
+      </div>
+
+      {/* ─── Tab bar ─── */}
+      <div className="an-tabbar">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`an-tab ${activeTab === tab.key ? 'an-tab--active' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            <tab.icon size={15} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══════════════════════════════════════
+          TAB: Search & Discovery
+      ════════════════════════════════════════ */}
+      {activeTab === 'search' && (
+        <div className="an-tab-content">
+
+          <SectionHeader icon={TrendingUp} title="Activity Trends (Last 14 Days)" subtitle="Daily search views vs result clicks" accent="#6366f1" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Search Views per Day</PanelTitle>
+              <BarChart
+                data={derived.searchTimeseries.map((d) => ({ label: d.date.slice(5), count: d.count }))}
+                color="#6366f1"
+                height={120}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Result Clicks per Day</PanelTitle>
+              <BarChart
+                data={derived.clickTimeseries.map((d) => ({ label: d.date.slice(5), count: d.count }))}
+                color="#8b5cf6"
+                height={120}
+              />
+            </Panel>
+          </div>
+
+          <SectionHeader icon={Search} title="Search Funnel" subtitle="From search open → click → submit → dead end" accent="#8b5cf6" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Conversion Funnel</PanelTitle>
+              <FunnelChart steps={derived.searchFunnel} />
+            </Panel>
+            <Panel>
+              <PanelTitle>Exit Behavior Split</PanelTitle>
+              <DonutChart
+                segments={[
+                  { label: 'Clicked result', value: derived.resultClicks.length, color: '#6366f1' },
+                  { label: 'Submitted', value: derived.submits.length, color: '#10b981' },
+                  { label: 'Abandoned', value: derived.abandons.length, color: '#ef4444' },
+                  { label: 'No Results', value: derived.noResults.length, color: '#f59e0b' },
+                ]}
+              />
+            </Panel>
+          </div>
+
+          <SectionHeader icon={BarChart3} title="Query Intelligence" subtitle="What users search for — and where they fail" accent="#10b981" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>🔥 Top Queries</PanelTitle>
+              <HorizontalBar data={derived.topQueries} color="#6366f1" />
+            </Panel>
+            <Panel>
+              <PanelTitle>⚠️ Zero-Result Queries</PanelTitle>
+              <HorizontalBar data={derived.noResultQueries} color="#ef4444" />
+            </Panel>
+          </div>
+
+          <div className="an-grid-3">
+            <Panel>
+              <PanelTitle>Click Type Mix</PanelTitle>
+              <DonutChart
+                size={100}
+                segments={derived.clickTypes.map((c, i) => ({
+                  label: c.label,
+                  value: c.count,
+                  color: ['#6366f1', '#8b5cf6', '#a78bfa', '#10b981', '#14b8a6'][i % 5],
+                }))}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Preset Sources</PanelTitle>
+              <HorizontalBar data={derived.presetSources} color="#f59e0b" maxLabel={5} />
+            </Panel>
+            <Panel>
+              <PanelTitle>Search Health KPIs</PanelTitle>
+              <div className="an-kv-grid">
+                {[
+                  { label: 'Distinct Queries', value: derived.distinctQueries },
+                  { label: 'CTR', value: derived.ctrRate !== null ? `${derived.ctrRate}%` : '—' },
+                  { label: 'Submit Rate', value: derived.submitRate !== null ? `${derived.submitRate}%` : '—' },
+                  { label: 'Zero Result %', value: derived.zeroResultRate !== null ? `${derived.zeroResultRate}%` : '—' },
+                  { label: 'Recovery Rate', value: derived.recoveryRate !== null ? `${derived.recoveryRate}%` : '—' },
+                  { label: 'Autocomplete %', value: derived.autocompleteRate !== null ? `${derived.autocompleteRate}%` : '—' },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           </div>
         </div>
-        <div className="admin-form-grid">
-          <label>
-            <span className="form-label">{t('admin.analytics.dateFrom')}</span>
-            <input
-              className="form-input"
-              type="date"
-              value={filters.dateFrom}
-              onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))}
-            />
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.dateTo')}</span>
-            <input
-              className="form-input"
-              type="date"
-              value={filters.dateTo}
-              onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))}
-            />
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.editorialStatus')}</span>
-            <select
-              className="form-select"
-              value={filters.editorialStatus}
-              onChange={(event) => setFilters((current) => ({ ...current, editorialStatus: event.target.value }))}
-            >
-              {EDITORIAL_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.blockType')}</span>
-            <select
-              className="form-select"
-              value={filters.blockType}
-              onChange={(event) => setFilters((current) => ({ ...current, blockType: event.target.value }))}
-            >
-              {HOMEPAGE_BLOCK_TYPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.reportStatus')}</span>
-            <select
-              className="form-select"
-              value={filters.reportStatus}
-              onChange={(event) => setFilters((current) => ({ ...current, reportStatus: event.target.value }))}
-            >
-              <option value="all">{t('admin.analytics.allReportStatuses')}</option>
-              {CONTENT_REPORT_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.reportIssueType')}</span>
-            <select
-              className="form-select"
-              value={filters.reportIssueType}
-              onChange={(event) => setFilters((current) => ({ ...current, reportIssueType: event.target.value }))}
-            >
-              <option value="all">{t('admin.analytics.allIssueTypes')}</option>
-              {CONTENT_REPORT_ISSUE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="form-label">{t('admin.analytics.duplicateStatus')}</span>
-            <select
-              className="form-select"
-              value={filters.duplicateStatus}
-              onChange={(event) => setFilters((current) => ({ ...current, duplicateStatus: event.target.value }))}
-            >
-              <option value="all">{t('admin.analytics.allDuplicateStatuses')}</option>
-              {DUPLICATE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </section>
+      )}
 
-      <section className="admin-analytics-section" style={{ marginBottom: 'var(--space-8)' }}>
-        <div className="admin-panel-heading">
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Library size={20} color="var(--primary-500)" />
-              {t('admin.analytics.catalogTitle')}
-            </h2>
-            <p>{t('admin.analytics.catalogHint')}</p>
+      {/* ═══════════════════════════════════════
+          TAB: Catalog
+      ════════════════════════════════════════ */}
+      {activeTab === 'catalog' && (
+        <div className="an-tab-content">
+
+          <SectionHeader icon={Library} title="Catalog Composition" subtitle="Type and subtype distribution across all canonical titles" accent="#10b981" />
+
+          <div className="an-grid-3">
+            <Panel>
+              <PanelTitle>Type Split</PanelTitle>
+              <DonutChart segments={derived.catalogSplit} />
+            </Panel>
+            <Panel className="an-col-span-2">
+              <PanelTitle>Type Counts</PanelTitle>
+              <HorizontalBar
+                data={[
+                  { label: 'Anime', count: data.catalog.totalAnime },
+                  { label: 'Manga', count: data.catalog.totalManga },
+                  { label: 'Manhwa', count: data.catalog.totalManhwa },
+                ]}
+                color="#10b981"
+                maxLabel={3}
+              />
+              <div className="an-kv-grid" style={{ marginTop: 20 }}>
+                {[
+                  { label: 'Total Titles', value: data.catalog.totalTitles.toLocaleString() },
+                  { label: 'Total Users', value: data.catalog.totalUsers.toLocaleString() },
+                  { label: 'Total Lists', value: data.catalog.totalLists.toLocaleString() },
+                  { label: 'Mood Tags', value: data.catalog.totalMoods.toLocaleString() },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           </div>
-        </div>
 
-        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statTitles')} value={data.catalog.totalTitles} hint={t('admin.analytics.hintAllCanonicalTitles')} />
-          <MetricCard label={t('admin.analytics.statAnime')} value={data.catalog.totalAnime} hint={t('admin.analytics.hintTypeSplit')} tone="#3b82f6" />
-          <MetricCard label={t('admin.analytics.statManga')} value={data.catalog.totalManga} hint={t('admin.analytics.hintSubtypeManga')} tone="#ec4899" />
-          <MetricCard label={t('admin.analytics.statManhwa')} value={data.catalog.totalManhwa} hint={t('admin.analytics.hintSubtypeManhwa')} tone="#22c55e" />
-          <MetricCard label={t('admin.analytics.statUsers')} value={data.catalog.totalUsers} hint={t('admin.analytics.hintProfilesInSystem')} tone="var(--success)" />
-          <MetricCard label={t('admin.analytics.statLists')} value={data.catalog.totalLists} hint={t('admin.analytics.hintTrackedListEntries')} tone="var(--warning)" />
-        </div>
-
-        <div className="admin-analytics-two-up">
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.topRatedTitles')}</h3>
-            <div className="admin-list-stack">
-              {data.catalog.topTitles.map((title, index) => {
-                const typeMeta = getTitleTypeMeta(title.type);
+          <SectionHeader icon={TrendingUp} title="Top Rated Titles" subtitle="Highest avg_score in the catalog" accent="#6366f1" />
+          <Panel>
+            <PanelTitle>🏆 Top 10 Titles by Score</PanelTitle>
+            <div className="an-title-table">
+              <div className="an-title-table-head">
+                <span>#</span><span>Title</span><span>Type</span><span>Score</span><span>Popularity</span>
+              </div>
+              {data.catalog.topTitles.map((title, i) => {
+                const meta = getTitleTypeMeta(title.type);
                 return (
-                  <div key={title.id} className="admin-analytics-row">
-                    <span className="admin-analytics-rank">{index + 1}</span>
-                    <img src={title.cover} alt="" className="admin-preview-cover" style={{ width: 34, height: 48 }} />
-                    <div className="admin-title-cell" style={{ flex: 1 }}>
-                      <div className="admin-title-primary">{title.title_en}</div>
-                      <div className="admin-title-meta">
-                        <span className={`badge ${typeMeta.badgeClass}`}>{typeMeta.label}</span>
-                      </div>
+                  <div key={title.id} className="an-title-row">
+                    <span className="an-title-rank">{i + 1}</span>
+                    <div className="an-title-info">
+                      {title.cover && <img src={title.cover} alt="" className="an-title-thumb" />}
+                      <span className="an-title-name">{title.title_en || title.canonical_title}</span>
                     </div>
-                    <strong style={{ color: 'var(--warning)' }}>{title.score ? (title.score / 10).toFixed(1) : '-'}</strong>
+                    <span><span className={`badge ${meta.badgeClass}`}>{meta.label}</span></span>
+                    <span className="an-title-score">{title.score ? (title.score / 10).toFixed(1) : '—'}</span>
+                    <div className="an-title-pop-bar">
+                      <div
+                        className="an-title-pop-fill"
+                        style={{
+                          width: `${pct(title.popularity_score || 0, Math.max(...data.catalog.topTitles.map((t) => t.popularity_score || 0), 1))}%`,
+                        }}
+                      />
+                      <span>{title.popularity_score?.toLocaleString() || '—'}</span>
+                    </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Panel>
 
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentlyAddedTitles')}</h3>
-            <div className="admin-list-stack">
+          <SectionHeader icon={Clock} title="Recently Added" subtitle="Latest 8 titles added to the catalog" accent="#f59e0b" />
+          <Panel>
+            <div className="an-recent-grid">
               {data.catalog.recentTitles.map((title) => {
-                const typeMeta = getTitleTypeMeta(title.type);
+                const meta = getTitleTypeMeta(title.type);
                 return (
-                  <div key={title.id} className="admin-analytics-row">
-                    <img src={title.cover} alt="" className="admin-preview-cover" style={{ width: 34, height: 48 }} />
-                    <div className="admin-title-cell" style={{ flex: 1 }}>
-                      <div className="admin-title-primary">{title.title_en}</div>
-                      <div className="admin-title-meta">
-                        <span className={`badge ${typeMeta.badgeClass}`}>{typeMeta.label}</span>
-                      </div>
+                  <div key={title.id} className="an-recent-card">
+                    {title.cover && (
+                      <img src={title.cover} alt="" className="an-recent-cover" />
+                    )}
+                    <div className="an-recent-info">
+                      <span className={`badge ${meta.badgeClass}`}>{meta.label}</span>
+                      <strong>{title.title_en || title.canonical_title}</strong>
+                      <span className="an-recent-date">
+                        {title.created_at
+                          ? new Date(title.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+                          : '—'}
+                      </span>
                     </div>
-                    <span className="admin-queue-pill subtle">{new Date(title.created_at).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Panel>
         </div>
-      </section>
+      )}
 
-      <section className="admin-analytics-section" style={{ marginBottom: 'var(--space-8)' }}>
-        <div className="admin-panel-heading">
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Layers size={20} color="var(--primary-500)" />
-              {t('admin.analytics.editorialTitle')}
-            </h2>
-            <p>{t('admin.analytics.editorialHint')}</p>
-          </div>
-        </div>
+      {/* ═══════════════════════════════════════
+          TAB: Editorial
+      ════════════════════════════════════════ */}
+      {activeTab === 'editorial' && (
+        <div className="an-tab-content">
 
-        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.collectionsLabel')} value={derived.filteredCollections.length} hint={t('admin.analytics.publishedRatioHint', { value: editorialPublishedRatio })} />
-          <MetricCard
-            label={t('admin.analytics.homepageBlocksLabel')}
-            value={derived.filteredBlocks.length}
-            hint={t('admin.analytics.publishedRatioHint', { value: blocksPublishedRatio })}
-            tone="#3b82f6"
-          />
-          <MetricCard
-            label={t('admin.analytics.statPublishedCollections')}
-            value={derived.filteredCollections.filter((collection) => collection.status === 'published').length}
-            hint={t('admin.analytics.readyForPublicHint')}
-            tone="#10b981"
-          />
-          <MetricCard
-            label={t('admin.analytics.statFeaturedCollections')}
-            value={derived.filteredCollections.filter((collection) => collection.is_featured).length}
-            hint={t('admin.analytics.featuredHint')}
-            tone="#f59e0b"
-          />
-          <MetricCard
-            label={t('admin.analytics.statCollectionItems')}
-            value={data.editorial.collectionItems}
-            hint={t('admin.analytics.totalItemsHint')}
-            tone="var(--secondary-600)"
-          />
-          <MetricCard label={t('admin.analytics.statMoodTags')} value={data.catalog.totalMoods} hint={t('admin.analytics.moodVocabularyHint')} tone="#8b5cf6" />
-        </div>
-
-        <div className="admin-analytics-two-up">
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.collectionStatusMix')}</h3>
-            <div className="admin-stat-list">
-              {EDITORIAL_STATUS_OPTIONS.filter((option) => option.value !== 'all').map((option) => {
-                const count = derived.filteredCollections.filter((collection) => collection.status === option.value).length;
-                return (
-                  <div key={option.value}>
-                    <span>{option.label}</span>
-                    <strong>{count}</strong>
+          <SectionHeader icon={Layers} title="Collections Health" subtitle="Published vs draft vs archived" accent="#8b5cf6" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Collection Status Split</PanelTitle>
+              <DonutChart segments={derived.colSplit} />
+            </Panel>
+            <Panel>
+              <PanelTitle>Collections Overview</PanelTitle>
+              <HorizontalBar
+                data={derived.colSplit.map((s) => ({ label: s.label, count: s.value }))}
+                color="#8b5cf6"
+                maxLabel={3}
+              />
+              <div className="an-kv-grid" style={{ marginTop: 20 }}>
+                {[
+                  { label: 'Total Collections', value: data.editorial.collections.length },
+                  { label: 'Published', value: data.editorial.collections.filter((c) => c.status === 'published').length },
+                  { label: 'Featured', value: data.editorial.collections.filter((c) => c.is_featured).length },
+                  { label: 'Total Items', value: data.editorial.collectionItems },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </Panel>
           </div>
 
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.homepageBlockTypes')}</h3>
-            <div className="admin-stat-list">
-              {HOMEPAGE_BLOCK_TYPE_OPTIONS.filter((option) => option.value !== 'all').map((option) => (
-                <div key={option.value}>
-                  <span>{option.label}</span>
-                  <strong>{derived.blockTypeCounts[option.value] || 0}</strong>
+          <SectionHeader icon={BarChart3} title="Homepage Blocks" subtitle="Block type distribution and status" accent="#ec4899" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Block Type Mix</PanelTitle>
+              <DonutChart
+                segments={derived.blockTypeCounts.map((b, i) => ({
+                  label: b.label,
+                  value: b.count,
+                  color: ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#14b8a6'][i % 6],
+                }))}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Block Types Ranked</PanelTitle>
+              <HorizontalBar data={derived.blockTypeCounts} color="#ec4899" />
+              <div className="an-kv-grid" style={{ marginTop: 20 }}>
+                {[
+                  { label: 'Total Blocks', value: data.editorial.blocks.length },
+                  { label: 'Published', value: data.editorial.blocks.filter((b) => b.status === 'published').length },
+                  { label: 'Draft', value: data.editorial.blocks.filter((b) => b.status === 'draft').length },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+          TAB: Moderation
+      ════════════════════════════════════════ */}
+      {activeTab === 'moderation' && (
+        <div className="an-tab-content">
+
+          <SectionHeader icon={Flag} title="Content Reports Overview" subtitle="Report volume, status pipeline, and issue type breakdown" accent="#f59e0b" />
+
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Report Volume (Last 14 Days)</PanelTitle>
+              <BarChart
+                data={derived.reportTimeseries.map((d) => ({ label: d.date.slice(5), count: d.count }))}
+                color="#f59e0b"
+                height={120}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Status Pipeline</PanelTitle>
+              <FunnelChart steps={derived.reportFunnel} />
+            </Panel>
+          </div>
+
+          <div className="an-grid-3">
+            <Panel>
+              <PanelTitle>Status Split</PanelTitle>
+              <DonutChart
+                segments={CONTENT_REPORT_STATUS_OPTIONS.map((o, i) => ({
+                  label: o.label,
+                  value: derived.reportStatusCounts[o.value] || 0,
+                  color: ['#ef4444', '#3b82f6', '#10b981', '#94a3b8'][i],
+                }))}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Issue Types Ranked</PanelTitle>
+              <HorizontalBar
+                data={CONTENT_REPORT_ISSUE_OPTIONS.map((o) => ({
+                  label: o.label,
+                  count: derived.reportIssueCounts[o.value] || 0,
+                }))}
+                color="#f59e0b"
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Report Health KPIs</PanelTitle>
+              <div className="an-kv-grid">
+                {[
+                  { label: 'Total Reports', value: data.reports.length },
+                  { label: 'Open', value: derived.reportStatusCounts.open || 0 },
+                  { label: 'In Review', value: derived.reportStatusCounts.in_review || 0 },
+                  { label: 'Resolved', value: derived.reportStatusCounts.resolved || 0 },
+                  { label: 'Dismissed', value: derived.reportStatusCounts.dismissed || 0 },
+                  {
+                    label: 'Oldest Open',
+                    value: derived.oldestOpen
+                      ? new Date(derived.oldestOpen.createdAt).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+                      : '—',
+                  },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+          TAB: Duplicates
+      ════════════════════════════════════════ */}
+      {activeTab === 'duplicates' && (
+        <div className="an-tab-content">
+
+          <SectionHeader icon={CopyPlus} title="Duplicate Candidates" subtitle="Confidence levels, pipeline status, and merge burn-down" accent="#ec4899" />
+
+          <div className="an-grid-3">
+            <Panel>
+              <PanelTitle>Status Split</PanelTitle>
+              <DonutChart
+                segments={DUPLICATE_STATUS_OPTIONS.map((o, i) => ({
+                  label: o.label,
+                  value: derived.dupeStatusCounts[o.value] || 0,
+                  color: ['#f59e0b', '#3b82f6', '#94a3b8', '#10b981'][i],
+                }))}
+              />
+            </Panel>
+            <Panel>
+              <PanelTitle>Confidence Buckets</PanelTitle>
+              <DonutChart segments={derived.confidenceBuckets} />
+            </Panel>
+            <Panel>
+              <PanelTitle>Pipeline KPIs</PanelTitle>
+              <div className="an-kv-grid">
+                {[
+                  { label: 'Total Candidates', value: data.duplicates.length },
+                  { label: 'Pending', value: derived.dupeStatusCounts.pending || 0 },
+                  { label: 'Approved', value: derived.dupeStatusCounts.approved || 0 },
+                  { label: 'Merged', value: derived.dupeStatusCounts.merged || 0 },
+                  { label: 'Rejected', value: derived.dupeStatusCounts.rejected || 0 },
+                  { label: 'Avg Confidence', value: `${derived.avgConfidence}%` },
+                ].map((kv) => (
+                  <div key={kv.label} className="an-kv-item">
+                    <span>{kv.label}</span>
+                    <strong>{kv.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          <SectionHeader icon={BarChart3} title="Duplicate Pipeline Flow" subtitle="How candidates move from detection to merge" accent="#3b82f6" />
+          <div className="an-grid-2">
+            <Panel>
+              <PanelTitle>Resolution Funnel</PanelTitle>
+              <FunnelChart steps={derived.dupeFunnel} />
+            </Panel>
+            <Panel>
+              <PanelTitle>Confidence Distribution</PanelTitle>
+              <BarChart
+                data={[
+                  { label: '≥80%', count: derived.confidenceBuckets[0].value },
+                  { label: '60–79%', count: derived.confidenceBuckets[1].value },
+                  { label: '<60%', count: derived.confidenceBuckets[2].value },
+                ]}
+                color="#ec4899"
+                height={120}
+              />
+            </Panel>
+          </div>
+
+          <SectionHeader icon={XCircle} title="Recent Decisions" subtitle="Latest reviewed candidates" accent="#94a3b8" />
+          <Panel>
+            <div className="an-title-table">
+              <div className="an-title-table-head">
+                <span>Title A</span><span>Title B</span><span>Status</span><span>Confidence</span>
+              </div>
+              {data.duplicates.slice(0, 12).map((d) => (
+                <div key={d.id} className="an-title-row">
+                  <span className="an-title-name">{d.titleA?.name || '—'}</span>
+                  <span className="an-title-name" style={{ color: 'var(--text-secondary)' }}>{d.titleB?.name || '—'}</span>
+                  <span>
+                    <span className={`admin-queue-pill status-${d.status}`}>{d.statusLabel}</span>
+                  </span>
+                  <div className="an-title-pop-bar">
+                    <div className="an-title-pop-fill" style={{ width: `${d.confidence}%` }} />
+                    <span>{d.confidence.toFixed(0)}%</span>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
         </div>
-      </section>
+      )}
 
-      <section className="admin-analytics-section" style={{ marginBottom: 'var(--space-8)' }}>
-        <div className="admin-panel-heading">
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Search size={20} color="var(--primary-500)" />
-              {t('admin.analytics.discoverTitle')}
-            </h2>
-            <p>{t('admin.analytics.discoverHint')}</p>
-          </div>
-        </div>
-
-        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.discoverSearchViews')} value={derived.discoverSearchViews.length} hint={t('admin.analytics.discoverSearchViewsHint')} />
-          <MetricCard label={t('admin.analytics.discoverResultClicks')} value={derived.discoverResultClicks.length} hint={t('admin.analytics.discoverResultClicksHint')} tone="#3b82f6" />
-          <MetricCard label={t('admin.analytics.discoverDistinctQueries')} value={derived.distinctQueryCount} hint={t('admin.analytics.discoverDistinctQueriesHint')} tone="#10b981" />
-          <MetricCard
-            label={t('admin.analytics.discoverTopQuery')}
-            value={derived.topQueries[0]?.label || '-'}
-            hint={derived.topQueries[0] ? t('admin.analytics.discoverTopQueryHint', { count: derived.topQueries[0].count }) : t('admin.analytics.discoverNoDataHint')}
-            tone="#f59e0b"
-          />
-          <MetricCard
-            label={t('admin.analytics.discoverNoResults')}
-            value={derived.discoverNoResults.length}
-            hint={t('admin.analytics.discoverNoResultsHint')}
-            tone="#ef4444"
-          />
-          <MetricCard
-            label={t('admin.analytics.discoverRecoveryRate')}
-            value={derived.recoveryRate !== null ? `${derived.recoveryRate}%` : '-'}
-            hint={derived.recoveryRate !== null
-              ? t('admin.analytics.discoverRecoveryRateHint', { recovered: derived.discoverRecoveries.length, total: derived.discoverNoResults.length })
-              : t('admin.analytics.discoverNoDataHint')}
-            tone="#8b5cf6"
-          />
-          <MetricCard
-            label={t('admin.analytics.discoverAutocompleteCtaRate')}
-            value={derived.autocompleteCtaRate !== null ? `${derived.autocompleteCtaRate}%` : '-'}
-            hint={t('admin.analytics.discoverAutocompleteCtaRateHint', { selects: derived.discoverAutocompleteSelects.length, views: derived.discoverSearchViews.length })}
-            tone="#06b6d4"
-          />
-          <MetricCard
-            label={t('admin.analytics.discoverSubmitRate')}
-            value={derived.submitRate !== null ? `${derived.submitRate}%` : '-'}
-            hint={t('admin.analytics.discoverSubmitRateHint', { submits: derived.discoverSearchSubmits.length, abandons: derived.discoverSearchAbandons.length })}
-            tone="#f97316"
-          />
-          <MetricCard
-            label={t('admin.analytics.discoverZeroResultRate')}
-            value={derived.zeroResultRate !== null ? `${derived.zeroResultRate}%` : '-'}
-            hint={t('admin.analytics.discoverZeroResultRateHint', { noResults: derived.discoverNoResults.length, views: derived.discoverSearchViews.length })}
-            tone="#e11d48"
-          />
-        </div>
-
-        <div className="admin-analytics-two-up">
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopQueries')}</h3>
-            {derived.topQueries.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.topQueries.map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverNoResultQueries')}</h3>
-            {derived.noResultQueries.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.noResultQueries.map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong style={{ color: '#ef4444' }}>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverClickMix')}</h3>
-            {derived.discoverClickTypeCounts.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.discoverClickTypeCounts.map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopAutocompleteClicks')}</h3>
-            {derived.topAutocompleteClicks.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.topAutocompleteClicks.map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverAutocompleteSurfaceSplit')}</h3>
-            <div className="admin-stat-list">
-              <div>
-                <span>{t('admin.analytics.discoverSurfaceHeader')}</span>
-                <strong>{derived.headerAutocompleteSelects}</strong>
-              </div>
-              <div>
-                <span>{t('admin.analytics.discoverSurfaceDiscover')}</span>
-                <strong>{derived.discoverSurfaceAutocompleteSelects}</strong>
-              </div>
-            </div>
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverTopSuggestionIds')}</h3>
-            {derived.topAutocompleteClicks.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.topAutocompleteClicks.slice(0, 8).map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="admin-analytics-two-up" style={{ marginTop: 'var(--space-4)' }}>
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverPresetMix')}</h3>
-            {derived.discoverPresetSourceCounts.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-stat-list">
-                {derived.discoverPresetSourceCounts.map((item) => (
-                  <div key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.count}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.discoverRecentEvents')}</h3>
-            {derived.filteredDiscoverEvents.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.discoverNoDataTitle')} description={t('admin.analytics.discoverNoDataHint')} />
-            ) : (
-              <div className="admin-list-stack">
-                {derived.filteredDiscoverEvents.slice(0, 6).map((event) => (
-                  <div key={event.id} className="admin-analytics-queue-card">
-                    <div className="admin-record-main">
-                      <strong className="admin-queue-card-title">{event.event_type}</strong>
-                      <span className="admin-queue-card-subtitle">{event.query || event.tag || '-'}</span>
-                    </div>
-                    <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
-                      <span className="admin-queue-pill subtle">{event.scope}</span>
-                      <span className="admin-queue-pill subtle">{event.result_type || event.preset_source || '-'}</span>
-                      <span className="admin-queue-pill subtle">{formatDateTime(event.created_at, locale)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="admin-analytics-section" style={{ marginBottom: 'var(--space-8)' }}>
-        <div className="admin-panel-heading">
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Flag size={20} color="var(--primary-500)" />
-              {t('admin.analytics.reportsTitle')}
-            </h2>
-            <p>{t('admin.analytics.reportsHint')}</p>
-          </div>
-        </div>
-
-        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statMatchingReports')} value={derived.filteredReports.length} hint={t('admin.analytics.rowsInCurrentFilterSet')} />
-          <MetricCard label={t('admin.analytics.statOpen')} value={derived.reportStatusCounts.open || 0} hint={t('admin.analytics.needsTriage')} tone="#f59e0b" />
-          <MetricCard label={t('admin.analytics.statInReview')} value={derived.reportStatusCounts.in_review || 0} hint={t('admin.analytics.activeModeration')} tone="#3b82f6" />
-          <MetricCard label={t('admin.analytics.statResolved')} value={derived.reportStatusCounts.resolved || 0} hint={t('admin.analytics.closedWithAction')} tone="#10b981" />
-          <MetricCard label={t('admin.analytics.statDismissed')} value={derived.reportStatusCounts.dismissed || 0} hint={t('admin.analytics.closedWithoutAction')} tone="#64748b" />
-          <MetricCard
-            label={t('admin.analytics.statOldestOpen')}
-            value={derived.oldestOpenReport ? formatDate(derived.oldestOpenReport.createdAt, locale) : '-'}
-            hint={derived.oldestOpenReport ? derived.oldestOpenReport.title.name : t('admin.analytics.noOpenReportsInFilters')}
-            tone="#ef4444"
-          />
-        </div>
-
-        <div className="admin-analytics-two-up">
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.issueTypeBreakdown')}</h3>
-            <div className="admin-stat-list">
-              {CONTENT_REPORT_ISSUE_OPTIONS.map((option) => (
-                <div key={option.value}>
-                  <span>{option.label}</span>
-                  <strong>{derived.reportIssueCounts[option.value] || 0}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentReportQueue')}</h3>
-            {derived.filteredReports.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.noReportsInViewTitle')} description={t('admin.analytics.noReportsInViewHint')} />
-            ) : (
-              <div className="admin-list-stack">
-                {derived.filteredReports.slice(0, 6).map((report) => (
-                  <div key={report.id} className="admin-analytics-queue-card">
-                    <div className="admin-record-main">
-                      <strong className="admin-queue-card-title">{report.title.name}</strong>
-                      <span className="admin-queue-card-subtitle">{report.issueLabel}</span>
-                    </div>
-                    <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
-                      <span className={`admin-queue-pill status-${report.status}`}>{report.statusLabel}</span>
-                      <span className="admin-queue-pill subtle">{formatDateTime(report.createdAt, locale)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="admin-analytics-section">
-        <div className="admin-panel-heading">
-          <div>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <CopyPlus size={20} color="var(--primary-500)" />
-              {t('admin.analytics.duplicatesTitle')}
-            </h2>
-            <p>{t('admin.analytics.duplicatesHint')}</p>
-          </div>
-        </div>
-
-        <div className="admin-analytics-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          <MetricCard label={t('admin.analytics.statMatchingCandidates')} value={derived.filteredDuplicates.length} hint={t('admin.analytics.rowsInCurrentFilterSet')} />
-          <MetricCard label={t('admin.analytics.statPending')} value={derived.duplicateStatusCounts.pending || 0} hint={t('admin.analytics.awaitingReview')} tone="#f59e0b" />
-          <MetricCard label={t('admin.analytics.statApproved')} value={derived.duplicateStatusCounts.approved || 0} hint={t('admin.analytics.readyToMerge')} tone="#3b82f6" />
-          <MetricCard label={t('admin.analytics.statRejected')} value={derived.duplicateStatusCounts.rejected || 0} hint={t('admin.analytics.reviewedDeclined')} tone="#64748b" />
-          <MetricCard label={t('admin.analytics.statMerged')} value={derived.duplicateStatusCounts.merged || 0} hint={t('admin.analytics.completedDedupe')} tone="#10b981" />
-          <MetricCard
-            label={t('admin.analytics.statAvgConfidence')}
-            value={`${derived.averageDuplicateConfidence}%`}
-            hint={t('admin.analytics.acrossFilteredCandidates')}
-            tone="#8b5cf6"
-          />
-        </div>
-
-        <div className="admin-analytics-two-up">
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.confidenceBuckets')}</h3>
-            <div className="admin-stat-list">
-              <div><span>{t('admin.analytics.confidenceHigh')}</span><strong>{derived.confidenceBuckets.high}</strong></div>
-              <div><span>{t('admin.analytics.confidenceMed')}</span><strong>{derived.confidenceBuckets.medium}</strong></div>
-              <div><span>{t('admin.analytics.confidenceLow')}</span><strong>{derived.confidenceBuckets.low}</strong></div>
-            </div>
-          </div>
-
-          <div className="glass-panel">
-            <h3 className="admin-analytics-panel-title">{t('admin.analytics.recentDuplicateDecisions')}</h3>
-            {derived.filteredDuplicates.length === 0 ? (
-              <AdminStatePanel title={t('admin.analytics.noDuplicateCandidatesTitle')} description={t('admin.analytics.noDuplicateCandidatesHint')} />
-            ) : (
-              <div className="admin-list-stack">
-                {derived.filteredDuplicates.slice(0, 6).map((candidate) => (
-                  <div key={candidate.id} className="admin-analytics-queue-card">
-                    <div className="admin-record-main">
-                      <strong className="admin-queue-card-title">{candidate.titleA.name}</strong>
-                      <span className="admin-queue-card-subtitle">{candidate.titleB.name}</span>
-                    </div>
-                    <div className="admin-chip-grid" style={{ gap: '0.45rem', marginTop: '0.75rem' }}>
-                      <span className={`admin-queue-pill status-${candidate.status}`}>{candidate.statusLabel}</span>
-                      <span className="admin-queue-pill subtle">{candidate.confidence.toFixed(0)} {t('admin.analytics.confidenceSuffix')}</span>
-                      <span className="admin-queue-pill subtle">{formatDateTime(candidate.reviewedAt || candidate.createdAt, locale)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

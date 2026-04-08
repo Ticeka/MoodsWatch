@@ -676,25 +676,31 @@ export function PartyTemplateBuilderPage() {
     <div className="party-page pt-template-builder-bg party-route-fade">
       <div className="pt-builder-container">
         {/* Header Bar */}
-        <header className="pt-builder-header party-shared-hero">
+        <header className="pt-builder-header pt-builder-header--minimal">
           <div className="pt-builder-title-group">
             <button className="pt-btn-back party-shared-back" onClick={() => navigate(returnTo, { replace: true, viewTransition: true })}>
               &larr; {pick('Back', 'Back')}
             </button>
             <div className="pt-builder-title-text">
-              <div className="party-shared-badge">
-                <span className="party-shared-badge-icon"><LayoutGrid size={12} /></span>
-                {pick('เซ็ตพร้อมใช้ทั้ง Quiz และ Vote', 'Ready for Quiz and Vote')}
-              </div>
-              <h1 className="party-shared-title">{meta.name || pick('ตั้งชื่อเพลย์ลิสต์...', 'Name your playlist...')}</h1>
-              <p className="party-shared-sub">
-                {items.length} {pick('เพลงที่เลือก', 'songs selected')}
-	                {!validation.valid && (
-	                  <span className="pt-builder-status-error">
-	                    - {validation.reason}
-	                  </span>
-		                )}
+              <span className="party-kicker pt-builder-kicker"><LayoutGrid size={15} /> {pick('สร้างชุดเพลง', 'Build a song set')}</span>
+              <h1 className="pt-builder-title">{meta.name || pick('ตั้งชื่อเพลย์ลิสต์...', 'Name your playlist...')}</h1>
+              <p className="pt-builder-subtitle">
+                {pick('เพิ่มเพลงจากคลังหรือ YouTube แล้วจัดเซ็ตให้พร้อมใช้ในห้องปาร์ตี้', 'Add songs from the catalog or YouTube, then shape a set that is ready for party rooms.')}
               </p>
+            </div>
+          </div>
+          <div className="pt-builder-header-status">
+            <div className="pt-builder-stat-card">
+              <strong>{items.length}</strong>
+              <span>{pick('เพลงในเซ็ต', 'songs in set')}</span>
+            </div>
+            <div className={`pt-builder-stat-card ${validation.valid ? 'is-valid' : 'is-invalid'}`}>
+              <strong>{validation.valid ? pick('พร้อม', 'Ready') : pick('ต้องแก้', 'Needs work')}</strong>
+              <span>
+                {validation.valid
+                  ? pick('บันทึกได้แล้ว', 'Ready to save')
+                  : validation.reason}
+              </span>
             </div>
           </div>
         </header>
@@ -1432,5 +1438,4 @@ export function PartyTemplateBuilderPage() {
     </div>
   );
 }
-
 

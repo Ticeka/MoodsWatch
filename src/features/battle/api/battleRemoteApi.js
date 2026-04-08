@@ -2,6 +2,77 @@ import { supabase } from '@/shared/lib/supabase';
 import { getBattleDecisionCount } from '../lib/battleStore.js';
 import { TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '../../../shared/lib/catalogEntities.js';
 
+const BATTLE_SESSION_SELECT = `
+  id,
+  user_id,
+  deck_key,
+  deck_fingerprint,
+  deck_label,
+  filters,
+  title_ids,
+  titles_snapshot,
+  target_rounds,
+  status,
+  current_pair,
+  ratings,
+  history,
+  ranking,
+  tiers,
+  winner_title_id,
+  snapshot,
+  comparison_count,
+  created_at,
+  updated_at,
+  completed_at
+`;
+
+const BATTLE_DECK_ROLLUP_SELECT = `
+  deck_fingerprint,
+  deck_key,
+  deck_label,
+  title_ids,
+  title_count,
+  completed_session_count,
+  total_vote_count,
+  community_winner_title_id,
+  community_ranking,
+  updated_at
+`;
+
+const BATTLE_PUBLIC_DECK_SELECT = `
+  id,
+  owner_user_id,
+  owner_display_name,
+  owner_username,
+  deck_key,
+  deck_fingerprint,
+  deck_label,
+  filters,
+  title_ids,
+  titles_snapshot,
+  title_count,
+  source_count,
+  play_count,
+  created_at,
+  updated_at
+`;
+
+const BATTLE_PUBLIC_DECK_LEGACY_SELECT = `
+  id,
+  owner_user_id,
+  owner_display_name,
+  deck_key,
+  deck_fingerprint,
+  deck_label,
+  filters,
+  title_ids,
+  titles_snapshot,
+  title_count,
+  source_count,
+  created_at,
+  updated_at
+`;
+
 function hasRemote(userId) {
   return Boolean(userId && supabase);
 }
@@ -307,6 +378,7 @@ function mapRowToPublicDeck(row) {
     titleIds: Array.isArray(row.title_ids) ? row.title_ids : [],
     titles: Array.isArray(row.titles_snapshot) ? row.titles_snapshot : [],
     sourceCount: Number(row.source_count || 0),
+    playCount: Math.max(0, Number(row.play_count || 0)),
     isPublic: true,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
@@ -335,6 +407,7 @@ function buildPublicDeckPayload(user, deck) {
     titles_snapshot: deck.titles || [],
     title_count: Number(deck?.titles?.length || 0),
     source_count: Number(deck?.sourceCount || deck?.titles?.length || 0),
+    play_count: Math.max(0, Number(deck?.playCount || 0)),
     created_at: deck.createdAt || new Date().toISOString(),
     updated_at: deck.updatedAt || new Date().toISOString(),
   };
@@ -347,7 +420,7 @@ export async function fetchRemoteBattleSessions(userId, { limit = 20 } = {}) {
 
   const { data, error } = await supabase
     .from('battle_sessions')
-    .select('id, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, target_rounds, status, current_pair, ratings, history, ranking, tiers, winner_title_id, snapshot, comparison_count, created_at, updated_at, completed_at')
+    .select(BATTLE_SESSION_SELECT)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
     .limit(limit);
@@ -366,7 +439,7 @@ export async function fetchRemoteBattleSession(userId, sessionId) {
 
   const { data, error } = await supabase
     .from('battle_sessions')
-    .select('*')
+    .select(BATTLE_SESSION_SELECT)
     .eq('user_id', userId)
     .eq('id', sessionId)
     .maybeSingle();
@@ -460,7 +533,7 @@ export async function fetchBattleCommunityRollup(deckFingerprint) {
 
   const { data, error } = await supabase
     .from('battle_deck_rollups')
-    .select('*')
+    .select(BATTLE_DECK_ROLLUP_SELECT)
     .eq('deck_fingerprint', deckFingerprint)
     .maybeSingle();
 
@@ -481,7 +554,7 @@ export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
 
   const { data, error } = await supabase
     .from('battle_public_decks')
-    .select('id, owner_user_id, owner_display_name, owner_username, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, title_count, source_count, created_at, updated_at')
+    .select(BATTLE_PUBLIC_DECK_SELECT)
     .order('updated_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -489,11 +562,12 @@ export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
     if (isMissingRelation(error, 'battle_public_decks')) {
       return [];
     }
-    // owner_username column may not exist yet — fall back to select without it
-    if (getMissingColumn(error, 'battle_public_decks') === 'owner_username') {
+    // owner_username / play_count columns may not exist yet — fall back to select without them
+    const missingColumn = getMissingColumn(error, 'battle_public_decks');
+    if (missingColumn === 'owner_username' || missingColumn === 'play_count') {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('battle_public_decks')
-        .select('id, owner_user_id, owner_display_name, deck_key, deck_fingerprint, deck_label, filters, title_ids, titles_snapshot, title_count, source_count, created_at, updated_at')
+        .select(BATTLE_PUBLIC_DECK_LEGACY_SELECT)
         .order('updated_at', { ascending: false })
         .range(offset, offset + limit - 1);
       if (fallbackError) throw fallbackError;
@@ -545,6 +619,36 @@ export async function persistRemotePublicBattleDeck(user, deck) {
   }
 
   return deck;
+}
+
+export async function incrementRemotePublicBattleDeckPlayCount(deckId) {
+  const normalizedDeckId = String(deckId || '').trim();
+  if (!supabase || !normalizedDeckId) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('increment_battle_public_deck_play_count', {
+      p_deck_id: normalizedDeckId,
+    });
+
+    if (!error) {
+      return;
+    }
+
+    const message = String(error?.message || '');
+    if (
+      Number(error?.status || 0) === 404
+      || message.includes('increment_battle_public_deck_play_count')
+      || message.includes('schema cache')
+    ) {
+      return;
+    }
+
+    throw error;
+  } catch (error) {
+    warnBattleRemote('Failed to increment battle public deck play count', error);
+  }
 }
 
 export async function deleteRemotePublicBattleDeck(userId, deckId) {

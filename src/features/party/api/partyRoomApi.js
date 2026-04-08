@@ -12,6 +12,105 @@ import {
   savePartyProfile,
 } from './partyProfileApi.js';
 
+export const PARTY_ROOM_SELECT = `
+  id,
+  room_code,
+  room_name,
+  visibility,
+  status,
+  host_member_token,
+  settings,
+  current_match,
+  created_at,
+  updated_at
+`;
+
+export const PARTY_ROOM_MEMBER_SELECT = `
+  id,
+  room_id,
+  member_token,
+  display_name,
+  avatar_key,
+  avatar_url,
+  is_host,
+  is_ready,
+  joined_at,
+  updated_at
+`;
+
+export const PARTY_ROOM_ANSWER_SELECT = `
+  id,
+  room_id,
+  match_id,
+  round_id,
+  member_token,
+  member_name,
+  answer_mode,
+  selected_option_id,
+  typed_title,
+  typed_song,
+  title_correct,
+  song_correct,
+  points_awarded,
+  elapsed_ms,
+  submitted_at,
+  updated_at
+`;
+
+const PARTY_ROOM_BROADCAST_FIELD_KEYS = [
+  'room_code',
+  'room_name',
+  'visibility',
+  'status',
+  'host_member_token',
+  'settings',
+  'current_match',
+  'updated_at',
+];
+
+function arePartyRoomBroadcastValuesEqual(left, right) {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (typeof left === 'object' || typeof right === 'object') {
+    try {
+      return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+export function buildPartyRoomRealtimePatch(nextRoom, previousRoom = null, { forceKeys = [] } = {}) {
+  if (!nextRoom) {
+    return null;
+  }
+
+  const patch = {
+    id: nextRoom.id,
+  };
+  const forceKeySet = new Set(forceKeys);
+
+  PARTY_ROOM_BROADCAST_FIELD_KEYS.forEach((key) => {
+    if (!(key in nextRoom)) {
+      return;
+    }
+
+    if (
+      !previousRoom
+      || forceKeySet.has(key)
+      || !arePartyRoomBroadcastValuesEqual(previousRoom?.[key], nextRoom?.[key])
+    ) {
+      patch[key] = nextRoom[key];
+    }
+  });
+
+  return patch;
+}
+
 export function hasMissingColumn(error, columnName) {
   const message = String(error?.message || '').toLowerCase();
   return message.includes(`column "${String(columnName || '').toLowerCase()}"`) || message.includes(`'${String(columnName || '').toLowerCase()}'`);
@@ -28,7 +127,7 @@ export async function fetchPartyRoomRecordById(roomId) {
 
   const { data, error } = await supabase
     .from('party_rooms')
-    .select('*')
+    .select(PARTY_ROOM_SELECT)
     .eq('id', roomId);
 
   if (error) {
@@ -45,7 +144,7 @@ export async function fetchPartyRoomMembers(roomId) {
 
   const { data, error } = await supabase
     .from('party_room_members')
-    .select('*')
+    .select(PARTY_ROOM_MEMBER_SELECT)
     .eq('room_id', roomId)
     .order('joined_at', { ascending: true });
 
@@ -64,7 +163,7 @@ export async function fetchPartyRoomBundle(roomCode) {
   const normalizedCode = String(roomCode || '').trim().toUpperCase();
   const { data: room, error: roomError } = await supabase
     .from('party_rooms')
-    .select('*')
+    .select(PARTY_ROOM_SELECT)
     .eq('room_code', normalizedCode)
     .maybeSingle();
 
@@ -79,12 +178,12 @@ export async function fetchPartyRoomBundle(roomCode) {
   const [{ data: members, error: membersError }, { data: answers, error: answersError }] = await Promise.all([
     supabase
       .from('party_room_members')
-      .select('*')
+      .select(PARTY_ROOM_MEMBER_SELECT)
       .eq('room_id', room.id)
       .order('joined_at', { ascending: true }),
     supabase
       .from('party_room_answers')
-      .select('*')
+      .select(PARTY_ROOM_ANSWER_SELECT)
       .eq('room_id', room.id)
       .order('submitted_at', { ascending: true }),
   ]);
@@ -134,7 +233,7 @@ export async function createPartyRoom({ profile = {}, settings = {}, roomName = 
         room_name: normalizedRoomName,
         visibility: normalizedVisibility,
       })
-      .select('*')
+      .select(PARTY_ROOM_SELECT)
       .single();
 
     if (roomError) {
@@ -203,7 +302,7 @@ export async function updatePartyRoomSettings(room, settings = {}) {
     .eq('host_member_token', freshRoom.host_member_token)
     .eq('status', 'lobby')
     .eq('updated_at', freshRoom.updated_at)
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (error) {
     throw error;
@@ -221,7 +320,7 @@ export async function updatePartyRoomSettings(room, settings = {}) {
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_UPDATED',
     payload: {
-      room: nextRoom,
+      room: buildPartyRoomRealtimePatch(nextRoom, freshRoom),
     },
   });
 
@@ -266,7 +365,7 @@ export async function joinPartyRoom(roomCode, profile = {}) {
   let { data: memberData, error } = await supabase
     .from('party_room_members')
     .upsert(payload, { onConflict: 'room_id,member_token' })
-    .select('*')
+    .select(PARTY_ROOM_MEMBER_SELECT)
     .single();
 
   if (error && hasMissingColumn(error, 'avatar_url')) {
@@ -274,7 +373,7 @@ export async function joinPartyRoom(roomCode, profile = {}) {
     ({ data: memberData, error } = await supabase
       .from('party_room_members')
       .upsert(legacyPayload, { onConflict: 'room_id,member_token' })
-      .select('*')
+      .select(PARTY_ROOM_MEMBER_SELECT)
       .single());
   }
 
@@ -302,7 +401,7 @@ export async function togglePartyMemberReady(roomId, memberToken, isReady) {
     .update({ is_ready: Boolean(isReady) })
     .eq('room_id', roomId)
     .eq('member_token', memberToken)
-    .select('*')
+    .select(PARTY_ROOM_MEMBER_SELECT)
     .single();
 
   if (error) {
@@ -369,7 +468,7 @@ export async function leavePartyRoom({ room, memberToken } = {}) {
     .update({ status: 'closed' })
     .eq('id', freshRoom.id)
     .neq('status', 'closed')
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (closeError) {
     throw closeError;
@@ -380,7 +479,7 @@ export async function leavePartyRoom({ room, memberToken } = {}) {
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_CLOSED',
     payload: {
-      room: closedRoom,
+      room: buildPartyRoomRealtimePatch(closedRoom, freshRoom, { forceKeys: ['status', 'updated_at'] }),
     },
   });
 
@@ -402,7 +501,7 @@ export async function closePartyRoom(room) {
     .update({ status: 'closed' })
     .eq('id', room.id)
     .eq('host_member_token', room.host_member_token)
-    .select('*')
+    .select(PARTY_ROOM_SELECT)
     .single();
 
   if (error) {
@@ -412,7 +511,7 @@ export async function closePartyRoom(room) {
   await broadcastPartyRoomEvent(room.id, {
     type: 'ROOM_CLOSED',
     payload: {
-      room: data,
+      room: buildPartyRoomRealtimePatch(data, room, { forceKeys: ['status', 'updated_at'] }),
     },
   });
 

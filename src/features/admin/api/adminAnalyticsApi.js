@@ -9,6 +9,9 @@ import {
 } from '@/shared/lib/duplicates';
 import { mapCanonicalTitle } from '@/shared/lib/catalog';
 
+const ADMIN_DASHBOARD_STALE_TIME = 30_000;
+const ADMIN_ANALYTICS_WINDOW_DAYS = 30;
+
 function ensureSupabase() {
   if (!supabase) {
     throw new Error('Supabase client is not available');
@@ -26,8 +29,66 @@ function isMissingTableError(error, tableName) {
   );
 }
 
+function getAnalyticsWindowStartIso(days = ADMIN_ANALYTICS_WINDOW_DAYS) {
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
+
+export async function fetchAdminDashboardData() {
+  ensureSupabase();
+
+  const [
+    usersCount,
+    titlesCount,
+    listsCount,
+    collectionsCount,
+    homepageBlocksCount,
+    openReportsCount,
+    pendingDuplicatesCount,
+    recentUsersData,
+  ] = await Promise.all([
+    supabase.from('user_profiles').select('id', { count: 'estimated', head: true }),
+    supabase.from('canonical_titles').select('id', { count: 'estimated', head: true }),
+    supabase.from('user_lists').select('id', { count: 'estimated', head: true }),
+    supabase.from('editor_collections').select('id', { count: 'estimated', head: true }),
+    supabase.from('homepage_content_blocks').select('id', { count: 'estimated', head: true }),
+    supabase.from('content_reports').select('id', { count: 'estimated', head: true }).in('status', ['open', 'in_review']),
+    supabase.from('duplicate_candidates').select('id', { count: 'estimated', head: true }).eq('status', 'pending'),
+    supabase.from('user_profiles').select('id, name, role, created_at').order('created_at', { ascending: false }).limit(5),
+  ]);
+
+  const responseErrors = [
+    usersCount.error,
+    titlesCount.error,
+    listsCount.error,
+    collectionsCount.error,
+    homepageBlocksCount.error,
+    openReportsCount.error,
+    pendingDuplicatesCount.error,
+    recentUsersData.error,
+  ].filter(Boolean);
+
+  if (responseErrors.length > 0) {
+    throw responseErrors[0];
+  }
+
+  return {
+    stats: {
+      totalUsers: usersCount.count || 0,
+      totalTitles: titlesCount.count || 0,
+      totalLists: listsCount.count || 0,
+      totalCollections: collectionsCount.count || 0,
+      totalHomepageBlocks: homepageBlocksCount.count || 0,
+      openReports: openReportsCount.count || 0,
+      pendingDuplicates: pendingDuplicatesCount.count || 0,
+    },
+    recentUsers: recentUsersData.data || [],
+    fetchedAt: Date.now(),
+  };
+}
+
 export async function fetchAdminAnalyticsData() {
   ensureSupabase();
+  const analyticsWindowStart = getAnalyticsWindowStartIso();
 
   const [
     titlesRes,
@@ -46,13 +107,13 @@ export async function fetchAdminAnalyticsData() {
     duplicatesRes,
     discoverEventsRes,
   ] = await Promise.all([
-    supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }),
-    supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'anime'),
-    supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manga'),
-    supabase.from('canonical_titles').select('*', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manhwa'),
-    supabase.from('user_profiles').select('*', { count: 'estimated', head: true }),
-    supabase.from('user_lists').select('*', { count: 'estimated', head: true }),
-    supabase.from('moods').select('*', { count: 'estimated', head: true }),
+    supabase.from('canonical_titles').select('id', { count: 'estimated', head: true }),
+    supabase.from('canonical_titles').select('id', { count: 'estimated', head: true }).eq('type', 'anime'),
+    supabase.from('canonical_titles').select('id', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manga'),
+    supabase.from('canonical_titles').select('id', { count: 'estimated', head: true }).eq('type', 'manga').eq('subtype', 'manhwa'),
+    supabase.from('user_profiles').select('id', { count: 'estimated', head: true }),
+    supabase.from('user_lists').select('id', { count: 'estimated', head: true }),
+    supabase.from('moods').select('id', { count: 'estimated', head: true }),
     supabase.from('canonical_titles')
       .select('id, slug, canonical_title, type, subtype, avg_score, cover_image, popularity_score')
       .order('avg_score', { ascending: false, nullsFirst: false })
@@ -62,11 +123,16 @@ export async function fetchAdminAnalyticsData() {
       .order('created_at', { ascending: false })
       .limit(8),
     supabase.from('editor_collections').select('id, status, visibility, is_featured, created_at, updated_at'),
-    supabase.from('editor_collection_items').select('*', { count: 'estimated', head: true }),
+    supabase.from('editor_collection_items').select('id', { count: 'estimated', head: true }),
     supabase.from('homepage_content_blocks').select('id, status, visibility, block_type, created_at, updated_at'),
-    supabase.from('content_reports').select(CONTENT_REPORT_SELECT).order('created_at', { ascending: false }).limit(1000),
-    supabase.from('duplicate_candidates').select(DUPLICATE_CANDIDATE_SELECT).order('created_at', { ascending: false }).limit(1000),
-    supabase.from('discover_search_events').select('*').order('created_at', { ascending: false }).limit(1000),
+    supabase.from('content_reports').select(CONTENT_REPORT_SELECT).gte('created_at', analyticsWindowStart).order('created_at', { ascending: false }).limit(250),
+    supabase.from('duplicate_candidates').select(DUPLICATE_CANDIDATE_SELECT).gte('created_at', analyticsWindowStart).order('created_at', { ascending: false }).limit(250),
+    supabase
+      .from('discover_search_events')
+      .select('id, event_type, query, normalized_query, result_type, preset_source, session_id, created_at')
+      .gte('created_at', analyticsWindowStart)
+      .order('created_at', { ascending: false })
+      .limit(600),
   ]);
 
   const responseErrors = [
@@ -109,6 +175,11 @@ export async function fetchAdminAnalyticsData() {
       collections: collectionsRes.data || [],
       collectionItems: collectionItemsRes.count || 0,
       blocks: blocksRes.data || [],
+    },
+    freshness: {
+      fetchedAt: Date.now(),
+      windowDays: ADMIN_ANALYTICS_WINDOW_DAYS,
+      staleTime: ADMIN_DASHBOARD_STALE_TIME,
     },
     discoverEvents: (discoverEventsRes.error && isMissingTableError(discoverEventsRes.error, 'discover_search_events'))
       ? []

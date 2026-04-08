@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   Library,
@@ -8,8 +9,13 @@ import {
   Search,
   Settings,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
+import {
+  fetchAdminPartyPresetItems,
+  fetchAdminPartyPresetSummaries,
+} from '@/features/admin/api';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { searchPartyThemeSongs } from '@/features/party/api/partyRemoteApi';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -33,21 +39,6 @@ const SEARCH_SORT_OPTIONS = [
   { id: 'score', label: 'คะแนนสูงสุด', labelEn: 'Highest score' },
 ];
 
-function mapPreset(record) {
-  const items = Array.isArray(record?.party_song_preset_items) ? record.party_song_preset_items : [];
-
-  return {
-    id: Number(record?.id || 0),
-    slug: record?.slug || '',
-    name: record?.name || '',
-    description: record?.description || '',
-    status: record?.status || 'draft',
-    visibility: record?.visibility || 'public',
-    updatedAt: record?.updated_at || '',
-    itemCount: items.length,
-  };
-}
-
 function mapForm(preset) {
   return {
     name: preset?.name || '',
@@ -70,11 +61,7 @@ function slugifyPreset(value = '') {
 export function AdminPartyPresets() {
   const { user } = useAuth();
   const { pick } = useLanguage();
-  const [presets, setPresets] = useState([]);
-  const [presetItems, setPresetItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,87 +74,80 @@ export function AdminPartyPresets() {
   const [addingSongId, setAddingSongId] = useState(null);
   const [removingItemId, setRemovingItemId] = useState(null);
 
+  const presetsQuery = useQuery({
+    queryKey: ['admin-party-preset-summaries'],
+    queryFn: fetchAdminPartyPresetSummaries,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const presets = useMemo(() => presetsQuery.data || [], [presetsQuery.data]);
   const selectedPreset = useMemo(
     () => presets.find((preset) => preset.id === selectedId) || null,
-    [presets, selectedId]
+    [presets, selectedId],
   );
 
-  const loadPresets = useCallback(async (preferredId = null) => {
-    if (!supabase) {
-      setErrorMessage('Unable to connect to Supabase');
-      setIsLoading(false);
+  const presetItemsQuery = useQuery({
+    queryKey: ['admin-party-preset-items', selectedId || null],
+    queryFn: () => fetchAdminPartyPresetItems(selectedId),
+    enabled: Boolean(selectedId),
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (!presets.length) {
+      setSelectedId(null);
+      setForm(EMPTY_FORM);
       return;
     }
 
-    setIsLoading(true);
-    setErrorMessage('');
-    try {
-      const { data, error } = await supabase
-        .from('party_song_presets')
-        .select('id, slug, name, description, status, visibility, updated_at, party_song_preset_items(id)')
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      const nextPresets = (data || []).map(mapPreset);
-      setPresets(nextPresets);
-
-      if (nextPresets.length === 0) {
-        setSelectedId(null);
-        setForm(EMPTY_FORM);
-        setPresetItems([]);
-        return;
-      }
-
-      const nextSelected = preferredId && nextPresets.some((preset) => preset.id === preferredId)
-        ? nextPresets.find((preset) => preset.id === preferredId)
-        : nextPresets[0];
-
-      setSelectedId(nextSelected.id);
-      setForm(mapForm(nextSelected));
-    } catch (error) {
-      console.error('Failed to load party presets', error);
-      setErrorMessage(error.message || 'Failed to load presets');
-      toast.error(error.message || 'Failed to load presets');
-    } finally {
-      setIsLoading(false);
+    if (!selectedId || !presets.some((preset) => preset.id === selectedId)) {
+      setSelectedId(presets[0].id);
     }
-  }, []);
+  }, [presets, selectedId]);
 
-  const loadPresetItems = useCallback(async (presetId) => {
-    if (!supabase || !presetId) {
-      setPresetItems([]);
+  useEffect(() => {
+    if (!selectedPreset) {
+      if (selectedId) return;
+      setForm(EMPTY_FORM);
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('party_song_preset_items')
-        .select('*')
-        .eq('preset_id', presetId)
-        .order('position', { ascending: true })
-        .order('created_at', { ascending: true });
+    setForm(mapForm(selectedPreset));
+  }, [selectedId, selectedPreset]);
 
-      if (error) {
-        throw error;
-      }
-
-      setPresetItems(data || []);
-    } catch (error) {
-      console.error('Failed to load preset songs', error);
-      toast.error(error.message || 'Failed to load preset songs');
+  useEffect(() => {
+    if (presetsQuery.error || presetItemsQuery.error) {
+      toast.error(presetsQuery.error?.message || presetItemsQuery.error?.message || 'Failed to load presets');
     }
-  }, []);
+  }, [presetItemsQuery.error, presetsQuery.error]);
 
-  useEffect(() => {
-    void loadPresets();
-  }, [loadPresets]);
+  const presetItems = useMemo(() => presetItemsQuery.data || [], [presetItemsQuery.data]);
+  const isLoading = presetsQuery.isLoading && !presets.length;
+  const errorMessage = presetsQuery.error?.message || presetItemsQuery.error?.message || '';
+  const isRefreshing = (presetsQuery.isFetching && !presetsQuery.isLoading)
+    || (presetItemsQuery.isFetching && Boolean(selectedId));
 
-  useEffect(() => {
-    void loadPresetItems(selectedId);
-  }, [loadPresetItems, selectedId]);
+  const refreshPresets = useCallback(async ({ showToast = true } = {}) => {
+    try {
+      const [listResult, itemsResult] = await Promise.all([
+        presetsQuery.refetch(),
+        selectedId ? presetItemsQuery.refetch() : Promise.resolve({ error: null }),
+      ]);
+
+      if (listResult.error) throw listResult.error;
+      if (itemsResult?.error) throw itemsResult.error;
+
+      if (showToast) {
+        toast.success(pick('รีเฟรชแล้ว', 'Refreshed'));
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Failed to refresh presets');
+    }
+  }, [pick, presetItemsQuery, presetsQuery, selectedId]);
 
   const handleSelect = (preset) => {
     setSelectedId(preset.id);
@@ -182,7 +162,6 @@ export function AdminPartyPresets() {
   const handleCreateNew = () => {
     setSelectedId(null);
     setForm(EMPTY_FORM);
-    setPresetItems([]);
     setSearchResults([]);
     setSearchQuery('');
     setSearchPage(0);
@@ -256,7 +235,10 @@ export function AdminPartyPresets() {
       }
 
       toast.success(pick('บันทึก preset แล้ว', 'Preset saved'), { id: toastId });
-      await loadPresets(nextSelectedId || undefined);
+      await presetsQuery.refetch();
+      if (nextSelectedId) {
+        await presetItemsQuery.refetch();
+      }
     } catch (error) {
       console.error('Failed to save preset', error);
       toast.error(error.message || 'Failed to save preset', { id: toastId });
@@ -286,7 +268,8 @@ export function AdminPartyPresets() {
       }
 
       toast.success(pick('ลบ preset แล้ว', 'Preset deleted'), { id: toastId });
-      await loadPresets();
+      setSelectedId(null);
+      await presetsQuery.refetch();
     } catch (error) {
       console.error('Failed to delete preset', error);
       toast.error(error.message || 'Failed to delete preset', { id: toastId });
@@ -343,8 +326,8 @@ export function AdminPartyPresets() {
 
       toast.success(pick('เพิ่มเพลงเข้า preset แล้ว', 'Song added'), { id: toastId });
       await Promise.all([
-        loadPresets(selectedPreset.id),
-        loadPresetItems(selectedPreset.id),
+        presetsQuery.refetch(),
+        presetItemsQuery.refetch(),
       ]);
     } catch (error) {
       console.error('Failed to add preset song', error);
@@ -373,8 +356,8 @@ export function AdminPartyPresets() {
 
       toast.success(pick('ลบเพลงออกจาก preset แล้ว', 'Song removed'), { id: toastId });
       await Promise.all([
-        loadPresets(selectedPreset.id),
-        loadPresetItems(selectedPreset.id),
+        presetsQuery.refetch(),
+        presetItemsQuery.refetch(),
       ]);
     } catch (error) {
       console.error('Failed to remove preset song', error);
@@ -404,8 +387,8 @@ export function AdminPartyPresets() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="action-btn" onClick={() => void loadPresets(selectedId)} type="button">
-            <RefreshCw size={16} style={{ marginRight: 8 }} />
+          <button className="action-btn" onClick={() => void refreshPresets()} type="button" disabled={isRefreshing}>
+            {isRefreshing ? <Loader2 size={16} className="animate-spin" style={{ marginRight: 8 }} /> : <RefreshCw size={16} style={{ marginRight: 8 }} />}
             {pick('รีเฟรช', 'Refresh')}
           </button>
           <button className="primary-btn" onClick={handleCreateNew} type="button">
@@ -437,7 +420,7 @@ export function AdminPartyPresets() {
               title={pick('โหลด preset ไม่สำเร็จ', 'Failed to load presets')}
               description={errorMessage}
               actionLabel={pick('ลองใหม่', 'Retry')}
-              onAction={() => void loadPresets(selectedId)}
+              onAction={() => void refreshPresets({ showToast: false })}
               tone="error"
             />
           ) : presets.length === 0 ? (

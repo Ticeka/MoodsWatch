@@ -37,11 +37,14 @@ import {
   savePartyProfile,
 } from './partyProfileApi.js';
 import {
+  buildPartyRoomRealtimePatch,
   closePartyRoom,
   createPartyRoom,
   fetchPartyRoomBundle,
   fetchPartyRoomMembers,
   fetchPartyRoomRecordById,
+  PARTY_ROOM_ANSWER_SELECT,
+  PARTY_ROOM_SELECT,
   joinPartyRoom,
   leavePartyRoom,
   searchPublicPartyRooms,
@@ -147,6 +150,78 @@ const PARTY_SONG_POOL_PAGE_SIZE = 60;
 const PARTY_SONG_POOL_MAX_PAGES = 3;
 const PARTY_SONG_POOL_CACHE_TTL_MS = 2 * 60 * 1000;
 const partySongPoolCache = new Map();
+
+async function fetchPartyVoteSummary(roomId, matchId, roundId, songA, songB) {
+  if (!supabase || !roomId || !matchId || !roundId) {
+    return null;
+  }
+
+  const normalizedSongA = String(songA || '');
+  const normalizedSongB = String(songB || '');
+
+  try {
+    const { data, error } = await supabase.rpc('get_party_vote_summary', {
+      p_room_id: roomId,
+      p_match_id: String(matchId),
+      p_round_id: String(roundId),
+      p_song_a: normalizedSongA,
+      p_song_b: normalizedSongB,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const summary = Array.isArray(data) ? data[0] : data;
+    if (!summary) {
+      throw new Error('Vote summary RPC returned no rows.');
+    }
+
+    return {
+      songA_votes: Number(summary.song_a_votes || 0),
+      songB_votes: Number(summary.song_b_votes || 0),
+      total_votes: Number(summary.total_votes || 0),
+      is_tie: Boolean(summary.is_tie),
+      winning_song_id: String(summary.winning_song_id || ''),
+    };
+  } catch (error) {
+    console.warn('Falling back to client vote tally', error);
+  }
+
+  const { data: voteRecords, error: voteRecordsError } = await supabase
+    .from('party_room_answers')
+    .select('selected_option_id')
+    .eq('room_id', roomId)
+    .eq('match_id', String(matchId))
+    .eq('round_id', String(roundId));
+
+  if (voteRecordsError) {
+    throw voteRecordsError;
+  }
+
+  const songA_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongA).length;
+  const songB_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongB).length;
+  const total_votes = (voteRecords || []).length;
+  const is_tie = songA_votes === songB_votes;
+  let winning_song_id;
+
+  if (songA_votes > songB_votes) {
+    winning_song_id = normalizedSongA;
+  } else if (songB_votes > songA_votes) {
+    winning_song_id = normalizedSongB;
+  } else {
+    const tieHash = Array.from(String(roundId)).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    winning_song_id = tieHash % 2 === 0 ? normalizedSongA : normalizedSongB;
+  }
+
+  return {
+    songA_votes,
+    songB_votes,
+    total_votes,
+    is_tie,
+    winning_song_id,
+  };
+}
 
 function makeId(prefix = 'party') {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -419,7 +494,7 @@ export async function startPartyMatch(room) {
     .eq('host_member_token', freshRoom.host_member_token)
     .eq('status', 'lobby')
     .eq('updated_at', freshRoom.updated_at)
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (error) {
     throw error;
@@ -454,7 +529,7 @@ export async function startPartyMatch(room) {
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_UPDATED',
     payload: {
-      room: nextRoom,
+      room: buildPartyRoomRealtimePatch(nextRoom, freshRoom),
     },
   });
 
@@ -545,7 +620,7 @@ export async function extendPartyQuestionPhase({
     .eq('host_member_token', freshRoom.host_member_token)
     .eq('status', freshRoom.status)
     .eq('updated_at', freshRoom.updated_at)
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (error) {
     throw error;
@@ -559,7 +634,7 @@ export async function extendPartyQuestionPhase({
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_UPDATED',
     payload: {
-      room: nextRoom,
+      room: buildPartyRoomRealtimePatch(nextRoom, freshRoom),
     },
   });
 
@@ -598,7 +673,7 @@ export async function advancePartyRoom(room) {
       .eq('host_member_token', room.host_member_token)
       .eq('status', room.status)
       .eq('updated_at', room.updated_at)
-      .select('*');
+      .select(PARTY_ROOM_SELECT);
 
     if (optimisticError) {
       throw optimisticError;
@@ -608,7 +683,7 @@ export async function advancePartyRoom(room) {
     if (optimisticRoom) {
       await broadcastPartyRoomEvent(room.id, {
         type: 'MATCH_ADVANCED',
-        payload: { room: optimisticRoom },
+        payload: { room: buildPartyRoomRealtimePatch(optimisticRoom, room, { forceKeys: ['status', 'current_match', 'updated_at'] }) },
       });
       return optimisticRoom;
     }
@@ -634,43 +709,22 @@ export async function advancePartyRoom(room) {
     const songA = freshRoom.current_match.currentBattle.songA;
     const songB = freshRoom.current_match.currentBattle.songB;
 
-    const { data: voteRecords, error: voteRecordsError } = await supabase
-      .from('party_room_answers')
-      .select('selected_option_id')
-      .eq('room_id', freshRoom.id)
-      .eq('match_id', freshRoom.current_match.id)
-      .eq('round_id', battleId);
-
-    if (voteRecordsError) {
-      throw voteRecordsError;
-    }
-
-    const normalizedSongA = String(songA || '');
-    const normalizedSongB = String(songB || '');
-    const songA_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongA).length;
-    const songB_votes = (voteRecords || []).filter((vote) => String(vote?.selected_option_id || '') === normalizedSongB).length;
-    const total_votes = (voteRecords || []).length;
-    const is_tie = songA_votes === songB_votes;
-
-    // Deterministic tie-break: hash the battle id so all clients agree.
-    let winning_song_id;
-    if (songA_votes > songB_votes) {
-      winning_song_id = normalizedSongA;
-    } else if (songB_votes > songA_votes) {
-      winning_song_id = normalizedSongB;
-    } else {
-      const tieHash = Array.from(String(battleId)).reduce((sum, c) => sum + c.charCodeAt(0), 0);
-      winning_song_id = tieHash % 2 === 0 ? normalizedSongA : normalizedSongB;
-    }
+    const voteSummary = await fetchPartyVoteSummary(
+      freshRoom.id,
+      freshRoom.current_match.id,
+      battleId,
+      songA,
+      songB,
+    );
 
     freshRoom.current_match.currentBattle.voteSummary = {
-      songA_votes,
-      songB_votes,
-      total_votes,
-      winning_song_id,
-      is_tie,
+      songA_votes: Number(voteSummary?.songA_votes || 0),
+      songB_votes: Number(voteSummary?.songB_votes || 0),
+      total_votes: Number(voteSummary?.total_votes || 0),
+      winning_song_id: String(voteSummary?.winning_song_id || ''),
+      is_tie: Boolean(voteSummary?.is_tie),
     };
-    freshRoom.current_match.currentBattle.winnerSongId = winning_song_id;
+    freshRoom.current_match.currentBattle.winnerSongId = String(voteSummary?.winning_song_id || '');
   }
 
   const nextMatch = freshModeType === 'vote'
@@ -688,7 +742,7 @@ export async function advancePartyRoom(room) {
     .eq('host_member_token', freshRoom.host_member_token)
     .eq('status', freshRoom.status)
     .eq('updated_at', freshRoom.updated_at)
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (error) {
     throw error;
@@ -701,7 +755,7 @@ export async function advancePartyRoom(room) {
 
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'MATCH_ADVANCED',
-    payload: { room: nextRoom },
+    payload: { room: buildPartyRoomRealtimePatch(nextRoom, freshRoom, { forceKeys: ['status', 'current_match', 'updated_at'] }) },
   });
 
   return nextRoom;
@@ -723,7 +777,7 @@ export async function resetPartyRoom(room) {
     .eq('id', freshRoom.id)
     .eq('host_member_token', freshRoom.host_member_token)
     .eq('updated_at', freshRoom.updated_at)
-    .select('*');
+    .select(PARTY_ROOM_SELECT);
 
   if (roomError) {
     throw roomError;
@@ -775,7 +829,7 @@ export async function resetPartyRoom(room) {
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_RESET',
     payload: {
-      room: roomData,
+      room: buildPartyRoomRealtimePatch(roomData, freshRoom, { forceKeys: ['status', 'current_match', 'updated_at'] }),
       members,
     },
   });
@@ -822,7 +876,7 @@ export async function submitPartyAnswer({
 
   const { data: existingAnswer, error: existingAnswerError } = await supabase
     .from('party_room_answers')
-    .select('*')
+    .select(PARTY_ROOM_ANSWER_SELECT)
     .eq('room_id', freshRoom.id)
     .eq('match_id', freshRoom.current_match.id)
     .eq('round_id', round.id)
@@ -883,7 +937,7 @@ export async function submitPartyAnswer({
       elapsed_ms: elapsedMs,
       submitted_at: new Date(now).toISOString(),
     }, { onConflict: 'round_id,member_token' })
-    .select('*')
+    .select(PARTY_ROOM_ANSWER_SELECT)
     .single();
 
   if (error) {
@@ -946,7 +1000,7 @@ export async function submitPartyVote({
       elapsed_ms: elapsedMs,
       submitted_at: new Date(now).toISOString(),
     }, { onConflict: 'round_id,member_token' })
-    .select('*')
+    .select(PARTY_ROOM_ANSWER_SELECT)
     .single();
 
   if (error) {
@@ -1028,7 +1082,7 @@ export async function submitPartySkipVote({
       .eq('id', freshRoom.id)
       .eq('status', freshRoom.status)
       .eq('updated_at', freshRoom.updated_at)
-      .select('*');
+      .select(PARTY_ROOM_SELECT);
 
     if (error) {
       throw error;
@@ -1041,7 +1095,13 @@ export async function submitPartySkipVote({
 
     await broadcastPartyRoomEvent(freshRoom.id, {
       type: shouldAdvance ? 'MATCH_ADVANCED' : 'ROOM_UPDATED',
-      payload: { room: nextRoom },
+      payload: {
+        room: buildPartyRoomRealtimePatch(
+          nextRoom,
+          freshRoom,
+          { forceKeys: shouldAdvance ? ['status', 'current_match', 'updated_at'] : ['current_match', 'updated_at'] },
+        ),
+      },
     });
 
     return {

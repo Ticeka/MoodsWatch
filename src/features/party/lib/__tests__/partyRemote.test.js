@@ -366,6 +366,24 @@ describe('partyRemote realtime optimizations', () => {
         { type: 'eq', column: 'status', value: 'lobby' },
         { type: 'eq', column: 'updated_at', value: '2026-03-29T10:00:01.000Z' },
       ]));
+      expect(mockState.channels[0]?.send).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'broadcast',
+        event: 'party-room-event',
+        payload: expect.objectContaining({
+          type: 'ROOM_UPDATED',
+          payload: expect.objectContaining({
+            room: expect.objectContaining({
+              id: 'room-1',
+              updated_at: '2026-03-29T10:00:02.000Z',
+              settings: expect.objectContaining({
+                modeType: 'vote',
+                entrantCount: 8,
+              }),
+            }),
+          }),
+        }),
+      }));
+      expect(mockState.channels[0]?.send.mock.calls[0]?.[0]?.payload?.payload?.room).not.toHaveProperty('host_member_token');
     } finally {
       globalThis.window = originalWindow;
     }

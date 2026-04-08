@@ -50,6 +50,33 @@ function getSurfaceConfig(surface) {
   return SURFACE_CONFIG[surface] || SURFACE_CONFIG.header;
 }
 
+function getAutocompleteLaneFetchPlan({ surface = 'header', normalizedQuery = '', groupCaps }) {
+  const intent = getSearchIntent(normalizedQuery);
+  const isFocusedQuery = normalizedQuery.length >= 3 && !intent.isBroad;
+  const isShortQuery = normalizedQuery.length <= 3;
+  const isHeaderSurface = surface === 'header';
+
+  if (!isFocusedQuery) {
+    return {
+      titles: groupCaps.titles + 1,
+      posts: groupCaps.posts + 1,
+      people: groupCaps.people + 1,
+      tierlists: groupCaps.tierlists + 1,
+      queryScript: intent.queryScript,
+    };
+  }
+
+  return {
+    // Titles stay slightly over-fetched so exact title wins still surface when
+    // ranking nudges aliases or nearby variants around the cap boundary.
+    titles: groupCaps.titles + 1,
+    posts: Math.max(groupCaps.posts, isHeaderSurface || isShortQuery ? groupCaps.posts : groupCaps.posts + 1),
+    people: Math.max(groupCaps.people, isHeaderSurface ? groupCaps.people : groupCaps.people + (isShortQuery ? 0 : 1)),
+    tierlists: Math.max(groupCaps.tierlists, isHeaderSurface || isShortQuery ? groupCaps.tierlists : groupCaps.tierlists + 1),
+    queryScript: intent.queryScript,
+  };
+}
+
 function buildDiscoverSearchHref(term) {
   const params = new URLSearchParams();
   if (term) {
@@ -378,6 +405,10 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
   const searchQuery = useMemo(() => expandQuery(normalizedQuery), [normalizedQuery]);
   const canSearch = enabled && normalizedQuery.length >= 2;
   const { groupCaps } = getSurfaceConfig(surface);
+  const laneFetchPlan = useMemo(
+    () => getAutocompleteLaneFetchPlan({ surface, normalizedQuery: searchQuery, groupCaps }),
+    [groupCaps, searchQuery, surface]
+  );
 
   const recentGroup = useMemo(
     () => buildRecentSearchGroup(recentSearches, normalizedQuery, groupCaps.recent),
@@ -412,13 +443,11 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
     // is near-instant), 220ms when cold (needs network round-trip).
     const debounceMs = isCatalogCacheWarm() ? 80 : 220;
     const timeoutId = window.setTimeout(async () => {
-      const intent = getSearchIntent(searchQuery);
-
       const [titlesResult, postsResult, profilesResult, tierlistsResult] = await Promise.allSettled([
-        listTitles({ query: searchQuery, page: 1, pageSize: groupCaps.titles + 1, showAdult }),
-        searchPosts({ query: searchQuery, limit: groupCaps.posts + 1, showAdult }),
-        searchProfiles({ query: searchQuery, limit: groupCaps.people + 1 }),
-        searchTierlists({ query: searchQuery, userId, limit: groupCaps.tierlists + 1 }),
+        listTitles({ query: searchQuery, page: 1, pageSize: laneFetchPlan.titles, showAdult }),
+        searchPosts({ query: searchQuery, limit: laneFetchPlan.posts, showAdult }),
+        searchProfiles({ query: searchQuery, limit: laneFetchPlan.people }),
+        searchTierlists({ query: searchQuery, userId, limit: laneFetchPlan.tierlists }),
       ]);
 
       if (requestId !== requestRef.current) {
@@ -431,7 +460,7 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
         profiles: profilesResult.status === 'fulfilled' ? profilesResult.value || [] : [],
         tierlists: tierlistsResult.status === 'fulfilled' ? tierlistsResult.value || [] : [],
         surface,
-        queryScript: intent.queryScript,
+        queryScript: laneFetchPlan.queryScript,
       });
       _groupResultCache.set(cacheKey, { groups, ts: Date.now() });
       setLiveGroups(groups);
@@ -442,7 +471,7 @@ export function useSearchAutocomplete(query, { enabled = true, userId = null, re
       window.cancelAnimationFrame(loadingFrameId);
       window.clearTimeout(timeoutId);
     };
-  }, [canSearch, searchQuery, showAdult, userId, surface, groupCaps.titles, groupCaps.posts, groupCaps.people, groupCaps.tierlists]);
+  }, [canSearch, searchQuery, showAdult, userId, surface, laneFetchPlan]);
 
   // Fire no_results_view once when a search finishes with zero live results.
   useEffect(() => {

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { CalendarDays, Check, Loader2, Plus, RefreshCw, Shuffle, Trash2, X } from 'lucide-react';
 import { supabase } from '@/shared/lib/supabase';
@@ -7,6 +8,7 @@ import '../styles/Admin.css';
 
 const DAYS_AHEAD = 7;
 const EMOJI_PRESETS = ['📅','⚔️','🏆','🌟','🔥','💥','🎯','🎭','🌸','🌊','❄️','🚀'];
+const DAILY_CHALLENGE_QUERY_KEY = ['admin-daily-challenge-data'];
 
 function getDateRange() {
   const dates = [];
@@ -20,48 +22,67 @@ function getDateRange() {
 
 const EMPTY_FORM = { theme_name_th: '', theme_name_en: '', theme_icon: '📅', deck_id: '' };
 
+async function fetchDailyChallengeAdminData(dates) {
+  if (!supabase) {
+    throw new Error('Supabase client is not available');
+  }
+
+  const [{ data: challengeData, error: challengeError }, { data: deckData, error: deckError }] = await Promise.all([
+    supabase
+      .from('daily_challenges')
+      .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
+      .gte('challenge_date', dates[0])
+      .lte('challenge_date', dates[dates.length - 1]),
+    supabase
+      .from('battle_decks')
+      .select('id, name, is_public')
+      .eq('is_public', true)
+      .order('name'),
+  ]);
+
+  if (challengeError) throw challengeError;
+  if (deckError) throw deckError;
+
+  const challengeMap = {};
+  dates.forEach((date) => {
+    challengeMap[date] = null;
+  });
+  (challengeData || []).forEach((challenge) => {
+    challengeMap[challenge.challenge_date] = challenge;
+  });
+
+  return {
+    challengeMap,
+    decks: deckData || [],
+  };
+}
+
 export function AdminDailyChallenge() {
   const { t } = useLanguage();
-  const [challenges, setChallenges]   = useState({});   // { date: challenge | null }
-  const [decks, setDecks]             = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const queryClient = useQueryClient();
   const [editDate, setEditDate]       = useState(null); // date string being edited
   const [form, setForm]               = useState(EMPTY_FORM);
   const [saving, setSaving]           = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
 
   const dates = getDateRange();
+  const dailyChallengeQuery = useQuery({
+    queryKey: DAILY_CHALLENGE_QUERY_KEY,
+    queryFn: () => fetchDailyChallengeAdminData(dates),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
 
-  const load = useCallback(async () => {
-    if (!supabase) return;
-    setLoading(true);
-    try {
-      const [{ data: challengeData }, { data: deckData }] = await Promise.all([
-        supabase
-          .from('daily_challenges')
-          .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
-          .gte('challenge_date', dates[0])
-          .lte('challenge_date', dates[dates.length - 1]),
-        supabase
-          .from('battle_decks')
-          .select('id, name, is_public')
-          .eq('is_public', true)
-          .order('name'),
-      ]);
+  const challenges = useMemo(() => dailyChallengeQuery.data?.challengeMap || {}, [dailyChallengeQuery.data]);
+  const decks = useMemo(() => dailyChallengeQuery.data?.decks || [], [dailyChallengeQuery.data]);
 
-      const map = {};
-      dates.forEach((d) => { map[d] = null; });
-      (challengeData || []).forEach((c) => { map[c.challenge_date] = c; });
-      setChallenges(map);
-      setDecks(deckData || []);
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
+  async function refreshData() {
+    const result = await dailyChallengeQuery.refetch();
+    if (result.error) {
+      toast.error(result.error.message);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { load(); }, [load]);
+  }
 
   function openEdit(date) {
     const existing = challenges[date];
@@ -95,7 +116,7 @@ export function AdminDailyChallenge() {
 
       toast.success(t('admin.daily.saved'));
       setEditDate(null);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: DAILY_CHALLENGE_QUERY_KEY });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -110,7 +131,7 @@ export function AdminDailyChallenge() {
     const { error } = await supabase.from('daily_challenges').delete().eq('id', existing.id);
     if (error) { toast.error(error.message); return; }
     toast.success(t('admin.daily.deleted'));
-    await load();
+    await queryClient.invalidateQueries({ queryKey: DAILY_CHALLENGE_QUERY_KEY });
   }
 
   async function autoFill() {
@@ -141,7 +162,7 @@ export function AdminDailyChallenge() {
       const { error } = await supabase.from('daily_challenges').insert(rows);
       if (error) throw error;
       toast.success(t('admin.daily.autoFilled').replace('{n}', emptyDates.length));
-      await load();
+      await queryClient.invalidateQueries({ queryKey: DAILY_CHALLENGE_QUERY_KEY });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -164,7 +185,7 @@ export function AdminDailyChallenge() {
         <button
           className="btn btn-secondary"
           onClick={autoFill}
-          disabled={autoFilling || loading}
+          disabled={autoFilling || dailyChallengeQuery.isLoading}
           type="button"
         >
           {autoFilling
@@ -175,9 +196,17 @@ export function AdminDailyChallenge() {
         </button>
       </div>
 
-      {loading ? (
+      {dailyChallengeQuery.isLoading ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
           <Loader2 size={24} className="animate-spin" />
+        </div>
+      ) : dailyChallengeQuery.error ? (
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <p style={{ marginBottom: '1rem' }}>{dailyChallengeQuery.error.message || t('admin.daily.loadFailed')}</p>
+          <button className="action-btn" type="button" onClick={refreshData}>
+            <RefreshCw size={15} />
+            {t('admin.common.refresh')}
+          </button>
         </div>
       ) : (
         <div className="admin-daily-grid">

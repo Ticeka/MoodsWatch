@@ -1,36 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Sparkles, Users, Play, RefreshCw, Filter, ListCollapse } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
+import {
+  buildEmptyRecommendationPersona,
+  fetchRecommendationPreviewUsers,
+  fetchRecommendationPreviewUserState,
+} from '@/features/admin/api';
 import { recommend } from '@/features/discover/lib/recommend';
-import { extractProfilePreferences, DEFAULT_PROFILE_PREFERENCES } from '@/features/profile/lib/profileStore';
 import { MOODS, TYPE_OPTIONS, getLocalizedMoodName, getLocalizedLabel } from '@/shared/data/moods';
-import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
-
-const TIME_OPTIONS = [
-  { id: '', label: 'Any length' },
-  { id: 'short', label: 'Short' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'long', label: 'Long' },
-  { id: 'binge', label: 'Binge' },
-];
-
-function summarizePersona(profile, watchlist, favoriteTitleIds, hiddenTitleIds) {
-  const prefs = extractProfilePreferences(profile);
-  return {
-    prefs,
-    watchlist,
-    favoriteTitleIds,
-    hiddenTitleIds,
-    counts: {
-      tracked: watchlist.length,
-      favorites: favoriteTitleIds.length,
-      hidden: hiddenTitleIds.length,
-    },
-  };
-}
 
 function formatPercent(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
@@ -38,18 +19,10 @@ function formatPercent(value) {
 
 export function AdminRecommendationPreview() {
   const { t, language } = useLanguage();
-  const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [userState, setUserState] = useState({
-    prefs: DEFAULT_PROFILE_PREFERENCES,
-    watchlist: [],
-    favoriteTitleIds: [],
-    hiddenTitleIds: [],
-    counts: { tracked: 0, favorites: 0, hidden: 0 },
-  });
+  const [userState, setUserState] = useState(buildEmptyRecommendationPersona);
   const [controls, setControls] = useState({
     type: 'all',
     moods: [],
@@ -58,98 +31,76 @@ export function AdminRecommendationPreview() {
   });
   const [results, setResults] = useState([]);
 
-  const fetchUsers = useCallback(async () => {
-    if (!supabase) {
-      setErrorMessage('Unable to connect to Supabase');
-      setIsLoadingUsers(false);
+  const usersQuery = useQuery({
+    queryKey: ['admin-recommendation-preview-users'],
+    queryFn: fetchRecommendationPreviewUsers,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const users = useMemo(() => usersQuery.data || [], [usersQuery.data]);
+
+  const userStateQuery = useQuery({
+    queryKey: ['admin-recommendation-preview-user-state', selectedUserId || null],
+    queryFn: () => fetchRecommendationPreviewUserState(selectedUserId),
+    enabled: Boolean(selectedUserId),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (!users.length) {
+      setSelectedUserId('');
       return;
     }
 
-    setIsLoadingUsers(true);
-    setErrorMessage('');
+    if (!selectedUserId || !users.some((user) => user.id === selectedUserId)) {
+      setSelectedUserId(users[0].id);
+    }
+  }, [selectedUserId, users]);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setUserState(buildEmptyRecommendationPersona());
+      return;
+    }
+
+    if (userStateQuery.data) {
+      setUserState(userStateQuery.data);
+      setControls((current) => ({
+        ...current,
+        moods: current.moods.length > 0 ? current.moods : userStateQuery.data.prefs.favoriteMoods,
+      }));
+    }
+  }, [selectedUserId, userStateQuery.data]);
+
+  const fetchUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id, name, role, favorite_moods, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      setUsers(data || []);
-      if (!selectedUserId && data?.length) {
-        setSelectedUserId(data[0].id);
-      }
+      setErrorMessage('');
+      const [usersResult, userStateResult] = await Promise.all([
+        usersQuery.refetch(),
+        selectedUserId ? userStateQuery.refetch() : Promise.resolve({ error: null }),
+      ]);
+
+      if (usersResult.error) throw usersResult.error;
+      if (userStateResult?.error) throw userStateResult.error;
     } catch (error) {
       console.error('Failed to load preview users', error);
       setErrorMessage(error.message || 'Failed to load users');
       toast.error(error.message || 'Failed to load users');
-    } finally {
-      setIsLoadingUsers(false);
     }
-  }, [selectedUserId]);
+  }, [selectedUserId, userStateQuery, usersQuery]);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
-
-  useEffect(() => {
-    async function loadSelectedUserState() {
-      if (!supabase || !selectedUserId) {
-        setUserState({
-          prefs: DEFAULT_PROFILE_PREFERENCES,
-          watchlist: [],
-          favoriteTitleIds: [],
-          hiddenTitleIds: [],
-          counts: { tracked: 0, favorites: 0, hidden: 0 },
-        });
-        return;
-      }
-
-      try {
-        const [profileRes, watchlistRes, favoritesRes, hiddenRes] = await Promise.all([
-          supabase.from('user_profiles').select('*').eq('id', selectedUserId).maybeSingle(),
-          supabase.from('user_lists').select('title_id, list_status, progress_episode, progress_chapter').eq('user_id', selectedUserId),
-          supabase.from('user_favorite_titles').select('title_id').eq('user_id', selectedUserId),
-          supabase.from('user_hidden_titles').select('title_id, hide_from_recommendations').eq('user_id', selectedUserId),
-        ]);
-
-        if (profileRes.error) throw profileRes.error;
-        if (watchlistRes.error) throw watchlistRes.error;
-        if (favoritesRes.error) throw favoritesRes.error;
-        if (hiddenRes.error) throw hiddenRes.error;
-
-        const watchlist = (watchlistRes.data || []).map((item) => ({
-          titleId: item.title_id,
-          status: item.list_status,
-          progressEpisode: item.progress_episode,
-          progressChapter: item.progress_chapter,
-        }));
-        const favoriteTitleIds = (favoritesRes.data || []).map((item) => item.title_id);
-        const hiddenTitleIds = (hiddenRes.data || [])
-          .filter((item) => item.hide_from_recommendations !== false)
-          .map((item) => item.title_id);
-        const nextState = summarizePersona(profileRes.data, watchlist, favoriteTitleIds, hiddenTitleIds);
-
-        setUserState(nextState);
-        setControls((current) => ({
-          ...current,
-          moods: current.moods.length > 0 ? current.moods : nextState.prefs.favoriteMoods,
-        }));
-      } catch (error) {
-        console.error('Failed to load preview data', error);
-        setErrorMessage(error.message || 'Failed to load preview data');
-        toast.error(error.message || 'Failed to load preview data');
-        setUserState({
-          prefs: DEFAULT_PROFILE_PREFERENCES,
-          watchlist: [],
-          favoriteTitleIds: [],
-          hiddenTitleIds: [],
-          counts: { tracked: 0, favorites: 0, hidden: 0 },
-        });
-      }
+    if (usersQuery.error || userStateQuery.error) {
+      const nextMessage = usersQuery.error?.message || userStateQuery.error?.message || 'Failed to load preview data';
+      setErrorMessage(nextMessage);
+      toast.error(nextMessage);
+      setUserState(buildEmptyRecommendationPersona());
     }
-
-    loadSelectedUserState();
-  }, [selectedUserId]);
+  }, [userStateQuery.error, usersQuery.error]);
 
   const runPreview = useCallback(async () => {
     setIsRunning(true);
@@ -184,7 +135,7 @@ export function AdminRecommendationPreview() {
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) || null,
-    [users, selectedUserId]
+    [users, selectedUserId],
   );
 
   const handleMoodToggle = (moodId) => {
@@ -248,7 +199,7 @@ export function AdminRecommendationPreview() {
                   className="form-select"
                   value={selectedUserId}
                   onChange={(event) => setSelectedUserId(event.target.value)}
-                  disabled={isLoadingUsers}
+                  disabled={usersQuery.isLoading}
                 >
                   <option value="">{t('admin.recommendations.selectUser')}</option>
                   {users.map((user) => (

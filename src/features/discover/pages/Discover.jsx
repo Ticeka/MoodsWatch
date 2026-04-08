@@ -87,6 +87,8 @@ const TITLE_PREVIEW_SIZE = 6;
 const TITLE_PAGE_SIZE = 20;
 const ENTITY_PREVIEW_LIMIT = 6;
 const ENTITY_FULL_LIMIT = 18;
+const ENTITY_FOCUSED_PREVIEW_LIMIT = 4;
+const ENTITY_FOCUSED_FULL_LIMIT = 12;
 const SUGGESTED_SEARCHES = [
   { id: 'frieren', labelKey: 'discover.suggestionFrieren', scope: 'titles', query: 'Frieren', titleType: 'anime' },
   { id: 'action', labelKey: 'discover.suggestionAction', scope: 'titles', query: '', tag: 'action', titleType: 'all' },
@@ -154,6 +156,17 @@ function describeSearchPreset(preset, t) {
   }
 
   return parts.join(' · ') || t('discover.scopeAll');
+}
+
+function resolveDiscoverEntityLimit(scope, query) {
+  const intent = getSearchIntent(query);
+  const isEntityScope = scope === 'people' || scope === 'posts' || scope === 'tierlists';
+
+  if (!isEntityScope) {
+    return intent.isBroad || intent.isShort ? ENTITY_PREVIEW_LIMIT : ENTITY_FOCUSED_PREVIEW_LIMIT;
+  }
+
+  return intent.isBroad || intent.isShort ? ENTITY_FULL_LIMIT : ENTITY_FOCUSED_FULL_LIMIT;
 }
 
 
@@ -372,7 +385,7 @@ export function Discover() {
   } = {}) => {
     const requestId = ++loadRequestRef.current;
     const titlePageSize = scope === 'titles' ? TITLE_PAGE_SIZE : TITLE_PREVIEW_SIZE;
-    const entityLimit = scope === 'people' || scope === 'posts' || scope === 'tierlists' ? ENTITY_FULL_LIMIT : ENTITY_PREVIEW_LIMIT;
+    const entityLimit = resolveDiscoverEntityLimit(scope, searchValue);
 
     setLoadingState({
       titles: true,

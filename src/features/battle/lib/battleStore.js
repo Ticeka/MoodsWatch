@@ -739,6 +739,7 @@ export function createStoredBattleDeck(deck, options = {}) {
     label,
     filters,
     sourceCount: Number(options.sourceCount || deck?.sourceCount || titles.length),
+    playCount: Math.max(0, Number(options.playCount ?? deck?.playCount ?? 0)),
     titles,
     isPublic: Boolean(options.isPublic ?? deck?.isPublic),
     createdAt: now,
@@ -834,6 +835,7 @@ export function getStoredBattleDecks() {
       ? parsed.map((deck) => ({
         ...deck,
         isPublic: Boolean(deck?.isPublic),
+        playCount: Math.max(0, Number(deck?.playCount || 0)),
       }))
       : [];
   } catch {
@@ -852,11 +854,26 @@ export function saveStoredBattleDeck(deck) {
     filters: normalizeDeckFilters(deck.filters),
     titles: (deck.titles || []).map(serializeTitle),
     isPublic: Boolean(deck.isPublic),
+    playCount: Math.max(0, Number(deck?.playCount || 0)),
   };
   const decks = getStoredBattleDecks();
   const nextDecks = [normalizedDeck, ...decks.filter((entry) => entry.id !== normalizedDeck.id)].slice(0, 20);
   storage.setItem(BATTLE_DECKS_KEY, JSON.stringify(nextDecks));
   return normalizedDeck;
+}
+
+export function incrementStoredBattleDeckPlayCount(deckId) {
+  if (!deckId) return null;
+
+  const existingDeck = getStoredBattleDecks().find((deck) => deck.id === deckId);
+  if (!existingDeck) {
+    return null;
+  }
+
+  return saveStoredBattleDeck({
+    ...existingDeck,
+    playCount: Math.max(0, Number(existingDeck.playCount || 0)) + 1,
+  });
 }
 
 export function deleteStoredBattleDeck(deckId) {

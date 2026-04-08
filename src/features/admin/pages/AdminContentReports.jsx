@@ -12,9 +12,13 @@ import {
   CONTENT_REPORT_STATUS_OPTIONS,
   mapContentReport,
 } from '@/shared/lib/contentReports';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
+
+const PAGE_SIZE = 40;
+const EMPTY_SUMMARY = { total: 0, open: 0, in_review: 0, resolved: 0, dismissed: 0 };
 
 async function resolveMatchingTitleIds(searchTerm) {
   if (!supabase) return [];
@@ -45,6 +49,48 @@ async function resolveMatchingTitleIds(searchTerm) {
   return [...ids];
 }
 
+function applyReportFilters(query, filters, matchingTitleIds = null) {
+  let nextQuery = query;
+
+  if (filters.issueType !== 'all') {
+    nextQuery = nextQuery.eq('issue_type', filters.issueType);
+  }
+
+  if (filters.status !== 'all') {
+    nextQuery = nextQuery.eq('status', filters.status);
+  }
+
+  if (filters.dateFrom) {
+    nextQuery = nextQuery.gte('created_at', `${filters.dateFrom}T00:00:00`);
+  }
+
+  if (filters.dateTo) {
+    nextQuery = nextQuery.lte('created_at', `${filters.dateTo}T23:59:59`);
+  }
+
+  if (Array.isArray(matchingTitleIds)) {
+    nextQuery = matchingTitleIds.length > 0
+      ? nextQuery.in('title_id', matchingTitleIds)
+      : nextQuery.eq('title_id', -1);
+  }
+
+  return nextQuery;
+}
+
+function toSummaryRpcParams(filters, matchingTitleIds) {
+  return {
+    p_issue_type: filters.issueType ?? 'all',
+    p_status: filters.status ?? 'all',
+    p_date_from: filters.dateFrom ? `${filters.dateFrom}T00:00:00` : null,
+    p_date_to: filters.dateTo ? `${filters.dateTo}T23:59:59` : null,
+    p_title_ids: Array.isArray(matchingTitleIds) ? matchingTitleIds : null,
+  };
+}
+
+function createUserMap(rows = []) {
+  return new Map(rows.map((entry) => [entry.id, entry]));
+}
+
 export function AdminContentReports() {
   const { user } = useAuth();
   const { t, language } = useLanguage();
@@ -55,6 +101,9 @@ export function AdminContentReports() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalReports, setTotalReports] = useState(0);
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
   const [filters, setFilters] = useState({
     searchTerm: '',
     issueType: 'all',
@@ -62,16 +111,19 @@ export function AdminContentReports() {
     dateFrom: '',
     dateTo: '',
   });
+  const debouncedSearchTerm = useDebouncedValue(filters.searchTerm, 300);
   const [editorState, setEditorState] = useState({
     status: 'open',
     assignedTo: '',
     internalNote: '',
   });
+  const totalPages = Math.max(1, Math.ceil(totalReports / PAGE_SIZE));
 
   const selectedReport = useMemo(
     () => reports.find((report) => report.id === selectedId) || null,
     [reports, selectedId]
   );
+  const staffUserMap = useMemo(() => createUserMap(staffOptions), [staffOptions]);
 
   const syncEditorState = useCallback((report) => {
     if (!report) {
@@ -86,6 +138,20 @@ export function AdminContentReports() {
     });
   }, []);
 
+  const fetchStaffOptions = useCallback(async () => {
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, name, role')
+      .in('role', ['admin', 'editor'])
+      .order('role', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    setStaffOptions(data || []);
+  }, []);
+
   const fetchReports = useCallback(async () => {
     if (!supabase) {
       setErrorMessage(t('admin.reports.supabaseUnavailable'));
@@ -96,51 +162,37 @@ export function AdminContentReports() {
     setIsLoading(true);
     setErrorMessage('');
     try {
-      let query = supabase
-        .from('content_reports')
-        .select(CONTENT_REPORT_SELECT)
-        .order('created_at', { ascending: false });
+      const appliedFilters = {
+        searchTerm: debouncedSearchTerm,
+        issueType: filters.issueType,
+        status: filters.status,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+      };
+      const matchingTitleIds = debouncedSearchTerm.trim()
+        ? await resolveMatchingTitleIds(debouncedSearchTerm)
+        : null;
 
-      if (filters.issueType !== 'all') {
-        query = query.eq('issue_type', filters.issueType);
-      }
-
-      if (filters.status !== 'all') {
-        query = query.eq('status', filters.status);
-      }
-
-      if (filters.dateFrom) {
-        query = query.gte('created_at', `${filters.dateFrom}T00:00:00`);
-      }
-
-      if (filters.dateTo) {
-        query = query.lte('created_at', `${filters.dateTo}T23:59:59`);
-      }
-
-      if (filters.searchTerm.trim()) {
-        const matchingTitleIds = await resolveMatchingTitleIds(filters.searchTerm);
-        if (matchingTitleIds.length === 0) {
-          setReports([]);
-          setSelectedId(null);
-          syncEditorState(null);
-          setIsLoading(false);
-          return;
-        }
-        query = query.in('title_id', matchingTitleIds);
-      }
-
-      const [{ data: reportRows, error: reportError }, { data: staffRows, error: staffError }] = await Promise.all([
-        query,
+      const from = (currentPage - 1) * PAGE_SIZE;
+      const baseQueueQuery = applyReportFilters(
         supabase
-          .from('user_profiles')
-          .select('id, name, role')
-          .in('role', ['admin', 'editor'])
-          .order('role', { ascending: true })
-          .order('name', { ascending: true }),
+          .from('content_reports')
+          .select(CONTENT_REPORT_SELECT, { count: 'planned' })
+          .order('created_at', { ascending: false }),
+        appliedFilters,
+        matchingTitleIds,
+      ).range(from, from + PAGE_SIZE - 1);
+
+      const [{ data: reportRows, count, error: reportError }, summaryRes] = await Promise.all([
+        baseQueueQuery,
+        supabase.rpc('admin_get_content_report_summary', toSummaryRpcParams(
+          { ...appliedFilters, status: 'all' },
+          matchingTitleIds,
+        )),
       ]);
 
       if (reportError) throw reportError;
-      if (staffError) throw staffError;
+      if (summaryRes.error) throw summaryRes.error;
 
       const relatedUserIds = new Set();
       (reportRows || []).forEach((row) => {
@@ -148,21 +200,28 @@ export function AdminContentReports() {
         if (row.assigned_to) relatedUserIds.add(row.assigned_to);
         if (row.resolved_by) relatedUserIds.add(row.resolved_by);
       });
-      (staffRows || []).forEach((row) => relatedUserIds.add(row.id));
-
-      let userMap = new Map();
-      if (relatedUserIds.size > 0) {
+      const userMap = new Map(staffUserMap);
+      const missingUserIds = [...relatedUserIds].filter((id) => !userMap.has(id));
+      if (missingUserIds.length > 0) {
         const { data: profileRows, error: profileError } = await supabase
           .from('user_profiles')
           .select('id, name, role')
-          .in('id', [...relatedUserIds]);
+          .in('id', missingUserIds);
         if (profileError) throw profileError;
-        userMap = new Map((profileRows || []).map((entry) => [entry.id, entry]));
+        (profileRows || []).forEach((entry) => userMap.set(entry.id, entry));
       }
 
       const mappedReports = (reportRows || []).map((row) => mapContentReport(row, userMap));
       setReports(mappedReports);
-      setStaffOptions(staffRows || []);
+      setTotalReports(count || 0);
+      const summaryRow = Array.isArray(summaryRes.data) ? summaryRes.data[0] : summaryRes.data;
+      setSummary({
+        total: Number(summaryRow?.total || 0),
+        open: Number(summaryRow?.open || 0),
+        in_review: Number(summaryRow?.in_review || 0),
+        resolved: Number(summaryRow?.resolved || 0),
+        dismissed: Number(summaryRow?.dismissed || 0),
+      });
 
       if (mappedReports.length === 0) {
         setSelectedId(null);
@@ -182,23 +241,32 @@ export function AdminContentReports() {
     } finally {
       setIsLoading(false);
     }
-  }, [filters, selectedId, syncEditorState, t]);
+  }, [currentPage, debouncedSearchTerm, filters.dateFrom, filters.dateTo, filters.issueType, filters.status, selectedId, staffUserMap, syncEditorState, t]);
+
+  useEffect(() => {
+    fetchStaffOptions().catch((error) => {
+      console.error('Failed to load staff options:', error);
+      toast.error(t('admin.reports.loadFailed'));
+    });
+  }, [fetchStaffOptions, t]);
 
   useEffect(() => {
     fetchReports();
   }, [fetchReports]);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, filters.dateFrom, filters.dateTo, filters.issueType, filters.status]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
     syncEditorState(selectedReport);
   }, [selectedReport, syncEditorState]);
-
-  const summary = useMemo(() => {
-    return reports.reduce((acc, report) => {
-      acc.total += 1;
-      acc[report.status] += 1;
-      return acc;
-    }, { total: 0, open: 0, in_review: 0, resolved: 0, dismissed: 0 });
-  }, [reports]);
 
   const handleSave = async (event) => {
     event.preventDefault();
@@ -314,7 +382,7 @@ export function AdminContentReports() {
           <div className="admin-panel-heading">
             <div>
               <h2>{t('admin.reports.queueTitle')}</h2>
-              <p>{t('admin.reports.queueHint', { count: reports.length })}</p>
+              <p>{t('admin.reports.queueHint', { count: totalReports })}</p>
             </div>
           </div>
 
@@ -325,31 +393,45 @@ export function AdminContentReports() {
           ) : reports.length === 0 ? (
             <EmptyState title={t('admin.reports.noResultsTitle')} message={t('admin.reports.noResults')} />
           ) : (
-            <div className="admin-list-stack">
-              {reports.map((report) => (
-                <button
-                  key={report.id}
-                  type="button"
-                  className={`admin-record-card ${selectedId === report.id ? 'active' : ''}`}
-                  onClick={() => setSelectedId(report.id)}
-                >
-                  <div className="admin-record-main">
-                    <strong className="admin-queue-card-title">{report.title.name}</strong>
-                    <span className="admin-queue-card-subtitle">{report.title.slug || report.title.canonicalTitle}</span>
-                    <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
-                      <span className={`admin-queue-pill status-${report.status}`}>{report.statusLabel}</span>
-                      <span className="admin-queue-pill">{report.issueLabel}</span>
-                      {report.assigneeName && <span className="admin-queue-pill subtle">{t('admin.reports.assignedLabel')}: {report.assigneeName}</span>}
+            <>
+              <div className="admin-list-stack">
+                {reports.map((report) => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    className={`admin-record-card ${selectedId === report.id ? 'active' : ''}`}
+                    onClick={() => setSelectedId(report.id)}
+                  >
+                    <div className="admin-record-main">
+                      <strong className="admin-queue-card-title">{report.title.name}</strong>
+                      <span className="admin-queue-card-subtitle">{report.title.slug || report.title.canonicalTitle}</span>
+                      <div className="admin-chip-grid" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
+                        <span className={`admin-queue-pill status-${report.status}`}>{report.statusLabel}</span>
+                        <span className="admin-queue-pill">{report.issueLabel}</span>
+                        {report.assigneeName && <span className="admin-queue-pill subtle">{t('admin.reports.assignedLabel')}: {report.assigneeName}</span>}
+                      </div>
+                      <span className="admin-clamp-2">{report.description || t('admin.reports.noReporterNote')}</span>
                     </div>
-                    <span className="admin-clamp-2">{report.description || t('admin.reports.noReporterNote')}</span>
-                  </div>
-                  <div className="admin-record-meta">
-                    <span>#{report.id}</span>
-                    <span>{new Date(report.createdAt).toLocaleDateString(locale)}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="admin-record-meta">
+                      <span>#{report.id}</span>
+                      <span>{new Date(report.createdAt).toLocaleDateString(locale)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {totalPages > 1 ? (
+                <div className="admin-pagination">
+                  <button className="action-btn" disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                    {t('common.previous')}
+                  </button>
+                  <span className="admin-list-summary">{t('common.page')} {currentPage} / {totalPages}</span>
+                  <button className="action-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>
+                    {t('common.next')}
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
 

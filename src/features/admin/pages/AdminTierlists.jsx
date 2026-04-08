@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Eye,
@@ -17,7 +18,10 @@ import {
 } from 'lucide-react';
 import {
   deleteAdminTierlistRecord,
-  fetchAdminTierlistData,
+  fetchAdminTierlistLists,
+  fetchAdminTierlistOverview,
+  fetchAdminTierlistRecordDetail,
+  fetchAdminTierlistTemplates,
   updateAdminTierlistVisibility,
 } from '@/features/admin/api';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
@@ -32,6 +36,7 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
 const TEMPLATE_CATEGORY_CHARACTER_PREFIX = 'character::';
 const TEMPLATE_CATEGORY_THEME_SONG_PREFIX = 'theme_song::';
+const PAGE_SIZE = 30;
 
 function decodeTemplateCategory(rawCategory) {
   const value = String(rawCategory || 'general');
@@ -166,20 +171,10 @@ export function AdminTierlists() {
   const locale = language === 'th' ? 'th-TH' : 'en-US';
   const isAdmin = user?.profile?.role === 'admin';
 
-  const [templates, setTemplates] = useState([]);
-  const [lists, setLists] = useState([]);
-  const [summary, setSummary] = useState({
-    templateCount: 0,
-    publicTemplateCount: 0,
-    listCount: 0,
-    publicListCount: 0,
-    commentCount: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
   const [activeTab, setActiveTab] = useState('templates');
   const [selectedId, setSelectedId] = useState('');
   const [isActing, setIsActing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState({
     searchTerm: '',
     visibility: 'all',
@@ -188,171 +183,158 @@ export function AdminTierlists() {
     sortBy: 'updated',
   });
 
-  const fetchTierlistData = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
+  const overviewQuery = useQuery({
+    queryKey: ['admin-tierlists-overview'],
+    queryFn: fetchAdminTierlistOverview,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
 
-    try {
-      const {
-        counts,
-        templateRows,
-        listRows,
-        commentRows,
-        listRowsData,
-        listPoolData,
-        profileRows,
-      } = await fetchAdminTierlistData();
-      const profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
+  const templatesQuery = useQuery({
+    queryKey: ['admin-tierlists-templates'],
+    queryFn: fetchAdminTierlistTemplates,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
 
-      const rowMap = new Map();
-      (listRowsData || []).forEach((row) => {
-        const currentRows = rowMap.get(row.list_id) || [];
-        currentRows.push({
-          id: row.id,
-          label: row.label || '',
-          color: row.color || '',
-          position: Number(row.position || 0),
-          titleIds: Array.isArray(row.title_ids) ? row.title_ids : [],
-        });
-        rowMap.set(row.list_id, currentRows);
-      });
+  const listsQuery = useQuery({
+    queryKey: ['admin-tierlists-lists'],
+    queryFn: fetchAdminTierlistLists,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
 
-      const poolMap = new Map();
-      (listPoolData || []).forEach((row) => {
-        const currentPool = poolMap.get(row.list_id) || [];
-        currentPool.push({
-          titleId: Number(row.title_id),
-          position: Number(row.position || 0),
-        });
-        poolMap.set(row.list_id, currentPool);
-      });
+  const summary = overviewQuery.data || {
+    template_count: 0,
+    public_template_count: 0,
+    template_issue_count: 0,
+    list_count: 0,
+    public_list_count: 0,
+    broken_public_list_count: 0,
+    comment_count: 0,
+  };
 
-      const commentCountMap = new Map();
-      (commentRows || []).forEach((row) => {
-        const key = String(row.list_id || '');
-        commentCountMap.set(key, Number(commentCountMap.get(key) || 0) + 1);
-      });
+  const templates = useMemo(() => {
+    const rows = templatesQuery.data || [];
 
-      const baseTemplates = templateRows.map((row) => {
-        const decoded = decodeTemplateCategory(row.category);
-        const ownerProfile = profileMap.get(row.owner_user_id);
+    return rows.map((row) => {
+      const decoded = decodeTemplateCategory(row.category);
+      const ownerProfile = row.owner_name || row.owner_username
+        ? { name: row.owner_name || '', username: row.owner_username || '' }
+        : null;
+      const mappedTemplate = {
+        kind: 'template',
+        id: row.id,
+        title: row.title || pick('ไม่มีชื่อเทมเพลต', 'Untitled template'),
+        description: row.description || '',
+        category: decoded.category,
+        entityType: decoded.entityType,
+        itemCount: Number(row.item_count || 0),
+        titleIds: [],
+        defaultRows: [],
+        isPublic: Boolean(row.is_public),
+        isSystem: Boolean(row.is_system),
+        plays: Number(row.plays || 0),
+        ownerUserId: row.owner_user_id || null,
+        ownerLabel: row.is_system
+          ? pick('ระบบ', 'System')
+          : getOwnerLabel(ownerProfile, '', '', pick),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        linkedListCount: Number(row.linked_list_count || 0),
+        linkedPublicListCount: Number(row.linked_public_list_count || 0),
+        path: `/tierlist/template/${row.id}`,
+      };
 
-        return {
-          kind: 'template',
-          id: row.id,
-          title: row.title || pick('ไม่มีชื่อเทมเพลต', 'Untitled template'),
-          description: row.description || '',
-          category: decoded.category,
-          entityType: decoded.entityType,
-          itemCount: Array.isArray(row.title_ids) ? row.title_ids.length : 0,
-          titleIds: Array.isArray(row.title_ids) ? row.title_ids : [],
-          defaultRows: Array.isArray(row.default_rows) ? row.default_rows : [],
-          isPublic: Boolean(row.is_public),
-          isSystem: Boolean(row.is_system),
-          plays: Number(row.plays || 0),
-          ownerUserId: row.owner_user_id || null,
-          ownerLabel: row.is_system
-            ? pick('ระบบ', 'System')
-            : getOwnerLabel(ownerProfile, '', '', pick),
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          path: `/tierlist/template/${row.id}`,
-        };
-      });
+      return {
+        ...mappedTemplate,
+        issues: buildTemplateIssues(mappedTemplate, pick),
+      };
+    });
+  }, [pick, templatesQuery.data]);
 
-      const templateMap = new Map(baseTemplates.map((template) => [template.id, template]));
-      const linkedListCountMap = new Map();
-      const linkedPublicListCountMap = new Map();
+  const lists = useMemo(() => {
+    const rows = listsQuery.data || [];
 
-      listRows.forEach((row) => {
-        const templateId = String(row.template_id || '');
-        if (!templateId) return;
-        linkedListCountMap.set(templateId, Number(linkedListCountMap.get(templateId) || 0) + 1);
-        if (row.is_public) {
-          linkedPublicListCountMap.set(templateId, Number(linkedPublicListCountMap.get(templateId) || 0) + 1);
-        }
-      });
+    return rows.map((row) => {
+      const decodedTemplateCategory = decodeTemplateCategory(row.template_category);
+      const ownerProfile = row.owner_name || row.owner_username
+        ? { name: row.owner_name || '', username: row.owner_username || '' }
+        : null;
 
-      const mappedTemplates = baseTemplates.map((template) => {
-        const withCounts = {
-          ...template,
-          linkedListCount: Number(linkedListCountMap.get(template.id) || 0),
-          linkedPublicListCount: Number(linkedPublicListCountMap.get(template.id) || 0),
-        };
-        return {
-          ...withCounts,
-          issues: buildTemplateIssues(withCounts, pick),
-        };
-      });
+      const mappedList = {
+        kind: 'list',
+        id: row.id,
+        title: row.title || pick('ไม่มีชื่อลิสต์', 'Untitled list'),
+        description: row.description || '',
+        templateId: row.template_id || '',
+        templateTitle: row.template_title || '',
+        hasTemplate: Boolean(row.has_template),
+        entityType: decodedTemplateCategory.entityType || TITLE_ENTITY_TYPE,
+        ownerUserId: row.owner_user_id || null,
+        ownerLabel: getOwnerLabel(ownerProfile, row.owner_name, row.owner_username, pick),
+        isPublic: Boolean(row.is_public),
+        playCount: Number(row.play_count || 0),
+        rankedCount: Number(row.ranked_count || 0),
+        poolCount: Number(row.pool_count || 0),
+        totalItemCount: Number(row.total_item_count || 0),
+        tierCount: Number(row.tier_count || 0),
+        rows: [],
+        commentCount: Number(row.comment_count || 0),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        path: `/tierlist/play/${row.id}`,
+      };
 
-      const mappedLists = listRows.map((row) => {
-        const ownerProfile = profileMap.get(row.owner_user_id);
-        const rows = [...(rowMap.get(row.id) || [])].sort((left, right) => left.position - right.position);
-        const poolItems = [...(poolMap.get(row.id) || [])].sort((left, right) => left.position - right.position);
-        const rankedCount = rows.reduce((sum, item) => sum + item.titleIds.length, 0);
-        const poolCount = poolItems.length;
-        const template = templateMap.get(String(row.template_id || ''));
-        const entityType = template?.entityType || TITLE_ENTITY_TYPE;
+      return {
+        ...mappedList,
+        issues: buildListIssues(mappedList, pick),
+      };
+    });
+  }, [listsQuery.data, pick]);
 
-        const mappedList = {
-          kind: 'list',
-          id: row.id,
-          title: row.title || pick('ไม่มีชื่อลิสต์', 'Untitled list'),
-          description: row.description || '',
-          templateId: row.template_id || '',
-          templateTitle: template?.title || '',
-          hasTemplate: Boolean(template),
-          entityType,
-          ownerUserId: row.owner_user_id || null,
-          ownerLabel: getOwnerLabel(ownerProfile, row.owner_name, row.owner_username, pick),
-          isPublic: Boolean(row.is_public),
-          playCount: Number(row.play_count || 0),
-          rankedCount,
-          poolCount,
-          totalItemCount: rankedCount + poolCount,
-          tierCount: rows.length,
-          rows,
-          commentCount: Number(commentCountMap.get(String(row.id)) || 0),
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          path: `/tierlist/play/${row.id}`,
-        };
-
-        return {
-          ...mappedList,
-          issues: buildListIssues(mappedList, pick),
-        };
-      });
-
-      setTemplates(mappedTemplates);
-      setLists(mappedLists);
-      setSummary({
-        templateCount: Number(counts.templateCount || mappedTemplates.length),
-        publicTemplateCount: mappedTemplates.filter((item) => item.isPublic).length,
-        listCount: Number(counts.listCount || mappedLists.length),
-        publicListCount: mappedLists.filter((item) => item.isPublic).length,
-        commentCount: Number(counts.commentCount || 0),
-      });
-    } catch (error) {
-      console.error('Failed to load admin tierlists:', error);
-      setErrorMessage(
-        error?.message === 'Supabase client is not available'
-          ? pick('ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'Supabase is unavailable')
-          : (error?.message || pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'))
-      );
-      toast.error(pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [pick]);
-
-  useEffect(() => {
-    void fetchTierlistData();
-  }, [fetchTierlistData]);
-
-  const templateIssueCount = useMemo(() => templates.filter((item) => item.issues.length > 0).length, [templates]);
-  const brokenPublicLists = useMemo(() => lists.filter((item) => item.isPublic && item.issues.length > 0).length, [lists]);
+  const activeRecordsQuery = activeTab === 'templates' ? templatesQuery : listsQuery;
   const records = activeTab === 'templates' ? templates : lists;
+  const selectedSummaryRecord = useMemo(
+    () => records.find((record) => record.id === selectedId) || null,
+    [records, selectedId],
+  );
+
+  const selectedDetailQuery = useQuery({
+    queryKey: ['admin-tierlists-detail', selectedSummaryRecord?.kind || null, selectedSummaryRecord?.id || null],
+    queryFn: () => fetchAdminTierlistRecordDetail(selectedSummaryRecord.kind, selectedSummaryRecord.id),
+    enabled: Boolean(selectedSummaryRecord?.id),
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const selectedRecord = useMemo(() => {
+    if (!selectedSummaryRecord) return null;
+
+    if (selectedSummaryRecord.kind === 'template') {
+      return {
+        ...selectedSummaryRecord,
+        defaultRows: selectedDetailQuery.data?.defaultRows || [],
+        titleIds: selectedDetailQuery.data?.titleIds || [],
+      };
+    }
+
+    return {
+      ...selectedSummaryRecord,
+      rows: selectedDetailQuery.data?.rows || [],
+      poolItems: selectedDetailQuery.data?.poolItems || [],
+    };
+  }, [selectedDetailQuery.data, selectedSummaryRecord]);
+
+  const isLoading = !records.length && activeRecordsQuery.isLoading;
+  const errorMessage = overviewQuery.error?.message || activeRecordsQuery.error?.message || '';
+  const templateIssueCount = Number(summary.template_issue_count || 0);
+  const brokenPublicLists = Number(summary.broken_public_list_count || 0);
+  const isPageFetching = overviewQuery.isFetching || templatesQuery.isFetching || listsQuery.isFetching;
 
   const visibleRecords = useMemo(() => {
     const normalizedSearch = filters.searchTerm.trim().toLowerCase();
@@ -403,21 +385,32 @@ export function AdminTierlists() {
     });
   }, [filters, records]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleRecords.length / PAGE_SIZE));
+  const pagedRecords = useMemo(() => {
+    const from = (currentPage - 1) * PAGE_SIZE;
+    return visibleRecords.slice(from, from + PAGE_SIZE);
+  }, [currentPage, visibleRecords]);
+
   useEffect(() => {
-    if (!visibleRecords.length) {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, filters]);
+
+  useEffect(() => {
+    if (!pagedRecords.length) {
       setSelectedId('');
       return;
     }
 
-    if (!selectedId || !visibleRecords.some((record) => record.id === selectedId)) {
-      setSelectedId(visibleRecords[0].id);
+    if (!selectedId || !pagedRecords.some((record) => record.id === selectedId)) {
+      setSelectedId(pagedRecords[0].id);
     }
-  }, [selectedId, visibleRecords]);
-
-  const selectedRecord = useMemo(
-    () => visibleRecords.find((record) => record.id === selectedId) || null,
-    [selectedId, visibleRecords],
-  );
+  }, [pagedRecords, selectedId]);
 
   const resetFilters = () => {
     setFilters({
@@ -429,6 +422,41 @@ export function AdminTierlists() {
     });
   };
 
+  useEffect(() => {
+    if (overviewQuery.error || activeRecordsQuery.error) {
+      console.error('Failed to load admin tierlists:', overviewQuery.error || activeRecordsQuery.error);
+      toast.error(pick('โหลดข้อมูล tierlist ไม่สำเร็จ', 'Failed to load tierlist admin data'));
+    }
+  }, [activeRecordsQuery.error, overviewQuery.error, pick]);
+
+  useEffect(() => {
+    if (selectedDetailQuery.error) {
+      console.error('Failed to load tierlist detail:', selectedDetailQuery.error);
+      toast.error(pick('โหลดรายละเอียด tierlist ไม่สำเร็จ', 'Failed to load tierlist detail'));
+    }
+  }, [pick, selectedDetailQuery.error]);
+
+  const refreshTierlistData = async ({ showToast = true } = {}) => {
+    try {
+      const results = await Promise.all([
+        overviewQuery.refetch(),
+        templatesQuery.refetch(),
+        listsQuery.refetch(),
+        selectedSummaryRecord ? selectedDetailQuery.refetch() : Promise.resolve({ error: null }),
+      ]);
+
+      if (results.some((result) => result?.error)) {
+        throw results.find((result) => result?.error)?.error;
+      }
+
+      if (showToast) {
+        toast.success(pick('รีเฟรชข้อมูล tierlist แล้ว', 'Tierlist data refreshed'));
+      }
+    } catch (error) {
+      toast.error(error?.message || pick('รีเฟรชข้อมูลไม่สำเร็จ', 'Failed to refresh tierlist data'));
+    }
+  };
+
   const handleToggleVisibility = async () => {
     if (!selectedRecord) return;
 
@@ -438,7 +466,7 @@ export function AdminTierlists() {
     try {
       await updateAdminTierlistVisibility(selectedRecord.kind, selectedRecord.id, nextValue);
       toast.success(nextValue ? pick('อัปเดตเป็นสาธารณะแล้ว', 'Marked as public') : pick('อัปเดตเป็นส่วนตัวแล้ว', 'Marked as private'));
-      await fetchTierlistData();
+      await refreshTierlistData({ showToast: false });
     } catch (error) {
       console.error('Failed to update tierlist visibility:', error);
       toast.error(error?.message || pick('อัปเดตสถานะไม่สำเร็จ', 'Failed to update visibility'));
@@ -472,7 +500,7 @@ export function AdminTierlists() {
     try {
       await deleteAdminTierlistRecord(selectedRecord.kind, selectedRecord.id);
       toast.success(pick('ลบรายการเรียบร้อยแล้ว', 'Tierlist record deleted'));
-      await fetchTierlistData();
+      await refreshTierlistData({ showToast: false });
     } catch (error) {
       console.error('Failed to delete tierlist record:', error);
       toast.error(error?.message || pick('ลบรายการไม่สำเร็จ', 'Failed to delete tierlist record'));
@@ -498,8 +526,8 @@ export function AdminTierlists() {
             )}
           </p>
         </div>
-        <button className="action-btn" type="button" onClick={fetchTierlistData} disabled={isLoading || isActing}>
-          {isLoading ? <Loader2 size={16} className="animate-spin" style={{ marginRight: 8 }} /> : <RefreshCw size={16} style={{ marginRight: 8 }} />}
+        <button className="action-btn" type="button" onClick={() => void refreshTierlistData()} disabled={isPageFetching || isActing}>
+          {isPageFetching ? <Loader2 size={16} className="animate-spin" style={{ marginRight: 8 }} /> : <RefreshCw size={16} style={{ marginRight: 8 }} />}
           {pick('รีเฟรชข้อมูล', 'Refresh')}
         </button>
       </div>
@@ -510,28 +538,28 @@ export function AdminTierlists() {
             <h3 className="stat-title">{pick('เทมเพลตทั้งหมด', 'All Templates')}</h3>
             <LayoutTemplate size={18} color="var(--primary-400)" />
           </div>
-          <p className="stat-value" style={{ color: 'var(--primary-600)' }}>{summary.templateCount.toLocaleString(locale)}</p>
+          <p className="stat-value" style={{ color: 'var(--primary-600)' }}>{Number(summary.template_count || 0).toLocaleString(locale)}</p>
         </div>
         <div className="stat-card">
           <div className="stat-card-header">
             <h3 className="stat-title">{pick('เทมเพลตสาธารณะ', 'Public Templates')}</h3>
             <Eye size={18} color="var(--success)" />
           </div>
-          <p className="stat-value" style={{ color: 'var(--success)' }}>{summary.publicTemplateCount.toLocaleString(locale)}</p>
+          <p className="stat-value" style={{ color: 'var(--success)' }}>{Number(summary.public_template_count || 0).toLocaleString(locale)}</p>
         </div>
         <div className="stat-card">
           <div className="stat-card-header">
             <h3 className="stat-title">{pick('ลิสต์ทั้งหมด', 'All Lists')}</h3>
             <ListOrdered size={18} color="var(--primary-400)" />
           </div>
-          <p className="stat-value" style={{ color: 'var(--primary-600)' }}>{summary.listCount.toLocaleString(locale)}</p>
+          <p className="stat-value" style={{ color: 'var(--primary-600)' }}>{Number(summary.list_count || 0).toLocaleString(locale)}</p>
         </div>
         <div className="stat-card">
           <div className="stat-card-header">
             <h3 className="stat-title">{pick('ลิสต์สาธารณะ', 'Public Lists')}</h3>
             <Eye size={18} color="var(--success)" />
           </div>
-          <p className="stat-value" style={{ color: 'var(--success)' }}>{summary.publicListCount.toLocaleString(locale)}</p>
+          <p className="stat-value" style={{ color: 'var(--success)' }}>{Number(summary.public_list_count || 0).toLocaleString(locale)}</p>
         </div>
       </div>
 
@@ -551,7 +579,7 @@ export function AdminTierlists() {
         <div className="admin-mini-stat">
           <MessageSquare size={14} color="var(--text-tertiary)" />
           <span className="admin-mini-stat-label">{pick('คอมเมนต์ทั้งหมด', 'Tierlist comments')}</span>
-          <strong className="admin-mini-stat-value">{summary.commentCount.toLocaleString(locale)}</strong>
+          <strong className="admin-mini-stat-value">{Number(summary.comment_count || 0).toLocaleString(locale)}</strong>
         </div>
       </div>
 
@@ -614,8 +642,8 @@ export function AdminTierlists() {
         <div className="admin-form-actions" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <p className="admin-list-summary subtle">
             {pick(
-              `กำลังแสดง ${visibleRecords.length.toLocaleString(locale)} รายการในโหมด ${activeTab === 'templates' ? 'เทมเพลต' : 'ลิสต์'}`,
-              `Showing ${visibleRecords.length.toLocaleString(locale)} records in ${activeTab === 'templates' ? 'templates' : 'lists'} mode`,
+              `กำลังแสดง ${pagedRecords.length.toLocaleString(locale)} จาก ${visibleRecords.length.toLocaleString(locale)} รายการในโหมด ${activeTab === 'templates' ? 'เทมเพลต' : 'ลิสต์'}`,
+              `Showing ${pagedRecords.length.toLocaleString(locale)} of ${visibleRecords.length.toLocaleString(locale)} records in ${activeTab === 'templates' ? 'templates' : 'lists'} mode`,
             )}
           </p>
           <button type="button" className="action-btn" onClick={resetFilters}>
@@ -637,39 +665,55 @@ export function AdminTierlists() {
             </div>
           </div>
           {isLoading ? (
-            <AdminStatePanel title={pick('กำลังโหลดข้อมูล tierlist', 'Loading tierlist records')} description={pick('กำลังดึงเทมเพลต, ลิสต์, แถว, pool และคอมเมนต์สำหรับหน้าแอดมิน', 'Fetching templates, lists, rows, pools, and comments for the admin workspace.')} />
+            <AdminStatePanel title={pick('กำลังโหลดข้อมูล tierlist', 'Loading tierlist records')} description={pick('กำลังดึงข้อมูลสรุปของเทมเพลตและลิสต์สำหรับหน้าแอดมิน', 'Fetching tierlist summaries for the admin workspace.')} />
           ) : errorMessage ? (
-            <AdminStatePanel title={pick('โหลดข้อมูลไม่สำเร็จ', 'Could not load data')} description={errorMessage} tone="error" actionLabel={pick('ลองใหม่', 'Try again')} onAction={fetchTierlistData} />
+            <AdminStatePanel title={pick('โหลดข้อมูลไม่สำเร็จ', 'Could not load data')} description={errorMessage} tone="error" actionLabel={pick('ลองใหม่', 'Try again')} onAction={() => void refreshTierlistData({ showToast: false })} />
           ) : visibleRecords.length === 0 ? (
             <AdminStatePanel title={pick('ไม่พบรายการที่ตรงกับตัวกรอง', 'No matching records')} description={pick('ลองเปลี่ยนคำค้น, สถานะ, หรือโหมดดูข้อมูล แล้วค่อยเช็คอีกครั้ง', 'Try changing the search, visibility, or review mode and check again.')} actionLabel={pick('ล้างตัวกรอง', 'Clear filters')} onAction={resetFilters} />
           ) : (
-            <div className="admin-list-stack">
-              {visibleRecords.map((record) => {
-                const EntityIcon = getEntityTypeIcon(record.entityType);
-                return (
-                  <button key={record.id} type="button" className={`admin-record-card ${record.id === selectedId ? 'active' : ''}`} onClick={() => setSelectedId(record.id)}>
-                    <div className="admin-tierlist-record-badges">
-                      <span className={`admin-queue-pill ${record.isPublic ? 'status-approved' : 'status-dismissed'}`}>{record.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}</span>
-                      <span className="admin-queue-pill subtle"><EntityIcon size={13} />{getEntityTypeLabel(record.entityType, pick)}</span>
-                      {record.kind === 'template' && record.isSystem ? <span className="admin-queue-pill subtle">{pick('ระบบ', 'System')}</span> : null}
-                      {record.issues.length > 0 ? <span className="admin-queue-pill status-open"><AlertTriangle size={13} />{record.issues.length} {pick('ปัญหา', 'issues')}</span> : null}
-                    </div>
-                    <div className="admin-record-main">
-                      <strong className="admin-queue-card-title admin-clamp-2">{record.title}</strong>
-                      <span className="admin-queue-card-subtitle admin-clamp-2">{record.description || (record.kind === 'template' ? pick('ไม่มีคำอธิบายเทมเพลต', 'No template description') : pick('ไม่มีคำอธิบายลิสต์', 'No list description'))}</span>
-                    </div>
-                    <div className="admin-record-meta">
-                      <span>
-                        {record.kind === 'template'
-                          ? pick('{count} item / {plays} plays', '{count} items / {plays} plays').replace('{count}', formatCompactNumber(record.itemCount, locale)).replace('{plays}', formatCompactNumber(record.plays, locale))
-                          : pick('{count} item / {plays} plays', '{count} items / {plays} plays').replace('{count}', formatCompactNumber(record.totalItemCount, locale)).replace('{plays}', formatCompactNumber(record.playCount, locale))}
-                      </span>
-                      <span>{formatDate(record.updatedAt, locale)}</span>
-                    </div>
+            <>
+              <div className="admin-list-stack">
+                {pagedRecords.map((record) => {
+                  const EntityIcon = getEntityTypeIcon(record.entityType);
+                  return (
+                    <button key={record.id} type="button" className={`admin-record-card ${record.id === selectedId ? 'active' : ''}`} onClick={() => setSelectedId(record.id)}>
+                      <div className="admin-tierlist-record-badges">
+                        <span className={`admin-queue-pill ${record.isPublic ? 'status-approved' : 'status-dismissed'}`}>{record.isPublic ? pick('สาธารณะ', 'Public') : pick('ส่วนตัว', 'Private')}</span>
+                        <span className="admin-queue-pill subtle"><EntityIcon size={13} />{getEntityTypeLabel(record.entityType, pick)}</span>
+                        {record.kind === 'template' && record.isSystem ? <span className="admin-queue-pill subtle">{pick('ระบบ', 'System')}</span> : null}
+                        {record.issues.length > 0 ? <span className="admin-queue-pill status-open"><AlertTriangle size={13} />{record.issues.length} {pick('ปัญหา', 'issues')}</span> : null}
+                      </div>
+                      <div className="admin-record-main">
+                        <strong className="admin-queue-card-title admin-clamp-2">{record.title}</strong>
+                        <span className="admin-queue-card-subtitle admin-clamp-2">{record.description || (record.kind === 'template' ? pick('ไม่มีคำอธิบายเทมเพลต', 'No template description') : pick('ไม่มีคำอธิบายลิสต์', 'No list description'))}</span>
+                      </div>
+                      <div className="admin-record-meta">
+                        <span>
+                          {record.kind === 'template'
+                            ? pick('{count} item / {plays} plays', '{count} items / {plays} plays').replace('{count}', formatCompactNumber(record.itemCount, locale)).replace('{plays}', formatCompactNumber(record.plays, locale))
+                            : pick('{count} item / {plays} plays', '{count} items / {plays} plays').replace('{count}', formatCompactNumber(record.totalItemCount, locale)).replace('{plays}', formatCompactNumber(record.playCount, locale))}
+                        </span>
+                        <span>{formatDate(record.updatedAt, locale)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {totalPages > 1 ? (
+                <div className="admin-pagination">
+                  <button className="action-btn" disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                    {pick('ก่อนหน้า', 'Previous')}
                   </button>
-                );
-              })}
-            </div>
+                  <span className="admin-list-summary">
+                    {pick(`หน้า ${currentPage} / ${totalPages}`, `Page ${currentPage} / ${totalPages}`)}
+                  </span>
+                  <button className="action-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>
+                    {pick('ถัดไป', 'Next')}
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
 
@@ -745,14 +789,24 @@ export function AdminTierlists() {
                       <div className="admin-tierlist-subsection">
                         <strong>{pick('แถวเริ่มต้น', 'Default rows')}</strong>
                         <div className="admin-chip-grid" style={{ marginTop: 'var(--space-3)' }}>
-                          {selectedRecord.defaultRows.length > 0 ? selectedRecord.defaultRows.map((rowLabel) => <span key={rowLabel} className="admin-queue-pill subtle">{rowLabel}</span>) : <span className="admin-tierlist-muted">{pick('ไม่มีค่า default rows', 'No default rows saved')}</span>}
+                          {selectedDetailQuery.isLoading && !selectedDetailQuery.data
+                            ? <span className="admin-tierlist-muted">{pick('กำลังโหลดโครงสร้างเทมเพลต...', 'Loading template structure...')}</span>
+                            : selectedRecord.defaultRows.length > 0
+                              ? selectedRecord.defaultRows.map((rowLabel) => <span key={rowLabel} className="admin-queue-pill subtle">{rowLabel}</span>)
+                              : <span className="admin-tierlist-muted">{pick('ไม่มีค่า default rows', 'No default rows saved')}</span>}
                         </div>
                       </div>
                       <div className="admin-tierlist-subsection">
                         <strong>{pick('ตัวอย่าง item ids', 'Sample item ids')}</strong>
                         <div className="admin-tierlist-code-list">
-                          {selectedRecord.titleIds.slice(0, 18).map((id) => <code key={`${selectedRecord.id}-${id}`}>{id}</code>)}
-                          {selectedRecord.titleIds.length === 0 ? <span className="admin-tierlist-muted">{pick('ไม่มี item ids', 'No item ids')}</span> : null}
+                          {selectedDetailQuery.isLoading && !selectedDetailQuery.data
+                            ? <span className="admin-tierlist-muted">{pick('กำลังโหลด item ids...', 'Loading item ids...')}</span>
+                            : (
+                              <>
+                                {selectedRecord.titleIds.slice(0, 18).map((id) => <code key={`${selectedRecord.id}-${id}`}>{id}</code>)}
+                                {selectedRecord.titleIds.length === 0 ? <span className="admin-tierlist-muted">{pick('ไม่มี item ids', 'No item ids')}</span> : null}
+                              </>
+                            )}
                         </div>
                       </div>
                     </>
@@ -761,12 +815,16 @@ export function AdminTierlists() {
                       <div className="admin-tierlist-subsection">
                         <strong>{pick('สรุปแต่ละ tier', 'Tier breakdown')}</strong>
                         <div className="admin-tierlist-row-grid">
-                          {selectedRecord.rows.length > 0 ? selectedRecord.rows.map((row) => (
-                            <div key={row.id} className="admin-tierlist-row-card">
-                              <span className="admin-tierlist-row-label">{row.label || pick('ไม่มีชื่อแถว', 'Untitled row')}</span>
-                              <strong>{row.titleIds.length.toLocaleString(locale)} {pick('item', 'items')}</strong>
-                            </div>
-                          )) : <span className="admin-tierlist-muted">{pick('ไม่มีข้อมูลแถว tier', 'No tier row data')}</span>}
+                          {selectedDetailQuery.isLoading && !selectedDetailQuery.data
+                            ? <span className="admin-tierlist-muted">{pick('กำลังโหลดโครงสร้างลิสต์...', 'Loading list structure...')}</span>
+                            : selectedRecord.rows.length > 0
+                              ? selectedRecord.rows.map((row) => (
+                                <div key={row.id} className="admin-tierlist-row-card">
+                                  <span className="admin-tierlist-row-label">{row.label || pick('ไม่มีชื่อแถว', 'Untitled row')}</span>
+                                  <strong>{row.titleIds.length.toLocaleString(locale)} {pick('item', 'items')}</strong>
+                                </div>
+                              ))
+                              : <span className="admin-tierlist-muted">{pick('ไม่มีข้อมูลแถว tier', 'No tier row data')}</span>}
                         </div>
                       </div>
                       <div className="admin-tierlist-subsection">

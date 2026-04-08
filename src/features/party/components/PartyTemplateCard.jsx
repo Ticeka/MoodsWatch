@@ -21,7 +21,18 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
   const resolvedCoverUrl = isTitleGuess ? coverUrl : getTemplateCoverUrl(coverUrl);
 
   return (
-    <div className="party-template-card" onClick={onClick}>
+    <article
+      className="party-template-card"
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="party-template-card-header">
         <div className="party-template-card-cover">
           {resolvedCoverUrl ? (
@@ -41,10 +52,9 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
               <span>{pick('ทางการ', 'Official')}</span>
             </div>
           )}
-          <div className="party-template-card-overlay">
-            <button className="party-play-button-overlay">
-              <Play fill="currentColor" />
-            </button>
+          <div className="party-template-card-type-badge">
+            <Play size={12} fill="currentColor" />
+            <span>{isTitleGuess ? pick('เดาชื่อเรื่อง', 'Guess set') : pick('เลือกไปเล่น', 'Use in party')}</span>
           </div>
         </div>
       </div>
@@ -104,6 +114,6 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
           </div>
         ) : null}
       </div>
-    </div>
+    </article>
   );
 }

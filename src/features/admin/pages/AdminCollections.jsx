@@ -1,11 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Library, RefreshCw, FolderPlus, Columns, Settings, ListPlus } from 'lucide-react';
+import { Library, RefreshCw, FolderPlus, Columns, Settings, ListPlus, Loader2 } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
+import {
+  fetchAdminCollectionDetail,
+  fetchAdminCollectionSummaries,
+  searchAdminCollectionTitles,
+} from '@/features/admin/api';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
-import { mapEditorCollection, EDITOR_COLLECTION_SELECT, buildCollectionPayload } from '@/shared/lib/editorial';
+import { buildCollectionPayload } from '@/shared/lib/editorial';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import '../styles/Admin.css';
 
 const EMPTY_FORM = {
@@ -57,91 +64,116 @@ function titleLabel(title) {
 export function AdminCollections() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const [collections, setCollections] = useState([]);
-  const [titles, setTitles] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [itemDraft, setItemDraft] = useState({ titleId: '', position: 0, note: '' });
+  const [titleSearchTerm, setTitleSearchTerm] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [removingItemId, setRemovingItemId] = useState(null);
+  const debouncedTitleSearchTerm = useDebouncedValue(titleSearchTerm, 250);
 
-  const selectedCollection = useMemo(
+  const collectionsQuery = useQuery({
+    queryKey: ['admin-collections-summaries'],
+    queryFn: fetchAdminCollectionSummaries,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const collections = useMemo(() => collectionsQuery.data || [], [collectionsQuery.data]);
+  const selectedSummary = useMemo(
     () => collections.find((collection) => collection.id === selectedId) || null,
-    [collections, selectedId]
+    [collections, selectedId],
   );
 
-  const fetchData = useCallback(async () => {
-    if (!supabase) {
-      const message = 'Unable to connect to Supabase';
-      setErrorMessage(message);
-      toast.error(message);
-      setIsLoading(false);
+  const selectedCollectionQuery = useQuery({
+    queryKey: ['admin-collection-detail', selectedId || null],
+    queryFn: () => fetchAdminCollectionDetail(selectedId),
+    enabled: Boolean(selectedId),
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const selectedCollection = selectedCollectionQuery.data || null;
+
+  const titleOptionsQuery = useQuery({
+    queryKey: ['admin-collection-title-options', debouncedTitleSearchTerm],
+    queryFn: () => searchAdminCollectionTitles(debouncedTitleSearchTerm, 30),
+    enabled: Boolean(selectedCollection),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const titleOptions = useMemo(() => titleOptionsQuery.data || [], [titleOptionsQuery.data]);
+  const isLoading = collectionsQuery.isLoading && !collections.length;
+  const errorMessage = collectionsQuery.error?.message || selectedCollectionQuery.error?.message || '';
+  const isRefreshing = (collectionsQuery.isFetching && !collectionsQuery.isLoading)
+    || (selectedCollectionQuery.isFetching && Boolean(selectedId));
+
+  useEffect(() => {
+    if (!collections.length) {
+      setSelectedId(null);
       return;
     }
 
-    setIsLoading(true);
-    setErrorMessage('');
-    try {
-      const [collectionsRes, titlesRes] = await Promise.all([
-        supabase
-          .from('editor_collections')
-          .select(EDITOR_COLLECTION_SELECT)
-          .order('updated_at', { ascending: false }),
-        supabase
-          .from('canonical_titles')
-          .select('id, canonical_title, type, subtype, aliases:aliases_cache')
-          .order('popularity_score', { ascending: false, nullsFirst: false })
-          .limit(200),
-      ]);
-
-      if (collectionsRes.error) throw collectionsRes.error;
-      if (titlesRes.error) throw titlesRes.error;
-
-      const nextCollections = (collectionsRes.data || []).map(mapEditorCollection);
-      const nextTitles = (titlesRes.data || []).map((record) => ({
-        id: record.id,
-        name:
-          record.aliases?.find((alias) => alias.alias_type === 'english' || alias.language_code === 'en')?.alias ||
-          record.canonical_title,
-        type: record.subtype === 'manhwa' ? 'manhwa' : record.type,
-      }));
-
-      setCollections(nextCollections);
-      setTitles(nextTitles);
-      if (nextCollections.length > 0) {
-        const initial = selectedId && nextCollections.some((item) => item.id === selectedId)
-          ? nextCollections.find((item) => item.id === selectedId)
-          : nextCollections[0];
-        setSelectedId(initial.id);
-        setForm(mapForm(initial));
-      } else {
-        setSelectedId(null);
-        setForm(EMPTY_FORM);
-      }
-    } catch (error) {
-      console.error('Failed to load collections', error);
-      setErrorMessage(error.message || 'Failed to load collections');
-      toast.error(error.message || 'Failed to load collections');
-    } finally {
-      setIsLoading(false);
+    if (!selectedId || !collections.some((collection) => collection.id === selectedId)) {
+      setSelectedId(collections[0].id);
     }
-  }, [selectedId]);
+  }, [collections, selectedId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!selectedCollection) {
+      if (selectedId) return;
+      setForm(EMPTY_FORM);
+      setItemDraft({ titleId: '', position: 0, note: '' });
+      return;
+    }
+
+    setForm(mapForm(selectedCollection));
+    setItemDraft((current) => ({
+      titleId: current.titleId,
+      position: current.position || selectedCollection.items.length,
+      note: current.note || '',
+    }));
+  }, [selectedCollection, selectedId]);
+
+  useEffect(() => {
+    if (collectionsQuery.error || selectedCollectionQuery.error) {
+      toast.error(errorMessage || 'Failed to load collections');
+    }
+  }, [collectionsQuery.error, errorMessage, selectedCollectionQuery.error]);
+
+  const refreshCollections = async ({ showToast = true } = {}) => {
+    try {
+      const [listResult, detailResult] = await Promise.all([
+        collectionsQuery.refetch(),
+        selectedId ? selectedCollectionQuery.refetch() : Promise.resolve({ error: null }),
+      ]);
+
+      if (listResult.error) throw listResult.error;
+      if (detailResult?.error) throw detailResult.error;
+
+      if (showToast) {
+        toast.success(t('admin.common.refresh'));
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Failed to refresh collections');
+    }
+  };
 
   const handleSelect = (collection) => {
     setSelectedId(collection.id);
-    setForm(mapForm(collection));
-    setItemDraft({ titleId: '', position: collection.items.length, note: '' });
+    setTitleSearchTerm('');
+    setItemDraft({ titleId: '', position: 0, note: '' });
   };
 
   const handleCreateNew = () => {
     setSelectedId(null);
     setForm(EMPTY_FORM);
     setItemDraft({ titleId: '', position: 0, note: '' });
+    setTitleSearchTerm('');
   };
 
   const handleFormChange = (key) => (event) => {
@@ -161,20 +193,34 @@ export function AdminCollections() {
 
     setIsSaving(true);
     const toastId = toast.loading(selectedId ? 'Saving collection...' : 'Creating collection...');
+
     try {
+      let nextSelectedId = selectedId;
+
       if (selectedId) {
         const { error } = await supabase.from('editor_collections').update(payload).eq('id', selectedId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('editor_collections').insert({
-          ...payload,
-          created_by: user?.id || null,
-        });
+        const { data, error } = await supabase
+          .from('editor_collections')
+          .insert({
+            ...payload,
+            created_by: user?.id || null,
+          })
+          .select('id')
+          .single();
+
         if (error) throw error;
+        nextSelectedId = Number(data?.id || 0) || null;
+        setSelectedId(nextSelectedId);
       }
 
       toast.success(t('admin.collections.saved'), { id: toastId });
-      await fetchData();
+      const listResult = await collectionsQuery.refetch();
+      if (listResult.error) throw listResult.error;
+      if (nextSelectedId) {
+        await selectedCollectionQuery.refetch();
+      }
     } catch (error) {
       console.error('Failed to save collection', error);
       toast.error(error.message || 'Failed to save collection', { id: toastId });
@@ -193,7 +239,9 @@ export function AdminCollections() {
       if (error) throw error;
 
       toast.success(t('admin.collections.deleted'), { id: toastId });
-      await fetchData();
+      setSelectedId(null);
+      const result = await collectionsQuery.refetch();
+      if (result.error) throw result.error;
     } catch (error) {
       console.error('Failed to delete collection', error);
       toast.error(error.message || 'Failed to delete collection', { id: toastId });
@@ -218,7 +266,7 @@ export function AdminCollections() {
 
       toast.success(t('admin.collections.itemAdded'), { id: toastId });
       setItemDraft({ titleId: '', position: selectedCollection.items.length + 1, note: '' });
-      await fetchData();
+      await Promise.all([collectionsQuery.refetch(), selectedCollectionQuery.refetch()]);
     } catch (error) {
       console.error('Failed to add item', error);
       toast.error(error.message || 'Failed to add item', { id: toastId });
@@ -227,15 +275,19 @@ export function AdminCollections() {
 
   const handleRemoveItem = async (itemId) => {
     if (!supabase) return;
+    setRemovingItemId(itemId);
     const toastId = toast.loading('Removing title...');
     try {
       const { error } = await supabase.from('editor_collection_items').delete().eq('id', itemId);
       if (error) throw error;
+
       toast.success(t('admin.collections.itemRemoved'), { id: toastId });
-      await fetchData();
+      await Promise.all([collectionsQuery.refetch(), selectedCollectionQuery.refetch()]);
     } catch (error) {
       console.error('Failed to remove item', error);
       toast.error(error.message || 'Failed to remove item', { id: toastId });
+    } finally {
+      setRemovingItemId(null);
     }
   };
 
@@ -250,8 +302,8 @@ export function AdminCollections() {
           <p style={{ color: 'var(--text-secondary)' }}>{t('admin.collections.pageSubtitle')}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="action-btn" onClick={fetchData} type="button">
-            <RefreshCw size={16} style={{ marginRight: 8 }} />
+          <button className="action-btn" onClick={() => void refreshCollections()} type="button" disabled={isRefreshing}>
+            {isRefreshing ? <Loader2 size={16} className="animate-spin" style={{ marginRight: 8 }} /> : <RefreshCw size={16} style={{ marginRight: 8 }} />}
             {t('admin.common.refresh')}
           </button>
           <button className="primary-btn" onClick={handleCreateNew} type="button">
@@ -276,7 +328,7 @@ export function AdminCollections() {
           {isLoading ? (
             <AdminStatePanel title={t('admin.collections.loadingTitle')} description={t('admin.collections.loadingHint')} />
           ) : errorMessage ? (
-            <AdminStatePanel title={t('admin.collections.errorTitle')} description={errorMessage} actionLabel="Retry" onAction={fetchData} tone="error" />
+            <AdminStatePanel title={t('admin.collections.errorTitle')} description={errorMessage} actionLabel="Retry" onAction={() => void refreshCollections({ showToast: false })} tone="error" />
           ) : collections.length === 0 ? (
             <AdminStatePanel title={t('admin.collections.noCollections')} description={t('admin.collections.noCollectionsHint')} />
           ) : (
@@ -294,7 +346,7 @@ export function AdminCollections() {
                   </div>
                   <div className="admin-record-meta">
                     <span className="badge badge-user">{collection.status}</span>
-                    <span>{collection.items.length} items</span>
+                    <span>{collection.itemCount} items</span>
                   </div>
                 </button>
               ))}
@@ -312,8 +364,8 @@ export function AdminCollections() {
                 </h2>
                 <p>{t('admin.collections.createHint')}</p>
               </div>
-              {selectedCollection && (
-                <button className="action-btn" type="button" onClick={() => handleDelete(selectedCollection)}>
+              {selectedSummary && (
+                <button className="action-btn" type="button" onClick={() => void handleDelete(selectedSummary)}>
                   {t('admin.common.delete')}
                 </button>
               )}
@@ -405,24 +457,37 @@ export function AdminCollections() {
                   <ListPlus size={20} color="var(--primary-500)" />
                   {t('admin.collections.itemsTitle')}
                 </h2>
-                <p>{selectedCollection ? t('admin.collections.itemsCount', { count: selectedCollection.items.length }) : t('admin.collections.itemsSelectFirst')}</p>
+                <p>{selectedSummary ? t('admin.collections.itemsCount', { count: selectedSummary.itemCount }) : t('admin.collections.itemsSelectFirst')}</p>
               </div>
             </div>
 
-            {!selectedCollection ? (
+            {!selectedSummary ? (
               <AdminStatePanel title="No collection selected" description="Create or select a collection to manage its titles." />
+            ) : selectedCollectionQuery.isLoading && !selectedCollection ? (
+              <AdminStatePanel title={t('admin.collections.loadingTitle')} description={t('admin.collections.loadingHint')} />
+            ) : !selectedCollection ? (
+              <AdminStatePanel title={t('admin.collections.errorTitle')} description={selectedCollectionQuery.error?.message || 'Failed to load collection detail'} tone="error" actionLabel="Retry" onAction={() => void selectedCollectionQuery.refetch()} />
             ) : (
               <>
                 <form className="admin-inline-form" onSubmit={handleAddItem}>
                   <label className="admin-inline-form-grow">
                     <span className="form-label">{t('admin.collections.fieldTitleSelect')}</span>
+                    <input
+                      className="form-input"
+                      value={titleSearchTerm}
+                      onChange={(event) => setTitleSearchTerm(event.target.value)}
+                      placeholder={t('admin.collections.fieldTitleSelect')}
+                    />
+                  </label>
+                  <label className="admin-inline-form-grow">
+                    <span className="form-label">{t('admin.common.selectTitle')}</span>
                     <select
                       className="form-select"
                       value={itemDraft.titleId}
                       onChange={(event) => setItemDraft((current) => ({ ...current, titleId: event.target.value }))}
                     >
-                      <option value="">{t('admin.common.selectTitle')}</option>
-                      {titles.map((title) => (
+                      <option value="">{titleOptionsQuery.isFetching ? 'Loading titles...' : t('admin.common.selectTitle')}</option>
+                      {titleOptions.map((title) => (
                         <option key={title.id} value={title.id}>{titleLabel(title)}</option>
                       ))}
                     </select>
@@ -471,7 +536,9 @@ export function AdminCollections() {
                             <td>{item.title.type}</td>
                             <td>{item.note || '-'}</td>
                             <td style={{ textAlign: 'right' }}>
-                              <button className="action-btn" type="button" onClick={() => handleRemoveItem(item.id)}>{t('admin.common.remove')}</button>
+                              <button className="action-btn" type="button" disabled={removingItemId === item.id} onClick={() => void handleRemoveItem(item.id)}>
+                                {removingItemId === item.id ? 'Removing...' : t('admin.common.remove')}
+                              </button>
                             </td>
                           </tr>
                         ))}

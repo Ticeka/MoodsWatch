@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Layout, RefreshCw, PlusSquare, ListOrdered, Settings } from 'lucide-react';
 import { AdminStatePanel } from '@/features/admin/components/AdminStatePanel';
@@ -6,7 +7,13 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
   buildHomepageBlockPayload,
 } from '@/shared/lib/editorial';
-import { deleteHomepageBlock, fetchHomepageAdminData, saveHomepageBlock } from '@/features/admin/api/homepageAdminApi';
+import {
+  deleteHomepageBlock,
+  fetchHomepageAdminCollections,
+  fetchHomepageBlockDetail,
+  fetchHomepageBlockSummaries,
+  saveHomepageBlock,
+} from '@/features/admin/api/homepageAdminApi';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
 
@@ -60,50 +67,99 @@ function mapForm(block) {
 export function AdminHomepage() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const [blocks, setBlocks] = useState([]);
-  const [collections, setCollections] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
+  const blocksQuery = useQuery({
+    queryKey: ['admin-homepage-block-summaries'],
+    queryFn: fetchHomepageBlockSummaries,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const collectionsQuery = useQuery({
+    queryKey: ['admin-homepage-collections'],
+    queryFn: fetchHomepageAdminCollections,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  const blocks = useMemo(() => blocksQuery.data || [], [blocksQuery.data]);
+  const collections = useMemo(() => collectionsQuery.data || [], [collectionsQuery.data]);
+
+  const selectedBlockQuery = useQuery({
+    queryKey: ['admin-homepage-block-detail', selectedId || null],
+    queryFn: () => fetchHomepageBlockDetail(selectedId),
+    enabled: Boolean(selectedId),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: 1,
+  });
+
   const selectedBlock = useMemo(
-    () => blocks.find((block) => block.id === selectedId) || null,
-    [blocks, selectedId]
+    () => selectedBlockQuery.data || blocks.find((block) => block.id === selectedId) || null,
+    [blocks, selectedBlockQuery.data, selectedId]
   );
 
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
     try {
-      const { blocks: nextBlocks, collections: nextCollections } = await fetchHomepageAdminData();
-      setBlocks(nextBlocks);
-      setCollections(nextCollections);
+      setErrorMessage('');
+      const [blocksResult, collectionsResult, selectedResult] = await Promise.all([
+        blocksQuery.refetch(),
+        collectionsQuery.refetch(),
+        selectedId ? selectedBlockQuery.refetch() : Promise.resolve({ error: null }),
+      ]);
 
-      if (nextBlocks.length > 0) {
-        const initial = selectedId && nextBlocks.some((item) => item.id === selectedId)
-          ? nextBlocks.find((item) => item.id === selectedId)
-          : nextBlocks[0];
-        setSelectedId(initial.id);
-        setForm(mapForm(initial));
-      } else {
-        setSelectedId(null);
-        setForm(EMPTY_FORM);
-      }
+      if (blocksResult.error) throw blocksResult.error;
+      if (collectionsResult.error) throw collectionsResult.error;
+      if (selectedResult?.error) throw selectedResult.error;
     } catch (error) {
       console.error('Failed to load homepage blocks', error);
       const message = error.message || t('admin.homepage.loadFailed');
       setErrorMessage(message);
       toast.error(message);
-    } finally {
-      setIsLoading(false);
     }
-  }, [selectedId, t]);
+  }, [blocksQuery, collectionsQuery, selectedBlockQuery, selectedId, t]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!blocks.length) {
+      setSelectedId(null);
+      setForm(EMPTY_FORM);
+      return;
+    }
+
+    if (!selectedId || !blocks.some((block) => block.id === selectedId)) {
+      setSelectedId(blocks[0].id);
+    }
+  }, [blocks, selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+
+    if (selectedBlockQuery.data) {
+      setForm(mapForm(selectedBlockQuery.data));
+    }
+  }, [selectedBlockQuery.data, selectedId]);
+
+  useEffect(() => {
+    const nextMessage =
+      blocksQuery.error?.message
+      || collectionsQuery.error?.message
+      || selectedBlockQuery.error?.message
+      || '';
+
+    if (!nextMessage) return;
+
+    setErrorMessage(nextMessage);
+    toast.error(nextMessage);
+  }, [blocksQuery.error, collectionsQuery.error, selectedBlockQuery.error]);
 
   const handleFormChange = (key) => (event) => {
     setForm((current) => ({ ...current, [key]: event.target.value }));
@@ -111,7 +167,7 @@ export function AdminHomepage() {
 
   const handleSelect = (block) => {
     setSelectedId(block.id);
-    setForm(mapForm(block));
+    setForm(EMPTY_FORM);
   };
 
   const handleCreateNew = () => {
@@ -141,9 +197,13 @@ export function AdminHomepage() {
     setIsSaving(true);
     const toastId = toast.loading(selectedId ? t('admin.homepage.savingBlock') : t('admin.homepage.creatingBlock'));
     try {
-      await saveHomepageBlock(selectedId, payload, user?.id || null);
+      const savedId = await saveHomepageBlock(selectedId, payload, user?.id || null);
+      await queryClient.invalidateQueries({ queryKey: ['admin-homepage-block-summaries'] });
+      if (savedId) {
+        await queryClient.invalidateQueries({ queryKey: ['admin-homepage-block-detail', savedId] });
+        setSelectedId(savedId);
+      }
       toast.success(t('admin.homepage.blockSaved'), { id: toastId });
-      await fetchData();
     } catch (error) {
       console.error('Failed to save homepage block', error);
       toast.error(error.message || t('admin.homepage.saveFailed'), { id: toastId });
@@ -158,8 +218,13 @@ export function AdminHomepage() {
     const toastId = toast.loading(t('admin.homepage.deletingBlock'));
     try {
       await deleteHomepageBlock(block.id);
+      await queryClient.invalidateQueries({ queryKey: ['admin-homepage-block-summaries'] });
+      await queryClient.removeQueries({ queryKey: ['admin-homepage-block-detail', block.id] });
+      if (selectedId === block.id) {
+        setSelectedId(null);
+        setForm(EMPTY_FORM);
+      }
       toast.success(t('admin.homepage.blockDeleted'), { id: toastId });
-      await fetchData();
     } catch (error) {
       console.error('Failed to delete block', error);
       toast.error(error.message || t('admin.homepage.deleteFailed'), { id: toastId });
@@ -200,7 +265,7 @@ export function AdminHomepage() {
             </div>
           </div>
 
-          {isLoading ? (
+          {blocksQuery.isLoading ? (
             <AdminStatePanel title={t('admin.homepage.loadingTitle')} description={t('admin.homepage.loadingHint')} />
           ) : errorMessage ? (
             <AdminStatePanel title={t('admin.homepage.errorTitle')} description={errorMessage} actionLabel={t('common.retry')} onAction={fetchData} tone="error" />
@@ -245,6 +310,10 @@ export function AdminHomepage() {
             )}
           </div>
 
+          {selectedId && selectedBlockQuery.isLoading ? (
+            <AdminStatePanel title={t('admin.homepage.loadingTitle')} description={t('admin.homepage.loadingHint')} />
+          ) : (
+            <>
           <div className="admin-form-grid">
             <label>
               <span className="form-label">{t('admin.homepage.fieldTitle')}</span>
@@ -271,7 +340,12 @@ export function AdminHomepage() {
             </label>
             <label>
               <span className="form-label">{t('admin.homepage.fieldCollection')}</span>
-              <select className="form-select" value={form.collectionId} onChange={handleFormChange('collectionId')}>
+              <select
+                className="form-select"
+                value={form.collectionId}
+                onChange={handleFormChange('collectionId')}
+                disabled={collectionsQuery.isLoading}
+              >
                 <option value="">{t('admin.homepage.noCollection')}</option>
                 {collections.map((collection) => (
                   <option key={collection.id} value={collection.id}>
@@ -341,11 +415,13 @@ export function AdminHomepage() {
             </div>
           </div>
 
-          <div className="admin-form-actions">
-            <button className="primary-btn" type="submit" disabled={isSaving}>
-              {isSaving ? t('admin.common.saving') : selectedId ? t('admin.homepage.saveChanges') : t('admin.homepage.createTitle')}
-            </button>
-          </div>
+            <div className="admin-form-actions">
+              <button className="primary-btn" type="submit" disabled={isSaving}>
+                {isSaving ? t('admin.common.saving') : selectedId ? t('admin.homepage.saveChanges') : t('admin.homepage.createTitle')}
+              </button>
+            </div>
+            </>
+          )}
         </form>
       </div>
     </div>

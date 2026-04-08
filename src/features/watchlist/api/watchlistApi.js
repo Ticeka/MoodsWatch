@@ -1,6 +1,8 @@
 import { supabase } from '@/shared/lib/supabase';
 import { CANONICAL_TITLE_BROWSE_SELECT } from '@/shared/lib/catalog';
 
+const WATCHLIST_TITLE_BATCH_SIZE = 120;
+
 export async function persistRemoteWatchlistSnapshot(userId, rows = [], timeoutMs, withTimeout) {
   if (!userId || !supabase || rows.length === 0) {
     return;
@@ -60,20 +62,28 @@ export async function fetchRemoteWatchlistTitles(titleIds, timeoutMs, withTimeou
     return [];
   }
 
-  const { data, error } = await withTimeout(
-    supabase
-      .from('canonical_titles')
-      .select(CANONICAL_TITLE_BROWSE_SELECT)
-      .in('id', titleIds),
-    timeoutMs,
-    'Watchlist titles fetch'
-  );
+  const normalizedIds = [...new Set(titleIds.map((id) => Number(id)).filter(Boolean))];
+  const rows = [];
 
-  if (error) {
-    throw error;
+  for (let index = 0; index < normalizedIds.length; index += WATCHLIST_TITLE_BATCH_SIZE) {
+    const batchIds = normalizedIds.slice(index, index + WATCHLIST_TITLE_BATCH_SIZE);
+    const { data, error } = await withTimeout(
+      supabase
+        .from('canonical_titles')
+        .select(CANONICAL_TITLE_BROWSE_SELECT)
+        .in('id', batchIds),
+      timeoutMs,
+      'Watchlist titles fetch'
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    rows.push(...(data || []));
   }
 
-  return data || [];
+  return rows;
 }
 
 export async function fetchRemoteWatchlistHistory(userId) {

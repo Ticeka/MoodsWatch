@@ -24,6 +24,7 @@ import {
   createBattleSession,
   dedupeBattleSessionsByRecency,
   getBattlePresets,
+  incrementStoredBattleDeckPlayCount,
   getStoredBattleDecks,
   getStoredBattleSessions,
   saveBattleSession,
@@ -31,6 +32,7 @@ import {
 import {
   fetchPublicBattleDecks,
   fetchRemoteBattleSessions,
+  incrementRemotePublicBattleDeckPlayCount,
   persistRemoteBattleSession,
 } from '@/features/battle/api/battleRemoteApi';
 import { supabase } from '@/shared/lib/supabase';
@@ -458,6 +460,13 @@ export function BattleHub() {
     if ((deck?.titles?.length || 0) < 8) {
       toast.error(t('battle.needAtLeastEight'));
       return;
+    }
+
+    if (deck?.id) {
+      incrementStoredBattleDeckPlayCount(deck.id);
+      if (deck.isPublic) {
+        incrementRemotePublicBattleDeckPlayCount(deck.id);
+      }
     }
 
     let session = saveBattleSession(createBattleSession(deck, {

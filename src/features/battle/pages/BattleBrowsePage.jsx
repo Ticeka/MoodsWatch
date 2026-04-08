@@ -22,10 +22,12 @@ import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDec
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import {
   createBattleSession,
+  incrementStoredBattleDeckPlayCount,
   saveBattleSession,
 } from '@/features/battle/lib/battleStore';
 import {
   fetchPublicBattleDecks,
+  incrementRemotePublicBattleDeckPlayCount,
   persistRemoteBattleSession,
 } from '@/features/battle/api/battleRemoteApi';
 import '../styles/Battle.css';
@@ -283,6 +285,13 @@ export function BattleBrowsePage() {
     if ((deck?.titles?.length || 0) < 8) {
       toast.error(t('battle.needAtLeastEight'));
       return;
+    }
+
+    if (deck?.id) {
+      incrementStoredBattleDeckPlayCount(deck.id);
+      if (deck.isPublic) {
+        incrementRemotePublicBattleDeckPlayCount(deck.id);
+      }
     }
 
     const entityType = normalizeCatalogEntityType(deck?.filters?.entityType);
