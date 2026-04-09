@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useFavoriteTitles } from '@/features/profile/hooks/useFavoriteTitles';
 import { useProfilePreferences } from '@/features/profile/hooks/useProfilePreferences';
@@ -238,39 +238,48 @@ export function Watchlist() {
     };
 
     return [...filtered].sort((a, b) => {
+      // Helper to get most recent timestamp
+      const getRecentTime = (item) => {
+        return Math.max(
+          new Date(item._lastConsumedAt || 0).getTime(),
+          new Date(item._listUpdatedAt || 0).getTime(),
+          new Date(item._listAddedAt || 0).getTime()
+        );
+      };
+
       if (sortBy === 'status') {
         const statusDiff = (statusPriority[a._listStatus] ?? 99) - (statusPriority[b._listStatus] ?? 99);
         if (statusDiff !== 0) return statusDiff;
       }
 
-	      if (sortBy === 'progress') {
-	        const aProgress = Math.max(a._listProgressEpisode || 0, a._listProgressChapter || 0);
-	        const bProgress = Math.max(b._listProgressEpisode || 0, b._listProgressChapter || 0);
-	        if (bProgress !== aProgress) return bProgress - aProgress;
-	      }
+      if (sortBy === 'progress') {
+        const aProgress = Math.max(a._listProgressEpisode || 0, a._listProgressChapter || 0);
+        const bProgress = Math.max(b._listProgressEpisode || 0, b._listProgressChapter || 0);
+        if (bProgress !== aProgress) return bProgress - aProgress;
+      }
 
-	      if (sortBy === 'score') {
-	        const scoreDiff = Number(b._userScore || 0) - Number(a._userScore || 0);
-	        if (scoreDiff !== 0) return scoreDiff;
-	      }
+      if (sortBy === 'score') {
+        const scoreDiff = Number(b._userScore || 0) - Number(a._userScore || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+      }
 
-	      if (sortBy === 'popularity') {
-	        const popularityDiff = Number(b.popularity || 0) - Number(a.popularity || 0);
-	        if (popularityDiff !== 0) return popularityDiff;
-	      }
+      if (sortBy === 'popularity') {
+        const popularityDiff = Number(b.popularity || 0) - Number(a.popularity || 0);
+        if (popularityDiff !== 0) return popularityDiff;
+      }
 
-	      if (sortBy === 'year') {
-	        const yearDiff = Number(b.year || 0) - Number(a.year || 0);
-	        if (yearDiff !== 0) return yearDiff;
-	      }
+      if (sortBy === 'year') {
+        const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+        if (yearDiff !== 0) return yearDiff;
+      }
 
-	      if (sortBy === 'title') {
-	        return String(a.title_th || a.title_en || '').localeCompare(String(b.title_th || b.title_en || ''));
-	      }
+      if (sortBy === 'title') {
+        return String(a.title_th || a.title_en || '').localeCompare(String(b.title_th || b.title_en || ''));
+      }
 
-	      const consumedDiff = new Date(b._lastConsumedAt || b._listUpdatedAt || b._listAddedAt || 0).getTime()
-	        - new Date(a._lastConsumedAt || a._listUpdatedAt || a._listAddedAt || 0).getTime();
-      if (consumedDiff !== 0) return consumedDiff;
+      // Default: Recent activity (compare latest of all timestamps)
+      const diff = getRecentTime(b) - getRecentTime(a);
+      if (diff !== 0) return diff;
 
       return String(a.title_th || a.title_en || '').localeCompare(String(b.title_th || b.title_en || ''));
     });
@@ -316,10 +325,6 @@ export function Watchlist() {
     [showAdult]
   );
   const inProgressCount = (statusCounts.watching || 0) + (statusCounts.reading || 0);
-  const planningCount = (statusCounts.planned || 0) + (statusCounts['on-hold'] || 0);
-  const currentFilterLabel = filter === 'all'
-    ? t('watchlist.all')
-    : getLocalizedLabel(statusOptionMap.get(filter), language);
 
   const handleQuickAdvance = async (title) => {
     try {
@@ -489,55 +494,46 @@ export function Watchlist() {
   };
 
   return (
-    <div className="watchlist-page animate-fade-in">
-      <section className="section pb-0">
+    <div className="watchlist-page animate-fade-in theme-emerald">
+      <div className="watchlist-hero-bg">
+        <div className="watchlist-hero-orb watchlist-hero-orb-1" />
+        <div className="watchlist-hero-orb watchlist-hero-orb-2" />
+        <div className="watchlist-particles">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className={`watchlist-particle watchlist-particle-${i + 1}`} />
+          ))}
+        </div>
+      </div>
+      <section className="watchlist-hero-section">
         <div className="container">
           <div className="watchlist-header">
-            <div className="watchlist-header-copy">
-              <span className="watchlist-eyebrow">{t('watchlist.libraryEyebrow')}</span>
-              <h1 className="section-heading">{t('watchlist.title')}</h1>
-              <p className="watchlist-subtitle">{t('watchlist.subtitle')}</p>
-            </div>
+            <span className="watchlist-eyebrow">{t('watchlist.libraryEyebrow')}</span>
+            <h1 className="watchlist-page-title">
+              {t('watchlist.title')}
+            </h1>
+            <p className="watchlist-subtitle">{t('watchlist.subtitle')}</p>
+          </div>
 
-            <div className="watchlist-stats glass-heavy">
-              <div className="stat-item">
-                <span className="stat-value">{visiblePopulatedList.length}</span>
-                <span className="stat-label">{t('watchlist.total')}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value">{inProgressCount}</span>
-                <span className="stat-label">{t('watchlist.inProgress')}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value text-success">{statusCounts.completed || 0}</span>
-                <span className="stat-label">{t('watchlist.completed')}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value">{visibleFavoriteList.length}</span>
-                <span className="stat-label">{t('watchlist.favoritesStat')}</span>
-              </div>
+          <div className="watchlist-stats-row">
+            <div className="watchlist-stat-chip">
+              <strong className="watchlist-stat-num">{visiblePopulatedList.length}</strong>
+              <span className="watchlist-stat-label">{t('watchlist.total')}</span>
+            </div>
+            <div className="watchlist-stat-chip">
+              <strong className="watchlist-stat-num watchlist-stat-num--active">{inProgressCount}</strong>
+              <span className="watchlist-stat-label">{t('watchlist.inProgress')}</span>
+            </div>
+            <div className="watchlist-stat-chip">
+              <strong className="watchlist-stat-num watchlist-stat-num--success">{statusCounts.completed || 0}</strong>
+              <span className="watchlist-stat-label">{t('watchlist.completed')}</span>
+            </div>
+            <div className="watchlist-stat-chip">
+              <strong className="watchlist-stat-num watchlist-stat-num--fav">{visibleFavoriteList.length}</strong>
+              <span className="watchlist-stat-label">{t('watchlist.favoritesStat')}</span>
             </div>
           </div>
 
-          <div className="watchlist-overview-grid">
-            <div className="watchlist-overview-card glass-heavy">
-              <span className="watchlist-overview-label">{t('watchlist.currentPace')}</span>
-              <strong>{t('watchlist.currentPaceSummary', { count: inProgressCount })}</strong>
-              <p>{t('watchlist.currentPaceHint')}</p>
-            </div>
-            <div className="watchlist-overview-card glass-heavy">
-              <span className="watchlist-overview-label">{t('watchlist.queue')}</span>
-              <strong>{t('watchlist.queueSummary', { count: planningCount })}</strong>
-              <p>{t('watchlist.queueHint')}</p>
-            </div>
-            <div className="watchlist-overview-card glass-heavy">
-              <span className="watchlist-overview-label">{t('watchlist.taste')}</span>
-              <strong>{t('watchlist.tasteSummary', { count: prefs.favoriteMoods.length })}</strong>
-              <p>{t('watchlist.tasteHint')}</p>
-            </div>
-          </div>
-
-          <div className="watchlist-controls-shell glass-heavy">
+          <div className="watchlist-controls-shell">
             <div className="watchlist-tabs-nav" role="tablist" aria-label={t('watchlist.title')}>
               <button
                 role="tab"
@@ -569,67 +565,55 @@ export function Watchlist() {
             </div>
 
             {activeTab === 'list' && (
-              <>
-                <div id="watchlist-list-panel" role="tabpanel" className="watchlist-filter-row">
-                  <div className="status-filters scrollbar-hide" role="group" aria-label={t('watchlist.filterByStatus')}>
-                    <button
-                      className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-                      aria-pressed={filter === 'all'}
-                      onClick={() => setFilter('all')}
-                    >
-                      {t('watchlist.all')}
-                    </button>
-                    {LIST_STATUS_OPTIONS.map((option) => {
-                      const count = statusCounts[option.id] || 0;
-                      if (count === 0 && filter !== option.id) return null;
+              <div id="watchlist-list-panel" role="tabpanel" className="watchlist-filter-row">
+                <div className="status-filters scrollbar-hide" role="group" aria-label={t('watchlist.filterByStatus')}>
+                  <button
+                    className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
+                    aria-pressed={filter === 'all'}
+                    onClick={() => setFilter('all')}
+                  >
+                    {t('watchlist.all')}
+                  </button>
+                  {LIST_STATUS_OPTIONS.map((option) => {
+                    const count = statusCounts[option.id] || 0;
+                    if (count === 0 && filter !== option.id) return null;
 
-                      return (
-                        <button
-                          key={option.id}
-                          className={`filter-btn ${filter === option.id ? 'active' : ''}`}
-                          aria-pressed={filter === option.id}
-                          onClick={() => setFilter(option.id)}
-                          style={filter === option.id ? { '--filter-color': option.color } : {}}
-                        >
-                          <span className="mr-1" aria-hidden="true">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge" aria-label={t('watchlist.titlesInStatus', { count, status: getLocalizedLabel(option, language) })}>{count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="watchlist-toolbar">
-                    <SortSelect
-                      value={sortBy}
-                      onChange={setSortBy}
-                      label={t('watchlist.sort')}
-                      className="watchlist-sorter"
-                    >
-                      <option value="recent">{t('watchlist.sortOption.recent')}</option>
-                      <option value="progress">{t('watchlist.sortOption.progress')}</option>
-                      <option value="status">{t('watchlist.sortOption.status')}</option>
-                      <option value="score">{t('watchlist.sortOption.score')}</option>
-                      <option value="popularity">{t('watchlist.sortOption.popularity')}</option>
-                      <option value="year">{t('watchlist.sortOption.year')}</option>
-                      <option value="title">{t('watchlist.sortOption.title')}</option>
-                    </SortSelect>
-                  </div>
+                    return (
+                      <button
+                        key={option.id}
+                        className={`filter-btn ${filter === option.id ? 'active' : ''}`}
+                        aria-pressed={filter === option.id}
+                        onClick={() => setFilter(option.id)}
+                        style={filter === option.id ? { '--filter-color': option.color } : {}}
+                      >
+                        <span className="mr-1" aria-hidden="true">{option.icon}</span> {getLocalizedLabel(option, language)} <span className="count-badge" aria-label={t('watchlist.titlesInStatus', { count, status: getLocalizedLabel(option, language) })}>{count}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="watchlist-list-head">
-                  <div>
-                    <h2>{t('watchlist.entriesTitle')}</h2>
-                    <p>{t('watchlist.entriesSummary', { count: displayList.length, filter: currentFilterLabel.toLowerCase() })}</p>
-                  </div>
-                  <span className="watchlist-list-pill">
-                    {sortBy === 'recent' ? t('watchlist.sortedByRecent') : t('watchlist.sortedBy', { value: t(`watchlist.sortOption.${sortBy}`) })}
-                  </span>
+                <div className="watchlist-toolbar">
+                  <SortSelect
+                    value={sortBy}
+                    onChange={setSortBy}
+                    label={t('watchlist.sort')}
+                    className="watchlist-sorter"
+                  >
+                    <option value="recent">{t('watchlist.sortOption.recent')}</option>
+                    <option value="progress">{t('watchlist.sortOption.progress')}</option>
+                    <option value="status">{t('watchlist.sortOption.status')}</option>
+                    <option value="score">{t('watchlist.sortOption.score')}</option>
+                    <option value="popularity">{t('watchlist.sortOption.popularity')}</option>
+                    <option value="year">{t('watchlist.sortOption.year')}</option>
+                    <option value="title">{t('watchlist.sortOption.title')}</option>
+                  </SortSelect>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
           {activeTab === 'favorites' && (
-            <div id="watchlist-favorites-panel" role="tabpanel" className="watchlist-favorites glass-heavy">
+            <div id="watchlist-favorites-panel" role="tabpanel" className="watchlist-favorites">
               <div className="watchlist-favorites-header">
                 <div>
                   <h2><Heart size={18} /> {t('watchlist.favoritesHeader')}</h2>
@@ -716,15 +700,7 @@ export function Watchlist() {
 
                   return (
                     <div key={title.id} className="watchlist-item-wrapper">
-                      <div className="watchlist-item-top-row">
-                        <div
-                          className="status-indicator"
-                          style={{
-                            backgroundColor: statusOptionMap.get(title._listStatus)?.color,
-                          }}
-                        >
-                          {getLocalizedLabel(statusOptionMap.get(title._listStatus), language)}
-                        </div>
+                      <div className="watchlist-item-top-row" style={{ justifyContent: 'flex-end' }}>
                         <button
                           className="watchlist-share-btn"
                           onClick={() => setShareTarget({ title, listItem: watchlistItemMap.get(title.id) })}
