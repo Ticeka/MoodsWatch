@@ -27,9 +27,7 @@ import {
 } from '@/features/tierlist/lib/tierlistStore';
 import {
   getThemeSongSummary,
-  getTierRowFallbackLabel,
 } from '@/features/tierlist/lib/tierlistLabels';
-import { loadExportImage } from '@/features/tierlist/lib/tierlistExportUtils';
 import { Button } from '@/shared/components/ui/Button';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { BRAND_NAME } from '@/shared/config/brand';
@@ -39,6 +37,55 @@ import {
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+
+const EXPORT_TILE_W = 90;
+const EXPORT_TILE_H = 120;
+const EXPORT_LABEL_W = 100;
+const EXPORT_HEADER_H = 44;
+const EXPORT_GAP = 1;
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, 'image/png');
+  });
+}
+
+function resolveExportImageUrl(src) {
+  if (import.meta.env.DEV && src.startsWith('https://s4.anilist.co/')) {
+    return src.replace('https://s4.anilist.co/', '/anilist-img/');
+  }
+  return src;
+}
+
+function loadImageForCanvas(src) {
+  const url = resolveExportImageUrl(src);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function drawCoverImage(ctx, img, x, y, w, h) {
+  if (!img?.naturalWidth || !img?.naturalHeight) return;
+  const imgAspect = img.naturalWidth / img.naturalHeight;
+  const boxAspect = w / h;
+  let sx, sy, sw, sh;
+  if (imgAspect > boxAspect) {
+    sh = img.naturalHeight;
+    sw = sh * boxAspect;
+    sx = (img.naturalWidth - sw) / 2;
+    sy = 0;
+  } else {
+    sw = img.naturalWidth;
+    sh = sw / boxAspect;
+    sx = 0;
+    sy = (img.naturalHeight - sh) / 2;
+  }
+  ctx.drawImage(img, Math.round(sx), Math.round(sy), Math.round(sw), Math.round(sh), x, y, w, h);
+}
 
 export function TierListEditor({ tierList, setTierList, titleById, query, setQuery, pick, readOnly = false }) {
   const { user } = useAuth();
@@ -150,53 +197,141 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
     }
   });
 
-  const resolveInsertIndex = (dropzone, clientX) => {
-    const tiles = Array.from(dropzone.querySelectorAll('.tiermaker-tile[data-tier-tile="true"]'));
-    for (let index = 0; index < tiles.length; index += 1) {
-      const rect = tiles[index].getBoundingClientRect();
-      if (clientX < rect.left + rect.width / 2) {
-        return index;
+  const resolveInsertIndex = (dropzone, clientX, clientY) => {
+    const tiles = Array.from(dropzone.querySelectorAll('.tiermaker-tile[data-tier-tile="true"]'))
+      .map((tile, index) => ({ index, rect: tile.getBoundingClientRect() }));
+
+    if (tiles.length === 0) {
+      return 0;
+    }
+
+    const VISUAL_ROW_TOLERANCE = 10;
+    const visualRows = [];
+
+    tiles.forEach((tile) => {
+      const existingRow = visualRows.find((row) => Math.abs(row.top - tile.rect.top) <= VISUAL_ROW_TOLERANCE);
+      if (existingRow) {
+        existingRow.tiles.push(tile);
+        existingRow.top = Math.min(existingRow.top, tile.rect.top);
+        existingRow.bottom = Math.max(existingRow.bottom, tile.rect.bottom);
+      } else {
+        visualRows.push({
+          top: tile.rect.top,
+          bottom: tile.rect.bottom,
+          tiles: [tile],
+        });
+      }
+    });
+
+    visualRows.sort((left, right) => left.top - right.top);
+    visualRows.forEach((row) => {
+      row.tiles.sort((left, right) => left.rect.left - right.rect.left);
+    });
+
+    const dropzoneRect = dropzone.getBoundingClientRect();
+    const normalizedY = Number.isFinite(clientY) ? clientY : dropzoneRect.top;
+    const clampedY = Math.max(dropzoneRect.top, Math.min(dropzoneRect.bottom, normalizedY));
+
+    let targetVisualRow = visualRows[visualRows.length - 1];
+    for (const row of visualRows) {
+      if (clampedY <= row.bottom) {
+        targetVisualRow = row;
+        break;
       }
     }
-    return tiles.length;
+
+    for (const tile of targetVisualRow.tiles) {
+      if (clientX < tile.rect.left + tile.rect.width / 2) {
+        return tile.index;
+      }
+    }
+
+    const lastTileInRow = targetVisualRow.tiles[targetVisualRow.tiles.length - 1];
+    if (targetVisualRow === visualRows[visualRows.length - 1]) {
+      return tiles.length;
+    }
+
+    return lastTileInRow.index + 1;
   };
 
   const resolveDragTarget = useEffectEvent((clientX, clientY) => {
-    const hovered = document.elementFromPoint(clientX, clientY);
-    if (!(hovered instanceof HTMLElement)) {
-      return null;
+    const board = boardRef.current;
+    if (board instanceof HTMLElement) {
+      const rows = Array.from(board.querySelectorAll('.tiermaker-row[data-row-id]'));
+      for (const row of rows) {
+        if (!(row instanceof HTMLElement)) {
+          continue;
+        }
+
+        const rect = row.getBoundingClientRect();
+        if (clientY < rect.top || clientY > rect.bottom) {
+          continue;
+        }
+
+        const rowId = row.dataset.rowId || '';
+        const dropzone = row.querySelector('.tiermaker-dropzone');
+        return {
+          type: 'row',
+          rowId,
+          insertIndex: dropzone instanceof HTMLElement ? resolveInsertIndex(dropzone, clientX, clientY) : null,
+        };
+      }
     }
 
-    const slot = hovered.closest('.tiermaker-insert-slot[data-row-id]');
-    if (slot instanceof HTMLElement) {
-      return {
-        type: 'row',
-        rowId: slot.dataset.rowId || '',
-        insertIndex: Number(slot.dataset.insertIndex || 0),
-      };
-    }
-
-    const row = hovered.closest('.tiermaker-row[data-row-id]');
-    if (row instanceof HTMLElement) {
-      const rowId = row.dataset.rowId || '';
-      const dropzone = row.querySelector('.tiermaker-dropzone');
-      return {
-        type: 'row',
-        rowId,
-        insertIndex: dropzone instanceof HTMLElement ? resolveInsertIndex(dropzone, clientX) : null,
-      };
-    }
-
-    const pool = hovered.closest('.tiermaker-pool[data-drop-pool="true"], .tiermaker-pool-rail');
+    const pool = document.querySelector('.tiermaker-pool[data-drop-pool="true"], .tiermaker-pool-rail');
     if (pool instanceof HTMLElement) {
-      return { type: 'pool' };
+      const poolRect = pool.getBoundingClientRect();
+      if (
+        clientX >= poolRect.left
+        && clientX <= poolRect.right
+        && clientY >= poolRect.top
+        && clientY <= poolRect.bottom
+      ) {
+        return { type: 'pool' };
+      }
+    }
+
+    const hovered = document.elementFromPoint(clientX, clientY);
+    if (hovered instanceof HTMLElement) {
+      const fallbackPool = hovered.closest('.tiermaker-pool[data-drop-pool="true"], .tiermaker-pool-rail');
+      if (fallbackPool instanceof HTMLElement) {
+        return { type: 'pool' };
+      }
+    }
+
+    if (
+      board instanceof HTMLElement
+      && clientX >= board.getBoundingClientRect().left
+      && clientX <= board.getBoundingClientRect().right
+    ) {
+      const rows = Array.from(board.querySelectorAll('.tiermaker-row[data-row-id]'));
+      if (rows.length > 0) {
+        const lastRow = rows[rows.length - 1];
+        if (lastRow instanceof HTMLElement) {
+          const lastRect = lastRow.getBoundingClientRect();
+          if (clientY > lastRect.bottom) {
+            const rowId = lastRow.dataset.rowId || '';
+            const dropzone = lastRow.querySelector('.tiermaker-dropzone');
+            return {
+              type: 'row',
+              rowId,
+              insertIndex: dropzone instanceof HTMLElement ? resolveInsertIndex(dropzone, clientX, clientY) : null,
+            };
+          }
+        }
+      }
     }
 
     return null;
   });
 
   const resolveRowDragTarget = useEffectEvent((clientY) => {
-    const rows = Array.from(document.querySelectorAll('.tiermaker-row[data-row-id]'));
+    const board = boardRef.current;
+    if (!(board instanceof HTMLElement)) {
+      return null;
+    }
+
+    const rows = Array.from(board.querySelectorAll('.tiermaker-row[data-row-id]'));
     if (rows.length === 0) {
       return null;
     }
@@ -455,83 +590,82 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
   const handleDownload = async () => {
     setIsExporting(true);
     try {
-      const labelWidth = 108;
-      const tileSize = 74;
-      const rowGap = 4;
-      const boardPadding = 18;
-      const titleBarHeight = 54;
-      const longestRow = Math.max(1, ...tierList.rows.map((row) => row.titleIds.length));
+      const rows = tierList.rows;
+      const maxItems = Math.max(...rows.map((r) => r.titleIds.length), 0);
+
+      const canvasW = EXPORT_LABEL_W + maxItems * EXPORT_TILE_W + (maxItems + 1) * EXPORT_GAP;
+      const canvasH = EXPORT_HEADER_H + rows.length * (EXPORT_TILE_H + EXPORT_GAP) + EXPORT_GAP;
+
+      const scale = Math.min(2, window.devicePixelRatio || 1);
       const canvas = document.createElement('canvas');
-      const width = boardPadding * 2 + labelWidth + longestRow * tileSize;
-      const height = boardPadding * 2 + titleBarHeight + tierList.rows.length * (tileSize + rowGap) - rowGap;
+      canvas.width = canvasW * scale;
+      canvas.height = canvasH * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
 
-      canvas.width = width;
-      canvas.height = height;
+      // Background
+      ctx.fillStyle = '#111111';
+      ctx.fillRect(0, 0, canvasW, canvasH);
 
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('Canvas unavailable');
-      }
+      // Header
+      ctx.fillStyle = '#18182a';
+      ctx.fillRect(0, 0, canvasW, EXPORT_HEADER_H);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tierList.title || 'Tier List', 12, EXPORT_HEADER_H / 2);
+      ctx.fillStyle = '#666680';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(BRAND_NAME, canvasW - 12, EXPORT_HEADER_H / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
 
-      context.fillStyle = '#111111';
-      context.fillRect(0, 0, width, height);
+      // Pre-load all images in parallel
+      const allIds = [...new Set(rows.flatMap((r) => r.titleIds).map(Number).filter(Boolean))];
+      const imageCache = new Map();
+      await Promise.allSettled(allIds.map(async (id) => {
+        const entity = titleById.get(id);
+        if (!entity) return;
+        const src = getTitleArtwork(entity);
+        if (!src || src.startsWith('/') || imageCache.has(src)) return;
+        const img = await loadImageForCanvas(src);
+        if (img) imageCache.set(src, img);
+      }));
 
-      context.fillStyle = '#1b1b1b';
-      context.fillRect(boardPadding, boardPadding, width - boardPadding * 2, titleBarHeight);
-      context.fillStyle = '#ffffff';
-      context.font = '700 22px Arial';
-      context.fillText(tierList.title || 'Tier List', boardPadding + 14, boardPadding + 32);
-      context.fillStyle = 'rgba(255,255,255,0.72)';
-      context.font = '14px Arial';
-      context.fillText(pick(`จัดอันดับด้วย ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`), boardPadding + 14, boardPadding + 47);
+      // Draw rows
+      rows.forEach((row, rowIndex) => {
+        const rowY = EXPORT_HEADER_H + rowIndex * (EXPORT_TILE_H + EXPORT_GAP) + EXPORT_GAP;
 
-      const imageEntries = await Promise.all(
-        tierList.rows.flatMap((row) => row.titleIds).map(async (titleId) => {
-          const title = titleById.get(Number(titleId));
-          if (!title) {
-            return [titleId, null];
-          }
-          const image = await loadExportImage(getTitleArtwork(title));
-          return [titleId, image];
-        })
-      );
-      const imageByTitleId = new Map(imageEntries);
+        // Label cell
+        ctx.fillStyle = row.color || TIER_COLORS[rowIndex % TIER_COLORS.length];
+        ctx.fillRect(0, rowY, EXPORT_LABEL_W, EXPORT_TILE_H);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, rowY, EXPORT_LABEL_W, EXPORT_TILE_H);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const label = row.label || '';
+        ctx.fillText(label, EXPORT_LABEL_W / 2, rowY + EXPORT_TILE_H / 2);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
 
-      tierList.rows.forEach((row, rowIndex) => {
-        const top = boardPadding + titleBarHeight + 12 + rowIndex * (tileSize + rowGap);
-        const labelColor = row.color || TIER_COLORS[rowIndex % TIER_COLORS.length];
-
-        context.fillStyle = labelColor;
-        context.fillRect(boardPadding, top, labelWidth, tileSize);
-
-        context.fillStyle = 'rgba(17,17,17,0.88)';
-        context.font = '700 30px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(row.label || getTierRowFallbackLabel(rowIndex, pick), boardPadding + labelWidth / 2, top + tileSize / 2);
-
-        context.fillStyle = '#222222';
-        context.fillRect(boardPadding + labelWidth, top, width - boardPadding * 2 - labelWidth, tileSize);
-
-        row.titleIds.forEach((titleId, titleIndex) => {
-          const image = imageByTitleId.get(titleId);
-          const tileLeft = boardPadding + labelWidth + titleIndex * tileSize;
-          context.fillStyle = '#2e2e2e';
-          context.fillRect(tileLeft, top, tileSize, tileSize);
-
-          if (image) {
-            context.drawImage(image, tileLeft, top, tileSize, tileSize);
-          } else {
-            context.fillStyle = 'rgba(255,255,255,0.16)';
-            context.fillRect(tileLeft + 4, top + 4, tileSize - 8, tileSize - 8);
+        // Image tiles
+        row.titleIds.forEach((id, imgIndex) => {
+          const tileX = EXPORT_LABEL_W + imgIndex * EXPORT_TILE_W + (imgIndex + 1) * EXPORT_GAP;
+          ctx.fillStyle = '#1e1e2a';
+          ctx.fillRect(tileX, rowY, EXPORT_TILE_W, EXPORT_TILE_H);
+          const entity = titleById.get(Number(id));
+          if (entity) {
+            const src = getTitleArtwork(entity);
+            const img = imageCache.get(src);
+            if (img) drawCoverImage(ctx, img, tileX, rowY, EXPORT_TILE_W, EXPORT_TILE_H);
           }
         });
       });
 
-      const blob = await new Promise((resolve) => {
-        canvas.toBlob(resolve, 'image/png');
-      });
-
+      const blob = await canvasToBlob(canvas);
       if (!blob) {
         toast.error(pick('ส่งออกไม่สำเร็จ', 'Export failed'));
         return;
@@ -886,6 +1020,7 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
                           title={title}
                           fromRowId={row.id}
                           fromIndex={titleIndex}
+                          eager
                           isDragging={dragState?.titleId === Number(title.id) && dragState?.fromRowId === row.id && dragState?.fromIndex === titleIndex}
                           onPointerDragStart={readOnly ? null : beginPointerDrag}
                           onPreviewSong={isSongTierList ? handlePreviewSong : null}

@@ -18,12 +18,15 @@ import {
 } from '@/shared/lib/catalogEntities';
 
 const DEFAULT_PAGE_SIZE = 24;
+const BATTLE_CATALOG_CACHE_TTL_MS = 60 * 1000;
 const EMPTY_FILTER_OPTIONS = {
   genres: [],
   tags: [],
   moods: [],
   trailerProviders: [],
 };
+const battleCatalogCache = new Map();
+const battleCatalogRequestCache = new Map();
 
 function normalizeNumericIdList(ids = []) {
   return [...new Set((ids || []).map(Number).filter(Boolean))];
@@ -31,6 +34,52 @@ function normalizeNumericIdList(ids = []) {
 
 function normalizeTextList(values = []) {
   return [...new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function getCacheKey(prefix, params = {}) {
+  return `${prefix}:${JSON.stringify(params)}`;
+}
+
+function getCachedValue(cacheKey) {
+  const cached = battleCatalogCache.get(cacheKey);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() - cached.timestamp >= BATTLE_CATALOG_CACHE_TTL_MS) {
+    battleCatalogCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.value;
+}
+
+async function withCatalogCache(cacheKey, loader) {
+  const cached = getCachedValue(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  if (battleCatalogRequestCache.has(cacheKey)) {
+    return battleCatalogRequestCache.get(cacheKey);
+  }
+
+  const request = (async () => {
+    const value = await loader();
+    battleCatalogCache.set(cacheKey, {
+      timestamp: Date.now(),
+      value,
+    });
+    return value;
+  })();
+
+  battleCatalogRequestCache.set(cacheKey, request);
+
+  try {
+    return await request;
+  } finally {
+    battleCatalogRequestCache.delete(cacheKey);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,75 +109,94 @@ export async function fetchBattleTitlesPage({
   page = 0,
   pageSize = DEFAULT_PAGE_SIZE,
 } = {}) {
-  const { data, error } = await supabase.rpc('search_battle_titles', {
-    p_type: type || 'all',
-    p_tag: tag || '',
-    p_mood: mood || '',
-    p_query: query || '',
-    p_trailer_state: trailerState || 'all',
-    p_trailer_provider: trailerProvider || 'all',
-    p_show_adult: Boolean(showAdult),
-    p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
-    p_page: Math.max(0, page),
-    p_page_size: Math.max(1, pageSize),
+  return withCatalogCache(getCacheKey('battle-titles', {
+    type,
+    tag,
+    mood,
+    query,
+    trailerState,
+    trailerProvider,
+    showAdult,
+    hiddenTitleIds: normalizeNumericIdList(hiddenTitleIds),
+    page: Math.max(0, page),
+    pageSize: Math.max(1, pageSize),
+  }), async () => {
+    const { data, error } = await supabase.rpc('search_battle_titles', {
+      p_type: type || 'all',
+      p_tag: tag || '',
+      p_mood: mood || '',
+      p_query: query || '',
+      p_trailer_state: trailerState || 'all',
+      p_trailer_provider: trailerProvider || 'all',
+      p_show_adult: Boolean(showAdult),
+      p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
+      p_page: Math.max(0, page),
+      p_page_size: Math.max(1, pageSize),
+    });
+
+    if (error) throw error;
+
+    const rows = (data || []).map((row) => {
+      const total = row.total_count;
+      const mapped = mapCanonicalTitle(row);
+      mapped._totalCount = Number(total || 0);
+      return mapped;
+    });
+
+    const total = rows.length > 0 ? (rows[0]._totalCount || 0) : 0;
+    rows.forEach((row) => { delete row._totalCount; });
+
+    return { rows, total };
   });
-
-  if (error) throw error;
-
-  const rows = (data || []).map((row) => {
-    const total = row.total_count; // saved before mapCanonicalTitle strips it
-    const mapped = mapCanonicalTitle(row);
-    mapped._totalCount = Number(total || 0); // stash for extraction
-    return mapped;
-  });
-
-  const total = rows.length > 0 ? (rows[0]._totalCount || 0) : 0;
-  // clean stash
-  rows.forEach((r) => { delete r._totalCount; });
-
-  return { rows, total };
 }
 
 export async function fetchBattleTitleBySlug(slug) {
   const normalizedSlug = String(slug || '').trim();
   if (!normalizedSlug) return null;
 
-  const { data, error } = await supabase
-    .from('canonical_titles')
-    .select(`
-      id, slug, canonical_title, type, subtype,
-      release_year, is_adult, cover_image, banner_image,
-      aliases:aliases_cache
-    `)
-    .eq('slug', normalizedSlug)
-    .maybeSingle();
+  return withCatalogCache(getCacheKey('battle-title-by-slug', { slug: normalizedSlug }), async () => {
+    const { data, error } = await supabase
+      .from('canonical_titles')
+      .select(`
+        id, slug, canonical_title, type, subtype,
+        release_year, is_adult, cover_image, banner_image,
+        aliases:aliases_cache
+      `)
+      .eq('slug', normalizedSlug)
+      .maybeSingle();
 
-  if (error) throw error;
-  return data ? mapCanonicalTitle(data) : null;
+    if (error) throw error;
+    return data ? mapCanonicalTitle(data) : null;
+  });
 }
 
 export async function fetchBattleTitleFacets({
   showAdult = false,
   hiddenTitleIds = [],
 } = {}) {
-  const { data, error } = await supabase.rpc('get_battle_title_facets', {
-    p_show_adult: Boolean(showAdult),
-    p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
+  return withCatalogCache(getCacheKey('battle-title-facets', {
+    showAdult: Boolean(showAdult),
+    hiddenTitleIds: normalizeNumericIdList(hiddenTitleIds),
+  }), async () => {
+    const { data, error } = await supabase.rpc('get_battle_title_facets', {
+      p_show_adult: Boolean(showAdult),
+      p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
+    });
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      return EMPTY_FILTER_OPTIONS;
+    }
+
+    return {
+      genres: normalizeTextList(row.genres),
+      tags: normalizeTextList(row.tags),
+      moods: normalizeTextList(row.moods),
+      trailerProviders: normalizeTextList(row.trailer_providers),
+    };
   });
-
-  if (error) throw error;
-
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) {
-    return EMPTY_FILTER_OPTIONS;
-  }
-
-  return {
-    genres: normalizeTextList(row.genres),
-    tags: normalizeTextList(row.tags),
-    moods: normalizeTextList(row.moods),
-    trailerProviders: normalizeTextList(row.trailer_providers),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -143,25 +211,28 @@ export async function fetchBattleThemeSongsPage({
   page = 0,
   pageSize = DEFAULT_PAGE_SIZE,
 } = {}) {
-  const { data, error } = await supabase.rpc('search_battle_theme_songs', {
-    p_query: query || '',
-    p_show_adult: Boolean(showAdult),
-    p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
-    p_page: Math.max(0, page),
-    p_page_size: Math.max(1, pageSize),
+  return withCatalogCache(getCacheKey('battle-theme-songs', {
+    query,
+    showAdult: Boolean(showAdult),
+    hiddenTitleIds: normalizeNumericIdList(hiddenTitleIds),
+    page: Math.max(0, page),
+    pageSize: Math.max(1, pageSize),
+  }), async () => {
+    const { data, error } = await supabase.rpc('search_battle_theme_songs', {
+      p_query: query || '',
+      p_show_adult: Boolean(showAdult),
+      p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
+      p_page: Math.max(0, page),
+      p_page_size: Math.max(1, pageSize),
+    });
+
+    if (error) throw error;
+
+    const totalCount = data?.length > 0 ? Number(data[0].total_count || 0) : 0;
+    const rows = (data || []).map((row) => buildThemeSongEntity(row, buildSourceTitleFromSongRow(row)));
+
+    return { rows, total: totalCount };
   });
-
-  if (error) throw error;
-
-  const totalCount = data?.length > 0 ? Number(data[0].total_count || 0) : 0;
-
-  const rows = (data || []).map((row) => {
-    // Reconstruct a minimal sourceTitle that buildThemeSongEntity expects
-    const sourceTitle = buildSourceTitleFromSongRow(row);
-    return buildThemeSongEntity(row, sourceTitle);
-  });
-
-  return { rows, total: totalCount };
 }
 
 export async function fetchBattleTrailersPage({
@@ -204,28 +275,38 @@ export async function fetchBattleCharactersPage({
   page = 0,
   pageSize = DEFAULT_PAGE_SIZE,
 } = {}) {
-  const { data, error } = await supabase.rpc('search_battle_characters', {
-    p_type: type || 'all',
-    p_tag: tag || '',
-    p_mood: mood || '',
-    p_query: query || '',
-    p_show_adult: Boolean(showAdult),
-    p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
-    p_page: Math.max(0, page),
-    p_page_size: Math.max(1, pageSize),
+  return withCatalogCache(getCacheKey('battle-characters', {
+    type,
+    tag,
+    mood,
+    query,
+    showAdult: Boolean(showAdult),
+    hiddenTitleIds: normalizeNumericIdList(hiddenTitleIds),
+    page: Math.max(0, page),
+    pageSize: Math.max(1, pageSize),
+  }), async () => {
+    const { data, error } = await supabase.rpc('search_battle_characters', {
+      p_type: type || 'all',
+      p_tag: tag || '',
+      p_mood: mood || '',
+      p_query: query || '',
+      p_show_adult: Boolean(showAdult),
+      p_hidden_title_ids: normalizeNumericIdList(hiddenTitleIds),
+      p_page: Math.max(0, page),
+      p_page_size: Math.max(1, pageSize),
+    });
+
+    if (error) throw error;
+
+    return {
+      rows: (data || []).map((row) => buildCharacterEntity(
+        buildSourceTitleFromCharacterRow(row),
+        row,
+        Number(row.character_index || 0),
+      )),
+      total: data?.length > 0 ? Number(data[0].total_count || 0) : 0,
+    };
   });
-
-  if (error) throw error;
-
-  const rows = (data || []).map((row) => {
-    const sourceTitle = buildSourceTitleFromCharacterRow(row);
-    return buildCharacterEntity(sourceTitle, row, Number(row.character_index || 0));
-  });
-
-  return {
-    rows,
-    total: data?.length > 0 ? Number(data[0].total_count || 0) : 0,
-  };
 }
 
 function buildSourceTitleFromSongRow(row) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
@@ -54,6 +54,10 @@ export function TierListCreatePage() {
   const [songEntityCache, setSongEntityCache] = useState(new Map());
   const [isSongsLoading, setIsSongsLoading] = useState(false);
   const [isAudienceSwitching, setIsAudienceSwitching] = useState(false);
+  const catalogResponseCacheRef = useRef(new Map());
+  const catalogRequestCacheRef = useRef(new Map());
+  const previousCatalogPageRef = useRef(1);
+  const pickerSectionRef = useRef(null);
   const {
     closeCoverEditor,
     coverFileInputRef,
@@ -86,6 +90,34 @@ export function TierListCreatePage() {
     userId: user?.id || null,
   });
 
+  const scrollTierlistCatalogToTop = () => {
+    if (typeof window === 'undefined' || !pickerSectionRef.current) {
+      return;
+    }
+
+    const sectionTop = pickerSectionRef.current.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({
+      top: Math.max(0, sectionTop - 16),
+      behavior: 'smooth',
+    });
+  };
+
+  const getCatalogRequestKey = ({
+    nextEntityType,
+    nextTypeFilter,
+    nextQuery,
+    nextSortBy,
+    nextPage,
+    nextShowAdult,
+  }) => JSON.stringify({
+    entityType: normalizeCatalogEntityType(nextEntityType),
+    typeFilter: nextTypeFilter === 'all' ? 'all' : String(nextTypeFilter || ''),
+    query: String(nextQuery || '').trim().toLowerCase(),
+    sortBy: String(nextSortBy || 'popularity'),
+    page: Math.max(1, Number(nextPage) || 1),
+    showAdult: Boolean(nextShowAdult),
+  });
+
   // Initialise library in background (no catalog needed)
   useEffect(() => {
     if (isAuthLoading) return;
@@ -100,43 +132,101 @@ export function TierListCreatePage() {
   // Debounce search query and reset to page 1
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedQuery(
-        normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE
-          ? ''
-          : titleQuery
-      );
+      setDebouncedQuery(titleQuery);
       setCatalogPage(1);
     }, 400);
     return () => clearTimeout(timer);
-  }, [entityType, titleQuery]);
+  }, [titleQuery]);
 
   // Server-side paginated fetch for all entity types (title, character, song)
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    setLoadError('');
     const isCharMode = normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE;
     const fetchFn = isCharMode ? getCharactersPage : getTitlesPage;
-    fetchFn({
+    const requestParams = {
       type: typeFilter === 'all' ? undefined : typeFilter,
       query: debouncedQuery,
       sortBy,
       page: catalogPage,
       pageSize: 30,
       showAdult,
-    }).then((result) => {
+    };
+    const requestKey = getCatalogRequestKey({
+      nextEntityType: entityType,
+      nextTypeFilter: typeFilter,
+      nextQuery: debouncedQuery,
+      nextSortBy: sortBy,
+      nextPage: catalogPage,
+      nextShowAdult: showAdult,
+    });
+    const cachedResponse = catalogResponseCacheRef.current.get(requestKey);
+
+    if (cachedResponse) {
+      setPagedEntries(cachedResponse.items);
+      setCatalogTotalPages(cachedResponse.totalPages);
+      setCatalogTotal(cachedResponse.total);
+      setIsLoading(false);
+      setLoadError('');
+    } else {
+      setIsLoading(true);
+      setLoadError('');
+    }
+
+    const activeRequest = catalogRequestCacheRef.current.get(requestKey)
+      || fetchFn(requestParams);
+    catalogRequestCacheRef.current.set(requestKey, activeRequest);
+
+    activeRequest.then((result) => {
       if (cancelled) return;
+      catalogResponseCacheRef.current.set(requestKey, result);
       setPagedEntries(result.items);
       setCatalogTotalPages(result.totalPages);
       setCatalogTotal(result.total);
       setIsLoading(false);
+
+      const nextPage = Number(result.page || catalogPage) + 1;
+      if (nextPage <= Number(result.totalPages || 1)) {
+        const nextRequestKey = getCatalogRequestKey({
+          nextEntityType: entityType,
+          nextTypeFilter: typeFilter,
+          nextQuery: debouncedQuery,
+          nextSortBy: sortBy,
+          nextPage,
+          nextShowAdult: showAdult,
+        });
+
+        if (!catalogResponseCacheRef.current.has(nextRequestKey) && !catalogRequestCacheRef.current.has(nextRequestKey)) {
+          const prefetchPromise = fetchFn({
+            ...requestParams,
+            page: nextPage,
+          })
+            .then((nextResult) => {
+              catalogResponseCacheRef.current.set(nextRequestKey, nextResult);
+              return nextResult;
+            })
+            .finally(() => {
+              catalogRequestCacheRef.current.delete(nextRequestKey);
+            });
+
+          catalogRequestCacheRef.current.set(nextRequestKey, prefetchPromise);
+        }
+      }
     }).catch((error) => {
       if (cancelled) return;
       setLoadError(error?.message || pick('โหลดแคตตาล็อกสำหรับสร้างเทมเพลตไม่สำเร็จ', 'Failed to load the catalog for template creation'));
       setIsLoading(false);
+    }).finally(() => {
+      catalogRequestCacheRef.current.delete(requestKey);
     });
     return () => { cancelled = true; };
   }, [entityType, typeFilter, debouncedQuery, sortBy, catalogPage, showAdult, pick]);
+
+  useEffect(() => {
+    if (previousCatalogPageRef.current !== catalogPage) {
+      scrollTierlistCatalogToTop();
+      previousCatalogPageRef.current = catalogPage;
+    }
+  }, [catalogPage]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -640,6 +730,7 @@ export function TierListCreatePage() {
           onTypeFilterChange={handleTypeFilterChange}
           pick={pick}
           preloadSongsForTitle={preloadSongsForTitle}
+          sectionRef={pickerSectionRef}
           selectedIds={selectedIds}
           songEntityCache={songEntityCache}
           songQuery={songQuery}
@@ -670,6 +761,7 @@ export function TierListCreatePage() {
           onToggleTitle={toggleTitle}
           onTypeFilterChange={handleTypeFilterChange}
           pick={pick}
+          sectionRef={pickerSectionRef}
           selectedIds={selectedIds}
           sortBy={sortBy}
           statusFilter={statusFilter}

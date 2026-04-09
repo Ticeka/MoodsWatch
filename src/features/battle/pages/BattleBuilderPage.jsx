@@ -44,6 +44,7 @@ import {
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import '../styles/Battle.css';
 
 const TYPE_OPTIONS = [
@@ -234,6 +235,7 @@ export function BattleBuilderPage() {
   const [editingDeck, setEditingDeck] = useState(null);
   const [hasLoadedEditDeck, setHasLoadedEditDeck] = useState(false);
   const deferredFilters = useDeferredValue(filters);
+  const debouncedQuery = useDebouncedValue(filters.query, 300);
   const editDeckId = searchParams.get('deckId');
   const songTitleSlug = searchParams.get('songTitleSlug');
   const normalizedHiddenTitleIds = useMemo(
@@ -244,6 +246,10 @@ export function BattleBuilderPage() {
   const isSongEntity = filters.entityType === THEME_SONG_ENTITY_TYPE;
   const isTrailerEntity = filters.entityType === TRAILER_ENTITY_TYPE;
   const usesRemoteCatalog = true;
+  const debouncedCatalogFilters = useMemo(() => ({
+    ...deferredFilters,
+    query: debouncedQuery,
+  }), [debouncedQuery, deferredFilters]);
 
   // Song battle mode: auto-fetch songs for a title and start a battle session
   useEffect(() => {
@@ -357,38 +363,80 @@ export function BattleBuilderPage() {
         const result = isSongEntity
           ? await fetchBattleThemeSongsPage({
               ...params,
-              query: deferredFilters.query || '',
+              query: debouncedCatalogFilters.query || '',
             })
           : isCharacterEntity
             ? await fetchBattleCharactersPage({
                 ...params,
-                type: deferredFilters.type || 'all',
-                tag: deferredFilters.tag || '',
-                mood: deferredFilters.mood || '',
-                query: deferredFilters.query || '',
+                type: debouncedCatalogFilters.type || 'all',
+                tag: debouncedCatalogFilters.tag || '',
+                mood: debouncedCatalogFilters.mood || '',
+                query: debouncedCatalogFilters.query || '',
               })
           : isTrailerEntity
             ? await fetchBattleTrailersPage({
                 ...params,
-                type: deferredFilters.type || 'all',
-                tag: deferredFilters.tag || '',
-                mood: deferredFilters.mood || '',
-                query: deferredFilters.query || '',
-                trailerProvider: deferredFilters.trailerProvider || 'all',
+                type: debouncedCatalogFilters.type || 'all',
+                tag: debouncedCatalogFilters.tag || '',
+                mood: debouncedCatalogFilters.mood || '',
+                query: debouncedCatalogFilters.query || '',
+                trailerProvider: debouncedCatalogFilters.trailerProvider || 'all',
               })
           : await fetchBattleTitlesPage({
               ...params,
-              type: deferredFilters.type || 'all',
-              tag: deferredFilters.tag || '',
-              mood: deferredFilters.mood || '',
-              query: deferredFilters.query || '',
-              trailerState: deferredFilters.trailerState || 'all',
-              trailerProvider: deferredFilters.trailerProvider || 'all',
+              type: debouncedCatalogFilters.type || 'all',
+              tag: debouncedCatalogFilters.tag || '',
+              mood: debouncedCatalogFilters.mood || '',
+              query: debouncedCatalogFilters.query || '',
+              trailerState: debouncedCatalogFilters.trailerState || 'all',
+              trailerProvider: debouncedCatalogFilters.trailerProvider || 'all',
             });
 
         if (!cancelled) {
           setCatalogRows(result.rows || []);
           setCatalogTotal(Number(result.total || 0));
+
+          const nextPage = catalogPage + 1;
+          if (nextPage < Math.max(1, Math.ceil(Number(result.total || 0) / BATTLE_CATALOG_PAGE_SIZE))) {
+            const nextParams = {
+              ...params,
+              page: nextPage,
+            };
+
+            if (isSongEntity) {
+              fetchBattleThemeSongsPage({
+                ...nextParams,
+                query: debouncedCatalogFilters.query || '',
+              }).catch(() => {});
+            } else if (isCharacterEntity) {
+              fetchBattleCharactersPage({
+                ...nextParams,
+                type: debouncedCatalogFilters.type || 'all',
+                tag: debouncedCatalogFilters.tag || '',
+                mood: debouncedCatalogFilters.mood || '',
+                query: debouncedCatalogFilters.query || '',
+              }).catch(() => {});
+            } else if (isTrailerEntity) {
+              fetchBattleTrailersPage({
+                ...nextParams,
+                type: debouncedCatalogFilters.type || 'all',
+                tag: debouncedCatalogFilters.tag || '',
+                mood: debouncedCatalogFilters.mood || '',
+                query: debouncedCatalogFilters.query || '',
+                trailerProvider: debouncedCatalogFilters.trailerProvider || 'all',
+              }).catch(() => {});
+            } else {
+              fetchBattleTitlesPage({
+                ...nextParams,
+                type: debouncedCatalogFilters.type || 'all',
+                tag: debouncedCatalogFilters.tag || '',
+                mood: debouncedCatalogFilters.mood || '',
+                query: debouncedCatalogFilters.query || '',
+                trailerState: debouncedCatalogFilters.trailerState || 'all',
+                trailerProvider: debouncedCatalogFilters.trailerProvider || 'all',
+              }).catch(() => {});
+            }
+          }
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -407,7 +455,7 @@ export function BattleBuilderPage() {
 
     loadRemoteCatalog();
     return () => { cancelled = true; };
-  }, [catalogPage, deferredFilters, isCharacterEntity, isSongEntity, isTrailerEntity, normalizedHiddenTitleIds, showAdult, songTitleSlug, t, usesRemoteCatalog]);
+  }, [catalogPage, debouncedCatalogFilters, isCharacterEntity, isSongEntity, isTrailerEntity, normalizedHiddenTitleIds, showAdult, songTitleSlug, t, usesRemoteCatalog]);
 
   const filteredCatalogTitles = catalogRows;
   const visibleCatalogCount = catalogTotal;
@@ -515,7 +563,7 @@ export function BattleBuilderPage() {
     if (activeSlotIndex >= deckSlots.length) setActiveSlotIndex(Math.max(0, deckSlots.length - 1));
   }, [activeSlotIndex, deckSlots.length]);
 
-  useEffect(() => { setCatalogPage(0); }, [deferredFilters, filters.entityType, showAdult]);
+  useEffect(() => { setCatalogPage(0); }, [debouncedCatalogFilters, filters.entityType, showAdult]);
 
   useEffect(() => {
     if (catalogPage > totalCatalogPages - 1) setCatalogPage(Math.max(0, totalCatalogPages - 1));

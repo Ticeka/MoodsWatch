@@ -34,6 +34,7 @@ export function TierListCreateCatalogPickerSection({
   onToggleTitle,
   onTypeFilterChange,
   pick,
+  sectionRef,
   selectedIds,
   sortBy,
   statusFilter,
@@ -41,7 +42,7 @@ export function TierListCreateCatalogPickerSection({
   typeFilter,
 }) {
   return (
-    <section className="container tierlist-section tierlist-create-rail">
+    <section ref={sectionRef} className="container tierlist-section tierlist-create-rail">
       <div className="tierlist-section-head">
         <h2>
           {isCharacterMode

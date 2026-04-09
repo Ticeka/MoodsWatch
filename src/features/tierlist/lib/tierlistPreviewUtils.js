@@ -1,4 +1,4 @@
-import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+import { getTitleArtwork, normalizeArtworkSource } from '@/shared/lib/titleArtwork';
 
 export const TEMPLATE_PREVIEW_MIN_SCALE = 1;
 export const TEMPLATE_PREVIEW_MAX_SCALE = 4;
@@ -179,17 +179,24 @@ export function getTemplatePreviewMediaStyle(settings = {}) {
 }
 
 export function getTierEntityArtworkSource(entity) {
-  return String(entity?.cover || entity?.image_url || getTitleArtwork(entity) || '').trim();
+  return normalizeArtworkSource(entity?.cover)
+    || normalizeArtworkSource(entity?.image_url)
+    || getTitleArtwork(entity)
+    || '';
 }
 
 export function getTemplatePreviewArtworkSource(template, fallbackEntity = null) {
-  const templatePreviewUrl = String(template?.previewArtworkUrl || '').trim();
+  const templatePreviewUrl = normalizeArtworkSource(template?.previewArtworkUrl);
   if (templatePreviewUrl) {
     return templatePreviewUrl;
   }
 
   const customItemArtwork = (template?.customItems || [])
-    .map((item) => String(item?.imageUrl || item?.cover || item?.image_url || '').trim())
+    .map((item) => (
+      normalizeArtworkSource(item?.imageUrl)
+      || normalizeArtworkSource(item?.cover)
+      || normalizeArtworkSource(item?.image_url)
+    ))
     .find(Boolean);
   if (customItemArtwork) {
     return customItemArtwork;

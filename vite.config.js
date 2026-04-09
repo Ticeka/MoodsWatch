@@ -20,6 +20,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: () => '',
       },
+      '/anilist-img': {
+        target: 'https://s4.anilist.co',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/anilist-img/, ''),
+      },
     },
   },
   resolve: {

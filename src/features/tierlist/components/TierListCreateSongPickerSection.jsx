@@ -339,6 +339,7 @@ export function TierListCreateSongPickerSection({
   onTypeFilterChange,
   pick,
   preloadSongsForTitle,
+  sectionRef,
   selectedIds,
   songEntityCache,
   songQuery,
@@ -347,7 +348,7 @@ export function TierListCreateSongPickerSection({
   typeFilter,
 }) {
   return (
-    <section className="container tierlist-section tierlist-create-rail">
+    <section ref={sectionRef} className="container tierlist-section tierlist-create-rail">
       {browsingTitle ? (
         <TierListCreateSongDrilldown
           browsingTitle={browsingTitle}

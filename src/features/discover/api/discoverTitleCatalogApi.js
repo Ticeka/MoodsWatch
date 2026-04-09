@@ -8,10 +8,11 @@ import {
 import {
   CANONICAL_TITLE_BROWSE_SELECT,
   CANONICAL_TITLE_PREVIEW_SELECT,
+  mapCanonicalTitle,
 } from '@/shared/lib/catalog';
-import { isSupabaseConnected } from '@/shared/lib/supabase';
+import { isSupabaseConnected, supabase } from '@/shared/lib/supabase';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
-import { buildCharacterCatalog } from '@/shared/lib/catalogEntities';
+import { buildCharacterEntity } from '@/shared/lib/catalogEntities';
 
 const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -27,6 +28,8 @@ let cachedDetailedTitlesPromise = null;
 let detailedCacheTimestamp = 0;
 let detailedCacheError = null;
 let cachedDetailedCatalogLimit = null;
+const characterPageCache = new Map();
+const characterPageRequestCache = new Map();
 const titleByIdCache = new Map();
 const titleByIdsRequestCache = new Map();
 const titleBySlugCache = new Map();
@@ -92,6 +95,50 @@ function ensureSupabaseConnected() {
   if (!isSupabaseConnected()) {
     throw new Error('Supabase is not configured');
   }
+}
+
+function getCharacterPageCacheKey({
+  type = 'all',
+  query = '',
+  sortBy = 'popularity',
+  page = 1,
+  pageSize = 30,
+  showAdult = true,
+} = {}) {
+  return JSON.stringify({
+    type: String(type || 'all'),
+    query: String(query || '').trim().toLowerCase(),
+    sortBy: String(sortBy || 'popularity'),
+    page: Math.max(1, Number(page) || 1),
+    pageSize: Math.max(1, Number(pageSize) || 30),
+    showAdult: Boolean(showAdult),
+  });
+}
+
+function getCachedCharacterPage(cacheKey) {
+  const cached = characterPageCache.get(cacheKey);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() - cached.timestamp >= CACHE_TTL_MS) {
+    characterPageCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.value;
+}
+
+function storeCharacterPage(cacheKey, value) {
+  characterPageCache.set(cacheKey, {
+    timestamp: Date.now(),
+    value,
+  });
+}
+
+function normalizeJoinedTitleRecord(record) {
+  const rawTitle = Array.isArray(record) ? record[0] : record;
+  return rawTitle ? mapCanonicalTitle(rawTitle) : null;
 }
 
 function mergeCachedTitleRecord(current = {}, incoming = {}) {
@@ -219,6 +266,8 @@ export function clearTitlesCache() {
   detailedCacheTimestamp = 0;
   detailedCacheError = null;
   cachedDetailedCatalogLimit = null;
+  characterPageCache.clear();
+  characterPageRequestCache.clear();
   titleByIdCache.clear();
   titleByIdsRequestCache.clear();
   titleBySlugCache.clear();
@@ -290,19 +339,207 @@ export async function getTitlesPage({ type = 'all', query = '', sortBy = 'popula
 }
 
 export async function getCharactersPage({ type = 'all', query = '', sortBy = 'popularity', page = 1, pageSize = 30, showAdult = true } = {}) {
-  const titleWindowSize = Math.max(pageSize * 4, 120);
-  const result = await fetchTitlesPageFromSupabase({ type, query, sortBy, page, pageSize: titleWindowSize, showAdult });
-  const titleIds = result.items.map((t) => t.id);
-  const characters = await fetchTitleCharacters(titleIds);
-  const titlesWithChars = attachCharactersToTitles(result.items, characters);
-  const characterItems = buildCharacterCatalog(titlesWithChars);
-  return {
-    items: characterItems.slice(0, pageSize),
-    total: Math.max(characterItems.length, result.total),
-    page: result.page,
-    pageSize: result.pageSize,
-    totalPages: result.totalPages,
-  };
+  ensureSupabaseConnected();
+
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.max(1, Number(pageSize) || 30);
+  const cacheKey = getCharacterPageCacheKey({
+    type,
+    query,
+    sortBy,
+    page: safePage,
+    pageSize: safePageSize,
+    showAdult,
+  });
+  const cached = getCachedCharacterPage(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  if (characterPageRequestCache.has(cacheKey)) {
+    return characterPageRequestCache.get(cacheKey);
+  }
+
+  const request = (async () => {
+    const from = (safePage - 1) * safePageSize;
+    const to = from + safePageSize - 1;
+    const normalizedQuery = String(query || '').trim();
+    const escapedQuery = normalizedQuery.replace(/[%_,]/g, '');
+    const hasSearchQuery = escapedQuery.length >= 2;
+
+    const applyCharacterBaseFilters = (builder) => {
+      let nextQuery = builder.eq('canonical_titles.is_adult', Boolean(showAdult));
+
+      if (type === 'manhwa') {
+        nextQuery = nextQuery.eq('canonical_titles.type', 'manga').eq('canonical_titles.subtype', 'manhwa');
+      } else if (type === 'manga') {
+        nextQuery = nextQuery.eq('canonical_titles.type', 'manga').neq('canonical_titles.subtype', 'manhwa');
+      } else if (type && type !== 'all') {
+        nextQuery = nextQuery.eq('canonical_titles.type', type);
+      }
+
+      return nextQuery;
+    };
+
+    const applyCharacterSort = (builder) => {
+      let nextQuery = builder;
+
+      if (sortBy === 'score') {
+        nextQuery = nextQuery
+          .order('avg_score', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false })
+          .order('popularity_score', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false });
+      } else if (sortBy === 'year') {
+        nextQuery = nextQuery
+          .order('release_year', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false })
+          .order('popularity_score', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false });
+      } else if (sortBy === 'title') {
+        nextQuery = nextQuery
+          .order('canonical_title', { foreignTable: 'canonical_titles', ascending: true })
+          .order('name_full', { ascending: true });
+      } else {
+        nextQuery = nextQuery
+          .order('popularity_score', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false })
+          .order('avg_score', { foreignTable: 'canonical_titles', ascending: false, nullsFirst: false });
+      }
+
+      return nextQuery
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('id', { ascending: true });
+    };
+
+    const selectClause = `
+      id,
+      canonical_title_id,
+      anilist_id,
+      name_full,
+      name_native,
+      image_url,
+      role,
+      is_primary_protagonist,
+      is_primary_heroine,
+      lead_type,
+      presentation_gender,
+      voice_actor_name,
+      voice_actor_image,
+      sort_order,
+      canonical_titles!inner(${CANONICAL_TITLE_BROWSE_SELECT})
+    `;
+
+    let rows = [];
+    let total = 0;
+
+    if (hasSearchQuery) {
+      const CHARACTER_SEARCH_FETCH_LIMIT = 400;
+
+      let titleQueryBuilder = supabase
+        .from('canonical_titles')
+        .select('id');
+
+      titleQueryBuilder = titleQueryBuilder.eq('is_adult', Boolean(showAdult));
+      if (type === 'manhwa') {
+        titleQueryBuilder = titleQueryBuilder.eq('type', 'manga').eq('subtype', 'manhwa');
+      } else if (type === 'manga') {
+        titleQueryBuilder = titleQueryBuilder.eq('type', 'manga').neq('subtype', 'manhwa');
+      } else if (type && type !== 'all') {
+        titleQueryBuilder = titleQueryBuilder.eq('type', type);
+      }
+
+      titleQueryBuilder = titleQueryBuilder
+        .or(`canonical_title.ilike.%${escapedQuery}%,slug.ilike.%${escapedQuery}%`)
+        .limit(120);
+
+      const [{ data: titleRows, error: titleError }, { data: localCharacterRows, error: localCharacterError }] = await Promise.all([
+        titleQueryBuilder,
+        applyCharacterSort(
+          applyCharacterBaseFilters(
+            supabase
+              .from('title_characters')
+              .select(selectClause)
+              .or(`name_full.ilike.%${escapedQuery}%,name_native.ilike.%${escapedQuery}%,voice_actor_name.ilike.%${escapedQuery}%`)
+          )
+        ).range(0, CHARACTER_SEARCH_FETCH_LIMIT - 1),
+      ]);
+
+      if (titleError) {
+        throw titleError;
+      }
+      if (localCharacterError) {
+        throw localCharacterError;
+      }
+
+      const matchingTitleIds = [...new Set((titleRows || []).map((row) => Number(row.id)).filter((id) => id > 0))];
+      let sourceCharacterRows = [];
+
+      if (matchingTitleIds.length > 0) {
+        const { data: sourceRows, error: sourceError } = await applyCharacterSort(
+          applyCharacterBaseFilters(
+            supabase
+              .from('title_characters')
+              .select(selectClause)
+              .in('canonical_title_id', matchingTitleIds)
+          )
+        ).range(0, CHARACTER_SEARCH_FETCH_LIMIT - 1);
+
+        if (sourceError) {
+          throw sourceError;
+        }
+
+        sourceCharacterRows = sourceRows || [];
+      }
+
+      const mergedById = new Map();
+      [...(localCharacterRows || []), ...sourceCharacterRows].forEach((row) => {
+        const rowId = Number(row?.id || 0);
+        if (rowId > 0 && !mergedById.has(rowId)) {
+          mergedById.set(rowId, row);
+        }
+      });
+
+      rows = [...mergedById.values()];
+      total = rows.length;
+      rows = rows.slice(from, to + 1);
+    } else {
+      const characterQuery = applyCharacterSort(
+        applyCharacterBaseFilters(
+          supabase
+            .from('title_characters')
+            .select(selectClause, { count: 'planned' })
+        )
+      ).range(from, to);
+
+      const { data, error, count } = await characterQuery;
+      if (error) {
+        throw error;
+      }
+
+      rows = data || [];
+      total = Number(count || 0);
+    }
+
+    const items = rows.map((row, index) => (
+      buildCharacterEntity(normalizeJoinedTitleRecord(row.canonical_titles), row, from + index, {
+        preferRowId: true,
+      })
+    ));
+    const response = {
+      items,
+      total,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+    };
+
+    storeCharacterPage(cacheKey, response);
+    return response;
+  })();
+
+  characterPageRequestCache.set(cacheKey, request);
+
+  try {
+    return await request;
+  } finally {
+    characterPageRequestCache.delete(cacheKey);
+  }
 }
 
 export async function getTitlesByIds(ids, options = {}) {

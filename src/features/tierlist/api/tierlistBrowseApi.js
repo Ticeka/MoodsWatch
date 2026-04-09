@@ -70,7 +70,9 @@ function buildCharacterEntitiesFromRows(sourceTitles = [], characterRows = []) {
     }
 
     sortCharacterRows(rows).forEach((row, index) => {
-      entities.push(buildCharacterEntity(sourceTitle, row, index));
+      entities.push(buildCharacterEntity(sourceTitle, row, index, {
+        preferRowId: Number(row?.id || 0) > 0,
+      }));
     });
   });
 
@@ -139,17 +141,19 @@ export async function fetchTierlistCharacterEntities(characterIds = [], options 
   const characterRows = [];
   const sourceTitles = [];
   const resolvedIds = new Set();
+  const requestedIds = new Set(uniqueCharacterIds);
 
   const mainChunks = [];
   for (let index = 0; index < uniqueCharacterIds.length; index += CHARACTER_BATCH_SIZE) {
     mainChunks.push(uniqueCharacterIds.slice(index, index + CHARACTER_BATCH_SIZE));
   }
 
-  const mainResults = await Promise.all(
+  const rowIdResults = await Promise.all(
     mainChunks.map((chunk) => {
       let query = supabase
         .from('title_characters')
         .select(`
+          id,
           canonical_title_id,
           anilist_id,
           name_full,
@@ -165,7 +169,54 @@ export async function fetchTierlistCharacterEntities(characterIds = [], options 
           sort_order,
           canonical_titles!inner(${CANONICAL_TITLE_PREVIEW_SELECT})
         `)
-        .in('anilist_id', chunk);
+        .in('id', chunk);
+
+      if (typeof options?.showAdult === 'boolean') {
+        query = query.eq('canonical_titles.is_adult', options.showAdult);
+      }
+
+      return query;
+    })
+  );
+
+  for (const { data, error } of rowIdResults) {
+    if (error) throw error;
+    characterRows.push(...(data || []));
+    (data || []).forEach((row) => {
+      const rowId = Number(row?.id || 0);
+      if (rowId > 0) resolvedIds.add(rowId);
+      const sourceTitle = normalizeJoinedTitleRecord(row.canonical_titles);
+      if (sourceTitle) sourceTitles.push(sourceTitle);
+    });
+  }
+
+  const mainResults = await Promise.all(
+    mainChunks.map((chunk) => {
+      const unresolvedChunk = chunk.filter((id) => !resolvedIds.has(id));
+      if (unresolvedChunk.length === 0) {
+        return Promise.resolve({ data: [], error: null });
+      }
+
+      let query = supabase
+        .from('title_characters')
+        .select(`
+          id,
+          canonical_title_id,
+          anilist_id,
+          name_full,
+          name_native,
+          image_url,
+          role,
+          is_primary_protagonist,
+          is_primary_heroine,
+          lead_type,
+          presentation_gender,
+          voice_actor_name,
+          voice_actor_image,
+          sort_order,
+          canonical_titles!inner(${CANONICAL_TITLE_PREVIEW_SELECT})
+        `)
+        .in('anilist_id', unresolvedChunk);
 
       if (typeof options?.showAdult === 'boolean') {
         query = query.eq('canonical_titles.is_adult', options.showAdult);
@@ -181,6 +232,8 @@ export async function fetchTierlistCharacterEntities(characterIds = [], options 
     (data || []).forEach((row) => {
       const anilistId = Number(row?.anilist_id || 0);
       if (anilistId > 0) resolvedIds.add(anilistId);
+      const rowId = Number(row?.id || 0);
+      if (rowId > 0 && requestedIds.has(rowId)) resolvedIds.add(rowId);
       const sourceTitle = normalizeJoinedTitleRecord(row.canonical_titles);
       if (sourceTitle) sourceTitles.push(sourceTitle);
     });
@@ -199,6 +252,7 @@ export async function fetchTierlistCharacterEntities(characterIds = [], options 
         let query = supabase
           .from('title_characters')
           .select(`
+            id,
             canonical_title_id,
             anilist_id,
             name_full,
@@ -239,7 +293,23 @@ export async function fetchTierlistCharacterEntities(characterIds = [], options 
   }
 
   const builtEntities = buildCharacterEntitiesFromRows(sourceTitles, characterRows);
-  const entityById = new Map(builtEntities.map((entity) => [Number(entity.id), entity]));
+  const entityById = new Map();
+  builtEntities.forEach((entity) => {
+    const entityId = Number(entity.id || 0);
+    if (entityId > 0) {
+      entityById.set(entityId, entity);
+    }
+
+    const rowId = Number(entity.characterRowId || 0);
+    if (rowId > 0 && !entityById.has(rowId)) {
+      entityById.set(rowId, entity);
+    }
+
+    const anilistId = Number(entity.anilist_id || 0);
+    if (anilistId > 0 && !entityById.has(anilistId)) {
+      entityById.set(anilistId, entity);
+    }
+  });
 
   return uniqueCharacterIds
     .map((characterId) => entityById.get(Number(characterId)) || null)
@@ -309,7 +379,9 @@ export async function fetchTierlistBrowseVisibility({ titleIds = [], songIds = [
     ),
     Promise.all(
       chunkIds(characterIds).map((chunk) =>
-        supabase.from('title_characters').select('anilist_id, canonical_titles!inner(is_adult)').in('anilist_id', chunk)
+        supabase.from('title_characters').select('id, anilist_id, canonical_titles!inner(is_adult)').or(
+          `id.in.(${chunk.join(',')}),anilist_id.in.(${chunk.join(',')})`
+        )
       )
     ),
   ]);
@@ -338,11 +410,16 @@ export async function fetchTierlistBrowseVisibility({ titleIds = [], songIds = [
   for (const { data, error } of characterResults) {
     if (error) throw error;
     (data || []).forEach((row) => {
-      const id = Number(row.anilist_id);
       const titleRecord = Array.isArray(row.canonical_titles) ? row.canonical_titles[0] : row.canonical_titles;
-      if (!id || titleRecord?.is_adult === undefined) return;
       const bucket = Boolean(titleRecord.is_adult) === showAdult ? 'allowedByType' : 'blockedByType';
-      visibility[bucket][CHARACTER_ENTITY_TYPE].add(id);
+      const rowId = Number(row.id || 0);
+      const anilistId = Number(row.anilist_id || 0);
+      if (rowId > 0) {
+        visibility[bucket][CHARACTER_ENTITY_TYPE].add(rowId);
+      }
+      if (anilistId > 0) {
+        visibility[bucket][CHARACTER_ENTITY_TYPE].add(anilistId);
+      }
     });
   }
 

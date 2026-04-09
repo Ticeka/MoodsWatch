@@ -1,5 +1,25 @@
 const TITLE_ARTWORK_FALLBACK = '/battle-placeholder.svg';
 
+export function normalizeArtworkSource(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (
+    normalized.startsWith('http://')
+    || normalized.startsWith('https://')
+    || normalized.startsWith('//')
+    || normalized.startsWith('/')
+    || normalized.startsWith('data:')
+    || normalized.startsWith('blob:')
+  ) {
+    return normalized;
+  }
+
+  return '';
+}
+
 export function getTitleArtwork(title) {
   const artworkCandidates = [
     title?.cover,
@@ -13,7 +33,9 @@ export function getTitleArtwork(title) {
     title?.trailer_thumbnail_url,
   ];
 
-  const resolvedArtwork = artworkCandidates.find((value) => typeof value === 'string' && value.trim().length > 0);
+  const resolvedArtwork = artworkCandidates
+    .map((value) => normalizeArtworkSource(value))
+    .find(Boolean);
   if (resolvedArtwork) {
     return resolvedArtwork;
   }

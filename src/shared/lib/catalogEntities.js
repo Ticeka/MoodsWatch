@@ -1,4 +1,5 @@
 import { buildTrailerThumbnailUrl, normalizeTrailer, parseTrailerUrl } from './trailers.js';
+import { normalizeArtworkSource } from './titleArtwork.js';
 
 export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';
@@ -36,10 +37,20 @@ function getFallbackCharacterId(sourceTitle, index) {
   return (Math.max(1, sourceId) * 1000) + index + 1;
 }
 
-function resolveCharacterId(sourceTitle, character, index) {
+function resolveCharacterId(sourceTitle, character, index, options = {}) {
+  const preferRowId = Boolean(options?.preferRowId);
+  const rowId = Number(character?.id || 0);
+  if (preferRowId && Number.isFinite(rowId) && rowId > 0) {
+    return rowId;
+  }
+
   const anilistId = Number(character?.anilist_id || 0);
   if (Number.isFinite(anilistId) && anilistId > 0) {
     return anilistId;
+  }
+
+  if (Number.isFinite(rowId) && rowId > 0) {
+    return rowId;
   }
 
   return getFallbackCharacterId(sourceTitle, index);
@@ -178,25 +189,30 @@ export function buildThemeSongEntity(song, sourceTitle) {
   };
 }
 
-export function buildCharacterEntity(sourceTitle, character, index = 0) {
-  const id = resolveCharacterId(sourceTitle, character, index);
+export function buildCharacterEntity(sourceTitle, character, index = 0, options = {}) {
+  const id = resolveCharacterId(sourceTitle, character, index, options);
   const sourceTitleName = getCatalogEntityName(sourceTitle);
   const nameFull = normalizeText(character?.name_full) || sourceTitleName || `Character ${id}`;
   const nameNative = normalizeText(character?.name_native);
   const role = normalizeText(character?.role).toUpperCase() || '';
   const slugBase = normalizeSlug(nameFull) || normalizeSlug(nameNative) || `character-${id}`;
+  const normalizedCharacterArtwork = normalizeArtworkSource(character?.image_url);
+  const normalizedSourceArtwork = normalizeArtworkSource(sourceTitle?.cover);
+  const normalizedSourceBanner = normalizeArtworkSource(sourceTitle?.banner);
 
   return {
     id,
     slug: `${slugBase}-${id}`,
     entityType: CHARACTER_ENTITY_TYPE,
+    characterRowId: Number(character?.id || 0) || null,
+    anilist_id: Number(character?.anilist_id || 0) || null,
     type: sourceTitle?.type || 'anime',
     subtype: sourceTitle?.subtype || sourceTitle?.type || 'anime',
     title_en: nameFull,
     title_th: nameFull,
     title_native: nameNative || '',
-    cover: character?.image_url || sourceTitle?.cover || '',
-    banner: sourceTitle?.banner || '',
+    cover: normalizedCharacterArtwork || normalizedSourceArtwork || '',
+    banner: normalizedSourceBanner || '',
     score: sourceTitle?.score ?? null,
     popularity: sourceTitle?.popularity ?? 0,
     is_adult: Boolean(sourceTitle?.is_adult),
@@ -211,7 +227,7 @@ export function buildCharacterEntity(sourceTitle, character, index = 0) {
     lead_type: normalizeText(character?.lead_type).toLowerCase() || 'unknown',
     presentation_gender: normalizeText(character?.presentation_gender).toLowerCase() || 'unknown',
     voice_actor_name: normalizeText(character?.voice_actor_name),
-    voice_actor_image: normalizeText(character?.voice_actor_image),
+    voice_actor_image: normalizeArtworkSource(character?.voice_actor_image) || '',
     sourceTitleId: Number(sourceTitle?.id || 0) || null,
     sourceTitleSlug: sourceTitle?.slug || '',
     sourceTitleName,

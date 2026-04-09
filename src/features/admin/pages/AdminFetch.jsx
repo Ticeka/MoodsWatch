@@ -472,7 +472,7 @@ export function AdminFetch() {
           if (csConfig.skipSatisfied) {
             const skipThreshold = csConfig.maxCharactersPerTitle > 0
               ? csConfig.maxCharactersPerTitle
-              : totalExistingCount;
+              : 0;
             const charsSatisfied = skipThreshold > 0 && totalExistingCount >= skipThreshold;
             const staffSatisfied = (existingStaffCount || 0) >= 25;
 
