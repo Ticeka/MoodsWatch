@@ -30,12 +30,12 @@ export function TierListBrowseHeader({ pick, userId }) {
           <span className="tl-hero-badge-icon">
             <ListOrdered size={13} strokeWidth={2.5} />
           </span>
-          อนิเมะ · มังงะ · มันฮวา
+          {pick('อนิเมะ · มังงะ · มันฮวา', 'Anime · Manga · Manhwa')}
         </div>
 
         {/* Title */}
         <h1 className="tl-hero-title animate-fade-in-up" style={{ animationDelay: '0.06s' }}>
-          TIER LIST
+          {pick('เทียร์ลิสต์', 'TIER LIST')}
         </h1>
 
         {/* Subtitle */}
@@ -50,7 +50,7 @@ export function TierListBrowseHeader({ pick, userId }) {
         <div className="tl-hero-actions animate-fade-in-up" style={{ animationDelay: '0.18s' }}>
           <Link className="tl-btn-primary action-pulse" to="/tierlist/create">
             <Plus size={18} />
-            {pick('สร้าง Tier List', 'Create Tier List')}
+            {pick('สร้างเทียร์ลิสต์', 'Create Tier List')}
           </Link>
           {userId ? (
             <Link className="tl-btn-secondary" to="/tierlist/me">

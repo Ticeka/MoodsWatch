@@ -6,9 +6,9 @@ import {
   Globe,
   Loader2,
   Lock,
-  Radio,
   Search,
   Sparkles,
+  Users2,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -83,11 +83,15 @@ export function PartyHubPage() {
     <div className="pgw-page party-route-fade">
       <div className="pgw-shell">
         <header className="pgw-hero">
-          <div className="pgw-title-stack animate-fade-in-up" aria-hidden="true">
-            <span className="pgw-title-echo">PARTY</span>
+          <div className="party-shared-kicker animate-fade-in-up">
+            <span className="party-shared-badge-icon"><Users2 size={14} /></span>
+            {pick('ห้องปาร์ตี้', 'Party Rooms')}
           </div>
-          <h1 className="pgw-title animate-fade-in-up">PARTY</h1>
-          <div className="pgw-hero-marquee animate-fade-in-up" style={{ animationDelay: '0.08s' }} aria-label={pick('จุดเด่นของหน้า Party', 'Party highlights')}>
+          <div className="pgw-title-stack animate-fade-in-up" aria-hidden="true">
+            <span className="pgw-title-echo">{pick('ปาร์ตี้', 'PARTY')}</span>
+          </div>
+          <h1 className="pgw-title animate-fade-in-up">{pick('ปาร์ตี้', 'PARTY')}</h1>
+          <div className="pgw-hero-marquee animate-fade-in-up" style={{ animationDelay: '0.08s' }} aria-label={pick('จุดเด่นของหน้าปาร์ตี้', 'Party highlights')}>
             <span className="pgw-hero-pill">{pick('สร้างห้องไว', 'Fast room setup')}</span>
             <span className="pgw-hero-pill">{pick('แชร์โค้ดชวนเพื่อน', 'Share room code')}</span>
             <span className="pgw-hero-pill">{pick('เริ่มพร้อมกันทั้งห้อง', 'Start together')}</span>

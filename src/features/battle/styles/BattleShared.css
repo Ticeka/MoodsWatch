@@ -406,6 +406,33 @@
   background: rgba(15, 23, 42, 0.82);
 }
 
+.battle-card-count-badge {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: calc(100% - 1.7rem);
+  min-height: 2rem;
+  padding: 0.42rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, white 28%, transparent);
+  background:
+    linear-gradient(135deg, rgba(44, 27, 22, 0.9), rgba(92, 47, 30, 0.82));
+  box-shadow:
+    0 14px 28px rgba(23, 12, 10, 0.24),
+    inset 0 1px 0 rgba(255, 244, 230, 0.18);
+  color: #fff7f0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 .battle-preset-art-tile,
 .battle-preset-art-empty {
   position: relative;

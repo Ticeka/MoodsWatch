@@ -1,11 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
+import { Coffee, Heart, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
+import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
+import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
 
 export function Footer() {
-  const { t } = useLanguage();
+  const { t, pick } = useLanguage();
+  const supportConfig = useSupportConfig();
 
   return (
     <footer className="footer">
@@ -38,6 +41,30 @@ export function Footer() {
           </div>
         </div>
       </div>
+      <div className="footer-support-strip">
+        <div className="container">
+          <a
+            href={SUPPORT_STRIPE_COFFEE_URL || undefined}
+            target={SUPPORT_STRIPE_COFFEE_URL ? '_blank' : undefined}
+            rel={SUPPORT_STRIPE_COFFEE_URL ? 'noreferrer' : undefined}
+            className={`footer-support-link${SUPPORT_STRIPE_COFFEE_URL ? '' : ' is-disabled'}`}
+            aria-disabled={!SUPPORT_STRIPE_COFFEE_URL}
+            onClick={(event) => {
+              if (!SUPPORT_STRIPE_COFFEE_URL) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <span className="footer-support-icon"><Coffee size={14} /></span>
+            <span className="footer-support-copy">
+              <strong>{pick(supportConfig.footerLabelTh, supportConfig.footerLabelEn)}</strong>
+              <span>{pick(supportConfig.footerHintTh, supportConfig.footerHintEn)}</span>
+            </span>
+            <Heart size={13} className="footer-support-heart" fill="currentColor" />
+          </a>
+        </div>
+      </div>
+
       <div className="footer-bottom">
         <div className="container">
           <p>&copy; {new Date().getFullYear()} {BRAND_NAME} | {t('layout.copyright')}</p>

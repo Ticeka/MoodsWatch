@@ -33,10 +33,12 @@ import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { BRAND_NAME } from '@/shared/config/brand';
 import {
   THEME_SONG_ENTITY_TYPE,
+  isCharacterEntity,
   isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+import { buildTitlePersonRouteId, buildTitleRouteSlug } from '@/features/titles/lib/titlePeople';
 
 const EXPORT_TILE_W = 90;
 const EXPORT_TILE_H = 120;
@@ -728,6 +730,33 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
     setIsSongModalOpen(true);
   };
 
+  const resolveWebDetailPath = (entity) => {
+    if (!entity || entity?.isCustomTierItem) {
+      return '';
+    }
+
+    const sourceSlug = buildTitleRouteSlug(entity?.sourceTitleSlug, entity?.sourceTitleId);
+    if (isCharacterEntity(entity) && sourceSlug) {
+      return `/title/${sourceSlug}/character/${buildTitlePersonRouteId(entity)}`;
+    }
+
+    if (sourceSlug) {
+      return `/title/${sourceSlug}`;
+    }
+
+    const ownSlug = buildTitleRouteSlug(entity?.slug, entity?.id);
+    return ownSlug ? `/title/${ownSlug}` : '';
+  };
+
+  const handleOpenPoolDetail = (entity) => {
+    const detailPath = resolveWebDetailPath(entity);
+    if (!detailPath) {
+      return;
+    }
+
+    window.open(detailPath, '_blank', 'noopener,noreferrer');
+  };
+
   const toolbarCompact = isMobileViewport && isToolbarCollapsed && !isToolbarExpanded;
 
   const statusClass = saveState === 'success' ? 'is-success' : saveState === 'error' ? 'is-error' : '';
@@ -760,7 +789,7 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
           <input
             type="text"
             value={tierList.title}
-            placeholder={pick('ชื่อ Tier List', 'Tier list name')}
+            placeholder={pick('ชื่อเทียร์ลิสต์', 'Tier list name')}
             readOnly={readOnly}
             onChange={(event) => {
               if (readOnly) return;
@@ -797,7 +826,7 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
         <div className="tiermaker-toolbar-sep" />
 
         {/* Action buttons */}
-        <div className="tiermaker-toolbar-actions" role="group" aria-label={pick('การกระทำของตัวแก้ไข Tier List', 'Tier list editor actions')}>
+        <div className="tiermaker-toolbar-actions" role="group" aria-label={pick('การกระทำของตัวแก้ไขเทียร์ลิสต์', 'Tier list editor actions')}>
           <Button
             variant="ghost"
             size="sm"
@@ -914,7 +943,7 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
       <div className="tiermaker-export-board">
         <div className="tiermaker-export-head">
           <strong>{tierList.title}</strong>
-          <span>{pick(`จัดอันดับด้วย ${BRAND_NAME} Tier List`, `Ranked with ${BRAND_NAME} Tier List`)}</span>
+          <span>{pick(`จัดอันดับด้วย ${BRAND_NAME} เทียร์ลิสต์`, `Ranked with ${BRAND_NAME} Tier List`)}</span>
         </div>
         <div className="tiermaker-board" ref={boardRef}>
           {tierList.rows.map((row, index) => (
@@ -1083,6 +1112,7 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
                 isDragging={dragState?.titleId === Number(title.id) && dragState?.fromRowId === '' && dragState?.fromIndex === index}
                 onPointerDragStart={readOnly ? null : beginPointerDrag}
                 onPreviewSong={isSongTierList ? handlePreviewSong : null}
+                onOpenDetail={handleOpenPoolDetail}
               />
             ))
           )}

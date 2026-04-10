@@ -68,7 +68,7 @@ export const PARTY_PRESETS = [
   {
     id: 'party-classic',
     label: 'Party Classic',
-    labelTh: 'Party Classic',
+    labelTh: 'ปาร์ตี้คลาสสิก',
     description: 'Listen to a clip and pick the correct answer from 4 choices.',
     descriptionTh: 'ฟังคลิปแล้วทายชื่อเรื่องจาก 4 ตัวเลือก',
     answerMode: 'choice',
@@ -79,7 +79,7 @@ export const PARTY_PRESETS = [
   {
     id: 'song-typing',
     label: 'Song Typing',
-    labelTh: 'Song Typing',
+    labelTh: 'พิมพ์ชื่อเพลง',
     description: 'Type the song title before the timer runs out.',
     descriptionTh: 'พิมพ์ชื่อเพลงให้ทันก่อนหมดเวลา',
     answerMode: 'typing',
@@ -93,7 +93,7 @@ export const PARTY_CATEGORY_OPTIONS = [
   { id: 'all', label: 'All Songs', labelTh: 'รวมทุกเพลง' },
   { id: 'op', label: 'Openings Only', labelTh: 'เฉพาะเพลงเปิด' },
   { id: 'ed', label: 'Endings Only', labelTh: 'เฉพาะเพลงปิด' },
-  { id: 'creditless', label: 'Creditless Picks', labelTh: 'เน้นเวอร์ชัน creditless' },
+  { id: 'creditless', label: 'Creditless Picks', labelTh: 'เน้นเวอร์ชันเครดิตเลส' },
 ];
 
 export const PARTY_VOTE_PLAYBACK_MODES = [

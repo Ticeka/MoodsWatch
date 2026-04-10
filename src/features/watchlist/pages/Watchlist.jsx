@@ -9,7 +9,7 @@ import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { LIST_STATUS_OPTIONS, MOODS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
-import { getTitleTypeMeta, isEpisodeBasedType } from '@/shared/lib/titleType';
+import { isEpisodeBasedType } from '@/shared/lib/titleType';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
 import { Plus, Target, FastForward, Play, CheckCircle2, Heart, List, Share2, BookOpen } from 'lucide-react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
@@ -21,11 +21,27 @@ import { ShareCardModal } from '@/features/watchlist/components/ShareCardModal';
 import { MoodJournal } from '@/features/watchlist/components/MoodJournal';
 import '../styles/Watchlist.css';
 
-function WatchlistProgressRow({ title, onUpdate }) {
+function getProgressUnitCopy(type, language = 'th') {
+  const isThai = language === 'th';
+
+  if (isEpisodeBasedType(type)) {
+    return {
+      short: isThai ? 'ตอน' : 'ep.',
+      full: isThai ? 'ตอน' : 'episode',
+    };
+  }
+
+  return {
+    short: isThai ? 'ตอน' : 'ch.',
+    full: isThai ? 'ตอน' : 'chapter',
+  };
+}
+
+function WatchlistProgressRow({ title, onUpdate, language, t }) {
   const isEp = isEpisodeBasedType(title.type);
   const current = Number(isEp ? title._listProgressEpisode : title._listProgressChapter) || 0;
   const total = isEp ? title.episodes : title.chapters;
-  const unit = getTitleTypeMeta(title.type).unitLabel;
+  const unitCopy = getProgressUnitCopy(title.type, language);
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState(current);
   const inputRef = useRef(null);
@@ -47,11 +63,11 @@ function WatchlistProgressRow({ title, onUpdate }) {
 
   return (
     <div className="watchlist-progress-row">
-      <span className="watchlist-progress-unit">{unit}</span>
+      <span className="watchlist-progress-unit">{unitCopy.short}</span>
       <button
         className="watchlist-progress-stepper"
         onClick={decrement}
-        aria-label={`Decrease ${unit}`}
+        aria-label={t('watchlist.progressDecrease', { unit: unitCopy.full })}
         disabled={current <= 0}
       >
         –
@@ -75,7 +91,7 @@ function WatchlistProgressRow({ title, onUpdate }) {
         <button
           className="watchlist-progress-value"
           onClick={() => { setInputVal(current); setEditing(true); }}
-          aria-label={`Edit ${unit} progress, currently ${current}`}
+          aria-label={t('watchlist.progressEdit', { unit: unitCopy.full, current })}
         >
           {current}
         </button>
@@ -86,7 +102,7 @@ function WatchlistProgressRow({ title, onUpdate }) {
       <button
         className="watchlist-progress-stepper"
         onClick={increment}
-        aria-label={`Increase ${unit}`}
+        aria-label={t('watchlist.progressIncrease', { unit: unitCopy.full })}
         disabled={total != null && current >= total}
       >
         +
@@ -325,11 +341,13 @@ export function Watchlist() {
     [showAdult]
   );
   const inProgressCount = (statusCounts.watching || 0) + (statusCounts.reading || 0);
+  const getUnitCopy = (type) => getProgressUnitCopy(type, language);
+  const getStatusLabel = (status) => getLocalizedLabel(statusOptionMap.get(status), language) || status;
 
   const handleQuickAdvance = async (title) => {
     try {
       await advanceProgress(title, 1);
-      toast.success(t('watchlist.updatedProgress', { unit: getTitleTypeMeta(title.type).unitLabel }));
+      toast.success(t('watchlist.updatedProgress', { unit: getUnitCopy(title.type).full }));
     } catch (error) {
       console.error(error);
       toast.error(t('watchlist.failedUpdateProgress'));
@@ -340,7 +358,7 @@ export function Watchlist() {
     const nextStatus = isEpisodeBasedType(title.type) ? 'watching' : 'reading';
     try {
       await updateItem(title.id, { status: nextStatus, lastConsumedAt: new Date().toISOString() }, { title });
-      toast.success(t('watchlist.movedToStatus', { status: nextStatus }));
+      toast.success(t('watchlist.movedToStatus', { status: getStatusLabel(nextStatus) }));
     } catch (error) {
       console.error(error);
       toast.error(t('watchlist.failedUpdateStatus'));
@@ -362,7 +380,7 @@ export function Watchlist() {
 
     try {
       await setConsumptionTarget(title, nextTarget);
-      toast.success(t('watchlist.setTargetSuccess', { unit: getTitleTypeMeta(title.type).unitLabel, value: nextTarget }));
+      toast.success(t('watchlist.setTargetSuccess', { unit: getUnitCopy(title.type).full, value: nextTarget }));
     } catch (error) {
       console.error(error);
       toast.error(t('watchlist.failedSetTarget'));
@@ -406,7 +424,7 @@ export function Watchlist() {
     }
     try {
       await updateItem(title.id, updates, { title });
-      toast.success(t('watchlist.updatedProgress', { unit: getTitleTypeMeta(title.type).unitLabel }));
+      toast.success(t('watchlist.updatedProgress', { unit: getUnitCopy(title.type).full }));
     } catch (error) {
       console.error(error);
       toast.error(t('watchlist.failedUpdateProgress'));
@@ -426,7 +444,7 @@ export function Watchlist() {
         key: 'advance',
         variant: 'secondary',
         icon: <Plus size={16} />,
-        label: `1 ${getTitleTypeMeta(title.type).unitLabel}`,
+        label: t('watchlist.quickAdvance', { unit: getUnitCopy(title.type).short }),
         onClick: () => handleQuickAdvance(title),
       });
     }
@@ -704,7 +722,7 @@ export function Watchlist() {
                         <button
                           className="watchlist-share-btn"
                           onClick={() => setShareTarget({ title, listItem: watchlistItemMap.get(title.id) })}
-                          aria-label="Share card"
+                          aria-label={t('watchlist.shareCardAria', { title: title.title_th || title.title_en || '' })}
                         >
                           <Share2 size={14} />
                         </button>
@@ -714,13 +732,15 @@ export function Watchlist() {
                         <WatchlistProgressRow
                           title={title}
                           onUpdate={(val) => handleProgressSet(title, val)}
+                          language={language}
+                          t={t}
                         />
                       )}
                       {(title._targetEpisode || title._targetChapter || title._lastConsumedAt) && (
                         <div className="watchlist-item-meta">
                           {title._targetEpisode || title._targetChapter ? (
                             <span className="watchlist-meta-pill">
-                              {t('watchlist.targetLabel')} {getTitleTypeMeta(title.type).unitLabel} {title._targetEpisode || title._targetChapter}
+                              {t('watchlist.targetLabel')} {getUnitCopy(title.type).short} {title._targetEpisode || title._targetChapter}
                             </span>
                           ) : null}
                           {title._lastConsumedAt ? (

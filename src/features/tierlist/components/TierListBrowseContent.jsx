@@ -102,6 +102,7 @@ export function TierListBrowseContent({
           <div className="tierlist-browse-grid">
             {pagedTemplates.items.map((template, index) => {
               const entityById = getBestEntityMapForIds(entityMaps, template.titleIds, template.entityType);
+              const templateItemCount = template.titleIds?.length || 0;
               const cover = template.titleIds
                 .slice(0, BROWSE_ENTITY_IDS_PER_TEMPLATE)
                 .map((id) => entityById.get(Number(id)))
@@ -135,6 +136,7 @@ export function TierListBrowseContent({
                     )}
                     <div className="tierlist-explorer-card-cover-badges">
                       <span className="tierlist-explorer-card-tag">{explorerSummary.categoryLabel}</span>
+                      <span className="tierlist-card-count-badge">{pick(`${templateItemCount} รายการ`, `${templateItemCount} items`)}</span>
                     </div>
                   </div>
                   <div className="tierlist-explorer-card-body">
@@ -221,7 +223,7 @@ export function TierListBrowseContent({
             <p>{pick('เลือกเรื่องที่มีข้อมูลเพลง แล้วจัดอันดับ OP/ED ในแบบของคุณเอง', 'Pick a title with song data and build your own OP/ED tier list.')}</p>
           </div>
           <span className="btn btn-primary btn-sm">
-            {pick('ดูลิสต์จัดอันดับเพลง', 'Explore Song Tier Lists')} <ArrowRight size={13} />
+            {pick('ดูเทียร์ลิสต์เพลง', 'Explore Song Tier Lists')} <ArrowRight size={13} />
           </span>
         </Link>
       </section>

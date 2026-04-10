@@ -85,13 +85,13 @@ export function SongTierListBrowsePage() {
     <div className="tierlist-page">
       <div className="container tierlist-browse-header">
         <div className="tierlist-browse-header-left">
-          <h1><Music size={17} /> {pick('ลิสต์จัดอันดับเพลง', 'Song Tier Lists')}</h1>
+          <h1><Music size={17} /> {pick('เทียร์ลิสต์เพลง', 'Song Tier Lists')}</h1>
           {!isLoading && (
             <span className="tierlist-count">{filteredTitles.length} {pick('เรื่อง', 'titles')}</span>
           )}
         </div>
         <Link className="btn btn-ghost btn-sm" to="/tierlist">
-          <ChevronLeft size={13} /> {pick('ลิสต์จัดอันดับทั้งหมด', 'All Tier Lists')}
+          <ChevronLeft size={13} /> {pick('เทียร์ลิสต์ทั้งหมด', 'All Tier Lists')}
         </Link>
       </div>
 

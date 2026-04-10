@@ -297,12 +297,12 @@ export const FILTER_OPTIONS = {
 };
 
 export const LIST_STATUS_OPTIONS = [
-  { id: 'planned', label: 'วางแผนจะดู', labelEn: 'Planned', icon: '📋', color: '#818cf8' },
+  { id: 'planned', label: 'เก็บไว้ดูทีหลัง', labelEn: 'Plan to watch/read', icon: '📋', color: '#818cf8' },
   { id: 'watching', label: 'กำลังดู', labelEn: 'Watching', icon: '▶️', color: '#34d399' },
   { id: 'reading', label: 'กำลังอ่าน', labelEn: 'Reading', icon: '📖', color: '#60a5fa' },
-  { id: 'completed', label: 'ดู/อ่านจบแล้ว', labelEn: 'Completed', icon: '✅', color: '#10b981' },
-  { id: 'dropped', label: 'ดรอป', labelEn: 'Dropped', icon: '❌', color: '#ef4444' },
-  { id: 'on-hold', label: 'พักไว้ก่อน', labelEn: 'On Hold', icon: '⏸️', color: '#f59e0b' },
+  { id: 'completed', label: 'จบแล้ว', labelEn: 'Finished', icon: '✅', color: '#10b981' },
+  { id: 'dropped', label: 'เลิกติดตาม', labelEn: 'Dropped', icon: '❌', color: '#ef4444' },
+  { id: 'on-hold', label: 'พักไว้ก่อน', labelEn: 'Paused', icon: '⏸️', color: '#f59e0b' },
 ];
 
 export const RANDOM_MODES = [

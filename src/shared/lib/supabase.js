@@ -1,13 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Environment variables from Vite
-const VITE_URL = import.meta.env.VITE_SUPABASE_URL;
-const VITE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Fallback hardcoded values based on the .env file I read
-// (Using fallbacks to ensure the app works even if Vite env fails to load)
-const SUPABASE_URL = VITE_URL || 'https://ntwgbtaxsovsnafpvbkj.supabase.co';
-const SUPABASE_ANON_KEY = VITE_KEY || 'sb_publishable_XtYX6GGbiAPGOS9QRLMisA_URDyjfJ_';
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 function getSupabaseProjectRef(url) {
   try {

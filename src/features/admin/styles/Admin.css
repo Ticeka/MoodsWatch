@@ -3,13 +3,36 @@
    ============================================ */
 
 .admin-layout {
+  --admin-accent: var(--primary-600);
+  --admin-accent-strong: var(--primary-700);
+  --admin-accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --admin-surface: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-primary));
+  --admin-surface-muted: color-mix(in srgb, var(--bg-secondary) 92%, var(--bg-primary));
+  --admin-border: color-mix(in srgb, var(--border-default) 88%, rgba(var(--primary-rgb), 0.08));
+  --admin-border-strong: color-mix(in srgb, var(--border-strong) 82%, rgba(var(--primary-rgb), 0.14));
+  --admin-heading: color-mix(in srgb, var(--text-primary) 90%, var(--primary));
+  --admin-copy: color-mix(in srgb, var(--text-primary) 78%, var(--text-secondary));
+  --admin-shadow: 0 16px 34px rgba(20, 24, 38, 0.08);
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-500) 9%, transparent), transparent 26%),
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 34%, transparent), transparent),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 8%, transparent), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 24%, transparent), transparent),
     var(--bg-tertiary);
+}
+
+[data-theme="dark"] .admin-layout {
+  --admin-accent: #f472b6;
+  --admin-accent-strong: #ec4899;
+  --admin-accent-soft: rgba(244, 114, 182, 0.14);
+  --admin-surface: #181212;
+  --admin-surface-muted: #21191a;
+  --admin-border: rgba(255, 230, 215, 0.1);
+  --admin-border-strong: rgba(244, 114, 182, 0.28);
+  --admin-heading: #fff1f7;
+  --admin-copy: #d8c7cb;
+  --admin-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
 }
 
 /* ============================================ 
@@ -17,8 +40,8 @@
    ============================================ */
 .admin-sidebar {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 95%, transparent), color-mix(in srgb, var(--bg-secondary) 98%, transparent));
-  border-right: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 92%, transparent), color-mix(in srgb, var(--bg-secondary) 99%, transparent));
+  border-right: 1px solid var(--admin-border);
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -30,7 +53,7 @@
 
 .sidebar-brand {
   padding: var(--space-6);
-  border-bottom: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border-bottom: 1px solid var(--admin-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -136,15 +159,15 @@
 }
 
 .sidebar-link:hover {
-  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--text-primary);
 }
 
 .sidebar-link.active {
-  background: color-mix(in srgb, var(--accent-500) 12%, transparent);
-  color: var(--accent-700);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--admin-accent-strong);
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-500) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 [data-theme="dark"] .sidebar-link.active {
@@ -241,7 +264,7 @@
    Admin Header
    ============================================ */
 .admin-header {
-  border-bottom: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border-bottom: 1px solid var(--admin-border);
   padding-bottom: var(--space-4);
   margin-bottom: var(--space-8);
   display: flex;
@@ -252,13 +275,11 @@
 }
 
 .admin-header h1 {
-  background: linear-gradient(135deg, var(--ink-900), var(--accent-500));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--admin-heading);
   display: inline-flex;
   font-family: var(--font-heading);
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 /* ============================================
@@ -267,9 +288,9 @@
 .stat-card {
   padding: var(--space-6) var(--space-8);
   border-radius: 28px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 95%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
-  box-shadow: 0 18px 34px rgba(26, 43, 60, 0.08);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 88%, transparent), var(--admin-surface));
+  border: 1px solid var(--admin-border);
+  box-shadow: var(--admin-shadow);
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
   overflow: hidden;
@@ -282,7 +303,7 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--ink-900), var(--accent-500), var(--primary-500));
+  background: linear-gradient(90deg, var(--admin-accent-strong), var(--admin-accent), var(--primary-400));
   background-size: 200% 100%;
   opacity: 0;
   transition: opacity 0.4s ease, background-position 3s ease infinite;
@@ -290,8 +311,8 @@
 
 .stat-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 26px 46px rgba(26, 43, 60, 0.12);
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
+  box-shadow: 0 24px 46px rgba(20, 24, 38, 0.12);
+  border-color: var(--admin-border-strong);
 }
 
 .stat-card:hover::before {
@@ -330,8 +351,8 @@
 .admin-table-container {
   overflow-x: auto;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--border-default);
-  background: var(--bg-elevated);
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface);
   box-shadow: var(--shadow-sm);
 }
 
@@ -349,13 +370,13 @@
 .admin-table td {
   padding: var(--space-4) var(--space-5);
   text-align: left;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--admin-border);
 }
 
 .admin-table th {
-  background: var(--bg-tertiary);
+  background: var(--admin-surface-muted);
   font-weight: 700;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
@@ -373,7 +394,7 @@
 }
 
 .admin-table tbody tr:hover {
-  background: var(--bg-tertiary);
+  background: var(--admin-surface-muted);
 }
 
 /* ============================================
@@ -450,10 +471,10 @@
    ============================================ */
 .action-btn {
   padding: var(--space-2) var(--space-4);
-  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
-  border: 1px solid var(--border-default);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
   border-radius: 999px;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   font-size: 0.85rem;
   font-weight: 600;
   transition: all 0.2s ease;
@@ -461,9 +482,9 @@
 }
 
 .action-btn:hover {
-  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
-  color: var(--accent-700);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  color: var(--admin-accent-strong);
   transform: translateY(-1px);
 }
 
@@ -476,20 +497,20 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-6);
-  background: linear-gradient(135deg, var(--ink-900), var(--accent-500));
-  color: white;
+  background: linear-gradient(135deg, var(--admin-accent-strong), var(--admin-accent));
+  color: var(--text-inverse);
   border: none;
   border-radius: 999px;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.25s ease;
-  box-shadow: 0 14px 28px rgba(26, 43, 60, 0.16);
+  box-shadow: 0 14px 28px rgba(var(--primary-rgb), 0.22);
   text-decoration: none;
 }
 
 .primary-btn:hover {
-  box-shadow: 0 18px 34px rgba(26, 43, 60, 0.2);
+  box-shadow: 0 18px 34px rgba(var(--primary-rgb), 0.28);
   transform: translateY(-2px);
 }
 
@@ -503,6 +524,50 @@
   transform: none;
 }
 
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  background: transparent;
+  color: var(--admin-copy);
+  border: 1.5px solid var(--admin-border);
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-decoration: none;
+}
+
+.secondary-btn:hover {
+  background: var(--admin-surface-2, var(--admin-surface));
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+  transform: translateY(-1px);
+}
+
+.secondary-btn:active {
+  transform: translateY(0);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+[data-theme="dark"] .secondary-btn {
+  color: var(--admin-copy);
+  border-color: var(--admin-border);
+}
+
+[data-theme="dark"] .secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--primary-300);
+  color: var(--primary-300);
+}
+
 /* ============================================
    Forms
    ============================================ */
@@ -510,7 +575,7 @@
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   margin-bottom: var(--space-2);
   letter-spacing: 0.01em;
 }
@@ -519,9 +584,9 @@
 .admin-page-content .form-select {
   width: 100%;
   padding: 0.7rem 0.9rem;
-  border: 1.5px solid var(--border-default);
+  border: 1.5px solid var(--admin-border);
   border-radius: var(--radius-lg);
-  background: var(--bg-primary);
+  background: var(--admin-surface);
   color: var(--text-primary);
   font-size: 0.95rem;
   font-family: inherit;
@@ -543,7 +608,7 @@
 .admin-page-content .form-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  background: var(--bg-tertiary);
+  background: var(--admin-surface-muted);
 }
 
 .admin-page-content textarea.form-input {
@@ -569,7 +634,7 @@
 
 .admin-page-content .results-sorter > span {
   display: block;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -579,9 +644,9 @@
   width: 100%;
   min-height: 44px;
   padding: 0.7rem 2.5rem 0.7rem 0.9rem;
-  border: 1.5px solid var(--border-default);
+  border: 1.5px solid var(--admin-border);
   border-radius: var(--radius-lg);
-  background: var(--bg-primary);
+  background: var(--admin-surface);
   color: var(--text-primary);
   font-size: 0.95rem;
   font-family: inherit;
@@ -594,7 +659,7 @@
 }
 
 .admin-page-content .results-sorter select:hover {
-  background-color: color-mix(in srgb, var(--accent-500) 3%, var(--bg-primary));
+  background-color: var(--admin-surface-muted);
 }
 
 .admin-page-content .results-sorter select:focus {
@@ -604,7 +669,7 @@
 
 .admin-helper-text {
   margin: var(--space-2) 0 0;
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
   font-size: 0.8rem;
   line-height: 1.55;
 }
@@ -613,11 +678,11 @@
    Glass Panel (Form Section Cards)
    ============================================ */
 .admin-page-content .glass-panel {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 90%, transparent), var(--admin-surface));
+  border: 1px solid var(--admin-border);
   border-radius: 30px;
   padding: var(--space-8);
-  box-shadow: 0 20px 42px rgba(26, 43, 60, 0.08);
+  box-shadow: var(--admin-shadow);
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -630,7 +695,7 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--ink-900), var(--accent-500), var(--primary-500));
+  background: linear-gradient(90deg, var(--admin-accent-strong), var(--admin-accent), var(--primary-400));
   background-size: 200% 100%;
   opacity: 0;
   transition: opacity 0.4s ease, background-position 3s ease infinite;
@@ -648,13 +713,13 @@
 
 .admin-page-content .glass-panel:hover {
   transform: translateY(-4px);
-  box-shadow: 0 28px 52px rgba(26, 43, 60, 0.12);
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
+  box-shadow: 0 28px 52px rgba(20, 24, 38, 0.12);
+  border-color: var(--admin-border-strong);
 }
 
 .admin-page-content .glass-panel h2,
 .admin-page-content .glass-panel h3 {
-  color: var(--text-primary);
+  color: var(--admin-heading);
 }
 
 .admin-page-content .glass-panel svg {
@@ -670,8 +735,8 @@
    ============================================ */
 [data-theme="dark"] .admin-page-content .form-input,
 [data-theme="dark"] .admin-page-content .form-select {
-  background: var(--bg-tertiary);
-  border-color: var(--border-default);
+  background: var(--admin-surface);
+  border-color: var(--admin-border);
 }
 
 [data-theme="dark"] .admin-page-content .form-input:focus,
@@ -681,8 +746,8 @@
 }
 
 [data-theme="dark"] .admin-page-content .glass-panel {
-  background: var(--bg-elevated);
-  border-color: var(--border-default);
+  background: var(--admin-surface);
+  border-color: var(--admin-border);
 }
 
 [data-theme="dark"] .primary-btn {
@@ -702,10 +767,11 @@
    Admin Edit Section (lightweight, no animation)
    ============================================ */
 .admin-edit-section {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
   border-radius: var(--radius-xl);
   padding: var(--space-6);
+  box-shadow: var(--shadow-sm);
 }
 
 .admin-edit-section h2 {
@@ -713,10 +779,10 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
   margin-bottom: var(--space-4);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--admin-border);
 }
 
 /* Sticky save bar for edit pages */
@@ -729,14 +795,14 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-6);
-  background: var(--bg-elevated);
-  border-top: 1px solid var(--border-default);
+  background: var(--admin-surface);
+  border-top: 1px solid var(--admin-border);
   margin-top: var(--space-6);
 }
 
 .admin-sticky-bar-info {
   font-size: 0.85rem;
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
 }
 
 .admin-list-toolbar {
@@ -764,15 +830,15 @@
   justify-content: flex-end;
   padding: 0.4rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-elevated) 95%, transparent);
-  border: 1px solid var(--border-default);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
 }
 
 .admin-export-label {
   padding-inline: 0.45rem 0.15rem;
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
   white-space: nowrap;
 }
 
@@ -781,9 +847,9 @@
 }
 
 .admin-export-btn.is-active {
-  background: color-mix(in srgb, var(--accent-500) 10%, transparent);
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
-  color: var(--accent-700);
+  background: var(--admin-accent-soft);
+  border-color: var(--admin-border-strong);
+  color: var(--admin-accent-strong);
 }
 
 .action-btn:disabled {
@@ -883,9 +949,9 @@
 }
 
 .admin-inline-alert--loading {
-  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
-  border-color: color-mix(in srgb, var(--accent-500) 18%, transparent);
-  color: var(--accent-700);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--admin-accent-strong);
 }
 
 .admin-inline-alert--success {
@@ -907,7 +973,7 @@
 
 .admin-panel-heading p {
   margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   font-size: 0.9rem;
 }
 
@@ -919,9 +985,9 @@
 
 .admin-record-card {
   width: 100%;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--admin-border);
   border-radius: 22px;
-  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  background: var(--admin-surface);
   padding: var(--space-4) var(--space-5);
   text-align: left;
   cursor: pointer;
@@ -937,7 +1003,7 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background: linear-gradient(180deg, var(--ink-900), var(--accent-500));
+  background: linear-gradient(180deg, var(--admin-accent-strong), var(--admin-accent));
   opacity: 0;
   transform: scaleY(0);
   transform-origin: center;
@@ -946,15 +1012,15 @@
 
 .admin-record-card:hover {
   transform: translateY(-3px) translateX(4px);
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
-  box-shadow: 0 18px 30px rgba(26, 43, 60, 0.1);
-  background: color-mix(in srgb, var(--accent-500) 7%, var(--bg-elevated));
+  border-color: var(--admin-border-strong);
+  box-shadow: 0 18px 30px rgba(20, 24, 38, 0.12);
+  background: color-mix(in srgb, var(--admin-accent) 8%, var(--admin-surface));
 }
 
 .admin-record-card.active {
-  border-color: color-mix(in srgb, var(--accent-500) 24%, transparent);
-  background: color-mix(in srgb, var(--accent-500) 10%, var(--bg-elevated));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-500) 20%, transparent) inset;
+  border-color: var(--admin-border-strong);
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--admin-accent) 18%, transparent) inset;
 }
 
 .admin-record-card.active::before {
@@ -974,7 +1040,7 @@
 }
 
 .admin-record-main span {
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
   font-size: 0.82rem;
 }
 
@@ -984,7 +1050,7 @@
 }
 
 .admin-queue-card-subtitle {
-  color: var(--text-secondary) !important;
+  color: var(--admin-copy) !important;
 }
 
 .admin-queue-pill {
@@ -994,16 +1060,16 @@
   min-height: 28px;
   padding: 0.15rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent);
-  background: color-mix(in srgb, var(--bg-tertiary) 88%, transparent);
-  color: var(--text-secondary);
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface-muted);
+  color: var(--admin-copy);
   font-size: 0.72rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .admin-queue-pill.subtle {
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
 }
 
 .admin-queue-pill.status-open,
@@ -1058,7 +1124,7 @@
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-3);
-  color: var(--text-secondary);
+  color: var(--admin-copy);
   font-size: 0.8rem;
 }
 
@@ -1075,7 +1141,72 @@
 .admin-form-actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-3);
   margin-top: var(--space-5);
+}
+
+.admin-support-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 44px;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.admin-support-toggle input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.admin-support-preview {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.admin-support-preview-card {
+  width: min(100%, 34rem);
+  padding: 1.2rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-support-preview-kicker {
+  display: inline-flex;
+  margin-bottom: 0.7rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface-muted);
+  color: var(--admin-copy);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.admin-support-preview-card strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.admin-support-preview-card p {
+  margin: 0;
+  color: var(--admin-copy);
+  line-height: 1.6;
+}
+
+.admin-support-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .admin-inline-form {
@@ -1181,10 +1312,10 @@
   margin-top: var(--space-6);
   padding: var(--space-5);
   border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border: 1px solid var(--admin-border);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-500) 14%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 94%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+    radial-gradient(circle at top left, color-mix(in srgb, var(--admin-accent) 14%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 88%, var(--admin-surface)), color-mix(in srgb, var(--bg-elevated) 76%, var(--admin-surface)));
 }
 
 .admin-preview-card h3 {
@@ -1194,7 +1325,7 @@
 
 .admin-preview-card p {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--admin-copy);
 }
 
 .admin-trailer-preview {
@@ -1205,10 +1336,10 @@
   margin-top: var(--space-5);
   padding: var(--space-5);
   border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border: 1px solid var(--admin-border);
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-500) 12%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 94%, transparent), color-mix(in srgb, var(--bg-elevated) 98%, transparent));
+    radial-gradient(circle at top left, color-mix(in srgb, var(--admin-accent) 12%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 88%, var(--admin-surface)), color-mix(in srgb, var(--bg-elevated) 76%, var(--admin-surface)));
 }
 
 .admin-trailer-preview-media {
@@ -1220,8 +1351,8 @@
   aspect-ratio: 16 / 9;
   border-radius: 20px;
   object-fit: cover;
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
-  background: var(--bg-primary);
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface-muted);
   box-shadow: 0 14px 32px rgba(26, 43, 60, 0.12);
 }
 
@@ -1229,10 +1360,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
+  color: var(--admin-copy);
   background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--accent-500) 10%, transparent), transparent 48%),
-    var(--bg-primary);
+    radial-gradient(circle at top, color-mix(in srgb, var(--admin-accent) 10%, transparent), transparent 48%),
+    var(--admin-surface-muted);
 }
 
 .admin-trailer-preview-copy {
@@ -2144,9 +2275,9 @@
   min-width: 0;
   padding: var(--space-5);
   border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--ink-900) 7%, transparent);
+  border: 1px solid var(--admin-border);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 80%, transparent), color-mix(in srgb, var(--bg-primary) 96%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 84%, var(--admin-surface)), color-mix(in srgb, var(--bg-primary) 72%, var(--admin-surface)));
 }
 
 .admin-tierlist-detail-section-wide {
@@ -2163,7 +2294,7 @@
   display: grid;
   gap: var(--space-3);
   padding-top: var(--space-4);
-  border-top: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border-top: 1px solid var(--admin-border);
 }
 
 .admin-tierlist-subsection:first-of-type {
@@ -2333,9 +2464,9 @@
   padding: var(--space-4);
   border-radius: 22px;
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--bg-elevated) 96%, transparent),
-    color-mix(in srgb, var(--paper-tint) 97%, transparent));
-  border: 1px solid color-mix(in srgb, var(--ink-900) 7%, transparent);
+    color-mix(in srgb, var(--bg-elevated) 72%, var(--admin-surface)),
+    color-mix(in srgb, var(--paper-tint) 82%, var(--admin-surface)));
+  border: 1px solid var(--admin-border);
   box-shadow: 0 2px 12px rgba(26,43,60,0.04);
 }
 .an-stat-chip {
@@ -2454,9 +2585,9 @@
 /* Panel */
 .an-panel {
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--paper-tint) 96%, transparent),
-    color-mix(in srgb, var(--bg-elevated) 98%, transparent));
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+    color-mix(in srgb, var(--paper-tint) 84%, var(--admin-surface)),
+    color-mix(in srgb, var(--bg-elevated) 72%, var(--admin-surface)));
+  border: 1px solid var(--admin-border);
   border-radius: 22px;
   padding: var(--space-5) var(--space-6);
   box-shadow: 0 2px 12px rgba(26,43,60,0.05);
@@ -2865,7 +2996,7 @@
   gap: var(--space-6);
   padding-bottom: var(--space-6);
   margin-bottom: var(--space-6);
-  border-bottom: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  border-bottom: 1px solid var(--admin-border);
   flex-wrap: wrap;
 }
 
@@ -2913,14 +3044,14 @@
 }
 
 .exec-greeting-name {
-  background: linear-gradient(135deg, var(--ink-900), var(--accent-500));
+  background: linear-gradient(135deg, var(--admin-heading), var(--admin-accent-strong));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 [data-theme="dark"] .exec-greeting-name {
-  background: linear-gradient(135deg, var(--primary-300), var(--accent-400));
+  background: linear-gradient(135deg, #ffdbe8, var(--admin-accent));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -3106,9 +3237,9 @@
   padding: var(--space-5) var(--space-6);
   border-radius: 22px;
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--paper-tint) 96%, transparent),
-    color-mix(in srgb, var(--bg-elevated) 98%, transparent));
-  border: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+    color-mix(in srgb, var(--paper-tint) 84%, var(--admin-surface)),
+    color-mix(in srgb, var(--bg-elevated) 72%, var(--admin-surface)));
+  border: 1px solid var(--admin-border);
   box-shadow: 0 4px 16px rgba(26, 43, 60, 0.06);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
@@ -3135,7 +3266,7 @@ a .exec-kpi-card {
 .exec-kpi-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 16px 32px rgba(26, 43, 60, 0.12);
-  border-color: color-mix(in srgb, var(--kpi-accent, var(--accent-500)) 25%, transparent);
+  border-color: color-mix(in srgb, var(--kpi-accent, var(--admin-accent)) 25%, transparent);
 }
 
 .exec-kpi-card:hover::after { opacity: 1; }
@@ -3335,9 +3466,9 @@ a .exec-kpi-card {
 }
 
 .exec-ops-link:hover {
-  background: color-mix(in srgb, var(--accent-500) 6%, var(--bg-elevated));
-  border-color: color-mix(in srgb, var(--accent-500) 20%, transparent);
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--admin-accent) 8%, var(--admin-surface));
+  border-color: color-mix(in srgb, var(--admin-accent) 28%, transparent);
+  color: var(--admin-heading);
   transform: translateY(-2px);
   box-shadow: 0 6px 14px rgba(26, 43, 60, 0.07);
 }
@@ -3348,7 +3479,7 @@ a .exec-kpi-card {
   transition: color 0.2s ease;
 }
 
-.exec-ops-link:hover > svg { color: var(--accent-500); }
+.exec-ops-link:hover > svg { color: var(--admin-accent-strong); }
 
 .exec-ops-link > div {
   display: flex;

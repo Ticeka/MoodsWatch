@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Globe, Moon, Settings, ShieldAlert, Sun } from 'lucide-react';
+import { Coffee, Globe, Moon, Settings, ShieldAlert, Sun } from 'lucide-react';
 import { getAdultModeLabel } from '@/shared/components/layout/headerUtils';
 import { LanguageToggle } from '@/shared/components/layout/LanguageToggle';
+import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
+import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
 
-export function GuestSettingsDropdown({ showAdult, toggleAdult, theme, toggleTheme, t }) {
+export function GuestSettingsDropdown({ showAdult, toggleAdult, theme, toggleTheme, t, pick }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef(null);
   const panelRef = useRef(null);
+  const supportConfig = useSupportConfig();
 
   useEffect(() => {
     if (!open) return;
@@ -83,6 +86,22 @@ export function GuestSettingsDropdown({ showAdult, toggleAdult, theme, toggleThe
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
           </div>
+          <a
+            href={SUPPORT_STRIPE_COFFEE_URL || undefined}
+            target={SUPPORT_STRIPE_COFFEE_URL ? '_blank' : undefined}
+            rel={SUPPORT_STRIPE_COFFEE_URL ? 'noreferrer' : undefined}
+            className={`guest-settings-link${SUPPORT_STRIPE_COFFEE_URL ? '' : ' is-disabled'}`}
+            aria-disabled={!SUPPORT_STRIPE_COFFEE_URL}
+            onClick={(event) => {
+              if (!SUPPORT_STRIPE_COFFEE_URL) {
+                event.preventDefault();
+              }
+              setOpen(false);
+            }}
+          >
+            <span className="guest-settings-label"><Coffee size={13} />{pick(supportConfig.menuLabelTh, supportConfig.menuLabelEn)}</span>
+            <span className="guest-settings-link-hint">{pick(supportConfig.guestHintTh, supportConfig.guestHintEn)}</span>
+          </a>
         </div>,
         document.body
       )}

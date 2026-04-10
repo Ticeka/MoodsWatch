@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart2, BookMarked, ChevronDown, Globe, Home, ListOrdered, LogOut, Menu, Moon, Radio, Search, Settings, ShieldAlert, Sparkles, Sun, Swords, User, Users, X } from 'lucide-react';
+import { BarChart2, BookMarked, ChevronDown, Coffee, Globe, Home, ListOrdered, LogOut, Menu, Moon, Search, Settings, ShieldAlert, Sparkles, Sun, User, Users, Users2, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -13,6 +13,9 @@ import { GuestSettingsDropdown } from '@/shared/components/layout/GuestSettingsD
 import { HeaderSearchFallback } from '@/shared/components/layout/HeaderSearchFallback';
 import { LanguageToggle } from '@/shared/components/layout/LanguageToggle';
 import { NotificationBell } from '@/shared/components/layout/NotificationBell';
+import { BattleVsIcon } from '@/shared/components/icons/BattleVsIcon';
+import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
+import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
 import './Layout.css';
 
 const HeaderSearchExperience = lazy(() => import('@/shared/components/layout/HeaderSearchExperience').then((module) => ({
@@ -24,10 +27,11 @@ export { Footer } from '@/shared/components/layout/Footer';
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { showAdult, toggleAdult } = useAgeGate();
-  const { t } = useLanguage();
+  const { t, pick } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const supportConfig = useSupportConfig();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -238,13 +242,13 @@ export function Header() {
               <Search size={16} /><span className="nav-link-label">{t('layout.discover')}</span>
             </Link>
             <Link to="/battle" className={`nav-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
-              <Swords size={16} /><span className="nav-link-label">{t('layout.battle')}</span>
+              <BattleVsIcon size={17} /><span className="nav-link-label">{t('layout.battle')}</span>
             </Link>
             <Link to="/tierlist" className={`nav-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
               <ListOrdered size={16} /><span className="nav-link-label">{t('layout.tierlist')}</span>
             </Link>
             <Link to="/party" className={`nav-link ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
-              <Radio size={16} /><span className="nav-link-label">{t('layout.party')}</span>
+              <Users2 size={17} /><span className="nav-link-label">{t('layout.party')}</span>
             </Link>
             <Link to="/watchlist" className={`nav-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
               <BookMarked size={16} /><span className="nav-link-label">{t('layout.watchlist')}</span>
@@ -254,7 +258,7 @@ export function Header() {
           <div className="header-actions">
             {!user && (
               <div className="guest-actions-desktop">
-                <GuestSettingsDropdown showAdult={showAdult} toggleAdult={toggleAdult} theme={theme} toggleTheme={toggleTheme} t={t} />
+                <GuestSettingsDropdown showAdult={showAdult} toggleAdult={toggleAdult} theme={theme} toggleTheme={toggleTheme} t={t} pick={pick} />
               </div>
             )}
 
@@ -361,13 +365,13 @@ export function Header() {
             <Search size={18} /> {t('layout.discover')}
           </Link>
           <Link to="/battle" className={`drawer-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
-            <Swords size={18} /> {t('layout.battle')}
+            <BattleVsIcon size={18} /> {t('layout.battle')}
           </Link>
           <Link to="/tierlist" className={`drawer-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
             <ListOrdered size={18} /> {t('layout.tierlist')}
           </Link>
           <Link to="/party" className={`drawer-link ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
-            <Radio size={18} /> {t('layout.party')}
+            <Users2 size={18} /> {t('layout.party')}
           </Link>
           <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BookMarked size={18} /> {t('layout.watchlist')}
@@ -415,6 +419,21 @@ export function Header() {
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             {theme === 'dark' ? t('layout.switchToLight') : t('layout.switchToDark')}
           </button>
+          <a
+            href={SUPPORT_STRIPE_COFFEE_URL || undefined}
+            target={SUPPORT_STRIPE_COFFEE_URL ? '_blank' : undefined}
+            rel={SUPPORT_STRIPE_COFFEE_URL ? 'noreferrer' : undefined}
+            className={`drawer-link drawer-link-support${SUPPORT_STRIPE_COFFEE_URL ? '' : ' is-disabled'}`}
+            aria-disabled={!SUPPORT_STRIPE_COFFEE_URL}
+            onClick={(event) => {
+              if (!SUPPORT_STRIPE_COFFEE_URL) {
+                event.preventDefault();
+              }
+              closeMobileMenu();
+            }}
+          >
+            <Coffee size={18} /> {pick(supportConfig.menuLabelTh, supportConfig.menuLabelEn)}
+          </a>
         </div>
       </nav>
 
@@ -428,11 +447,11 @@ export function Header() {
           <span className="bottom-nav-label">{t('layout.discover')}</span>
         </Link>
         <Link to="/battle" className={`bottom-nav-item ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <Swords size={20} className="bottom-nav-icon" />
+          <BattleVsIcon size={20} className="bottom-nav-icon" />
           <span className="bottom-nav-label">{t('layout.battle')}</span>
         </Link>
         <Link to="/party" className={`bottom-nav-item ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <Radio size={20} className="bottom-nav-icon" />
+          <Users2 size={20} className="bottom-nav-icon" />
           <span className="bottom-nav-label">{t('layout.party')}</span>
         </Link>
         <Link to="/watchlist" className={`bottom-nav-item ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
@@ -498,6 +517,24 @@ export function Header() {
             <BarChart2 size={16} />
             <span>{t('layout.stats')}</span>
           </Link>
+
+          <a
+            href={SUPPORT_STRIPE_COFFEE_URL || undefined}
+            target={SUPPORT_STRIPE_COFFEE_URL ? '_blank' : undefined}
+            rel={SUPPORT_STRIPE_COFFEE_URL ? 'noreferrer' : undefined}
+            className={`dropdown-item dropdown-item-support${SUPPORT_STRIPE_COFFEE_URL ? '' : ' is-disabled'}`}
+            onClick={(event) => {
+              if (!SUPPORT_STRIPE_COFFEE_URL) {
+                event.preventDefault();
+              }
+              setDropdownOpen(false);
+            }}
+            role="menuitem"
+            aria-disabled={!SUPPORT_STRIPE_COFFEE_URL}
+          >
+            <Coffee size={16} />
+            <span>{pick(supportConfig.profileLabelTh, supportConfig.profileLabelEn)}</span>
+          </a>
 
           {canAccessAdmin && (
             <Link to="/admin" className="dropdown-item admin-item" onClick={() => setDropdownOpen(false)} role="menuitem">

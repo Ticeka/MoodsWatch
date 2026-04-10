@@ -9,7 +9,6 @@ import {
   Layers, 
   Play, 
   Plus, 
-  Swords, 
   Trophy, 
   TrendingUp,
   ChevronRight,
@@ -42,6 +41,8 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import {
   CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
   getCatalogEntities,
@@ -50,99 +51,20 @@ import {
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
 import { getAllTitles } from '@/features/discover/lib/recommend';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
+import { BattleVsIcon } from '@/shared/components/icons/BattleVsIcon';
+import {
+  enrichPublicDeckOwners,
+  renderBattleDeckOwnerSubtitle,
+} from '@/features/battle/lib/battleOwnerPresentation';
 import '../styles/Battle.css';
 
 const RECENT_BATTLE_SESSION_LIMIT = 4;
 const PUBLIC_DECK_PAGE_SIZE = 8; // keep community stages to a manageable multi-row page
 const TODAY = new Date().toISOString().slice(0, 10);
 
-function buildOwnerProfilePath(ownerUsername) {
-  const normalized = String(ownerUsername || '').trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
-    return '';
-  }
-  return `/u/${normalized}`;
-}
-
 function mergeRecentBattleSessions(localSessions = [], remoteSessions = []) {
   return dedupeBattleSessionsByRecency([...localSessions, ...remoteSessions])
     .slice(0, RECENT_BATTLE_SESSION_LIMIT);
-}
-
-async function enrichPublicDeckOwners(decks = []) {
-  if (!decks.length) return decks;
-
-  const ownerIds = [...new Set(decks.map((deck) => String(deck?.ownerUserId || '').trim()).filter(Boolean))];
-  if (!ownerIds.length) return decks;
-
-  try {
-    const { data: profiles, error } = await supabase
-      .from('user_profiles')
-      .select('id, username, name, avatar_url')
-      .in('id', ownerIds);
-
-    if (error) throw error;
-
-    if (profiles?.length) {
-      const profileMap = new Map(profiles.map((profile) => [String(profile.id), profile]));
-      return decks.map((deck) => {
-        const profile = profileMap.get(String(deck?.ownerUserId || ''));
-        if (!profile) {
-          return deck;
-        }
-
-        return {
-          ...deck,
-          ownerAvatarUrl: profile.avatar_url || deck.ownerAvatarUrl || '',
-          ownerUsername: profile.username || deck.ownerUsername || '',
-          ownerDisplayName: profile.name || deck.ownerDisplayName || profile.username || '',
-        };
-      });
-    }
-  } catch (err) {
-    console.error('Failed to fetch public deck owners', err);
-  }
-  return decks;
-}
-
-function getOwnerLabel(deck) {
-  return deck?.ownerDisplayName || deck?.ownerUsername || '';
-}
-
-function getOwnerInitial(label) {
-  return String(label || '?').trim().charAt(0).toUpperCase() || '?';
-}
-
-function renderOwnerSubtitle(deck, t) {
-  const ownerLabel = getOwnerLabel(deck);
-  const ownerProfilePath = buildOwnerProfilePath(deck?.ownerUsername);
-
-  if (!ownerLabel) {
-    return t('battle.communityUserFallback');
-  }
-
-  if (!ownerProfilePath) {
-    return t('battle.publicDeckBy', { owner: ownerLabel });
-  }
-
-  return (
-    <Link
-      to={ownerProfilePath}
-      className="game-owner-link"
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-      aria-label={t('battle.publicDeckBy', { owner: ownerLabel })}
-    >
-      <span className="game-owner-avatar">
-        {deck.ownerAvatarUrl ? (
-          <img src={deck.ownerAvatarUrl} alt="" loading="lazy" />
-        ) : (
-          <span>{getOwnerInitial(ownerLabel)}</span>
-        )}
-      </span>
-      {ownerLabel}
-    </Link>
-  );
 }
 
 function BattlePresetCardSkeleton() {
@@ -474,6 +396,8 @@ export function BattleHub() {
         ? visibleCharacterCatalog.length
         : normalizeCatalogEntityType(deck?.filters?.entityType) === THEME_SONG_ENTITY_TYPE
           ? Number(deck?.sourceCount || deck?.titles?.length || 0)
+          : normalizeCatalogEntityType(deck?.filters?.entityType) === CUSTOM_IMAGE_ENTITY_TYPE || normalizeCatalogEntityType(deck?.filters?.entityType) === CUSTOM_VIDEO_ENTITY_TYPE
+            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
           : normalizeCatalogEntityType(deck?.filters?.entityType) === TRAILER_ENTITY_TYPE
             ? Number(deck?.sourceCount || deck?.titles?.length || 0)
             : visibleCatalogTitles.length,
@@ -516,10 +440,10 @@ export function BattleHub() {
         <header className="battle-hub-hero">
           <div className="container battle-hub-hero-container">
             <div className="battle-hero-badge animate-fade-in-up">
-              <span className="battle-hero-badge-icon"><Swords size={12} fill="currentColor" /></span>
-              อนิเมะ / มังงะ / มันฮวา
+              <span className="battle-hero-badge-icon"><BattleVsIcon size={15} /></span>
+              {t('battle.hubFormats')}
             </div>
-            <h1 className="battle-hub-title animate-fade-in-up">SOLO BATTLE</h1>
+            <h1 className="battle-hub-title animate-fade-in-up">{t('battle.hubDisplayTitle')}</h1>
             <p className="battle-hub-tagline animate-fade-in-up" style={{ animationDelay: '0.1s' }}>{t('battle.hubTagline')}</p>
             <div className="battle-hub-hero-actions">
               <Link className="battle-btn-primary action-pulse" to="/battle/build">
@@ -707,7 +631,7 @@ export function BattleHub() {
                   <BattleReadyDeckCard
                     key={deck.id}
                     title={deck.label}
-                    subtitle={renderOwnerSubtitle(deck, t)}
+                    subtitle={renderBattleDeckOwnerSubtitle(deck, t)}
                     badge={t('battle.customStage')}
                     badgeClassName="game-badge community"
                     deck={deck}
@@ -812,7 +736,7 @@ export function BattleHub() {
                         onClick={handleDailyPlay}
                         disabled={!user}
                       >
-                        <Swords size={16} />
+                        <BattleVsIcon size={18} />
                         {user ? t('dailyChallenge.playNow') : t('dailyChallenge.loginToPlay')}
                       </button>
                     </div>

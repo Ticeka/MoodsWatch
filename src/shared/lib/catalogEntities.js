@@ -5,6 +5,8 @@ export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';
 export const THEME_SONG_ENTITY_TYPE = 'theme_song';
 export const TRAILER_ENTITY_TYPE = 'trailer';
+export const CUSTOM_IMAGE_ENTITY_TYPE = 'custom_image';
+export const CUSTOM_VIDEO_ENTITY_TYPE = 'custom_video';
 
 const CHARACTER_ROLE_LABELS = {
   MAIN: 'Main character',
@@ -89,6 +91,8 @@ export function normalizeCatalogEntityType(value) {
   if (value === CHARACTER_ENTITY_TYPE) return CHARACTER_ENTITY_TYPE;
   if (value === THEME_SONG_ENTITY_TYPE) return THEME_SONG_ENTITY_TYPE;
   if (value === TRAILER_ENTITY_TYPE) return TRAILER_ENTITY_TYPE;
+  if (value === CUSTOM_IMAGE_ENTITY_TYPE) return CUSTOM_IMAGE_ENTITY_TYPE;
+  if (value === CUSTOM_VIDEO_ENTITY_TYPE) return CUSTOM_VIDEO_ENTITY_TYPE;
   return TITLE_ENTITY_TYPE;
 }
 
@@ -104,9 +108,20 @@ export function isTrailerEntity(entity) {
   return entity?.entityType === TRAILER_ENTITY_TYPE;
 }
 
+export function isCustomImageEntity(entity) {
+  return entity?.entityType === CUSTOM_IMAGE_ENTITY_TYPE;
+}
+
+export function isCustomVideoEntity(entity) {
+  return entity?.entityType === CUSTOM_VIDEO_ENTITY_TYPE;
+}
+
 export function getCatalogEntityName(entity) {
   if (isThemeSongEntity(entity)) {
     return entity?.song_title || entity?.title_en || 'Unknown';
+  }
+  if (isCustomImageEntity(entity) || isCustomVideoEntity(entity)) {
+    return entity?.title_en || entity?.title_th || entity?.title_native || 'Custom media';
   }
   return entity?.title_th || entity?.title_en || entity?.title_native || 'Unknown';
 }
@@ -131,6 +146,17 @@ export function getCatalogEntityMeta(entity) {
       ? String(entity.trailer_site).charAt(0).toUpperCase() + String(entity.trailer_site).slice(1)
       : 'Trailer';
     return [provider, entity?.year].filter(Boolean).join(' · ');
+  }
+
+  if (isCustomImageEntity(entity)) {
+    return [entity?.role || 'Custom image', entity?.sourceTitleName || entity?.subtype || 'External media'].filter(Boolean).join(' · ');
+  }
+
+  if (isCustomVideoEntity(entity)) {
+    const provider = entity?.trailer_site
+      ? String(entity.trailer_site).charAt(0).toUpperCase() + String(entity.trailer_site).slice(1)
+      : 'Video';
+    return [provider, entity?.sourceTitleName || entity?.subtype || 'External media'].filter(Boolean).join(' · ');
   }
 
   return [entity?.type, ...(entity?.genres || []).slice(0, 2)].filter(Boolean).join(' / ');

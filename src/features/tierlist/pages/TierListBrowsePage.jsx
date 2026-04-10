@@ -95,7 +95,7 @@ export function TierListBrowsePage() {
     }
     load().catch((error) => {
       if (!cancelled) {
-        setLoadError(error?.message || pick('โหลดหน้า Tier List ไม่สำเร็จ', 'Failed to load tier lists'));
+        setLoadError(error?.message || pick('โหลดหน้าเทียร์ลิสต์ไม่สำเร็จ', 'Failed to load tier lists'));
         setIsLoading(false);
         setIsCatalogHydrating(false);
       }

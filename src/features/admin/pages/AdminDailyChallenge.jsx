@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { CalendarDays, Check, Loader2, Plus, RefreshCw, Shuffle, Trash2, X } from 'lucide-react';
+import { fetchAdminDailyChallengeData } from '@/features/admin/api';
 import { supabase } from '@/shared/lib/supabase';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/Admin.css';
@@ -22,41 +23,6 @@ function getDateRange() {
 
 const EMPTY_FORM = { theme_name_th: '', theme_name_en: '', theme_icon: '📅', deck_id: '' };
 
-async function fetchDailyChallengeAdminData(dates) {
-  if (!supabase) {
-    throw new Error('Supabase client is not available');
-  }
-
-  const [{ data: challengeData, error: challengeError }, { data: deckData, error: deckError }] = await Promise.all([
-    supabase
-      .from('daily_challenges')
-      .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
-      .gte('challenge_date', dates[0])
-      .lte('challenge_date', dates[dates.length - 1]),
-    supabase
-      .from('battle_decks')
-      .select('id, name, is_public')
-      .eq('is_public', true)
-      .order('name'),
-  ]);
-
-  if (challengeError) throw challengeError;
-  if (deckError) throw deckError;
-
-  const challengeMap = {};
-  dates.forEach((date) => {
-    challengeMap[date] = null;
-  });
-  (challengeData || []).forEach((challenge) => {
-    challengeMap[challenge.challenge_date] = challenge;
-  });
-
-  return {
-    challengeMap,
-    decks: deckData || [],
-  };
-}
-
 export function AdminDailyChallenge() {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
@@ -68,7 +34,7 @@ export function AdminDailyChallenge() {
   const dates = getDateRange();
   const dailyChallengeQuery = useQuery({
     queryKey: DAILY_CHALLENGE_QUERY_KEY,
-    queryFn: () => fetchDailyChallengeAdminData(dates),
+    queryFn: () => fetchAdminDailyChallengeData(dates),
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     retry: 1,

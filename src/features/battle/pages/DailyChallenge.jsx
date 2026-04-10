@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/shared/lib/supabase';
+import {
+  fetchDailyChallengeByDate,
+  fetchDailyChallengeCompletion,
+  fetchDailyChallengeStreak,
+} from '@/features/battle/api';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { CalendarDays, Trophy, CheckCircle2, Swords } from 'lucide-react';
@@ -18,33 +22,16 @@ export function DailyChallenge() {
   const [streak, setStreak] = useState(0);
 
   const fetchChallenge = useCallback(async () => {
-    if (!supabase) { setLoading(false); return; }
     setLoading(true);
     try {
-      const { data: challengeData } = await supabase
-        .from('daily_challenges')
-        .select('id, challenge_date, theme_name_th, theme_name_en, theme_icon, deck_id')
-        .eq('challenge_date', TODAY)
-        .maybeSingle();
-
-      setChallenge(challengeData || null);
+      const challengeData = await fetchDailyChallengeByDate(TODAY);
+      setChallenge(challengeData);
 
       if (user && challengeData) {
-        const { data: completion } = await supabase
-          .from('daily_challenge_completions')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('challenge_date', TODAY)
-          .maybeSingle();
+        const completion = await fetchDailyChallengeCompletion(user.id, TODAY);
         setCompleted(!!completion);
 
-        // Calculate streak: count consecutive days with completions
-        const { data: recentCompletions } = await supabase
-          .from('daily_challenge_completions')
-          .select('challenge_date')
-          .eq('user_id', user.id)
-          .order('challenge_date', { ascending: false })
-          .limit(30);
+        const recentCompletions = await fetchDailyChallengeStreak(user.id, 30);
 
         let streakCount = 0;
         let expectedDate = new Date();

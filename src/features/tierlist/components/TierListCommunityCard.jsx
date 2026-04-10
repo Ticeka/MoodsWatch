@@ -25,6 +25,10 @@ export function TierListCommunityCard({
   onSecondaryClick,
 }) {
   const coverTitles = getTierListPreviewTitles(list, titleById);
+  const rankedCount = [...new Set([
+    ...(list?.rows || []).flatMap((row) => row?.titleIds || []),
+    ...(list?.poolTitleIds || []),
+  ].map(Number).filter(Boolean))].length;
   const ownerLabel = getOwnerDisplayName(list.ownerName, list.ownerUsername, pick);
   const ownerProfilePath = buildOwnerProfilePath(list.ownerUsername);
   const ownerInitial = String(ownerLabel || '?').trim().charAt(0).toUpperCase() || '?';
@@ -45,6 +49,9 @@ export function TierListCommunityCard({
   return (
     <article className="glass-heavy tierlist-browse-card tierlist-community-card">
       <div className="tierlist-community-preview">
+        <div className="tierlist-card-count-badges">
+          <span className="tierlist-card-count-badge">{pick(`${rankedCount} รายการ`, `${rankedCount} items`)}</span>
+        </div>
         {previewRows.length > 0 ? (
           previewRows.map((row) => (
             <div key={`${list.id}-${row.id}`} className="tierlist-community-preview-row">

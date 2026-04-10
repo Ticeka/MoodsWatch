@@ -579,6 +579,37 @@ export async function fetchPublicBattleDecks({ limit = 24, offset = 0 } = {}) {
   return (data || []).map(mapRowToPublicDeck).filter(Boolean);
 }
 
+export async function fetchMyPublicBattleDecks(userId) {
+  if (!hasRemote(userId)) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('battle_public_decks')
+    .select(BATTLE_PUBLIC_DECK_SELECT)
+    .eq('owner_user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    if (isMissingRelation(error, 'battle_public_decks')) {
+      return [];
+    }
+    const missingColumn = getMissingColumn(error, 'battle_public_decks');
+    if (missingColumn === 'owner_username' || missingColumn === 'play_count') {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('battle_public_decks')
+        .select(BATTLE_PUBLIC_DECK_LEGACY_SELECT)
+        .eq('owner_user_id', userId)
+        .order('updated_at', { ascending: false });
+      if (fallbackError) throw fallbackError;
+      return (fallbackData || []).map(mapRowToPublicDeck).filter(Boolean);
+    }
+    throw error;
+  }
+
+  return (data || []).map(mapRowToPublicDeck).filter(Boolean);
+}
+
 export async function persistRemotePublicBattleDeck(user, deck) {
   if (!supabase || !user?.id || !deck?.id) {
     return deck;

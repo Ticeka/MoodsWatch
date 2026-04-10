@@ -3,9 +3,9 @@ import toast from 'react-hot-toast';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { ErrorState } from '@/shared/components/ui/ErrorState';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
+import { fetchAdminUsersPage, updateAdminUserRole } from '@/features/admin/api';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
-import { supabase } from '@/shared/lib/supabase';
 import '../styles/Admin.css';
 
 const PAGE_SIZE = 50;
@@ -29,54 +29,19 @@ export function AdminUsers() {
   const totalPages = Math.max(1, Math.ceil(totalUsers / PAGE_SIZE));
 
   const fetchUsers = useCallback(async () => {
-    if (!supabase) {
-      const message = t('admin.users.supabaseUnavailable');
-      setErrorMessage(message);
-      toast.error(message);
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      let query = supabase
-        .from('user_profiles')
-        .select('id, name, email, role, avatar_url, created_at', { count: 'planned' });
-
-      if (roleFilter !== 'all') {
-        query = query.eq('role', roleFilter);
-      }
-
-      const normalizedSearchTerm = debouncedSearchTerm.trim();
-      if (normalizedSearchTerm) {
-        const searchClauses = [
-          `name.ilike.%${normalizedSearchTerm}%`,
-          `email.ilike.%${normalizedSearchTerm}%`,
-        ];
-
-        if (/^[0-9a-f-]{32,36}$/i.test(normalizedSearchTerm)) {
-          searchClauses.push(`id.eq.${normalizedSearchTerm}`);
-        }
-
-        query = query.or(searchClauses.join(','));
-      }
-
-      if (sortBy === 'oldest') {
-        query = query.order('created_at', { ascending: true });
-      } else if (sortBy === 'name') {
-        query = query.order('name', { ascending: true, nullsFirst: false });
-      } else {
-        query = query.order('created_at', { ascending: false });
-      }
-
-      const from = (currentPage - 1) * PAGE_SIZE;
-      const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1);
-
-      if (error) throw error;
-      setUsers(data || []);
-      setTotalUsers(count || 0);
+      const { users: nextUsers, totalUsers: nextTotalUsers } = await fetchAdminUsersPage({
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        searchTerm: debouncedSearchTerm,
+        roleFilter,
+        sortBy,
+      });
+      setUsers(nextUsers);
+      setTotalUsers(nextTotalUsers);
     } catch (err) {
       console.warn('Error fetching users:', err);
       const message = err?.message
@@ -104,24 +69,13 @@ export function AdminUsers() {
   }, [currentPage, totalPages]);
 
   async function handleRoleChange(userId, userName, newRole) {
-    if (!supabase) {
-      toast.error(t('admin.users.supabaseUnavailable'));
-      return;
-    }
-
     const roleLabel = roleLabelMap[newRole] || newRole;
     const isConfirmed = window.confirm(t('admin.users.confirmRoleChange', { name: userName, role: roleLabel }));
     if (!isConfirmed) return;
 
     const toastId = toast.loading(t('admin.users.updatingRole'));
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ role: newRole })
-        .eq('id', userId);
-
-      if (error) throw error;
-
+      await updateAdminUserRole(userId, newRole);
       toast.success(t('admin.users.roleChanged', { role: roleLabel }), { id: toastId });
       await fetchUsers();
     } catch (err) {
@@ -209,7 +163,9 @@ export function AdminUsers() {
                       )}
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{entry.name || t('admin.users.anonymous')}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{entry.email || t('admin.users.noEmail')}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                          {entry.username ? `@${entry.username}` : t('admin.users.noEmail')}
+                        </div>
                       </div>
                     </div>
                   </td>

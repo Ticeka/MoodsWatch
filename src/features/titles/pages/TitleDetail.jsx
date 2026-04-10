@@ -20,6 +20,7 @@ import { getTitleTypeMeta } from '@/shared/lib/titleType';
 import { ChevronLeft, ChevronRight, ExternalLink, Flag, Link as LinkIcon, Loader2, Music, Play, PlayCircle, Plus, Star, Trash2, Trophy } from 'lucide-react';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TitleReviews } from '@/features/titles/components/TitleReviews';
+import { buildTitlePersonRouteId } from '@/features/titles/lib/titlePeople';
 import {
   createTitleAvailabilityLink,
   deleteTitleAvailabilityLink,
@@ -64,7 +65,7 @@ function buildGoogleSearchUrl(title, primaryTitle) {
 export function TitleDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { language, t } = useLanguage();
+  const { language, pick, t } = useLanguage();
   const { showAdult } = useAgeGate();
   const { user } = useAuth();
   const { watchlist, addToList, removeFromList, updateItem, getStatus, advanceProgress, setConsumptionTarget } = useWatchlist();
@@ -178,7 +179,7 @@ export function TitleDetail() {
 
     loadSimilarTitles();
     return () => { cancelled = true; };
-  }, [title?.id, showAdult]);
+  }, [showAdult, title]);
 
   useEffect(() => {
     if (castTab !== 'stats' || !title?.id) return undefined;
@@ -1017,10 +1018,13 @@ export function TitleDetail() {
 
             {castTab === 'characters' && title.characters?.length > 0 && (
               <div className="cast-rail" role="tabpanel" ref={castRailRef}>
-                {title.characters.map((char) => (
-                  <div
+                {title.characters.map((char, index) => (
+                  <button
+                    type="button"
                     key={char.anilist_id ?? char.name_full}
                     className={`cast-card${char.role === 'MAIN' ? ' cast-card--main' : ''}`}
+                    onClick={() => navigate(`/title/${title.slug}/character/${buildTitlePersonRouteId(char, index)}`)}
+                    aria-label={pick(`เปิดรายละเอียดตัวละคร ${char.name_full} จากเรื่อง ${primaryTitle}`, `Open character detail for ${char.name_full} from ${primaryTitle}`)}
                   >
                     <div className="cast-img-wrap">
                       {char.image_url
@@ -1047,15 +1051,21 @@ export function TitleDetail() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
 
             {castTab === 'staff' && title.staff?.length > 0 && (
               <div className="cast-rail" role="tabpanel" ref={castRailRef}>
-                {title.staff.map((person) => (
-                  <div key={person.anilist_id ?? person.name_full} className="cast-card">
+                {title.staff.map((person, index) => (
+                  <button
+                    type="button"
+                    key={person.anilist_id ?? person.name_full}
+                    className="cast-card"
+                    onClick={() => navigate(`/title/${title.slug}/staff/${buildTitlePersonRouteId(person, index)}`)}
+                    aria-label={pick(`เปิดรายละเอียดทีมงาน ${person.name_full} จากเรื่อง ${primaryTitle}`, `Open staff detail for ${person.name_full} from ${primaryTitle}`)}
+                  >
                     <div className="cast-img-wrap">
                       {person.image_url
                         ? <img src={person.image_url} alt={person.name_full} className="cast-img" loading="lazy" />
@@ -1066,7 +1076,7 @@ export function TitleDetail() {
                       <span className="cast-name">{person.name_full}</span>
                       {person.role && <span className="cast-sub">{person.role}</span>}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

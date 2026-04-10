@@ -19,6 +19,7 @@ import {
   AdminMoodsPage,
   AdminPartyPresetsPage,
   AdminRecommendationPreviewPage,
+  AdminSupportModalPage,
   AdminTierlistsPage,
   AdminTitleEditPage,
   AdminTitlesPage,
@@ -50,7 +51,9 @@ import {
   TierListManagePage,
   TierListPlayPage,
   TierListTemplatePage,
+  TitleCharacterDetailPage,
   TitleDetailPage,
+  TitleStaffDetailPage,
   WatchlistPage,
 } from './lazyPages';
 import { AdminFallback, LegacyPartyTitleGuessCreateRedirect, PageLoader } from './routeElements';
@@ -102,6 +105,8 @@ export function AppRouter() {
             <Route path="tierlist/songs" element={<SongTierListBrowsePage />} />
             <Route path="tierlist/songs/:titleSlug" element={<SongTierListPage />} />
             <Route path="discover" element={<DiscoverPage />} />
+            <Route path="title/:slug/character/:personId" element={<TitleCharacterDetailPage />} />
+            <Route path="title/:slug/staff/:personId" element={<TitleStaffDetailPage />} />
             <Route path="title/:slug" element={<TitleDetailPage />} />
             <Route path="watchlist" element={<WatchlistPage />} />
             <Route
@@ -142,6 +147,7 @@ export function AppRouter() {
               <Route path="collections" element={<AdminCollectionsPage />} />
               <Route path="homepage" element={<AdminHomepagePage />} />
               <Route path="recommendations" element={<AdminRecommendationPreviewPage />} />
+              <Route path="support-modal" element={<AdminSupportModalPage />} />
               <Route path="fetch" element={<AdminFetchPage />} />
               <Route path="links" element={<AdminLinksPage />} />
               <Route path="daily" element={<AdminDailyChallengePage />} />

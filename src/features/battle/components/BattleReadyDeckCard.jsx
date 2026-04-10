@@ -22,12 +22,14 @@ export function BattleReadyDeckCard({
   variant = 'default',
 }) {
   const { t } = useLanguage();
+  const deckCount = deck?.titles?.length || 0;
   const getLocalizedReadyUnit = (entityType) => {
     const unit = getBattleDeckEntryUnitLabel(entityType);
     if (unit === 'characters') return t('battle.unitCharacters');
     if (unit === 'songs') return t('battle.unitSongs');
     return t('battle.unitTitles');
   };
+  const countBadgeLabel = `${deckCount} ${getLocalizedReadyUnit(deck?.filters?.entityType)}`;
   const resolvedActionLabel = actionLabel || t('battle.startBattle');
   const previewTitles = (() => {
     const items = deck?.titles?.slice(0, 3) || [];
@@ -39,7 +41,7 @@ export function BattleReadyDeckCard({
     }
     return items;
   })();
-  const canStart = (deck?.titles?.length || 0) >= 8;
+  const canStart = deckCount >= 8;
   const metaLabel = getBattleDeckMeta(deck);
   const isCardDisabled = disabled || !canStart;
   const handlePresetActivate = () => {
@@ -83,6 +85,7 @@ export function BattleReadyDeckCard({
               <Play size={20} />
             </div>
           )}
+          <span className="battle-card-count-badge">{countBadgeLabel}</span>
         </div>
         <div className="battle-preset-head">
           <span className={`battle-preset-badge ${badgeClassName}`.trim()}>{badge}</span>
@@ -112,6 +115,7 @@ export function BattleReadyDeckCard({
             <Play size={20} />
           </div>
         )}
+        <span className="battle-card-count-badge">{countBadgeLabel}</span>
       </div>
 
       <div className="battle-deck-card-body">
@@ -123,7 +127,7 @@ export function BattleReadyDeckCard({
         <div className="battle-deck-meta-row">
           <span className="battle-preset-meta">
             {t('battle.deckReadyMeta', {
-              count: deck?.titles?.length || 0,
+              count: deckCount,
               unit: getLocalizedReadyUnit(deck?.filters?.entityType),
             })}
           </span>

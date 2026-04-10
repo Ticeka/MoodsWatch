@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { Globe, Layers, Lock, Sparkles, Trash2 } from 'lucide-react';
@@ -9,6 +9,7 @@ import {
 } from '@/features/battle/lib/battleStore';
 import {
   deleteRemotePublicBattleDeck,
+  fetchMyPublicBattleDecks,
   persistRemotePublicBattleDeck,
 } from '@/features/battle/api/battleRemoteApi';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
@@ -26,6 +27,28 @@ export function BattleDeckLibraryPage() {
   const { t } = useLanguage();
   const { showAdult } = useAgeGate();
   const [savedDecks, setSavedDecks] = useState(() => getStoredBattleDecks());
+
+  // Merge remote public decks (owned by this user) into local store on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    fetchMyPublicBattleDecks(user.id).then((remoteDecks) => {
+      if (cancelled) return;
+      const localDecks = getStoredBattleDecks();
+      const localIds = new Set(localDecks.map((d) => d.id));
+      let changed = false;
+      for (const remote of remoteDecks) {
+        if (!localIds.has(remote.id)) {
+          saveStoredBattleDeck(remote);
+          changed = true;
+        }
+      }
+      if (changed) setSavedDecks(getStoredBattleDecks());
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   const readySavedDecks = useMemo(
     () => filterDecksForAgeGate(

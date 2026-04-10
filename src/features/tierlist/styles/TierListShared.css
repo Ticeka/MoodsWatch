@@ -750,6 +750,10 @@
   z-index: 2;
 }
 
+.tiermaker-pool .tiermaker-tile.can-open-detail {
+  cursor: zoom-in;
+}
+
 .tiermaker-editor.is-pointer-dragging .tiermaker-tile {
   cursor: grabbing;
 }

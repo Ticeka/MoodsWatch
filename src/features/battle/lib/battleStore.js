@@ -1,5 +1,12 @@
 import { BRAND_NAME } from '../../../shared/config/brand.js';
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '../../../shared/lib/catalogEntities.js';
+import {
+  CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
+  THEME_SONG_ENTITY_TYPE,
+  TITLE_ENTITY_TYPE,
+  normalizeCatalogEntityType,
+} from '../../../shared/lib/catalogEntities.js';
 import { normalizeTrailer } from '../../../shared/lib/trailers.js';
 
 const BATTLE_SESSIONS_KEY = 'moodtoon-battle-sessions';
@@ -97,6 +104,14 @@ function getAllEntityLabel(entityType) {
 
   if (entityType === THEME_SONG_ENTITY_TYPE) {
     return 'All songs';
+  }
+
+  if (entityType === CUSTOM_IMAGE_ENTITY_TYPE) {
+    return 'Custom images';
+  }
+
+  if (entityType === CUSTOM_VIDEO_ENTITY_TYPE) {
+    return 'Custom videos';
   }
 
   return 'All titles';
@@ -223,6 +238,9 @@ function buildDeckSignature(filters) {
 function normalizeDeckFilters(filters = {}) {
   const entityType = normalizeCatalogEntityType(filters.entityType);
   const supportsTrailerFilters = entityType === TITLE_ENTITY_TYPE;
+  const isMediaOnlyType = entityType === THEME_SONG_ENTITY_TYPE
+    || entityType === CUSTOM_IMAGE_ENTITY_TYPE
+    || entityType === CUSTOM_VIDEO_ENTITY_TYPE;
   const trailerState = supportsTrailerFilters ? (filters.trailerState || 'all') : 'all';
   const trailerProvider = supportsTrailerFilters && trailerState !== 'none'
     ? (filters.trailerProvider || 'all')
@@ -230,9 +248,9 @@ function normalizeDeckFilters(filters = {}) {
 
   return {
     entityType,
-    type: entityType === THEME_SONG_ENTITY_TYPE ? 'all' : (filters.type || 'all'),
-    tag: entityType === THEME_SONG_ENTITY_TYPE ? '' : (filters.tag || ''),
-    mood: entityType === THEME_SONG_ENTITY_TYPE ? '' : (filters.mood || ''),
+    type: isMediaOnlyType ? 'all' : (filters.type || 'all'),
+    tag: isMediaOnlyType ? '' : (filters.tag || ''),
+    mood: isMediaOnlyType ? '' : (filters.mood || ''),
     query: filters.query || '',
     trailerState,
     trailerProvider,
@@ -268,6 +286,9 @@ function serializeTitle(title) {
     genres: title.genres || [],
     tags: title.tags || [],
     moods: title.moods || [],
+    anilist_id: title.anilist_id || null,
+    characterRowId: title.characterRowId || null,
+    name_full: title.name_full || '',
     role: title.role || '',
     voice_actor_name: title.voice_actor_name || '',
     voice_actor_image: title.voice_actor_image || '',

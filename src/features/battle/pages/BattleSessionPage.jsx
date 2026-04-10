@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeftRight, BarChart3, ChevronLeft, Copy, Crown, ExternalLink, Medal, Music, Play, RotateCcw, Swords, Trophy } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, ChevronLeft, Copy, Crown, ExternalLink, Image as ImageIcon, Medal, Music, Play, RotateCcw, Swords, Trophy } from 'lucide-react';
 import {
   getBattleDecisionCount,
   getBattleSession,
@@ -23,6 +23,9 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import {
   getCatalogEntityMeta,
   getCatalogEntityName,
+  isCharacterEntity,
+  isCustomImageEntity,
+  isCustomVideoEntity,
   isThemeSongEntity,
   isTrailerEntity,
 } from '@/shared/lib/catalogEntities';
@@ -30,6 +33,7 @@ import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { normalizeTrailer } from '@/shared/lib/trailers';
 import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { TrailerModal } from '@/shared/components/ui/TrailerModal';
+import { buildTitlePersonRouteId, buildTitleRouteSlug } from '@/features/titles/lib/titlePeople';
 import '../styles/Battle.css';
 
 const COMMUNITY_ROLLUP_RETRY_DELAYS_MS = [0, 250, 500, 1000, 1500, 2000];
@@ -242,11 +246,44 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function isInlinePlayableVideoUrl(url = '') {
+  const normalized = String(url || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.startsWith('data:video/')
+    || normalized.startsWith('blob:')
+    || /\.(mp4|webm|ogg|mov|m4v)(?:[?#].*)?$/i.test(normalized);
+}
+
+function resolveBattleDetailPath(title) {
+  if (!title || title?.isCustomTierItem || isCustomImageEntity(title) || isCustomVideoEntity(title)) {
+    return '';
+  }
+
+  const sourceSlug = buildTitleRouteSlug(title?.sourceTitleSlug, title?.sourceTitleId);
+  if (isCharacterEntity(title) && sourceSlug) {
+    const charRouteId = buildTitlePersonRouteId(title) || String(title?.id || '');
+    return `/title/${sourceSlug}/character/${charRouteId}`;
+  }
+
+  if (sourceSlug) {
+    return `/title/${sourceSlug}`;
+  }
+
+  const ownSlug = buildTitleRouteSlug(title?.slug, title?.id);
+  return ownSlug ? `/title/${ownSlug}` : '';
+}
+
 function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTrailer }) {
-  const { t } = useLanguage();
+  const { pick, t } = useLanguage();
   if (!title) return null;
   const displayName = getDisplayName(title) || t('battle.catalogFallback');
+  const detailPath = resolveBattleDetailPath(title);
   const isSong = isThemeSongEntity(title);
+  const isCustomImage = isCustomImageEntity(title);
+  const isCustomVideo = isCustomVideoEntity(title);
 
   if (isSong) {
     let embedUrl = null;
@@ -288,7 +325,18 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
             <h2>{displayName}</h2>
             <p className="battle-card-info-sub">{[title.artist_name || title.voice_actor_name, title.sourceTitleName].filter(Boolean).join(' · ')}</p>
           </div>
-          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          <div className="battle-card-actions">
+            {detailPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.open(detailPath, '_blank', 'noopener,noreferrer')}
+              >
+                {pick('รายละเอียด', 'Details')}
+              </Button>
+            ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
         </div>
       </article>
     );
@@ -330,7 +378,105 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
             <h2>{displayName}</h2>
             <p className="battle-card-info-sub">{getMetaLine(title)}</p>
           </div>
-          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          <div className="battle-card-actions">
+            {detailPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.open(detailPath, '_blank', 'noopener,noreferrer')}
+              >
+                {pick('รายละเอียด', 'Details')}
+              </Button>
+            ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  if (isCustomVideo) {
+    const trailerNorm = normalizeTrailer(title);
+    const embedUrl = trailerNorm?.embedUrl || title?.trailer_embed_url || null;
+    const watchUrl = trailerNorm?.watchUrl || title?.trailer_watch_url || title?.trailer_url || null;
+    const thumbnailUrl = title?.trailer_thumbnail_url || getTitleArtwork(title);
+    const providerName = trailerNorm?.provider || title?.trailer_site || 'Video';
+    const providerBadge = String(providerName).charAt(0).toUpperCase() + String(providerName).slice(1);
+    const canPlayInline = !embedUrl && isInlinePlayableVideoUrl(watchUrl);
+
+    return (
+      <article className="battle-card battle-card--media glass-heavy">
+        <div className="battle-card-media-wrap">
+          {embedUrl ? (
+            <iframe className="battle-card-media-frame" src={embedUrl} title={displayName} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+          ) : canPlayInline ? (
+            <video className="battle-card-media-frame" src={watchUrl} controls playsInline preload="metadata" />
+          ) : (
+            <div className="battle-card-media-nonembed">
+              <div className="battle-card-media-blur-bg" style={{ backgroundImage: `url(${thumbnailUrl})` }} />
+              <img src={thumbnailUrl} alt="" className="battle-card-media-foreground" />
+              {watchUrl ? (
+                <div className="battle-card-media-nonembed-overlay">
+                  <a href={watchUrl} target="_blank" rel="noreferrer" className="battle-card-media-open-btn">
+                    <ExternalLink size={18} /><span>Open {providerBadge}</span>
+                  </a>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+        <div className="battle-card-info">
+          <div className="battle-card-info-text">
+            <span className="battle-card-song-type-badge"><Play size={10} />{providerBadge}</span>
+            <h2>{displayName}</h2>
+            <p className="battle-card-info-sub">{getMetaLine(title)}</p>
+          </div>
+          <div className="battle-card-actions">
+            {detailPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.open(detailPath, '_blank', 'noopener,noreferrer')}
+              >
+                {pick('รายละเอียด', 'Details')}
+              </Button>
+            ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  if (isCustomImage) {
+    const imageUrl = getTitleArtwork(title);
+
+    return (
+      <article className="battle-card battle-card--media glass-heavy">
+        <div className="battle-card-media-wrap">
+          <div className="battle-card-media-nonembed">
+            <div className="battle-card-media-blur-bg" style={{ backgroundImage: `url(${imageUrl})` }} />
+            <img src={imageUrl} alt="" className="battle-card-media-foreground" />
+          </div>
+        </div>
+        <div className="battle-card-info">
+          <div className="battle-card-info-text">
+            <span className="battle-card-song-type-badge"><ImageIcon size={10} />Custom image</span>
+            <h2>{displayName}</h2>
+            <p className="battle-card-info-sub">{getMetaLine(title)}</p>
+          </div>
+          <div className="battle-card-actions">
+            {detailPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.open(detailPath, '_blank', 'noopener,noreferrer')}
+              >
+                {pick('รายละเอียด', 'Details')}
+              </Button>
+            ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
         </div>
       </article>
     );
@@ -352,7 +498,18 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
               <span key={tag} className="battle-card-tag">{tag}</span>
             ))}
           </div>
-          <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          <div className="battle-card-actions">
+            {detailPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.open(detailPath, '_blank', 'noopener,noreferrer')}
+              >
+                {pick('รายละเอียด', 'Details')}
+              </Button>
+            ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
         </div>
       </div>
       {trailer ? (

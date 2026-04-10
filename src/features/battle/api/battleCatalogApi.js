@@ -10,6 +10,8 @@ import { supabase } from '@/shared/lib/supabase';
 import { mapCanonicalTitle } from '@/shared/lib/catalog';
 import {
   CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
   buildCharacterEntity,
@@ -380,6 +382,10 @@ function buildSourceTitleFromCharacterRow(row) {
 // returns: array of mapped entities (same shape as fetchBattleTitlesPage rows)
 export async function hydrateBattleEntriesByIds(ids, entityType) {
   if (!ids || ids.length === 0) return [];
+
+  if (entityType === CUSTOM_IMAGE_ENTITY_TYPE || entityType === CUSTOM_VIDEO_ENTITY_TYPE) {
+    return [];
+  }
 
   const numericIds = ids.map(Number).filter(Boolean);
   if (numericIds.length === 0) return [];

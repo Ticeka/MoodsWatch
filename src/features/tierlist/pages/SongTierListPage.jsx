@@ -135,11 +135,11 @@ export function SongTierListPage() {
       <div className="container tierlist-play-topbar">
         <div className="tierlist-play-topbar-left">
           <Link className="btn btn-ghost btn-sm" to="/tierlist/songs">
-            <ChevronLeft size={14} /> {pick('ลิสต์จัดอันดับเพลง', 'Song Tier Lists')}
+            <ChevronLeft size={14} /> {pick('เทียร์ลิสต์เพลง', 'Song Tier Lists')}
           </Link>
           <span className="tierlist-by-line">
             <Music size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-            {pick('จัดอันดับเพลง', 'Song Tierlist')}
+            {pick('เทียร์ลิสต์เพลง', 'Song Tierlist')}
           </span>
         </div>
       </div>

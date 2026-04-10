@@ -11,3 +11,5 @@ export * from './adminFetchRemoteApi';
 export * from './adminFetchTrailerApi';
 export * from './adminFetchTargetsApi';
 export * from './adminFetchAniListApi';
+export * from './adminUsersApi';
+export * from './adminDailyChallengeApi';

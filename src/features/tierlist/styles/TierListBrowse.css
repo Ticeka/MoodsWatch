@@ -1223,7 +1223,19 @@
   z-index: 1;
   display: flex;
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  pointer-events: none;
+}
+
+.tierlist-card-count-badges {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: flex-end;
   pointer-events: none;
 }
 
@@ -1277,6 +1289,30 @@
   border-color: color-mix(in srgb, white 16%, transparent);
   background: rgba(26, 18, 21, 0.74);
   color: #fff2df;
+}
+
+.tierlist-card-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  max-width: min(100%, 10rem);
+  padding: 0.42rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, white 24%, transparent);
+  background:
+    linear-gradient(135deg, rgba(58, 25, 37, 0.92), rgba(120, 50, 62, 0.82));
+  color: #fff4ef;
+  box-shadow:
+    0 14px 28px rgba(40, 13, 24, 0.24),
+    inset 0 1px 0 rgba(255, 242, 238, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-align: center;
 }
 
 .tierlist-explorer-card-stat {
@@ -1653,6 +1689,7 @@
 }
 
 .tierlist-community-preview {
+  position: relative;
   height: 224px;
   display: grid;
   gap: 0;

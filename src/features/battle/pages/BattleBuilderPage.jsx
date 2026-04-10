@@ -1,7 +1,7 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Globe, Layers, Lock, Music, Play, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Globe, Image as ImageIcon, Layers, Link2, Loader2, Lock, Music, Play, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import {
   fetchBattleCharactersPage,
   fetchBattleTitleBySlug,
@@ -32,37 +32,44 @@ import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import {
   CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
   buildThemeSongEntity,
   getCatalogEntityMeta,
   getCatalogEntityName,
+  isCustomImageEntity,
+  isCustomVideoEntity,
   isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
-import { normalizeTrailer } from '@/shared/lib/trailers';
+import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import '../styles/Battle.css';
 
 const TYPE_OPTIONS = [
-  { value: 'all', label: 'All entries' },
+  { value: 'all', translationKey: 'battle.allEntries' },
   { value: 'anime', label: 'Anime' },
   { value: 'manga', label: 'Manga' },
   { value: 'manhwa', label: 'Manhwa' },
 ];
 const ENTITY_TYPE_OPTIONS = [
-  { value: TITLE_ENTITY_TYPE, label: 'Titles' },
-  { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
-  { value: THEME_SONG_ENTITY_TYPE, label: 'Songs' },
-  { value: TRAILER_ENTITY_TYPE, label: 'Trailers' },
+  { value: TITLE_ENTITY_TYPE, translationKey: 'battle.entryUnitTitles' },
+  { value: CHARACTER_ENTITY_TYPE, translationKey: 'battle.entryUnitCharacters' },
+  { value: THEME_SONG_ENTITY_TYPE, translationKey: 'battle.entryUnitSongs' },
+  { value: TRAILER_ENTITY_TYPE, translationKey: 'battle.entryUnitTrailers' },
+  { value: CUSTOM_IMAGE_ENTITY_TYPE, label: 'Custom images' },
+  { value: CUSTOM_VIDEO_ENTITY_TYPE, label: 'Custom videos' },
 ];
 const SIZE_OPTIONS = [8, 16, 24, 32, 48];
 const BATTLE_CATALOG_PAGE_SIZE = 6;
 const TITLE_DRAG_MIME = 'application/x-battle-title-id';
 const SLOT_DRAG_MIME = 'application/x-battle-slot-index';
+const CUSTOM_BATTLE_LINK_TIMEOUT_MS = 8000;
 const EMPTY_FILTER_OPTIONS = {
   genres: [],
   tags: [],
@@ -72,19 +79,27 @@ const EMPTY_FILTER_OPTIONS = {
 
 function getDisplayName(title) { return getCatalogEntityName(title); }
 function getMetaLine(title) { return getCatalogEntityMeta(title); }
+function getLocalizedEntryUnitLabel(entityType, t, options = {}) {
+  const label = getEntryUnitLabel(entityType, options);
+  return label.startsWith('battle.') ? t(label) : label;
+}
 
 function getEntryUnitLabel(entityType, options = {}) {
   const normalized = normalizeCatalogEntityType(entityType);
-  if (normalized === CHARACTER_ENTITY_TYPE) return options.singular ? 'character' : 'characters';
-  if (normalized === THEME_SONG_ENTITY_TYPE) return options.singular ? 'song' : 'songs';
-  return options.singular ? 'title' : 'titles';
+  if (normalized === CHARACTER_ENTITY_TYPE) return options.singular ? 'battle.entryUnitCharacter' : 'battle.entryUnitCharacters';
+  if (normalized === THEME_SONG_ENTITY_TYPE) return options.singular ? 'battle.entryUnitSong' : 'battle.entryUnitSongs';
+  if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) return options.singular ? 'image' : 'images';
+  if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) return options.singular ? 'video' : 'videos';
+  return options.singular ? 'battle.entryUnitTitle' : 'battle.entryUnitTitles';
 }
 
-function getAnyTypeLabel(entityType) {
+function getAnyTypeLabel(entityType, t) {
   const normalized = normalizeCatalogEntityType(entityType);
-  if (normalized === CHARACTER_ENTITY_TYPE) return 'All characters';
-  if (normalized === THEME_SONG_ENTITY_TYPE) return 'All songs';
-  return 'All titles';
+  if (normalized === CHARACTER_ENTITY_TYPE) return t('battle.allCharacters');
+  if (normalized === THEME_SONG_ENTITY_TYPE) return t('battle.allSongs');
+  if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) return 'Custom images';
+  if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) return 'Custom videos';
+  return t('battle.allTitles');
 }
 
 function formatTrailerProviderLabel(provider, t) {
@@ -97,10 +112,12 @@ function formatTrailerProviderLabel(provider, t) {
 }
 
 function getBattleSongRoleLabel(title) {
-  return title?.theme_label || title?.role || 'Theme song';
+  return title?.theme_label || title?.role || '';
 }
 
 function hasBattleMedia(title) {
+  if (isCustomImageEntity(title)) return Boolean(title?.cover);
+  if (isCustomVideoEntity(title)) return Boolean(normalizeTrailer(title || {})?.watchUrl || title?.trailer_url);
   if (isThemeSongEntity(title)) return Boolean(title?.video_url);
   return Boolean(normalizeTrailer(title || {}));
 }
@@ -120,14 +137,28 @@ function getBattleEntryBadges(title, t, options = {}) {
   if (!title) return [];
   if (isThemeSongEntity(title)) {
     const badges = [
-      { tone: 'song', label: getBattleSongRoleLabel(title) },
-      { tone: title.video_url ? 'ready' : 'missing', label: title.video_url ? 'Preview ready' : 'No preview' },
+      { tone: 'song', label: getBattleSongRoleLabel(title) || t('battle.songThemeLabel') },
+      { tone: title.video_url ? 'ready' : 'missing', label: title.video_url ? t('battle.previewReady') : t('battle.noPreview') },
     ];
     if (!options.compact && title.episodes_text) badges.push({ tone: 'default', label: title.episodes_text });
-    if (!options.compact && title.is_creditless) badges.push({ tone: 'song', label: 'Creditless' });
-    if (!options.compact && title.is_spoiler) badges.push({ tone: 'warning', label: 'Spoiler' });
-    if (!options.compact && title.is_nsfw) badges.push({ tone: 'warning', label: 'NSFW' });
+    if (!options.compact && title.is_creditless) badges.push({ tone: 'song', label: t('battle.creditless') });
+    if (!options.compact && title.is_spoiler) badges.push({ tone: 'warning', label: t('battle.spoiler') });
+    if (!options.compact && title.is_nsfw) badges.push({ tone: 'warning', label: t('battle.nsfw') });
     return badges;
+  }
+  if (isCustomImageEntity(title)) {
+    return [
+      { tone: 'ready', label: 'Custom image' },
+      { tone: title?.cover ? 'ready' : 'missing', label: title?.cover ? 'Link verified' : 'Missing image' },
+    ];
+  }
+  if (isCustomVideoEntity(title)) {
+    const trailer = normalizeTrailer(title || {});
+    const providerLabel = formatTrailerProviderLabel(trailer?.provider || title?.trailer_site || 'external', t);
+    return [
+      { tone: 'song', label: 'Custom video' },
+      { tone: trailer?.watchUrl ? 'ready' : 'missing', label: trailer?.watchUrl ? providerLabel : 'Missing video' },
+    ];
   }
   const trailerBadge = getBattleTrailerBadge(title, t);
   return trailerBadge ? [trailerBadge] : [];
@@ -139,6 +170,8 @@ function countBattleReadyMedia(titles = []) {
 
 function getActiveBattleFilterSummary(filters, t) {
   const items = [];
+  if (filters.entityType === CUSTOM_IMAGE_ENTITY_TYPE) items.push('Custom images');
+  if (filters.entityType === CUSTOM_VIDEO_ENTITY_TYPE) items.push('Custom videos');
   if (filters.type && filters.type !== 'all') items.push(filters.type[0].toUpperCase() + filters.type.slice(1));
   if (filters.tag) items.push(`#${filters.tag}`);
   if (filters.mood) items.push(filters.mood);
@@ -161,14 +194,257 @@ function buildEmptyDeckSlots(size) {
   return Array.from({ length: size }, () => null);
 }
 
-function createManualBattleDeck({ filters, deckName, deckSlots, sourceCount }) {
+function createEmptyCustomDraft() {
+  return {
+    label: '',
+    subtitle: '',
+    url: '',
+  };
+}
+
+function stripCustomMediaFileExtension(filename = '') {
+  return String(filename || '').replace(/\.[^/.]+$/, '').trim();
+}
+
+function readCustomMediaFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!(file instanceof File)) {
+      reject(new Error('Unsupported file input.'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name || 'this file'}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function buildCustomDraftFromFile(file, entityType) {
+  const fileLabel = stripCustomMediaFileExtension(file?.name) || (entityType === CUSTOM_IMAGE_ENTITY_TYPE ? 'Custom image' : 'Custom video');
+  return {
+    label: fileLabel,
+    subtitle: 'Uploaded file',
+    url: '',
+  };
+}
+
+function makeCustomBattleEntryId() {
+  return -1 * (Date.now() + Math.floor(Math.random() * 100000));
+}
+
+function isDirectVideoUrl(url = '') {
+  return /\.(mp4|webm|ogg|mov|m4v)(?:[?#].*)?$/i.test(String(url || '').trim());
+}
+
+function loadCustomBattleImage(url, timeoutMs = CUSTOM_BATTLE_LINK_TIMEOUT_MS) {
+  const normalizedUrl = String(url || '').trim();
+  if (!normalizedUrl || typeof Image === 'undefined') {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    let settled = false;
+
+    const finalize = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      image.onload = null;
+      image.onerror = null;
+      resolve(result);
+    };
+
+    const timeoutId = window.setTimeout(() => finalize(false), timeoutMs);
+    image.onload = () => finalize(true);
+    image.onerror = () => finalize(false);
+    image.src = normalizedUrl;
+  });
+}
+
+async function fetchYoutubeVideoMetadata(url, timeoutMs = CUSTOM_BATTLE_LINK_TIMEOUT_MS) {
+  const parsed = parseTrailerUrl(url);
+  if (parsed?.site !== 'youtube' || !parsed?.videoId || typeof fetch !== 'function') {
+    return null;
+  }
+
+  const watchUrl = buildTrailerUrl({ site: 'youtube', videoId: parsed.videoId }) || String(url || '').trim();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  try {
+    const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`, {
+      signal: controller?.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+    return {
+      title: String(payload?.title || '').trim(),
+      authorName: String(payload?.author_name || '').trim(),
+      thumbnailUrl: String(payload?.thumbnail_url || '').trim(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function resolveCustomVideoDraft(draft) {
+  const label = String(draft?.label || '').trim();
+  const subtitle = String(draft?.subtitle || '').trim();
+  const rawUrl = String(draft?.url || '').trim();
+  const parsed = parseTrailerUrl(rawUrl);
+  const normalizedTrailer = normalizeTrailer({ trailer_url: rawUrl });
+  const youtubeMetadata = await fetchYoutubeVideoMetadata(rawUrl);
+  const resolvedLabel = label || youtubeMetadata?.title || '';
+  const resolvedSubtitle = subtitle || (
+    youtubeMetadata?.authorName
+      ? `YouTube · ${youtubeMetadata.authorName}`
+      : parsed?.site === 'youtube'
+        ? 'YouTube'
+        : parsed?.site === 'dailymotion'
+          ? 'Dailymotion'
+          : 'External video'
+  );
+
+  return {
+    parsed,
+    normalizedTrailer,
+    youtubeMetadata,
+    resolvedLabel,
+    resolvedSubtitle,
+    resolvedThumbnailUrl: youtubeMetadata?.thumbnailUrl || normalizedTrailer?.thumbnailUrl || '',
+  };
+}
+
+async function validateCustomBattleEntry(entityType, draft, existingId = null) {
+  const rawUrl = String(draft?.url || '').trim();
+
+  if (!rawUrl) {
+    return { ok: false, message: 'Please paste a link before adding this card.' };
+  }
+
+  if (entityType === CUSTOM_IMAGE_ENTITY_TYPE) {
+    const label = String(draft?.label || '').trim();
+    const subtitle = String(draft?.subtitle || '').trim();
+
+    if (!label) {
+      return { ok: false, message: 'Please enter a name for this card.' };
+    }
+
+    if (parseTrailerUrl(rawUrl)?.videoId) {
+      return { ok: false, message: 'This looks like a video link. Switch to Custom videos for YouTube or trailer links.' };
+    }
+
+    const imageReady = await loadCustomBattleImage(rawUrl);
+    if (!imageReady) {
+      return { ok: false, message: 'This image link could not be opened. Check that it is public and directly points to an image.' };
+    }
+
+    return {
+      ok: true,
+      entry: {
+        id: Number(existingId) || makeCustomBattleEntryId(),
+        entityType: CUSTOM_IMAGE_ENTITY_TYPE,
+        slug: `custom-image-${Math.abs(Number(existingId) || Date.now())}`,
+        type: 'custom',
+        subtype: 'image',
+        title_en: label,
+        title_th: label,
+        title_native: '',
+        cover: rawUrl,
+        banner: rawUrl,
+        synopsis: '',
+        score: null,
+        popularity: 0,
+        is_adult: false,
+        genres: [],
+        tags: [],
+        moods: [],
+        role: 'Custom image',
+        sourceTitleName: subtitle || 'External image',
+      },
+      message: 'Image link verified and ready to add.',
+    };
+  }
+
+  if (entityType === CUSTOM_VIDEO_ENTITY_TYPE) {
+    const {
+      parsed,
+      normalizedTrailer,
+      youtubeMetadata,
+      resolvedLabel,
+      resolvedSubtitle,
+      resolvedThumbnailUrl,
+    } = await resolveCustomVideoDraft(draft);
+    const isSupported = Boolean(parsed?.videoId || isDirectVideoUrl(rawUrl) || normalizedTrailer?.watchUrl);
+
+    if (!isSupported) {
+      return { ok: false, message: 'Use a YouTube, Dailymotion, or direct video file link for Custom videos.' };
+    }
+
+    if (!resolvedLabel) {
+      return { ok: false, message: 'Please enter a name for this card, or use a YouTube link so we can fill it in for you.' };
+    }
+
+    return {
+      ok: true,
+      draft: {
+        label: resolvedLabel,
+        subtitle: resolvedSubtitle,
+        url: rawUrl,
+      },
+      entry: {
+        id: Number(existingId) || makeCustomBattleEntryId(),
+        entityType: CUSTOM_VIDEO_ENTITY_TYPE,
+        slug: `custom-video-${Math.abs(Number(existingId) || Date.now())}`,
+        type: 'custom',
+        subtype: 'video',
+        title_en: resolvedLabel,
+        title_th: resolvedLabel,
+        title_native: '',
+        cover: resolvedThumbnailUrl,
+        banner: resolvedThumbnailUrl,
+        synopsis: '',
+        score: null,
+        popularity: 0,
+        is_adult: false,
+        genres: [],
+        tags: [],
+        moods: [],
+        role: 'Custom video',
+        sourceTitleName: resolvedSubtitle,
+        trailer_url: normalizedTrailer?.url || rawUrl,
+        trailer_site: normalizedTrailer?.site || (isDirectVideoUrl(rawUrl) ? 'external' : null),
+        trailer_video_id: normalizedTrailer?.videoId || null,
+        trailer_thumbnail_url: resolvedThumbnailUrl,
+        trailer_embed_url: normalizedTrailer?.embedUrl || null,
+        trailer_watch_url: normalizedTrailer?.watchUrl || rawUrl,
+      },
+      message: youtubeMetadata?.title && !String(draft?.label || '').trim()
+        ? 'Video link verified and title filled from YouTube. You can still edit it before adding.'
+        : 'Video link verified and ready to add.',
+    };
+  }
+
+  return { ok: false, message: 'Unsupported custom category.' };
+}
+
+function createManualBattleDeck({ filters, deckName, deckSlots, sourceCount, t }) {
   const titles = deckSlots.filter(Boolean);
   const entityType = normalizeCatalogEntityType(filters.entityType);
   const normalizedFilters = { ...filters, entityType, size: deckSlots.length };
   return {
     key: JSON.stringify({ ...normalizedFilters, titleIds: titles.map((title) => title.id) }),
     fingerprint: titles.map((title) => Number(title?.id)).filter(Boolean).sort((a, b) => a - b).join(':'),
-    label: deckName.trim() || `Custom ${getEntryUnitLabel(entityType, { singular: true })} deck ${titles.length}/${deckSlots.length}`,
+    label: deckName.trim() || `${t('battle.customDeck')} ${getLocalizedEntryUnitLabel(entityType, t, { singular: true })} ${titles.length}/${deckSlots.length}`,
     filters: normalizedFilters,
     sourceCount,
     titles,
@@ -234,6 +510,11 @@ export function BattleBuilderPage() {
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingDeck, setEditingDeck] = useState(null);
   const [hasLoadedEditDeck, setHasLoadedEditDeck] = useState(false);
+  const [customDraft, setCustomDraft] = useState(createEmptyCustomDraft);
+  const [customValidation, setCustomValidation] = useState({ status: 'idle', message: '' });
+  const [isValidatingCustomEntry, setIsValidatingCustomEntry] = useState(false);
+  const [isImportingCustomFiles, setIsImportingCustomFiles] = useState(false);
+  const customFileInputRef = useRef(null);
   const deferredFilters = useDeferredValue(filters);
   const debouncedQuery = useDebouncedValue(filters.query, 300);
   const editDeckId = searchParams.get('deckId');
@@ -245,11 +526,33 @@ export function BattleBuilderPage() {
   const isCharacterEntity = filters.entityType === CHARACTER_ENTITY_TYPE;
   const isSongEntity = filters.entityType === THEME_SONG_ENTITY_TYPE;
   const isTrailerEntity = filters.entityType === TRAILER_ENTITY_TYPE;
-  const usesRemoteCatalog = true;
+  const isCustomImageEntityType = filters.entityType === CUSTOM_IMAGE_ENTITY_TYPE;
+  const isCustomVideoEntityType = filters.entityType === CUSTOM_VIDEO_ENTITY_TYPE;
+  const isCustomEntityType = isCustomImageEntityType || isCustomVideoEntityType;
+  const activeCustomEntry = isCustomEntityType ? deckSlots[activeSlotIndex] : null;
+  const usesRemoteCatalog = !isCustomEntityType;
   const debouncedCatalogFilters = useMemo(() => ({
     ...deferredFilters,
     query: debouncedQuery,
   }), [debouncedQuery, deferredFilters]);
+  const customDraftPreviewArtwork = useMemo(() => {
+    if (!isCustomEntityType) {
+      return '';
+    }
+
+    if (isCustomImageEntityType && customDraft.url.trim()) {
+      return customDraft.url.trim();
+    }
+
+    if (isCustomVideoEntityType && customDraft.url.trim()) {
+      return normalizeTrailer({ trailer_url: customDraft.url.trim() })?.thumbnailUrl || '';
+    }
+
+    return getTitleArtwork(activeCustomEntry);
+  }, [activeCustomEntry, customDraft.url, isCustomEntityType, isCustomImageEntityType, isCustomVideoEntityType]);
+  const customDraftTitle = String(customDraft.label || '').trim() || (isCustomImageEntityType ? 'Untitled image card' : 'Untitled video card');
+  const customDraftSubtitle = String(customDraft.subtitle || '').trim()
+    || (isCustomImageEntityType ? 'Bring in posters, stills, or scans from anywhere.' : 'Use trailers, clips, or uploads that feel battle-worthy.');
 
   // Song battle mode: auto-fetch songs for a title and start a battle session
   useEffect(() => {
@@ -475,8 +778,14 @@ export function BattleBuilderPage() {
   );
   const trailerProviderOptions = useMemo(() => filterOptions.trailerProviders || [], [filterOptions.trailerProviders]);
   const battleDeck = useMemo(
-    () => createManualBattleDeck({ filters, deckName, deckSlots, sourceCount: filteredCatalogCount }),
-    [deckName, deckSlots, filteredCatalogCount, filters]
+    () => createManualBattleDeck({
+      filters,
+      deckName,
+      deckSlots,
+      sourceCount: isCustomEntityType ? deckSlots.filter(Boolean).length : filteredCatalogCount,
+      t,
+    }),
+    [deckName, deckSlots, filteredCatalogCount, filters, isCustomEntityType, t]
   );
   const selectedTitleIds = useMemo(
     () => new Set(deckSlots.filter(Boolean).map((title) => title.id)),
@@ -488,8 +797,8 @@ export function BattleBuilderPage() {
   const activeFilterSummary = useMemo(() => getActiveBattleFilterSummary(filters, t), [filters, t]);
   const catalogError = error || (isSongEntity ? songCatalogError : '');
   const isCatalogBusy = isLoading || isCatalogLoading;
-  const mediaResultsLabel = isSongEntity ? 'Songs with preview' : t('battle.trailersInResults');
-  const mediaDeckLabel = isSongEntity ? 'Songs with preview in deck' : t('battle.trailersInDeck');
+  const mediaResultsLabel = isSongEntity ? t('battle.songsWithPreview') : t('battle.trailersInResults');
+  const mediaDeckLabel = isSongEntity ? t('battle.songsWithPreviewInDeck') : t('battle.trailersInDeck');
   const firstEmptySlotIndex = useMemo(() => deckSlots.findIndex((title) => !title), [deckSlots]);
   const titleById = useMemo(
     () => new Map(previewCatalogTitles.map((title) => [String(title.id), title])),
@@ -569,6 +878,33 @@ export function BattleBuilderPage() {
     if (catalogPage > totalCatalogPages - 1) setCatalogPage(Math.max(0, totalCatalogPages - 1));
   }, [catalogPage, totalCatalogPages]);
 
+  useEffect(() => {
+    if (!isCustomEntityType) {
+      setCustomDraft(createEmptyCustomDraft());
+      setCustomValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    const activeEntry = deckSlots[activeSlotIndex];
+    if (activeEntry?.entityType === filters.entityType) {
+      setCustomDraft({
+        label: getDisplayName(activeEntry) || '',
+        subtitle: String(activeEntry?.sourceTitleName || '').trim(),
+        url: String(
+          activeEntry?.trailer_url
+          || activeEntry?.trailer_watch_url
+          || activeEntry?.cover
+          || ''
+        ).trim(),
+      });
+      setCustomValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    setCustomDraft(createEmptyCustomDraft());
+    setCustomValidation({ status: 'idle', message: '' });
+  }, [activeSlotIndex, deckSlots, filters.entityType, isCustomEntityType]);
+
   const assignTitleToSlot = (title, preferredIndex = 0) => {
     if (!title) return false;
     const existingIndex = deckSlots.findIndex((entry) => entry?.id === title.id);
@@ -580,6 +916,171 @@ export function BattleBuilderPage() {
     setDeckSlots((current) => current.map((entry, i) => (i === emptyIndex ? title : entry)));
     setActiveSlotIndex(emptyIndex);
     return true;
+  };
+
+  const handleValidateCustomEntry = async () => {
+    setIsValidatingCustomEntry(true);
+    setCustomValidation({ status: 'checking', message: 'Checking link...' });
+    try {
+      const result = await validateCustomBattleEntry(filters.entityType, customDraft, deckSlots[activeSlotIndex]?.id);
+      if (result?.draft) {
+        setCustomDraft((current) => ({ ...current, ...result.draft }));
+      }
+      setCustomValidation({
+        status: result.ok ? 'valid' : 'invalid',
+        message: result.message,
+      });
+      return result;
+    } finally {
+      setIsValidatingCustomEntry(false);
+    }
+  };
+
+  const handleCustomUrlBlur = async () => {
+    if (!isCustomVideoEntityType) {
+      return;
+    }
+
+    const currentUrl = String(customDraft.url || '').trim();
+    if (!currentUrl || String(customDraft.label || '').trim()) {
+      return;
+    }
+
+    try {
+      const resolved = await resolveCustomVideoDraft(customDraft);
+      if (!resolved?.resolvedLabel) {
+        return;
+      }
+
+      setCustomDraft((current) => {
+        if (String(current.url || '').trim() !== currentUrl || String(current.label || '').trim()) {
+          return current;
+        }
+
+        return {
+          ...current,
+          label: resolved.resolvedLabel,
+          subtitle: String(current.subtitle || '').trim() || resolved.resolvedSubtitle,
+        };
+      });
+      setCustomValidation({
+        status: 'valid',
+        message: 'Filled the video title from YouTube. You can edit it before adding the card.',
+      });
+    } catch {
+      // Best-effort autofill only.
+    }
+  };
+
+  const handleApplyCustomEntryToSlot = async () => {
+    const result = await handleValidateCustomEntry();
+    if (!result?.ok || !result.entry) {
+      toast.error(result?.message || 'Could not add this custom card.');
+      return;
+    }
+
+    setDeckSlots((current) => current.map((entry, index) => (
+      index === activeSlotIndex ? result.entry : entry
+    )));
+    toast.success(activeSlotIndex + 1 <= filledSlotCount ? 'Custom card updated.' : 'Custom card added.');
+  };
+
+  const handleCustomFilesSelected = async (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    event.target.value = '';
+
+    if (!selectedFiles.length) {
+      return;
+    }
+
+    const expectedKind = isCustomImageEntityType ? 'image/' : 'video/';
+    const supportedFiles = selectedFiles.filter((file) => String(file?.type || '').startsWith(expectedKind));
+
+    if (!supportedFiles.length) {
+      toast.error(isCustomImageEntityType ? 'Please choose image files for Custom images.' : 'Please choose video files for Custom videos.');
+      return;
+    }
+
+    setIsImportingCustomFiles(true);
+    setCustomValidation({
+      status: 'checking',
+      message: `Preparing ${supportedFiles.length} ${supportedFiles.length === 1 ? 'file' : 'files'}...`,
+    });
+
+    try {
+      const emptySlotIndexes = deckSlots
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => !entry)
+        .map(({ index }) => index);
+      const prioritizedSlotIndexes = [
+        ...emptySlotIndexes.filter((index) => index >= activeSlotIndex),
+        ...emptySlotIndexes.filter((index) => index < activeSlotIndex),
+      ];
+
+      if (!prioritizedSlotIndexes.length) {
+        setCustomValidation({ status: 'invalid', message: 'Deck is full. Clear a slot before importing more files.' });
+        toast.error('Deck is full. Clear a slot before importing more files.');
+        return;
+      }
+
+      const importableFiles = supportedFiles.slice(0, prioritizedSlotIndexes.length);
+      const skippedForSpace = supportedFiles.length - importableFiles.length;
+      const builtEntries = [];
+      const importErrors = [];
+
+      for (const file of importableFiles) {
+        try {
+          const draft = buildCustomDraftFromFile(file, filters.entityType);
+          draft.url = await readCustomMediaFileAsDataUrl(file);
+          const result = await validateCustomBattleEntry(filters.entityType, draft);
+          if (!result?.ok || !result.entry) {
+            importErrors.push(`${file.name}: ${result?.message || 'Could not import this file.'}`);
+            continue;
+          }
+          builtEntries.push(result.entry);
+        } catch (error) {
+          importErrors.push(`${file.name}: ${error?.message || 'Could not import this file.'}`);
+        }
+      }
+
+      if (!builtEntries.length) {
+        const fallbackMessage = importErrors[0] || 'No files could be imported.';
+        setCustomValidation({ status: 'invalid', message: fallbackMessage });
+        toast.error(fallbackMessage);
+        return;
+      }
+
+      setDeckSlots((current) => {
+        const nextSlots = [...current];
+        builtEntries.forEach((entry, index) => {
+          const slotIndex = prioritizedSlotIndexes[index];
+          if (slotIndex != null) {
+            nextSlots[slotIndex] = entry;
+          }
+        });
+        return nextSlots;
+      });
+      setActiveSlotIndex(prioritizedSlotIndexes[0] ?? activeSlotIndex);
+
+      const messageParts = [`Added ${builtEntries.length} ${builtEntries.length === 1 ? 'card' : 'cards'} from files.`];
+      if (skippedForSpace > 0) {
+        messageParts.push(`${skippedForSpace} skipped because the deck is full.`);
+      }
+      if (importErrors.length > 0) {
+        messageParts.push(`${importErrors.length} failed validation.`);
+      }
+      const finalMessage = messageParts.join(' ');
+      setCustomValidation({
+        status: importErrors.length > 0 || skippedForSpace > 0 ? 'valid' : 'valid',
+        message: finalMessage,
+      });
+      toast.success(finalMessage);
+      if (importErrors.length > 0) {
+        toast.error(importErrors[0]);
+      }
+    } finally {
+      setIsImportingCustomFiles(false);
+    }
   };
 
   const handleAutoFillDeck = async () => {
@@ -658,12 +1159,15 @@ export function BattleBuilderPage() {
     }));
     setDeckSlots(buildEmptyDeckSlots(filters.size));
     setActiveSlotIndex(0);
+    setCustomDraft(createEmptyCustomDraft());
+    setCustomValidation({ status: 'idle', message: '' });
     setCatalogPage(0);
   };
 
   const handleRemoveFromSlot = (slotIndex) => {
     setDeckSlots((current) => current.map((entry, i) => (i === slotIndex ? null : entry)));
     setActiveSlotIndex(slotIndex);
+    setCustomValidation({ status: 'idle', message: '' });
   };
 
   const handleDropOnSlot = (event, slotIndex) => {
@@ -693,8 +1197,31 @@ export function BattleBuilderPage() {
 
   const saveDeck = async ({ startAfterSave = false } = {}) => {
     if (battleDeck.titles.length < 8) {
-      toast.error(`Only ${battleDeck.titles.length} ${getEntryUnitLabel(filters.entityType)} match right now.`);
+      toast.error(t('battle.onlyMatchingRightNow', { count: battleDeck.titles.length, unit: getLocalizedEntryUnitLabel(filters.entityType, t) }));
       return;
+    }
+    if (isCustomEntityType) {
+      const invalidEntries = [];
+
+      for (const [index, title] of deckSlots.entries()) {
+        if (!title) {
+          continue;
+        }
+        const draft = {
+          label: getDisplayName(title),
+          subtitle: String(title?.sourceTitleName || '').trim(),
+          url: String(title?.trailer_url || title?.trailer_watch_url || title?.cover || '').trim(),
+        };
+        const validation = await validateCustomBattleEntry(filters.entityType, draft, title?.id);
+        if (!validation.ok) {
+          invalidEntries.push(`slot ${index + 1}`);
+        }
+      }
+
+      if (invalidEntries.length > 0) {
+        toast.error(`Some custom links failed validation before save: ${invalidEntries.join(', ')}`);
+        return;
+      }
     }
     if (isPublic && !user?.id) { toast.error(t('battle.loginToPublishDeck')); return; }
     setIsSaving(true);
@@ -727,7 +1254,9 @@ export function BattleBuilderPage() {
         }
 
         let session = saveBattleSession(createBattleSession(storedDeck, {
-          catalogCount: visibleCatalogCount,
+          catalogCount: isCustomEntityType
+            ? Number(storedDeck?.sourceCount || storedDeck?.titles?.length || 0)
+            : visibleCatalogCount,
           hiddenExcludedCount,
           excludesAdultContent: !showAdult,
         }));
@@ -784,11 +1313,11 @@ export function BattleBuilderPage() {
         <div className="battle-hero-panel glass-heavy">
           <div className="battle-hero-stat">
             <strong>{filledSlotCount}</strong>
-            <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {getEntryUnitLabel(filters.entityType)} in deck</span>
+            <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.entriesInDeck', { count: filledSlotCount, unit: getLocalizedEntryUnitLabel(filters.entityType, t) })}</span>
           </div>
           <div className="battle-hero-stat">
-            <strong>{visibleCatalogCount}</strong>
-            <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> visible {getEntryUnitLabel(filters.entityType)}</span>
+            <strong>{isCustomEntityType ? filledSlotCount : visibleCatalogCount}</strong>
+            <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {isCustomEntityType ? `${filledSlotCount} custom ${getLocalizedEntryUnitLabel(filters.entityType, t)} ready` : t('battle.visibleEntries', { count: visibleCatalogCount, unit: getLocalizedEntryUnitLabel(filters.entityType, t) })}</span>
           </div>
           <div className="battle-hero-stat">
             <strong>{hiddenExcludedCount}</strong>
@@ -821,26 +1350,26 @@ export function BattleBuilderPage() {
             </label>
 
             <label className="battle-field">
-              <span>Catalog</span>
+              <span>{t('battle.catalogLabel')}</span>
               <select value={filters.entityType} onChange={(event) => handleEntityTypeChange(event.target.value)}>
                 {ENTITY_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>{option.translationKey ? t(option.translationKey) : option.label}</option>
                 ))}
               </select>
             </label>
 
             <label className="battle-field">
               <span>{t('battle.type')}</span>
-              <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))} disabled={isSongEntity}>
+              <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
                 {TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.value === 'all' ? getAnyTypeLabel(filters.entityType) : option.label}</option>
+                  <option key={option.value} value={option.value}>{option.value === 'all' ? getAnyTypeLabel(filters.entityType, t) : (option.translationKey ? t(option.translationKey) : option.label)}</option>
                 ))}
               </select>
             </label>
 
             <label className="battle-field">
               <span><Search size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> {t('battle.tagGenre')}</span>
-              <select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))} disabled={isSongEntity}>
+              <select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
                 <option value="">{t('battle.anyTagGenre')}</option>
                 {tagOptions.map((value) => (<option key={value} value={value}>{value}</option>))}
               </select>
@@ -848,7 +1377,7 @@ export function BattleBuilderPage() {
 
             <label className="battle-field">
               <span>{t('battle.mood')}</span>
-              <select value={filters.mood} onChange={(event) => setFilters((current) => ({ ...current, mood: event.target.value }))} disabled={isSongEntity}>
+              <select value={filters.mood} onChange={(event) => setFilters((current) => ({ ...current, mood: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
                 <option value="">{t('battle.anyMood')}</option>
                 {filterOptions.moods.map((mood) => (<option key={mood} value={mood}>{mood}</option>))}
               </select>
@@ -856,7 +1385,7 @@ export function BattleBuilderPage() {
 
             <label className="battle-field">
               <span>{t('battle.search')}</span>
-              <input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder={t('battle.searchPlaceholder')} />
+              <input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder={isCustomEntityType ? 'Custom categories use the editor on the right.' : t('battle.searchPlaceholder')} disabled={isCustomEntityType} />
             </label>
 
             <label className="battle-field">
@@ -868,7 +1397,7 @@ export function BattleBuilderPage() {
                   trailerState: event.target.value,
                   trailerProvider: event.target.value === 'none' ? 'all' : current.trailerProvider,
                 }))}
-                disabled={filters.entityType !== TITLE_ENTITY_TYPE}
+                disabled={filters.entityType !== TITLE_ENTITY_TYPE || isCustomEntityType}
               >
                 <option value="all">{t('battle.anyTrailerStatus')}</option>
                 <option value="has">{t('battle.trailerHas')}</option>
@@ -881,7 +1410,7 @@ export function BattleBuilderPage() {
               <select
                 value={filters.trailerProvider}
                 onChange={(event) => setFilters((current) => ({ ...current, trailerProvider: event.target.value }))}
-                disabled={(filters.entityType !== TITLE_ENTITY_TYPE && filters.entityType !== TRAILER_ENTITY_TYPE) || filters.trailerState === 'none'}
+                disabled={(filters.entityType !== TITLE_ENTITY_TYPE && filters.entityType !== TRAILER_ENTITY_TYPE) || filters.trailerState === 'none' || isCustomEntityType}
               >
                 <option value="all">{t('battle.anyTrailerPlatform')}</option>
                 {trailerProviderOptions.map((provider) => (
@@ -893,12 +1422,14 @@ export function BattleBuilderPage() {
             <label className="battle-field">
               <span>{t('battle.deckSize')}</span>
               <select value={filters.size} onChange={(event) => setFilters((current) => ({ ...current, size: Number(event.target.value) }))}>
-                {SIZE_OPTIONS.map((value) => (<option key={value} value={value}>{value} {getEntryUnitLabel(filters.entityType)}</option>))}
+                {SIZE_OPTIONS.map((value) => (<option key={value} value={value}>{value} {getLocalizedEntryUnitLabel(filters.entityType, t)}</option>))}
               </select>
             </label>
 
             <div className="battle-builder-actions battle-builder-toolbar-actions">
-              <Button variant="ghost" onClick={handleAutoFillDeck} disabled={isCatalogBusy || Boolean(catalogError) || filteredCatalogCount === 0}>{t('battle.fillFromFilters')}</Button>
+              {!isCustomEntityType ? (
+                <Button variant="ghost" onClick={handleAutoFillDeck} disabled={isCatalogBusy || Boolean(catalogError) || filteredCatalogCount === 0}>{t('battle.fillFromFilters')}</Button>
+              ) : null}
               <Button variant="ghost" onClick={handleClearDeck} disabled={isLoading}>{t('battle.clearDeck')}</Button>
               <Link className="btn btn-ghost" to="/battle">{t('battle.backToBattle')}</Link>
               <Button variant="secondary" onClick={() => saveDeck()} disabled={isCatalogBusy || isSaving || Boolean(catalogError)}>{t('battle.saveDeck')}</Button>
@@ -908,14 +1439,14 @@ export function BattleBuilderPage() {
 
           <div className="battle-builder-summary">
             <div className="battle-builder-summary-card">
-              <span>{t('battle.filteredResults')}</span>
-              <strong>{filteredCatalogCount}</strong>
-              <small>{t('battle.builderSummaryHint')}</small>
+              <span>{isCustomEntityType ? 'Custom entries' : t('battle.filteredResults')}</span>
+              <strong>{isCustomEntityType ? filledSlotCount : filteredCatalogCount}</strong>
+              <small>{isCustomEntityType ? 'Validated cards currently placed into this deck.' : t('battle.builderSummaryHint')}</small>
             </div>
             <div className="battle-builder-summary-card">
-              <span>{mediaResultsLabel}</span>
-              <strong>{filteredReadyMediaCount}</strong>
-              <small>{t('battle.builderSummaryHint')}</small>
+              <span>{isCustomEntityType ? 'Active slot' : mediaResultsLabel}</span>
+              <strong>{isCustomEntityType ? activeSlotIndex + 1 : filteredReadyMediaCount}</strong>
+              <small>{isCustomEntityType ? `Editing card ${activeSlotIndex + 1} of ${deckSlots.length}` : t('battle.builderSummaryHint')}</small>
             </div>
             <div className="battle-builder-summary-card">
               <span>{mediaDeckLabel}</span>
@@ -1005,17 +1536,123 @@ export function BattleBuilderPage() {
 
             <div className="battle-builder-preview glass-heavy">
               <div className="battle-preview-head">
-                <strong>{t('battle.filteredCatalog')}</strong>
-                <span>{filteredCatalogCount} / {visibleCatalogCount} {getEntryUnitLabel(filters.entityType)}</span>
+                <strong>{isCustomEntityType ? 'Custom media editor' : t('battle.filteredCatalog')}</strong>
+                <span>{isCustomEntityType ? `${filledSlotCount}/${deckSlots.length} cards ready` : `${filteredCatalogCount} / ${visibleCatalogCount} ${getLocalizedEntryUnitLabel(filters.entityType, t)}`}</span>
               </div>
-              {isCatalogBusy ? (
+              {isCustomEntityType ? (
+                <div className="battle-custom-builder-panel">
+                  <div className="battle-custom-builder-hero">
+                    <div className="battle-custom-builder-copy">
+                      <span className="battle-builder-filter-summary-label">{isCustomImageEntityType ? 'Custom image studio' : 'Custom video studio'}</span>
+                      <h3>Card {activeSlotIndex + 1} of {deckSlots.length}</h3>
+                      <p>{isCustomImageEntityType ? 'Drop in posters, visuals, or manga spreads from outside the catalog. You can add one link carefully or batch in several files at once.' : 'Mix in trailers, clips, or your own uploads when the catalog is not enough. Link-based cards and batch file imports both land directly in your deck.'}</p>
+                    </div>
+                    <div className="battle-custom-preview-card">
+                      <div className="battle-custom-preview-art">
+                        {customDraftPreviewArtwork ? <img src={customDraftPreviewArtwork} alt="" loading="lazy" /> : <div className="battle-custom-preview-art-placeholder">{isCustomImageEntityType ? <ImageIcon size={20} /> : <Play size={20} />}</div>}
+                      </div>
+                      <div className="battle-custom-preview-copy">
+                        <strong>{customDraftTitle}</strong>
+                        <span>{customDraftSubtitle}</span>
+                        <div className="battle-custom-preview-chips">
+                          <span className="battle-builder-filter-chip">{isCustomImageEntityType ? 'Image card' : 'Video card'}</span>
+                          <span className="battle-builder-filter-chip">{activeCustomEntry ? 'Editing filled slot' : 'Empty slot ready'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="battle-custom-builder-note">
+                    <div className="battle-custom-builder-note-head">
+                      <strong>Two easy ways to add media</strong>
+                      <span>{isCustomImageEntityType ? 'Use links for one-offs, or batch import files when you are building a full image deck fast.' : 'Use links for hosted videos, or batch import files straight from your device for quick setup.'}</span>
+                    </div>
+                    <div className="battle-custom-builder-note-grid">
+                      <div className="battle-custom-builder-tip">
+                        <span className="battle-custom-builder-tip-icon"><Link2 size={14} /></span>
+                        <div>
+                          <strong>Paste a link</strong>
+                          <p>{isCustomImageEntityType ? 'Best for public direct image URLs.' : 'Best for YouTube, Dailymotion, or direct video URLs.'}</p>
+                        </div>
+                      </div>
+                      <div className="battle-custom-builder-tip">
+                        <span className="battle-custom-builder-tip-icon">{isCustomImageEntityType ? <ImageIcon size={14} /> : <Play size={14} />}</span>
+                        <div>
+                          <strong>Import multiple files</strong>
+                          <p>{isCustomImageEntityType ? 'Choose several images and let the builder place them into empty slots for you.' : 'Choose several video files and the builder will line them up across empty slots.'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="battle-custom-builder-form-grid">
+                    <label className="battle-field">
+                      <span>Card name</span>
+                      <input value={customDraft.label} onChange={(event) => { setCustomDraft((current) => ({ ...current, label: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder={isCustomImageEntityType ? 'For example: Best poster reveal' : 'Leave blank for YouTube auto-fill, or type your own title'} />
+                    </label>
+                    <label className="battle-field">
+                      <span>Subtitle</span>
+                      <input value={customDraft.subtitle} onChange={(event) => { setCustomDraft((current) => ({ ...current, subtitle: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder="Optional source or note" />
+                    </label>
+                  </div>
+                  <label className="battle-field">
+                    <span>External link</span>
+                    <input value={customDraft.url} onChange={(event) => { setCustomDraft((current) => ({ ...current, url: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} onBlur={handleCustomUrlBlur} placeholder={isCustomImageEntityType ? 'https://...image.jpg' : 'https://youtube.com/watch?v=...'} />
+                  </label>
+                  <div className="battle-custom-builder-action-grid">
+                    <div className="battle-custom-builder-action-panel">
+                      <span className="battle-custom-builder-action-label">From link</span>
+                      <div className="battle-builder-actions battle-custom-builder-actions">
+                        <Button variant="ghost" className="battle-custom-action-btn" onClick={handleValidateCustomEntry} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isValidatingCustomEntry ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}>
+                          Check link
+                        </Button>
+                        <Button className="battle-custom-action-btn" onClick={handleApplyCustomEntryToSlot} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />}>
+                          {deckSlots[activeSlotIndex] ? 'Update active slot' : 'Add to active slot'}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="battle-custom-builder-action-panel">
+                      <span className="battle-custom-builder-action-label">Batch import</span>
+                      <div className="battle-builder-actions battle-custom-builder-actions">
+                        <Button
+                          variant="ghost"
+                          className="battle-custom-action-btn battle-custom-action-btn--import"
+                          onClick={() => customFileInputRef.current?.click()}
+                          disabled={isImportingCustomFiles || isValidatingCustomEntry}
+                          icon={(isImportingCustomFiles || isValidatingCustomEntry) ? <Loader2 size={16} className="animate-spin" /> : (isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />)}
+                        >
+                          {isCustomImageEntityType ? 'Choose image files' : 'Choose video files'}
+                        </Button>
+                        <input
+                          ref={customFileInputRef}
+                          type="file"
+                          style={{ display: 'none' }}
+                          accept={isCustomImageEntityType ? 'image/*' : 'video/*'}
+                          multiple
+                          onChange={handleCustomFilesSelected}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="battle-custom-builder-footer">
+                    <small>{isCustomImageEntityType ? 'Tip: tall images usually feel best in battle cards because the slot preview is portrait-first.' : 'Tip: YouTube links create nicer previews, while uploaded files are best when you want private clips in the deck.'}</small>
+                    <span className="battle-builder-filter-chip">{filledSlotCount} / {deckSlots.length} slots filled</span>
+                  </div>
+                  {customValidation.status !== 'idle' ? (
+                    <div className={`battle-custom-validation is-${customValidation.status}`}>
+                      {customValidation.status === 'valid' ? <CheckCircle2 size={16} /> : null}
+                      {customValidation.status === 'invalid' ? <AlertTriangle size={16} /> : null}
+                      {customValidation.status === 'checking' ? <Loader2 size={16} className="animate-spin" /> : null}
+                      <span>{customValidation.message}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : isCatalogBusy ? (
                 <div className="battle-catalog-grid">
                   {Array.from({ length: 10 }).map((_, i) => <BattleCatalogCardSkeleton key={i} />)}
                 </div>
               ) : catalogError ? (
                 <p>{catalogError}</p>
               ) : filteredCatalogCount === 0 ? (
-                <p>No {getEntryUnitLabel(filters.entityType)} match the current filters.</p>
+                <p>{t('battle.filteredMatchNone', { unit: getLocalizedEntryUnitLabel(filters.entityType, t) })}</p>
               ) : (
                 <div className="battle-catalog-grid">
                   {previewCatalogTitles.map((title) => {
@@ -1057,7 +1694,7 @@ export function BattleBuilderPage() {
                   })}
                 </div>
               )}
-              {filteredCatalogCount > 0 ? (
+              {!isCustomEntityType && filteredCatalogCount > 0 ? (
                 <div className="battle-catalog-pagination">
                   <span className="battle-preview-muted">
                     {t('battle.catalogPage', { current: catalogPage + 1, total: totalCatalogPages })}

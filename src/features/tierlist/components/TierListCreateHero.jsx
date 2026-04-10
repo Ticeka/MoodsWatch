@@ -11,7 +11,7 @@ export function TierListCreateHero({
   return (
     <section className="container tierlist-hero tierlist-create-hero tierlist-create-rail">
       <div className="tierlist-hero-copy">
-        <span className="tierlist-kicker"><Sparkles size={14} /> {pick('สร้าง Tier List', 'Create Tier List')}</span>
+        <span className="tierlist-kicker"><Sparkles size={14} /> {pick('สร้างเทียร์ลิสต์', 'Create Tier List')}</span>
         <h1>{modeSummary.title}</h1>
         <p>{modeSummary.description}</p>
         <div className="tierlist-create-hero-meta" aria-label={pick('ภาพรวมการสร้าง', 'Creation summary')}>

@@ -4,6 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Globe, Layers, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
   CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
@@ -15,11 +17,14 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
-import { supabase } from '@/shared/lib/supabase';
 import { Button } from '@/shared/components/ui/Button';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
 import { getAllTitles } from '@/features/discover/lib/recommend';
+import {
+  enrichPublicDeckOwners,
+  renderBattleDeckOwnerSubtitle,
+} from '@/features/battle/lib/battleOwnerPresentation';
 import {
   createBattleSession,
   incrementStoredBattleDeckPlayCount,
@@ -34,90 +39,6 @@ import '../styles/Battle.css';
 
 const BROWSE_BATCH_SIZE = 96;
 const BROWSE_PAGE_SIZE = 12;
-
-function buildOwnerProfilePath(ownerUsername) {
-  const normalized = String(ownerUsername || '').trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
-    return '';
-  }
-  return `/u/${normalized}`;
-}
-
-function getOwnerLabel(deck) {
-  return deck?.ownerDisplayName || deck?.ownerUsername || '';
-}
-
-function getOwnerInitial(label) {
-  return String(label || '?').trim().charAt(0).toUpperCase() || '?';
-}
-
-function renderOwnerSubtitle(deck, t) {
-  const ownerLabel = getOwnerLabel(deck);
-  const ownerProfilePath = buildOwnerProfilePath(deck?.ownerUsername);
-
-  if (!ownerLabel) {
-    return t('battle.communityUserFallback');
-  }
-
-  if (!ownerProfilePath) {
-    return t('battle.publicDeckBy', { owner: ownerLabel });
-  }
-
-  return (
-    <Link
-      to={ownerProfilePath}
-      className="game-owner-link"
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-      aria-label={t('battle.publicDeckBy', { owner: ownerLabel })}
-    >
-      <span className="game-owner-avatar">
-        {deck.ownerAvatarUrl ? (
-          <img src={deck.ownerAvatarUrl} alt="" loading="lazy" />
-        ) : (
-          <span>{getOwnerInitial(ownerLabel)}</span>
-        )}
-      </span>
-      {ownerLabel}
-    </Link>
-  );
-}
-
-async function enrichPublicDeckOwners(decks = []) {
-  if (!decks.length) return decks;
-
-  const ownerIds = [...new Set(decks.map((deck) => String(deck?.ownerUserId || '').trim()).filter(Boolean))];
-  if (!ownerIds.length) return decks;
-
-  try {
-    const { data: profiles, error } = await supabase
-      .from('user_profiles')
-      .select('id, username, name, avatar_url')
-      .in('id', ownerIds);
-
-    if (error) throw error;
-
-    if (profiles?.length) {
-      const profileMap = new Map(profiles.map((profile) => [String(profile.id), profile]));
-      return decks.map((deck) => {
-        const profile = profileMap.get(String(deck?.ownerUserId || ''));
-        if (!profile) {
-          return deck;
-        }
-
-        return {
-          ...deck,
-          ownerAvatarUrl: profile.avatar_url || deck.ownerAvatarUrl || '',
-          ownerUsername: profile.username || deck.ownerUsername || '',
-          ownerDisplayName: profile.name || deck.ownerDisplayName || profile.username || '',
-        };
-      });
-    }
-  } catch (err) {
-    console.error('Failed to fetch public deck owners', err);
-  }
-  return decks;
-}
 
 function BattleBrowseCardSkeleton() {
   return (
@@ -300,6 +221,8 @@ export function BattleBrowsePage() {
         ? visibleCharacterCatalog.length
         : entityType === THEME_SONG_ENTITY_TYPE
           ? Number(deck?.sourceCount || deck?.titles?.length || 0)
+          : entityType === CUSTOM_IMAGE_ENTITY_TYPE || entityType === CUSTOM_VIDEO_ENTITY_TYPE
+            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
           : entityType === TRAILER_ENTITY_TYPE
             ? Number(deck?.sourceCount || deck?.titles?.length || 0)
             : visibleCatalogTitles.length,
@@ -503,7 +426,7 @@ export function BattleBrowsePage() {
                   <BattleReadyDeckCard
                     key={deck.id}
                     title={deck.label}
-                    subtitle={renderOwnerSubtitle(deck, t)}
+                    subtitle={renderBattleDeckOwnerSubtitle(deck, t)}
                     badge={t('battle.customStage')}
                     badgeClassName="game-badge community"
                     deck={deck}

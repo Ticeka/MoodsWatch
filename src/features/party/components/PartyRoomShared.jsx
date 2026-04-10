@@ -8,7 +8,6 @@ import {
   Loader2,
   Mic2,
   Play,
-  Radio,
   Sparkles,
   TimerReset,
   Users2,
@@ -63,7 +62,7 @@ export const PresetCard = React.memo(function PresetCard({
   onSelect,
 }) {
   const icon = preset.id === 'party-classic'
-    ? <Radio size={18} />
+    ? <Users2 size={18} />
     : <Mic2 size={18} />;
 
   return (

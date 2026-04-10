@@ -6,9 +6,9 @@ import {
   LibrarySquare,
   Link2,
   Loader2,
-  Radio,
   Sparkles,
   TimerReset,
+  Users2,
   X,
   XCircle,
 } from 'lucide-react';
@@ -1442,7 +1442,7 @@ export function PartyRoomPage() {
       <div className="party-page">
         <div className="party-game-canvas">
           <EmptyState
-            icon={<Radio size={24} />}
+            icon={<Users2 size={24} />}
             title={pick('แมตช์นี้เริ่มไปแล้ว', 'This match is already in progress')}
             message={pick('ยังไม่รองรับโหมดดู รอแมตช์ถัดไปเพื่อเข้าร่วม', 'Spectator mode is not wired yet in this slice. Wait for the rematch to join the room.')}
             action={<Link to="/party" className="party-text-link">{pick('กลับหน้า Party', 'Back to Party')}</Link>}
@@ -1502,7 +1502,7 @@ export function PartyRoomPage() {
         {showSyncBanner ? (
           <div className={`party-sync-banner ${syncState === 'stale' || syncState === 'error' ? 'is-stale' : ''}`}>
             <div className="party-sync-banner-icon" aria-hidden="true">
-              {syncState === 'syncing' ? <Loader2 size={16} className="party-spin" /> : <Radio size={16} />}
+              {syncState === 'syncing' ? <Loader2 size={16} className="party-spin" /> : <Users2 size={16} />}
             </div>
             <div className="party-sync-banner-copy">
               <strong>

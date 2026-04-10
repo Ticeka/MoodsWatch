@@ -23,6 +23,7 @@ import {
   CalendarDays,
   ListOrdered,
   Music4,
+  Coffee,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useTheme } from '@/shared/contexts/ThemeContext';
@@ -104,6 +105,9 @@ export function AdminLayout() {
             </NavLink>
             <NavLink to="/admin/recommendations" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
               <Lightbulb className="sidebar-link-icon" size={18} /> {t('admin.nav.recommendations')}
+            </NavLink>
+            <NavLink to="/admin/support-modal" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={close}>
+              <Coffee className="sidebar-link-icon" size={18} /> Support Modal
             </NavLink>
           </div>
 

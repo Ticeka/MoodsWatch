@@ -1,5 +1,7 @@
 import {
   CHARACTER_ENTITY_TYPE,
+  CUSTOM_IMAGE_ENTITY_TYPE,
+  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
@@ -12,6 +14,12 @@ function getEntryUnitLabel(entityType, options = {}) {
   if (normalized === THEME_SONG_ENTITY_TYPE) {
     return options.singular ? 'song' : 'songs';
   }
+  if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) {
+    return options.singular ? 'image' : 'images';
+  }
+  if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) {
+    return options.singular ? 'video' : 'videos';
+  }
   return options.singular ? 'title' : 'titles';
 }
 
@@ -22,6 +30,12 @@ function getAnyTypeLabel(entityType) {
   }
   if (normalized === THEME_SONG_ENTITY_TYPE) {
     return 'All songs';
+  }
+  if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) {
+    return 'Custom images';
+  }
+  if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) {
+    return 'Custom videos';
   }
   return 'All titles';
 }

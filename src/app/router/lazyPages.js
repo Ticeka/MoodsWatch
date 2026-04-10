@@ -27,6 +27,8 @@ export const SongTierListPage = lazyFeatureExport(() => import('@/features/tierl
 export const SongTierListBrowsePage = lazyFeatureExport(() => import('@/features/tierlist'), 'SongTierListBrowsePage');
 export const DiscoverPage = lazyFeatureExport(() => import('@/features/discover'), 'Discover');
 export const TitleDetailPage = lazyFeatureExport(() => import('@/features/titles'), 'TitleDetail');
+export const TitleCharacterDetailPage = lazyFeatureExport(() => import('@/features/titles'), 'TitleCharacterDetail');
+export const TitleStaffDetailPage = lazyFeatureExport(() => import('@/features/titles'), 'TitleStaffDetail');
 export const WatchlistPage = lazyFeatureExport(() => import('@/features/watchlist'), 'Watchlist');
 export const ProfilePage = lazyFeatureExport(() => import('@/features/profile'), 'Profile');
 export const PublicProfilePage = lazyFeatureExport(() => import('@/features/profile'), 'PublicProfile');
@@ -45,6 +47,7 @@ export const AdminDuplicatesPage = lazyFeatureExport(() => import('@/features/ad
 export const AdminCollectionsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminCollections');
 export const AdminHomepagePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminHomepage');
 export const AdminRecommendationPreviewPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminRecommendationPreview');
+export const AdminSupportModalPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminSupportModal');
 export const AdminFetchPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminFetch');
 export const AdminGuidePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminGuide');
 export const AdminLinksPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminLinks');

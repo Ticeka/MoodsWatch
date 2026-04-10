@@ -60,7 +60,7 @@ export function TierListPlayPage() {
       }
 
       if (!foundList) {
-        setLoadError(pick('ไม่พบ Tier List', 'Tier list not found'));
+        setLoadError(pick('ไม่พบเทียร์ลิสต์', 'Tier list not found'));
         return;
       }
 
@@ -201,7 +201,7 @@ export function TierListPlayPage() {
     }
     load().catch((error) => {
       if (cancelled) return;
-      setLoadError(error?.message || pick('โหลด Tier List ไม่สำเร็จ', 'Failed to load tier list'));
+      setLoadError(error?.message || pick('โหลดเทียร์ลิสต์ไม่สำเร็จ', 'Failed to load tier list'));
     });
     return () => { cancelled = true; };
   }, [listId, location.state, pick, showAdult, user?.id, isAuthLoading]);
@@ -320,7 +320,7 @@ export function TierListPlayPage() {
           ) : (
             <TierListEmptyPanel
               icon={<Loader2 size={28} className="animate-spin" />}
-              title={pick('กำลังโหลด Tier List', 'Loading tier list')}
+              title={pick('กำลังโหลดเทียร์ลิสต์', 'Loading tier list')}
               message={isWaitingForPoolEntities
                 ? pick('กำลังเตรียมภาพในคลัง tier list', 'Preparing artwork for the tier list pool.')
                 : isSongType
