@@ -22,7 +22,8 @@ export function TierTitleCard({
   const isCharacter = isCharacterEntity(title);
   const canPreviewSong = isSong && title?.video_url && typeof onPreviewSong === 'function';
   const canOpenDetail = typeof onOpenDetail === 'function';
-  const entityChip = isSong ? 'Theme Song' : (isCharacter ? 'Character' : 'Title');
+  const isYouTubeCustom = isSong && title?.isCustomTierItem && (title?.trailer_site === 'youtube' || title?.trailerSite === 'youtube');
+  const entityChip = isYouTubeCustom ? 'YouTube' : (isSong ? 'Theme Song' : (isCharacter ? 'Character' : 'Title'));
   const cardTitle = canOpenDetail
     ? `${getDisplayName(title)}\nDouble click to open details`
     : getDisplayName(title);

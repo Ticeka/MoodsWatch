@@ -17,7 +17,7 @@ export function TierListCreateSelectedPoolSummary({
         <strong>{pick('พูลที่เลือกแล้ว', 'Selected pool')}</strong>
         <div className="tierlist-create-summary-meta">
           <span>{pick(`${selectedItems.length} รายการพร้อมใช้`, `${selectedItems.length} items ready`)}</span>
-          <span>{pick(`${customItemsCount} รูปจากการอิมพอร์ต`, `${customItemsCount} imported images`)}</span>
+          <span>{pick(`${customItemsCount} รายการจากข้างนอก`, `${customItemsCount} external items`)}</span>
         </div>
       </div>
       {selectedItems.length > 0 ? (
@@ -25,7 +25,9 @@ export function TierListCreateSelectedPoolSummary({
           {selectedItems.map((entry) => {
             const artworkSource = getArtworkSource(entry);
             const metaLine = entry?.isCustomTierItem
-              ? pick('อิมพอร์ตจากข้างนอก', 'Imported from outside')
+              ? (entry?.trailer_site === 'youtube'
+                  ? pick('นำเข้าจาก YouTube', 'Imported from YouTube')
+                  : pick('อิมพอร์ตจากข้างนอก', 'Imported from outside'))
               : getMetaLine(entry) || pick('เลือกจากคลังในเว็บ', 'Selected from the site catalog');
             return (
               <article key={`selected-pool-${entry.id}`} className="tierlist-create-summary-item">
@@ -36,7 +38,7 @@ export function TierListCreateSelectedPoolSummary({
                   <div className="tierlist-create-summary-item-tags">
                     <span className="tierlist-chip">
                       {entry?.isCustomTierItem
-                        ? pick('อิมพอร์ต', 'Imported')
+                        ? (entry?.trailer_site === 'youtube' ? 'YouTube' : pick('อิมพอร์ต', 'Imported'))
                         : pick('จากเว็บ', 'Catalog')}
                     </span>
                     {entry?.is_adult ? <span className="tierlist-chip tierlist-chip-adult">18+</span> : null}
@@ -58,7 +60,7 @@ export function TierListCreateSelectedPoolSummary({
         </div>
       ) : (
         <p className="tierlist-create-summary-empty">
-          {pick('พอเลือกจากในเว็บหรืออิมพอร์ตจากข้างนอกแล้ว รายการทั้งหมดจะมาโชว์รวมกันตรงนี้', 'Once you pick items from the site or import them, everything will appear together here.')}
+          {pick('พอเลือกจากในเว็บหรือเพิ่มจากไฟล์กับลิงก์ข้างนอกแล้ว รายการทั้งหมดจะมาโชว์รวมกันตรงนี้', 'Once you pick items from the site or add files and links from outside, everything will appear together here.')}
         </p>
       )}
     </div>

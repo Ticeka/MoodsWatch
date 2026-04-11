@@ -7,8 +7,9 @@ import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { TierListArtworkImage as ArtworkImage, TierListCommentSection, TierListCommunityCard, TierListEditor, TierListEmptyPanel, TierListErrorPanel } from '@/features/tierlist/components';
 import { findTierList, findTierTemplate, filterTierListToCatalog, loadTierListDetail, saveTierList, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
 import { getDisplayName, getMetaLine, getOwnerDisplayName } from '@/features/tierlist/lib/tierlistLabels';
-import { buildEntityMaps, fetchCharacterEntitiesByIds, fetchThemeSongEntitiesByIds, getEntityMap, getTierEntryEntityIds } from '@/features/tierlist/lib/tierlistBrowseHelpers';
+import { buildEntityMaps, fetchCharacterEntitiesByIds, fetchThemeSongEntitiesByIds, getEntityMap, getTierEntryEntityIds, toCustomTierEntity } from '@/features/tierlist/lib/tierlistBrowseHelpers';
 import { buildRemixedTierList, getTierListPodium, hasMeaningfulTierRanking, hasTierListStructureChanged, hasVisibleTierListTitles, sortListsByRecentAndPopularity } from '@/features/tierlist/lib/tierlistPageUtils';
+import { getTierListProgressMedal } from '@/features/tierlist/lib/tierlistMedals';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
@@ -173,12 +174,14 @@ export function TierListPlayPage() {
         ].map(Number).filter((id) => Number.isFinite(id) && id > 0);
 
         let uniqueSongIds = [...new Set(songIds)];
+        let serverSongEntities = [];
+
         if (uniqueSongIds.length > 0) {
-          let songEntities = await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult });
+          serverSongEntities = await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult });
 
           if (cancelled) return;
           if (
-            songEntities.length === 0 &&
+            serverSongEntities.length === 0 &&
             canRepairFromTemplate
           ) {
             const repairedSongList = seedPoolFromCatalog({
@@ -189,13 +192,20 @@ export function TierListPlayPage() {
             setTierList(repairedSongList);
             songIds = [...new Set(sourceTemplate.titleIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))];
             uniqueSongIds = songIds;
-            songEntities = uniqueSongIds.length > 0
+            serverSongEntities = uniqueSongIds.length > 0
               ? await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult })
               : [];
             if (cancelled) return;
           }
+        }
 
-          setSongEntityMap(new Map(songEntities.map((e) => [e.id, e])));
+        // Always include custom items (negative IDs from YouTube/manual entries) in the entity map
+        const customSongEntities = (nextPlayableList.customItems || []).map(
+          (item) => toCustomTierEntity(item, THEME_SONG_ENTITY_TYPE)
+        );
+        const allSongEntities = [...serverSongEntities, ...customSongEntities];
+        if (allSongEntities.length > 0) {
+          setSongEntityMap(new Map(allSongEntities.map((e) => [e.id, e])));
         }
       }
     }
@@ -303,6 +313,8 @@ export function TierListPlayPage() {
   const isWaitingForSongs = isSongType && songEntityMap.size === 0 && !loadError;
   const isWaitingForPoolEntities = Boolean(tierList) && requiredEntityIds.length > 0 && !hasResolvedRequiredEntities && !loadError;
   const podium = useMemo(() => getTierListPodium(tierList, effectiveTitleById), [effectiveTitleById, tierList]);
+  const progressMedal = useMemo(() => getTierListProgressMedal(tierList, pick), [pick, tierList]);
+  const ProgressMedalIcon = progressMedal?.icon || null;
   const winner = podium[0] || null;
   const runnerUps = podium.slice(1, 3);
 
@@ -379,6 +391,20 @@ export function TierListPlayPage() {
         pick={pick}
         readOnly={!canEdit}
       />
+
+      {progressMedal ? (
+        <section className="container tierlist-section">
+          <div className={`tierlist-play-medal tierlist-play-medal-${progressMedal.key} glass-heavy`}>
+            <span className="tierlist-play-medal-icon">
+              {ProgressMedalIcon ? <ProgressMedalIcon size={18} /> : null}
+            </span>
+            <div className="tierlist-play-medal-copy">
+              <strong>{progressMedal.label}</strong>
+              <span>{progressMedal.description}</span>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {winner ? (
         <section className="container tierlist-section">

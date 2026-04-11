@@ -22,6 +22,7 @@ export function TierListCreateToolbar({
   coverImageUrl,
   coverStageRef,
   customItemsCount,
+  customVideoDraft,
   draftCoverImageOffsetX,
   draftCoverImageOffsetY,
   draftCoverPreviewStyle,
@@ -34,12 +35,15 @@ export function TierListCreateToolbar({
   isLoading,
   isSaving,
   isSongMode,
+  isSubmittingCustomVideo,
   isUploadingCover,
   isUploadingPoolItems,
   minimumRequired,
+  onCustomVideoDraftChange,
   onCatalogEntityTypeChange,
   onCategoryChange,
   onCloseCoverEditor,
+  onCreateCustomVideo,
   onCreate,
   onCoverPreviewPointerDown,
   onCoverPreviewPointerMove,
@@ -148,8 +152,37 @@ export function TierListCreateToolbar({
           </div>
           <div className="tierlist-create-external-status">
             <span className="tierlist-chip">{coverImageUrl ? pick('มีหน้าปกแล้ว', 'Cover ready') : pick('ยังไม่มีหน้าปก', 'No cover yet')}</span>
-            <span className="tierlist-chip">{pick(`${customItemsCount} รูปในพูล`, `${customItemsCount} pool images`)}</span>
+            <span className="tierlist-chip">{pick(`${customItemsCount} รายการข้างนอก`, `${customItemsCount} external items`)}</span>
           </div>
+          {isSongMode ? (
+            <div className="tierlist-create-video-link-panel">
+              <div className="tierlist-create-external-head">
+                <strong>{pick('เพิ่มลิงก์ YouTube', 'Add YouTube Link')}</strong>
+                <span>{pick('วางลิงก์เพลงจาก YouTube เพื่อสร้างการ์ดในพูลและกดฟังตอนจัดอันดับได้เลย', 'Paste a YouTube song link to create a pool card that you can preview while ranking.')}</span>
+              </div>
+              <div className="tierlist-create-video-link-grid">
+                <label className="tierlist-field">
+                  <span>{pick('ลิงก์ YouTube', 'YouTube URL')}</span>
+                  <input
+                    value={customVideoDraft.url}
+                    onChange={(event) => onCustomVideoDraftChange('url', event.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    disabled={isSubmittingCustomVideo || isSaving}
+                  />
+                  <small>{pick('รองรับ watch, youtu.be, shorts และ live', 'Supports watch, youtu.be, shorts, and live URLs')}</small>
+                </label>
+              </div>
+              <div className="tierlist-toolbar-actions">
+                <Button
+                  variant="secondary"
+                  onClick={onCreateCustomVideo}
+                  disabled={isSubmittingCustomVideo || isSaving || !String(customVideoDraft.url || '').trim()}
+                >
+                  {isSubmittingCustomVideo ? pick('กำลังเพิ่มลิงก์...', 'Adding link...') : pick('เพิ่มลิงก์เข้า pool', 'Add link to pool')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <TierListCreateCoverEditorPanel
             coverFileInputRef={coverFileInputRef}
             coverImageUrl={coverImageUrl}

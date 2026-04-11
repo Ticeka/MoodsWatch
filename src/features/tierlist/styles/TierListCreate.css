@@ -269,6 +269,20 @@
   box-shadow: 0 0 0 1px var(--primary-500), 0 6px 18px color-mix(in srgb, var(--primary-500) 20%, transparent);
 }
 
+.tierlist-create-video-link-panel {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 58%, transparent);
+}
+
+.tierlist-create-video-link-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .tierlist-picker-thumb {
   position: relative;
   aspect-ratio: 2 / 3;

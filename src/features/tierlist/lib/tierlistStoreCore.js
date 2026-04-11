@@ -105,6 +105,13 @@ export function normalizeCustomTierItems(items = []) {
       const title = String(item?.title ?? item?.label ?? item?.name ?? '').trim();
       const subtitle = String(item?.subtitle ?? item?.description ?? '').trim();
       const sourceUrl = String(item?.sourceUrl ?? item?.source_url ?? '').trim();
+      const videoUrl = String(item?.videoUrl ?? item?.video_url ?? item?.trailer_url ?? sourceUrl).trim();
+      const artistName = String(item?.artistName ?? item?.artist_name ?? '').trim();
+      const themeLabel = String(item?.themeLabel ?? item?.theme_label ?? item?.role ?? '').trim();
+      const entityType = normalizeCatalogEntityType(item?.entityType);
+      const trailerSite = String(item?.trailerSite ?? item?.trailer_site ?? '').trim();
+      const trailerVideoId = String(item?.trailerVideoId ?? item?.trailer_video_id ?? '').trim();
+      const trailerThumbnailUrl = String(item?.trailerThumbnailUrl ?? item?.trailer_thumbnail_url ?? imageUrl).trim();
 
       return {
         id,
@@ -112,6 +119,13 @@ export function normalizeCustomTierItems(items = []) {
         imageUrl,
         subtitle,
         sourceUrl,
+        videoUrl,
+        artistName,
+        themeLabel,
+        entityType,
+        trailerSite,
+        trailerVideoId,
+        trailerThumbnailUrl,
       };
     })
     .filter((item) => item.imageUrl)

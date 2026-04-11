@@ -28,6 +28,38 @@ import {
 } from '@/shared/lib/catalogEntities';
 
 export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
+  const resolvedEntityType = normalizeCatalogEntityType(item?.entityType || entityType);
+  if (resolvedEntityType === THEME_SONG_ENTITY_TYPE) {
+    const title = String(item?.title || '');
+    const subtitle = String(item?.subtitle || '');
+    const videoUrl = String(item?.videoUrl || item?.sourceUrl || '');
+    const themeLabel = String(item?.themeLabel || item?.role || 'YouTube');
+    const artistName = String(item?.artistName || '');
+
+    return {
+      id: Number(item?.id),
+      entityType: THEME_SONG_ENTITY_TYPE,
+      title: title,
+      title_en: title,
+      title_th: title,
+      sourceTitleName: subtitle,
+      subtitle,
+      cover: String(item?.imageUrl || ''),
+      image_url: String(item?.imageUrl || ''),
+      source_url: String(item?.sourceUrl || videoUrl || ''),
+      trailer_url: String(item?.videoUrl || item?.sourceUrl || ''),
+      video_url: String(item?.videoUrl || item?.sourceUrl || ''),
+      trailer_site: String(item?.trailerSite || ''),
+      trailer_video_id: String(item?.trailerVideoId || ''),
+      trailer_thumbnail_url: String(item?.trailerThumbnailUrl || item?.imageUrl || ''),
+      song_title: title,
+      artist_name: artistName,
+      theme_label: themeLabel,
+      role: themeLabel,
+      isCustomTierItem: true,
+    };
+  }
+
   return {
     id: Number(item?.id),
     title: String(item?.title || ''),
@@ -38,7 +70,7 @@ export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
     cover: String(item?.imageUrl || ''),
     image_url: String(item?.imageUrl || ''),
     source_url: String(item?.sourceUrl || ''),
-    entityType: normalizeCatalogEntityType(entityType),
+    entityType: resolvedEntityType,
     isCustomTierItem: true,
   };
 }

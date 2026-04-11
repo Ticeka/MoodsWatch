@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { Link2 } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getCharactersPage, getTitlesPage } from '@/features/discover/lib/recommend';
 import { getTierItemTitleFromFilename, uploadTierlistImage } from '@/features/tierlist/api';
@@ -21,7 +22,43 @@ import { getCurrentUsername } from '@/features/tierlist/lib/tierlistPageUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import '../styles/TierList.css';
+
+const CUSTOM_YOUTUBE_TIMEOUT_MS = 5000;
+
+async function fetchYoutubeVideoMetadata(url, timeoutMs = CUSTOM_YOUTUBE_TIMEOUT_MS) {
+  const parsed = parseTrailerUrl(url);
+  if (parsed?.site !== 'youtube' || !parsed?.videoId || typeof fetch !== 'function') {
+    return null;
+  }
+
+  const watchUrl = buildTrailerUrl({ site: 'youtube', videoId: parsed.videoId }) || String(url || '').trim();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  try {
+    const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`, {
+      signal: controller?.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+    return {
+      title: String(payload?.title || '').trim(),
+      authorName: String(payload?.author_name || '').trim(),
+      thumbnailUrl: String(payload?.thumbnail_url || '').trim(),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 export function TierListCreatePage() {
   const navigate = useNavigate();
@@ -39,13 +76,20 @@ export function TierListCreatePage() {
   const [templateDesc, setTemplateDesc] = useState('');
   const [customItems, setCustomItems] = useState([]);
   const [isUploadingPoolItems, setIsUploadingPoolItems] = useState(false);
+  const [isSubmittingCustomVideo, setIsSubmittingCustomVideo] = useState(false);
   const [category, setCategory] = useState('anime');
   const [entityType, setEntityType] = useState(TITLE_ENTITY_TYPE);
+  const [songCreateMode, setSongCreateMode] = useState('catalog');
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
   const [statusFilter, setStatusFilter] = useState('all');
   const [titleQuery, setTitleQuery] = useState('');
   const [songQuery, setSongQuery] = useState('');
+  const [customVideoDraft, setCustomVideoDraft] = useState({
+    url: '',
+    title: '',
+    subtitle: '',
+  });
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectedEntityCache, setSelectedEntityCache] = useState(new Map());
@@ -404,6 +448,80 @@ export function TierListCreatePage() {
     }
   };
 
+  const handleCustomVideoDraftChange = (field, value) => {
+    setCustomVideoDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleCreateCustomVideo = async () => {
+    const rawUrl = String(customVideoDraft.url || '').trim();
+    if (!rawUrl) {
+      toast.error(pick('วางลิงก์ YouTube ก่อน', 'Paste a YouTube link first'));
+      return;
+    }
+
+    const parsed = parseTrailerUrl(rawUrl);
+    if (parsed?.site !== 'youtube' || !parsed?.videoId) {
+      toast.error(pick('ตอนนี้รองรับลิงก์ YouTube สำหรับ tierlist เพลงก่อน', 'For now, tierlist link import supports YouTube links in song mode'));
+      return;
+    }
+
+    setIsSubmittingCustomVideo(true);
+    try {
+      const youtubeMetadata = await fetchYoutubeVideoMetadata(rawUrl);
+      const normalizedTrailer = normalizeTrailer({ trailer_url: rawUrl });
+      const title = String(customVideoDraft.title || '').trim() || youtubeMetadata?.title || `YouTube ${parsed.videoId}`;
+      const subtitle = String(customVideoDraft.subtitle || '').trim()
+        || (youtubeMetadata?.authorName ? `YouTube · ${youtubeMetadata.authorName}` : 'YouTube');
+      const imageUrl = youtubeMetadata?.thumbnailUrl || normalizedTrailer?.thumbnailUrl || '';
+
+      if (!imageUrl) {
+        toast.error(pick('ลิงก์นี้ยังสร้างภาพตัวอย่างไม่ได้ ลองเปลี่ยนลิงก์อีกอัน', 'This link could not produce a preview image. Try another YouTube URL.'));
+        return;
+      }
+
+      const customId = -(Date.now() + Math.floor(Math.random() * 1000));
+      const item = {
+        id: customId,
+        title,
+        subtitle,
+        imageUrl,
+        sourceUrl: normalizedTrailer?.watchUrl || rawUrl,
+        videoUrl: normalizedTrailer?.watchUrl || rawUrl,
+        artistName: youtubeMetadata?.authorName || '',
+        themeLabel: 'YouTube',
+        entityType: THEME_SONG_ENTITY_TYPE,
+        trailerSite: normalizedTrailer?.site || 'youtube',
+        trailerVideoId: normalizedTrailer?.videoId || parsed.videoId,
+        trailerThumbnailUrl: imageUrl,
+      };
+
+      setCustomItems((prev) => [...prev, item]);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.add(Number(item.id));
+        return next;
+      });
+      setSelectedEntityCache((prev) => {
+        const next = new Map(prev);
+        next.set(Number(item.id), toCustomTierEntity(item, THEME_SONG_ENTITY_TYPE));
+        return next;
+      });
+      setCustomVideoDraft({
+        url: '',
+        title: '',
+        subtitle: '',
+      });
+      toast.success(pick('เพิ่มลิงก์ YouTube เข้า pool แล้ว', 'Added YouTube link to the pool'));
+    } catch {
+      toast.error(pick('เพิ่มลิงก์ YouTube ไม่สำเร็จ', 'Could not add this YouTube link'));
+    } finally {
+      setIsSubmittingCustomVideo(false);
+    }
+  };
+
   const removeCustomItem = (itemId) => {
     const normalizedId = Number(itemId);
     setCustomItems((prev) => prev.filter((item) => Number(item.id) !== normalizedId));
@@ -457,6 +575,14 @@ export function TierListCreatePage() {
           title: getDisplayName(entry),
           subtitle: entry.subtitle || entry.sourceTitleName || '',
           imageUrl: entry.cover || entry.image_url || '',
+          sourceUrl: entry.source_url || entry.video_url || '',
+          videoUrl: entry.video_url || entry.source_url || '',
+          artistName: entry.artist_name || '',
+          themeLabel: entry.theme_label || entry.role || '',
+          entityType: normalizeCatalogEntityType(entry.entityType || entityType),
+          trailerSite: entry.trailer_site || '',
+          trailerVideoId: entry.trailer_video_id || '',
+          trailerThumbnailUrl: entry.trailer_thumbnail_url || entry.cover || entry.image_url || '',
         }));
       const catalogItems = entitiesToUse.filter((entry) => !entry?.isCustomTierItem);
       const template = createTemplateFromCatalog(catalogItems, {
@@ -528,8 +654,10 @@ export function TierListCreatePage() {
   };
 
   const handleModeEntityTypeChange = (nextValue) => {
-    const nextType = normalizeCatalogEntityType(nextValue);
+    const isYoutubeMode = nextValue === 'youtube_song';
+    const nextType = isYoutubeMode ? THEME_SONG_ENTITY_TYPE : normalizeCatalogEntityType(nextValue);
     setEntityType(nextType);
+    setSongCreateMode(isYoutubeMode ? 'youtube' : nextType === THEME_SONG_ENTITY_TYPE ? 'catalog' : 'catalog');
     setSelectedIds(new Set());
     setSelectedEntityCache(new Map());
     setBrowsingTitle(null);
@@ -540,6 +668,7 @@ export function TierListCreatePage() {
   const handleCatalogEntityTypeChange = (nextValue) => {
     const nextType = normalizeCatalogEntityType(nextValue);
     setEntityType(nextType);
+    setSongCreateMode(nextType === THEME_SONG_ENTITY_TYPE ? 'catalog' : 'catalog');
     setSelectedIds(new Set());
     setSelectedEntityCache(new Map());
     setBrowsingTitle(null);
@@ -650,6 +779,7 @@ export function TierListCreatePage() {
       <TierListCreateModeSelector
         entityType={entityType}
         onSelectEntityType={handleModeEntityTypeChange}
+        songCreateMode={songCreateMode}
         pick={pick}
       />
 
@@ -659,6 +789,7 @@ export function TierListCreatePage() {
         coverImageUrl={coverImageUrl}
         coverStageRef={coverStageRef}
         customItemsCount={customItems.length}
+        customVideoDraft={customVideoDraft}
         draftCoverImageOffsetX={draftCoverImageOffsetX}
         draftCoverImageOffsetY={draftCoverImageOffsetY}
         draftCoverPreviewStyle={draftCoverPreviewStyle}
@@ -671,12 +802,15 @@ export function TierListCreatePage() {
         isLoading={isLoading}
         isSaving={isSaving}
         isSongMode={isSongMode}
+        isSubmittingCustomVideo={isSubmittingCustomVideo}
         isUploadingCover={isUploadingCover}
         isUploadingPoolItems={isUploadingPoolItems}
         minimumRequired={minimumRequired}
+        onCustomVideoDraftChange={handleCustomVideoDraftChange}
         onCatalogEntityTypeChange={handleCatalogEntityTypeChange}
         onCategoryChange={setCategory}
         onCloseCoverEditor={closeCoverEditor}
+        onCreateCustomVideo={handleCreateCustomVideo}
         onCreate={handleCreate}
         onCoverPreviewPointerDown={handleCoverPreviewPointerDown}
         onCoverPreviewPointerMove={handleCoverPreviewPointerMove}
@@ -703,7 +837,7 @@ export function TierListCreatePage() {
       />
 
       {/* Song picker (song mode only) */}
-      {isSongMode ? (
+      {isSongMode && songCreateMode !== 'youtube' ? (
         <TierListCreateSongPickerSection
           browsingTitle={browsingTitle}
           catalogPage={catalogPage}
@@ -738,6 +872,14 @@ export function TierListCreatePage() {
           titleQuery={titleQuery}
           typeFilter={typeFilter}
         />
+      ) : isSongMode && songCreateMode === 'youtube' ? (
+        <section className="container tierlist-section" ref={pickerSectionRef}>
+          <TierListEmptyPanel
+            icon={<Link2 size={28} />}
+            title={pick('โหมด YouTube พร้อมแล้ว', 'YouTube mode is ready')}
+            message={pick('เพิ่มลิงก์ YouTube จากแผงด้านบนได้เลย รายการที่เพิ่มจะเข้า pool ทันที แล้วค่อยกด Create & Play เมื่อครบตามที่ต้องการ', 'Add YouTube links from the panel above. Each link goes straight into the pool, then hit Create & Play when you have enough items.')}
+          />
+        </section>
       ) : (
         /* Normal title/character picker */
         <TierListCreateCatalogPickerSection
