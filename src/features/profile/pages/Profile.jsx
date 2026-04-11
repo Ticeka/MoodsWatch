@@ -338,6 +338,12 @@ export function Profile() {
 
   const deleteProfileComment = async (commentId) => {
     if (!commentId || !supabase) return;
+    const confirmed = window.confirm(
+      language === 'th'
+        ? 'ลบคอมเมนต์นี้ใช่ไหม?'
+        : 'Delete this comment?'
+    );
+    if (!confirmed) return;
 
     setDeletingCommentId(commentId);
     setProfileCommentError('');

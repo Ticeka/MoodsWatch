@@ -443,6 +443,13 @@ export function TitleDetail() {
   };
 
   const handleDeleteLink = async (platform) => {
+    if (!window.confirm(t('titleDetail.confirmDelete', {
+      platform: platform.name,
+      title: title?.title_en || title?.title_th || title?.title_native || '',
+    }))) {
+      return;
+    }
+
     try {
       await deleteTitleAvailabilityLink({
         titleId: title.id,

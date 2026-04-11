@@ -72,6 +72,14 @@ export function BattleDeckLibraryPage() {
     if (!deck?.id) {
       return;
     }
+    const confirmed = window.confirm(
+      deck?.label
+        ? `${t('battle.deleteDeck')} "${deck.label}"?`
+        : `${t('battle.deleteDeck')}?`
+    );
+    if (!confirmed) {
+      return;
+    }
 
     if (deck.isPublic && user?.id) {
       try {

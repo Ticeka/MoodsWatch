@@ -95,6 +95,12 @@ export function PostCard({ post, titleMap, onDelete, isHighlighted = false }) {
   }
 
   async function handleDelete() {
+    const confirmed = window.confirm(
+      language === 'th'
+        ? 'ลบโพสต์นี้ใช่ไหม?'
+        : 'Delete this post?'
+    );
+    if (!confirmed) return;
     await deleteSocialPost(post.id);
     onDelete?.(post.id);
   }

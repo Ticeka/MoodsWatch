@@ -928,6 +928,15 @@ export function Discover() {
   }, [togglePinSearch, user?.id]);
 
   const handleSavedSearchDelete = useCallback(async (entry) => {
+    const confirmed = window.confirm(
+      language === 'th'
+        ? `ลบชุดค้นหาที่บันทึก "${describeSearchPreset(entry, t)}" ใช่ไหม?`
+        : `Delete saved search "${describeSearchPreset(entry, t)}"?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
     if (editingSavedSearchId === entry.id) {
       cancelSavedSearchRename();
     }
@@ -945,7 +954,7 @@ export function Discover() {
       },
     });
     toast.success(t('discover.savedSearchDeleted'));
-  }, [cancelSavedSearchRename, deleteSearch, editingSavedSearchId, t, user?.id]);
+  }, [cancelSavedSearchRename, deleteSearch, editingSavedSearchId, language, t, user?.id]);
 
   const isSearchWorkbenchOpen = showSearchWorkbench || Boolean(editingSavedSearchId);
   const renderedSavedSearches = isSearchWorkbenchOpen ? savedSearches : [];
@@ -1148,6 +1157,15 @@ export function Discover() {
   ) : null;
 
   const handleClearSavedSearches = useCallback(() => {
+    const confirmed = window.confirm(
+      language === 'th'
+        ? 'ลบการค้นหาที่บันทึกไว้ทั้งหมดใช่ไหม?'
+        : 'Delete all saved searches?'
+    );
+    if (!confirmed) {
+      return;
+    }
+
     cancelSavedSearchRename();
     void clearAllSearches();
     void trackDiscoverEvent({
@@ -1162,7 +1180,7 @@ export function Discover() {
       },
     });
     toast.success(t('discover.savedSearchesCleared'));
-  }, [activeScope, activeTag, activeTitleType, cancelSavedSearchRename, clearAllSearches, query, t, user?.id]);
+  }, [activeScope, activeTag, activeTitleType, cancelSavedSearchRename, clearAllSearches, language, query, t, user?.id]);
 
   const handleResultClick = useCallback((resultType, item, rank) => {
     void trackDiscoverEvent({
