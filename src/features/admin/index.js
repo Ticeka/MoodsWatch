@@ -12,6 +12,7 @@ export { AdminLinks } from './pages/AdminLinks';
 export { AdminMoods } from './pages/AdminMoods';
 export { AdminPartyPresets } from './pages/AdminPartyPresets';
 export { AdminRecommendationPreview } from './pages/AdminRecommendationPreview';
+export { AdminDonate } from './pages/AdminDonate';
 export { AdminSupportModal } from './pages/AdminSupportModal';
 export { AdminTierlists } from './pages/AdminTierlists';
 export { AdminTitleEdit } from './pages/AdminTitleEdit';

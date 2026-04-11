@@ -1553,6 +1553,55 @@
   justify-content: center;
 }
 
+.footer-support-strip-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.footer-donate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: fit-content;
+  padding: 0.7rem 1.25rem 0.7rem 0.75rem;
+  border-radius: 999px;
+  color: color-mix(in srgb, #ec4899 70%, var(--primary));
+  background: color-mix(in srgb, #ec4899 7%, var(--bg-elevated));
+  border: 1.5px solid color-mix(in srgb, #ec4899 22%, var(--border-default));
+  box-shadow: 0 2px 12px rgba(236, 72, 153, 0.1);
+  cursor: pointer;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, background-color 0.22s ease, border-color 0.22s ease;
+  font-family: inherit;
+}
+
+.footer-donate-btn:hover {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, #ec4899 12%, var(--bg-elevated));
+  border-color: color-mix(in srgb, #ec4899 40%, var(--border-default));
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.18);
+}
+
+.footer-donate-btn .footer-support-icon {
+  color: color-mix(in srgb, #ec4899 80%, var(--primary));
+  background: color-mix(in srgb, #ec4899 14%, var(--bg-elevated));
+  border-color: color-mix(in srgb, #ec4899 20%, var(--border-default));
+}
+
+.footer-donate-btn .footer-support-copy strong {
+  color: color-mix(in srgb, #ec4899 80%, var(--primary));
+}
+
+.footer-donate-btn .footer-support-copy span {
+  color: color-mix(in srgb, #ec4899 60%, var(--text-secondary));
+}
+
+.footer-donate-btn .footer-support-heart {
+  color: #ec4899;
+}
+
 .footer-support-link {
   display: inline-flex;
   align-items: center;

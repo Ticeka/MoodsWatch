@@ -47,6 +47,7 @@ export const AdminDuplicatesPage = lazyFeatureExport(() => import('@/features/ad
 export const AdminCollectionsPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminCollections');
 export const AdminHomepagePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminHomepage');
 export const AdminRecommendationPreviewPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminRecommendationPreview');
+export const AdminDonatePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminDonate');
 export const AdminSupportModalPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminSupportModal');
 export const AdminFetchPage = lazyFeatureExport(() => import('@/features/admin'), 'AdminFetch');
 export const AdminGuidePage = lazyFeatureExport(() => import('@/features/admin'), 'AdminGuide');

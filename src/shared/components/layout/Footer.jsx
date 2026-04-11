@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Coffee, Heart, Sparkles } from 'lucide-react';
+import { Coffee, Heart, QrCode, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { BRAND_NAME, BRAND_WORDMARK_ACCENT, BRAND_WORDMARK_LEAD } from '@/shared/config/brand';
 import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
 import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
+import { useDonateConfig } from '@/shared/hooks/useDonateConfig';
+import { DonateModal } from '@/features/donate';
 
 export function Footer() {
   const { t, pick } = useLanguage();
   const supportConfig = useSupportConfig();
+  const donateConfig = useDonateConfig();
+  const [donateOpen, setDonateOpen] = useState(false);
 
   return (
     <footer className="footer">
@@ -42,7 +46,7 @@ export function Footer() {
         </div>
       </div>
       <div className="footer-support-strip">
-        <div className="container">
+        <div className="container footer-support-strip-inner">
           <a
             href={SUPPORT_STRIPE_COFFEE_URL || undefined}
             target={SUPPORT_STRIPE_COFFEE_URL ? '_blank' : undefined}
@@ -62,8 +66,27 @@ export function Footer() {
             </span>
             <Heart size={13} className="footer-support-heart" fill="currentColor" />
           </a>
+
+          {donateConfig.enabled && (
+            <button
+              type="button"
+              className="footer-donate-btn"
+              onClick={() => setDonateOpen(true)}
+            >
+              <span className="footer-support-icon"><QrCode size={14} /></span>
+              <span className="footer-support-copy">
+                <strong>{pick('โดเนทผ่าน PromptPay', 'Donate via PromptPay')}</strong>
+                <span>{pick('สแกน QR โอนตรงเลย', 'Scan QR to donate directly')}</span>
+              </span>
+              <Heart size={13} className="footer-support-heart" fill="currentColor" />
+            </button>
+          )}
         </div>
       </div>
+
+      {donateConfig.enabled && (
+        <DonateModal open={donateOpen} onClose={() => setDonateOpen(false)} config={donateConfig} />
+      )}
 
       <div className="footer-bottom">
         <div className="container">
