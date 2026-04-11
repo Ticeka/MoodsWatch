@@ -19,6 +19,7 @@ import {
   AdminMoodsPage,
   AdminPartyPresetsPage,
   AdminRecommendationPreviewPage,
+  AdminDonatePage,
   AdminSupportModalPage,
   AdminTierlistsPage,
   AdminTitleEditPage,
@@ -147,6 +148,7 @@ export function AppRouter() {
               <Route path="collections" element={<AdminCollectionsPage />} />
               <Route path="homepage" element={<AdminHomepagePage />} />
               <Route path="recommendations" element={<AdminRecommendationPreviewPage />} />
+              <Route path="donate" element={<AdminDonatePage />} />
               <Route path="support-modal" element={<AdminSupportModalPage />} />
               <Route path="fetch" element={<AdminFetchPage />} />
               <Route path="links" element={<AdminLinksPage />} />
