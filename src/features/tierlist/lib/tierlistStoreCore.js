@@ -1,9 +1,10 @@
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 
 const TIERLIST_STORAGE_KEY = 'moodtoon-tierlist-v3';
 const DEFAULT_ROWS = ['S', 'A', 'B', 'C', 'D'];
 const TEMPLATE_CATEGORY_CHARACTER_PREFIX = 'character::';
 const TEMPLATE_CATEGORY_THEME_SONG_PREFIX = 'theme_song::';
+const TEMPLATE_CATEGORY_YOUTUBE_PREFIX = 'youtube::';
 
 export const DEFAULT_LIBRARY = {
   templates: [],
@@ -18,6 +19,9 @@ export function encodeTemplateCategory(category, entityType = TITLE_ENTITY_TYPE)
   }
   if (normalizedEntityType === THEME_SONG_ENTITY_TYPE) {
     return `${TEMPLATE_CATEGORY_THEME_SONG_PREFIX}${normalizedCategory}`;
+  }
+  if (normalizedEntityType === YOUTUBE_ENTITY_TYPE) {
+    return `${TEMPLATE_CATEGORY_YOUTUBE_PREFIX}${normalizedCategory}`;
   }
   return normalizedCategory;
 }
@@ -34,6 +38,12 @@ function decodeTemplateCategory(category) {
     return {
       category: rawCategory.slice(TEMPLATE_CATEGORY_THEME_SONG_PREFIX.length) || 'general',
       entityType: THEME_SONG_ENTITY_TYPE,
+    };
+  }
+  if (rawCategory.startsWith(TEMPLATE_CATEGORY_YOUTUBE_PREFIX)) {
+    return {
+      category: rawCategory.slice(TEMPLATE_CATEGORY_YOUTUBE_PREFIX.length) || 'general',
+      entityType: YOUTUBE_ENTITY_TYPE,
     };
   }
 
@@ -218,6 +228,14 @@ function inferTierListEntityType(raw = {}) {
   const normalizedDescription = String(raw?.description || '').trim().toLowerCase();
   if (normalizedDescription.startsWith('song-source:')) {
     return THEME_SONG_ENTITY_TYPE;
+  }
+  if (normalizedDescription.startsWith('youtube-source:')) {
+    return YOUTUBE_ENTITY_TYPE;
+  }
+
+  const customItems = normalizeCustomTierItems(raw?.customItems ?? raw?.custom_items ?? []);
+  if (customItems.some((item) => normalizeCatalogEntityType(item?.entityType) === YOUTUBE_ENTITY_TYPE)) {
+    return YOUTUBE_ENTITY_TYPE;
   }
 
   return TITLE_ENTITY_TYPE;

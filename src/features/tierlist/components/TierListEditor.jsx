@@ -33,6 +33,7 @@ import { ThemeSongModal } from '@/shared/components/ui/ThemeSongModal';
 import { BRAND_NAME } from '@/shared/config/brand';
 import {
   THEME_SONG_ENTITY_TYPE,
+  YOUTUBE_ENTITY_TYPE,
   isCharacterEntity,
   isThemeSongEntity,
   normalizeCatalogEntityType,
@@ -111,7 +112,10 @@ export function TierListEditor({ tierList, setTierList, titleById, query, setQue
   const dragStateRef = useRef(null);
   const rowDragStateRef = useRef(null);
   const sampleEntity = titleById.values().next().value;
-  const isSongTierList = normalizeCatalogEntityType(tierList?.entityType) === THEME_SONG_ENTITY_TYPE || isThemeSongEntity(sampleEntity);
+  const normalizedEntityType = normalizeCatalogEntityType(tierList?.entityType);
+  const isSongTierList = normalizedEntityType === THEME_SONG_ENTITY_TYPE
+    || normalizedEntityType === YOUTUBE_ENTITY_TYPE
+    || isThemeSongEntity(sampleEntity);
   const normalizedPoolQuery = useMemo(() => String(query || '').trim().toLowerCase(), [query]);
 
   useEffect(() => {

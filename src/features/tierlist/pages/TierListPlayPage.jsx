@@ -13,7 +13,7 @@ import { getTierListProgressMedal } from '@/features/tierlist/lib/tierlistMedals
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 import '../styles/TierList.css';
 
 export function TierListPlayPage() {
@@ -101,7 +101,7 @@ export function TierListPlayPage() {
         if (cancelled) return;
         filteredCatalog = catalog;
         availableCatalogIds = catalog.map((entity) => Number(entity.id)).filter(Boolean);
-      } else if (resolvedEntityTypeForLoad !== THEME_SONG_ENTITY_TYPE) {
+      } else if (resolvedEntityTypeForLoad !== THEME_SONG_ENTITY_TYPE && resolvedEntityTypeForLoad !== YOUTUBE_ENTITY_TYPE) {
         const catalog = await getTitlesByIds(referencedEntityIds, { showAdult });
         if (cancelled) return;
         filteredCatalog = catalog;
@@ -166,7 +166,7 @@ export function TierListPlayPage() {
       };
       setTierList(nextPlayableList);
 
-      if (resolvedEntityType === THEME_SONG_ENTITY_TYPE) {
+      if (resolvedEntityType === THEME_SONG_ENTITY_TYPE || resolvedEntityType === YOUTUBE_ENTITY_TYPE) {
         let songIds = [
           ...(sourceTemplate?.titleIds || []),
           ...nextPlayableList.poolTitleIds,
@@ -176,7 +176,7 @@ export function TierListPlayPage() {
         let uniqueSongIds = [...new Set(songIds)];
         let serverSongEntities = [];
 
-        if (uniqueSongIds.length > 0) {
+        if (resolvedEntityType === THEME_SONG_ENTITY_TYPE && uniqueSongIds.length > 0) {
           serverSongEntities = await fetchThemeSongEntitiesByIds(uniqueSongIds, { showAdult });
 
           if (cancelled) return;
@@ -201,7 +201,7 @@ export function TierListPlayPage() {
 
         // Always include custom items (negative IDs from YouTube/manual entries) in the entity map
         const customSongEntities = (nextPlayableList.customItems || []).map(
-          (item) => toCustomTierEntity(item, THEME_SONG_ENTITY_TYPE)
+          (item) => toCustomTierEntity(item, resolvedEntityType)
         );
         const allSongEntities = [...serverSongEntities, ...customSongEntities];
         if (allSongEntities.length > 0) {
@@ -309,7 +309,7 @@ export function TierListPlayPage() {
     }
   };
 
-  const isSongType = activeEntityType === THEME_SONG_ENTITY_TYPE;
+  const isSongType = activeEntityType === THEME_SONG_ENTITY_TYPE || activeEntityType === YOUTUBE_ENTITY_TYPE;
   const isWaitingForSongs = isSongType && songEntityMap.size === 0 && !loadError;
   const isWaitingForPoolEntities = Boolean(tierList) && requiredEntityIds.length > 0 && !hasResolvedRequiredEntities && !loadError;
   const podium = useMemo(() => getTierListPodium(tierList, effectiveTitleById), [effectiveTitleById, tierList]);

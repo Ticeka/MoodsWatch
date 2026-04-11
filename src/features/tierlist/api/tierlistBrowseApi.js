@@ -3,6 +3,7 @@ import {
   CHARACTER_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  YOUTUBE_ENTITY_TYPE,
   buildCharacterEntity,
   buildThemeSongEntity,
 } from '@/shared/lib/catalogEntities';
@@ -85,11 +86,13 @@ export function createEmptyBrowseVisibility() {
       [TITLE_ENTITY_TYPE]: new Set(),
       [CHARACTER_ENTITY_TYPE]: new Set(),
       [THEME_SONG_ENTITY_TYPE]: new Set(),
+      [YOUTUBE_ENTITY_TYPE]: new Set(),
     },
     blockedByType: {
       [TITLE_ENTITY_TYPE]: new Set(),
       [CHARACTER_ENTITY_TYPE]: new Set(),
       [THEME_SONG_ENTITY_TYPE]: new Set(),
+      [YOUTUBE_ENTITY_TYPE]: new Set(),
     },
   };
 }

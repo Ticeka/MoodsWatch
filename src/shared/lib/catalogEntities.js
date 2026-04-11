@@ -4,6 +4,7 @@ import { normalizeArtworkSource } from './titleArtwork.js';
 export const TITLE_ENTITY_TYPE = 'title';
 export const CHARACTER_ENTITY_TYPE = 'character';
 export const THEME_SONG_ENTITY_TYPE = 'theme_song';
+export const YOUTUBE_ENTITY_TYPE = 'youtube';
 export const TRAILER_ENTITY_TYPE = 'trailer';
 export const CUSTOM_IMAGE_ENTITY_TYPE = 'custom_image';
 export const CUSTOM_VIDEO_ENTITY_TYPE = 'custom_video';
@@ -90,6 +91,7 @@ function shouldReplaceCharacter(existingEntity, nextEntity) {
 export function normalizeCatalogEntityType(value) {
   if (value === CHARACTER_ENTITY_TYPE) return CHARACTER_ENTITY_TYPE;
   if (value === THEME_SONG_ENTITY_TYPE) return THEME_SONG_ENTITY_TYPE;
+  if (value === YOUTUBE_ENTITY_TYPE) return YOUTUBE_ENTITY_TYPE;
   if (value === TRAILER_ENTITY_TYPE) return TRAILER_ENTITY_TYPE;
   if (value === CUSTOM_IMAGE_ENTITY_TYPE) return CUSTOM_IMAGE_ENTITY_TYPE;
   if (value === CUSTOM_VIDEO_ENTITY_TYPE) return CUSTOM_VIDEO_ENTITY_TYPE;
@@ -102,6 +104,10 @@ export function isCharacterEntity(entity) {
 
 export function isThemeSongEntity(entity) {
   return entity?.entityType === THEME_SONG_ENTITY_TYPE;
+}
+
+export function isYoutubeEntity(entity) {
+  return entity?.entityType === YOUTUBE_ENTITY_TYPE;
 }
 
 export function isTrailerEntity(entity) {

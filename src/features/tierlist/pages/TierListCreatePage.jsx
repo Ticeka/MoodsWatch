@@ -21,7 +21,7 @@ import { fetchSongsForTitle, preloadSongsForTitle, splitByAdultFlag, toCustomTie
 import { getCurrentUsername } from '@/features/tierlist/lib/tierlistPageUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import '../styles/TierList.css';
 
@@ -79,7 +79,6 @@ export function TierListCreatePage() {
   const [isSubmittingCustomVideo, setIsSubmittingCustomVideo] = useState(false);
   const [category, setCategory] = useState('anime');
   const [entityType, setEntityType] = useState(TITLE_ENTITY_TYPE);
-  const [songCreateMode, setSongCreateMode] = useState('catalog');
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -280,8 +279,8 @@ export function TierListCreatePage() {
 
   // Load songs when user drills into a title (song picker mode)
   useEffect(() => {
-    const isSongMode = normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE;
-    if (!isSongMode || !browsingTitle) return undefined;
+    const isThemeSongMode = normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE;
+    if (!isThemeSongMode || !browsingTitle) return undefined;
     const titleId = Number(browsingTitle.id);
     if (songEntityCache.has(titleId)) return undefined;
     let cancelled = false;
@@ -304,7 +303,11 @@ export function TierListCreatePage() {
     return () => { cancelled = true; };
   }, [browsingTitle, entityType, songEntityCache]);
 
-  const isCharacterMode = normalizeCatalogEntityType(entityType) === CHARACTER_ENTITY_TYPE;
+  const normalizedEntityType = normalizeCatalogEntityType(entityType);
+  const isCharacterMode = normalizedEntityType === CHARACTER_ENTITY_TYPE;
+  const isThemeSongMode = normalizedEntityType === THEME_SONG_ENTITY_TYPE;
+  const isYoutubeMode = normalizedEntityType === YOUTUBE_ENTITY_TYPE;
+  const isSongMode = isThemeSongMode || isYoutubeMode;
   // Derived above together with the other create-page mode flags.
   const modeSummary = useMemo(() => getEntityModeSummary(entityType, pick), [entityType, pick]);
 
@@ -326,13 +329,11 @@ export function TierListCreatePage() {
     [selectedIds, selectedEntityCache]
   );
 
-  const isSongMode = normalizeCatalogEntityType(entityType) === THEME_SONG_ENTITY_TYPE;
-
   // Titles for browsing in song mode; already filtered server-side
   const filteredForSongBrowse = useMemo(() => {
-    if (!isSongMode) return [];
+    if (!isThemeSongMode) return [];
     return pagedEntries;
-  }, [isSongMode, pagedEntries]);
+  }, [isThemeSongMode, pagedEntries]);
   const groupedFilteredForSongBrowse = useMemo(
     () => splitByAdultFlag(filteredForSongBrowse),
     [filteredForSongBrowse]
@@ -340,9 +341,9 @@ export function TierListCreatePage() {
 
   // Songs currently shown in the drill-down panel
   const currentBrowseSongs = useMemo(() => {
-    if (!isSongMode || !browsingTitle) return [];
+    if (!isThemeSongMode || !browsingTitle) return [];
     return songEntityCache.get(Number(browsingTitle.id)) || [];
-  }, [isSongMode, browsingTitle, songEntityCache]);
+  }, [isThemeSongMode, browsingTitle, songEntityCache]);
 
   const filteredBrowseSongs = useMemo(
     () => currentBrowseSongs.filter((song) => matchesSongQuery(song, songQuery)),
@@ -355,13 +356,13 @@ export function TierListCreatePage() {
 
   // All selected song entities (accumulated across titles)
   const selectedSongEntities = useMemo(() => {
-    if (!isSongMode) return [];
+    if (!isThemeSongMode) return [];
     const result = [];
     for (const songs of songEntityCache.values()) {
       songs.forEach((s) => { if (selectedIds.has(s.id)) result.push(s); });
     }
     return result;
-  }, [isSongMode, selectedIds, songEntityCache]);
+  }, [isThemeSongMode, selectedIds, songEntityCache]);
 
   const selectedCustomEntities = useMemo(
     () => Array.from(selectedIds)
@@ -464,7 +465,7 @@ export function TierListCreatePage() {
 
     const parsed = parseTrailerUrl(rawUrl);
     if (parsed?.site !== 'youtube' || !parsed?.videoId) {
-      toast.error(pick('ตอนนี้รองรับลิงก์ YouTube สำหรับ tierlist เพลงก่อน', 'For now, tierlist link import supports YouTube links in song mode'));
+      toast.error(pick('ตอนนี้รองรับลิงก์ YouTube เท่านั้น', 'Only YouTube links are supported right now'));
       return;
     }
 
@@ -492,7 +493,7 @@ export function TierListCreatePage() {
         videoUrl: normalizedTrailer?.watchUrl || rawUrl,
         artistName: youtubeMetadata?.authorName || '',
         themeLabel: 'YouTube',
-        entityType: THEME_SONG_ENTITY_TYPE,
+        entityType: YOUTUBE_ENTITY_TYPE,
         trailerSite: normalizedTrailer?.site || 'youtube',
         trailerVideoId: normalizedTrailer?.videoId || parsed.videoId,
         trailerThumbnailUrl: imageUrl,
@@ -506,7 +507,7 @@ export function TierListCreatePage() {
       });
       setSelectedEntityCache((prev) => {
         const next = new Map(prev);
-        next.set(Number(item.id), toCustomTierEntity(item, THEME_SONG_ENTITY_TYPE));
+        next.set(Number(item.id), toCustomTierEntity(item, YOUTUBE_ENTITY_TYPE));
         return next;
       });
       setCustomVideoDraft({
@@ -586,9 +587,15 @@ export function TierListCreatePage() {
         }));
       const catalogItems = entitiesToUse.filter((entry) => !entry?.isCustomTierItem);
       const template = createTemplateFromCatalog(catalogItems, {
-        title: templateName.trim() || (isSongMode ? pick('เทมเพลตเพลงใหม่', 'New Song Template') : pick('เทมเพลตใหม่', 'New Template')),
+        title: templateName.trim() || (
+          isYoutubeMode
+            ? pick('เทมเพลต YouTube ใหม่', 'New YouTube Template')
+            : isSongMode
+              ? pick('เทมเพลตเพลงใหม่', 'New Song Template')
+              : pick('เทมเพลตใหม่', 'New Template')
+        ),
         description: templateDesc.trim(),
-        category: isSongMode ? 'songs' : category,
+        category: isYoutubeMode ? 'youtube' : isSongMode ? 'songs' : category,
         entityType,
         isPublic: true,
         isSystem: false,
@@ -614,19 +621,21 @@ export function TierListCreatePage() {
       const workingLibrary = cleanupResult.library;
       const libraryAfterTemplate = await saveTierTemplate(template, workingLibrary, { userId: user?.id || null });
       const savedTemplate = findTierTemplate(template.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || template;
-      const normalizedSavedTemplate = isSongMode
-        ? { ...savedTemplate, entityType: THEME_SONG_ENTITY_TYPE }
+      const normalizedSavedTemplate = isYoutubeMode
+        ? { ...savedTemplate, entityType: YOUTUBE_ENTITY_TYPE }
+        : isThemeSongMode
+          ? { ...savedTemplate, entityType: THEME_SONG_ENTITY_TYPE }
         : savedTemplate;
       const list = buildTierListFromTemplate(savedTemplate);
       const seeded = seedPoolFromCatalog({
         ...list,
-        entityType: isSongMode ? THEME_SONG_ENTITY_TYPE : list.entityType,
+        entityType: isYoutubeMode ? YOUTUBE_ENTITY_TYPE : isThemeSongMode ? THEME_SONG_ENTITY_TYPE : list.entityType,
       }, entitiesToUse.map((e) => Number(e.id)));
       const ownerUsername = getCurrentUsername(user);
       const nextList = {
         ...seeded,
         templateId: normalizedSavedTemplate.id,
-        entityType: isSongMode ? THEME_SONG_ENTITY_TYPE : seeded.entityType,
+        entityType: isYoutubeMode ? YOUTUBE_ENTITY_TYPE : isThemeSongMode ? THEME_SONG_ENTITY_TYPE : seeded.entityType,
         ownerName: ownerUsername || 'You',
         ownerUsername,
         ownerUserId: user?.id || null,
@@ -654,25 +663,38 @@ export function TierListCreatePage() {
   };
 
   const handleModeEntityTypeChange = (nextValue) => {
-    const isYoutubeMode = nextValue === 'youtube_song';
-    const nextType = isYoutubeMode ? THEME_SONG_ENTITY_TYPE : normalizeCatalogEntityType(nextValue);
+    const nextType = normalizeCatalogEntityType(nextValue);
     setEntityType(nextType);
-    setSongCreateMode(isYoutubeMode ? 'youtube' : nextType === THEME_SONG_ENTITY_TYPE ? 'catalog' : 'catalog');
     setSelectedIds(new Set());
     setSelectedEntityCache(new Map());
     setBrowsingTitle(null);
-    setCategory(nextType === CHARACTER_ENTITY_TYPE ? 'characters' : nextType === THEME_SONG_ENTITY_TYPE ? 'songs' : 'anime');
+    setCategory(
+      nextType === CHARACTER_ENTITY_TYPE
+        ? 'characters'
+        : nextType === THEME_SONG_ENTITY_TYPE
+          ? 'songs'
+          : nextType === YOUTUBE_ENTITY_TYPE
+            ? 'youtube'
+            : 'anime'
+    );
     resetCreateFilters();
   };
 
   const handleCatalogEntityTypeChange = (nextValue) => {
     const nextType = normalizeCatalogEntityType(nextValue);
     setEntityType(nextType);
-    setSongCreateMode(nextType === THEME_SONG_ENTITY_TYPE ? 'catalog' : 'catalog');
     setSelectedIds(new Set());
     setSelectedEntityCache(new Map());
     setBrowsingTitle(null);
-    setCategory(nextType === CHARACTER_ENTITY_TYPE ? 'characters' : nextType === THEME_SONG_ENTITY_TYPE ? 'songs' : 'anime');
+    setCategory(
+      nextType === CHARACTER_ENTITY_TYPE
+        ? 'characters'
+        : nextType === THEME_SONG_ENTITY_TYPE
+          ? 'songs'
+          : nextType === YOUTUBE_ENTITY_TYPE
+            ? 'youtube'
+            : 'anime'
+    );
     setTypeFilter('all');
     setTitleQuery('');
     setCatalogPage(1);
@@ -779,7 +801,6 @@ export function TierListCreatePage() {
       <TierListCreateModeSelector
         entityType={entityType}
         onSelectEntityType={handleModeEntityTypeChange}
-        songCreateMode={songCreateMode}
         pick={pick}
       />
 
@@ -802,6 +823,7 @@ export function TierListCreatePage() {
         isLoading={isLoading}
         isSaving={isSaving}
         isSongMode={isSongMode}
+        isYoutubeMode={isYoutubeMode}
         isSubmittingCustomVideo={isSubmittingCustomVideo}
         isUploadingCover={isUploadingCover}
         isUploadingPoolItems={isUploadingPoolItems}
@@ -837,7 +859,7 @@ export function TierListCreatePage() {
       />
 
       {/* Song picker (song mode only) */}
-      {isSongMode && songCreateMode !== 'youtube' ? (
+      {isThemeSongMode ? (
         <TierListCreateSongPickerSection
           browsingTitle={browsingTitle}
           catalogPage={catalogPage}
@@ -872,7 +894,7 @@ export function TierListCreatePage() {
           titleQuery={titleQuery}
           typeFilter={typeFilter}
         />
-      ) : isSongMode && songCreateMode === 'youtube' ? (
+      ) : isYoutubeMode ? (
         <section className="container tierlist-section" ref={pickerSectionRef}>
           <TierListEmptyPanel
             icon={<Link2 size={28} />}

@@ -21,15 +21,17 @@ import {
   CHARACTER_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  YOUTUBE_ENTITY_TYPE,
   getCatalogEntities,
   isCharacterEntity,
   isThemeSongEntity,
+  isYoutubeEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 
 export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
   const resolvedEntityType = normalizeCatalogEntityType(item?.entityType || entityType);
-  if (resolvedEntityType === THEME_SONG_ENTITY_TYPE) {
+  if (resolvedEntityType === THEME_SONG_ENTITY_TYPE || resolvedEntityType === YOUTUBE_ENTITY_TYPE) {
     const title = String(item?.title || '');
     const subtitle = String(item?.subtitle || '');
     const videoUrl = String(item?.videoUrl || item?.sourceUrl || '');
@@ -38,7 +40,7 @@ export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
 
     return {
       id: Number(item?.id),
-      entityType: THEME_SONG_ENTITY_TYPE,
+      entityType: resolvedEntityType,
       title: title,
       title_en: title,
       title_th: title,
@@ -80,7 +82,7 @@ export function buildEntityMaps(titles = [], customItems = [], customEntityType 
   const customEntities = (customItems || []).map((item) => toCustomTierEntity(item, customEntityType));
   const titleMap = new Map(
     [...sourceEntries
-      .filter((entry) => !isCharacterEntity(entry) && !isThemeSongEntity(entry))
+      .filter((entry) => !isCharacterEntity(entry) && !isThemeSongEntity(entry) && !isYoutubeEntity(entry))
       .map((title) => [Number(title.id), title]), ...customEntities.map((item) => [Number(item.id), item])]
   );
   const directCharacterEntities = sourceEntries.filter((entry) => isCharacterEntity(entry));
@@ -93,11 +95,17 @@ export function buildEntityMaps(titles = [], customItems = [], customEntityType 
       .filter((entry) => isThemeSongEntity(entry))
       .map((song) => [Number(song.id), song]), ...customEntities.map((item) => [Number(item.id), item])]
   );
+  const youtubeMap = new Map(
+    [...sourceEntries
+      .filter((entry) => isYoutubeEntity(entry))
+      .map((video) => [Number(video.id), video]), ...customEntities.map((item) => [Number(item.id), item])]
+  );
 
   return {
     [TITLE_ENTITY_TYPE]: titleMap,
     [CHARACTER_ENTITY_TYPE]: characterMap,
     [THEME_SONG_ENTITY_TYPE]: themeSongMap,
+    [YOUTUBE_ENTITY_TYPE]: youtubeMap,
   };
 }
 
@@ -117,7 +125,7 @@ export function getBestEntityMapForIds(entityMaps, ids = [], preferredType = TIT
     return preferredMap;
   }
 
-  const fallbackOrder = [THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, CHARACTER_ENTITY_TYPE]
+  const fallbackOrder = [THEME_SONG_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, TITLE_ENTITY_TYPE, CHARACTER_ENTITY_TYPE]
     .filter((type, index, list) => type !== normalizeCatalogEntityType(preferredType) && list.indexOf(type) === index);
 
   for (const type of fallbackOrder) {
@@ -160,7 +168,7 @@ export function createEmptyBrowseVisibility() {
 export function mergeBrowseVisibilityState(current = createEmptyBrowseVisibility(), incoming = createEmptyBrowseVisibility()) {
   const nextVisibility = createEmptyBrowseVisibility();
   const buckets = ['allowedByType', 'blockedByType'];
-  const entityTypes = [TITLE_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, CHARACTER_ENTITY_TYPE];
+  const entityTypes = [TITLE_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, CHARACTER_ENTITY_TYPE];
 
   buckets.forEach((bucket) => {
     entityTypes.forEach((entityType) => {

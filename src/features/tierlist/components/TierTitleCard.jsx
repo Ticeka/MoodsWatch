@@ -5,6 +5,7 @@ import { TierListArtworkImage as ArtworkImage } from '@/features/tierlist/compon
 import {
   isCharacterEntity,
   isThemeSongEntity,
+  isYoutubeEntity,
 } from '@/shared/lib/catalogEntities';
 
 export function TierTitleCard({
@@ -18,7 +19,7 @@ export function TierTitleCard({
   onOpenDetail = null,
 }) {
   const pointerSessionRef = useRef(null);
-  const isSong = isThemeSongEntity(title);
+  const isSong = isThemeSongEntity(title) || isYoutubeEntity(title);
   const isCharacter = isCharacterEntity(title);
   const canPreviewSong = isSong && title?.video_url && typeof onPreviewSong === 'function';
   const canOpenDetail = typeof onOpenDetail === 'function';

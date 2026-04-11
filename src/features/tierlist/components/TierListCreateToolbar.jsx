@@ -13,7 +13,6 @@ import {
 import { getTierEntityArtworkSource } from '@/features/tierlist/lib/tierlistPreviewUtils';
 import {
   CHARACTER_ENTITY_TYPE,
-  THEME_SONG_ENTITY_TYPE,
 } from '@/shared/lib/catalogEntities';
 
 export function TierListCreateToolbar({
@@ -35,6 +34,7 @@ export function TierListCreateToolbar({
   isLoading,
   isSaving,
   isSongMode,
+  isYoutubeMode,
   isSubmittingCustomVideo,
   isUploadingCover,
   isUploadingPoolItems,
@@ -154,7 +154,7 @@ export function TierListCreateToolbar({
             <span className="tierlist-chip">{coverImageUrl ? pick('มีหน้าปกแล้ว', 'Cover ready') : pick('ยังไม่มีหน้าปก', 'No cover yet')}</span>
             <span className="tierlist-chip">{pick(`${customItemsCount} รายการข้างนอก`, `${customItemsCount} external items`)}</span>
           </div>
-          {isSongMode ? (
+          {isYoutubeMode ? (
             <div className="tierlist-create-video-link-panel">
               <div className="tierlist-create-external-head">
                 <strong>{pick('เพิ่มลิงก์ YouTube', 'Add YouTube Link')}</strong>

@@ -2,10 +2,12 @@ import {
   CHARACTER_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
+  YOUTUBE_ENTITY_TYPE,
   getCatalogEntityMeta,
   getCatalogEntityName,
   isCharacterEntity,
   isThemeSongEntity,
+  isYoutubeEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 
@@ -35,6 +37,7 @@ export function getEntityTypeLabel(entityType, pick) {
     [TITLE_ENTITY_TYPE]: pick('เรื่อง', 'Titles'),
     [CHARACTER_ENTITY_TYPE]: pick('ตัวละคร', 'Characters'),
     [THEME_SONG_ENTITY_TYPE]: pick('เพลงประกอบ', 'Theme Songs'),
+    [YOUTUBE_ENTITY_TYPE]: 'YouTube',
   };
 
   return labels[normalized] || pick('เรื่อง', 'Titles');
@@ -64,6 +67,7 @@ export function getTierCategoryLabel(category, pick) {
     drama: pick('ดราม่า', 'Drama'),
     characters: pick('ตัวละคร', 'Characters'),
     songs: pick('เพลง', 'Songs'),
+    youtube: 'YouTube',
   };
 
   return labels[normalized] || humanizeTierToken(category);
@@ -138,6 +142,13 @@ export function getEntityModeSummary(entityType, pick) {
     };
   }
 
+  if (normalizeCatalogEntityType(entityType) === YOUTUBE_ENTITY_TYPE) {
+    return {
+      title: pick('จัด Tier จากลิงก์ YouTube', 'Build a YouTube tier'),
+      description: pick('วางลิงก์วิดีโอที่อยากเทียบกัน แล้วจัดอันดับได้ทันที', 'Paste the videos you want to compare and rank them right away.'),
+    };
+  }
+
   return {
     title: pick('จัด Tier จากชื่อเรื่อง', 'Build a title tier'),
     description: pick('คัดรายการจากแคตตาล็อกด้วยตัวกรองละเอียด แล้วเริ่มเล่นได้ทันที', 'Use richer catalog filters to curate the exact set you want before playing.'),
@@ -147,6 +158,10 @@ export function getEntityModeSummary(entityType, pick) {
 export function getCatalogTypeChipLabel(entity, pick) {
   if (isThemeSongEntity(entity)) {
     return pick('เพลง', 'Song');
+  }
+
+  if (isYoutubeEntity(entity)) {
+    return 'YouTube';
   }
 
   if (entity?.subtype === 'manhwa' || entity?.type === 'manhwa') {
