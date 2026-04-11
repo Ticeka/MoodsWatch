@@ -1310,20 +1310,6 @@ export function BattleBuilderPage() {
           <h1><Sparkles size={18} style={{ display: 'inline', color: 'var(--primary-500)', verticalAlign: 'middle', marginRight: '0.28rem' }} /> {t('battle.builderHeroTitle')}</h1>
           <p>{t('battle.builderHeroSubtitle')}</p>
         </div>
-        <div className="battle-hero-panel glass-heavy">
-          <div className="battle-hero-stat">
-            <strong>{filledSlotCount}</strong>
-            <span><Layers size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.entriesInDeck', { count: filledSlotCount, unit: getLocalizedEntryUnitLabel(filters.entityType, t) })}</span>
-          </div>
-          <div className="battle-hero-stat">
-            <strong>{isCustomEntityType ? filledSlotCount : visibleCatalogCount}</strong>
-            <span><Play size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {isCustomEntityType ? `${filledSlotCount} custom ${getLocalizedEntryUnitLabel(filters.entityType, t)} ready` : t('battle.visibleEntries', { count: visibleCatalogCount, unit: getLocalizedEntryUnitLabel(filters.entityType, t) })}</span>
-          </div>
-          <div className="battle-hero-stat">
-            <strong>{hiddenExcludedCount}</strong>
-            <span><Search size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> {t('battle.excludedByVisibility')}</span>
-          </div>
-        </div>
       </section>
 
       <section className="container battle-section">
@@ -1333,144 +1319,140 @@ export function BattleBuilderPage() {
         </div>
 
         <div className="battle-builder-stack">
-          <div className="battle-builder-toolbar glass-heavy">
-            <label className="battle-field">
-              <span>{t('battle.deckName')}</span>
-              <input value={deckName} onChange={(event) => setDeckName(event.target.value)} placeholder={t('battle.deckNamePlaceholder')} />
-            </label>
-
-            <label className="battle-field battle-checkbox-field">
-              <span>{t('battle.visibility')}</span>
-              <button type="button" className={`battle-visibility-toggle ${isPublic ? 'is-public' : 'is-private'}`} onClick={() => setIsPublic((current) => !current)} aria-pressed={isPublic}>
+          {/* Row 1: deck identity + primary actions */}
+          <div className="battle-builder-topbar glass-heavy">
+            <div className="battle-builder-topbar-left">
+              <input
+                className="battle-deck-name-input"
+                value={deckName}
+                onChange={(event) => setDeckName(event.target.value)}
+                placeholder={t('battle.deckNamePlaceholder')}
+              />
+              <select
+                className="battle-deck-size-select"
+                value={filters.size}
+                onChange={(event) => setFilters((current) => ({ ...current, size: Number(event.target.value) }))}
+              >
+                {SIZE_OPTIONS.map((value) => (<option key={value} value={value}>{value} slots</option>))}
+              </select>
+              <button
+                type="button"
+                className={`battle-visibility-toggle ${isPublic ? 'is-public' : 'is-private'}`}
+                onClick={() => setIsPublic((current) => !current)}
+                aria-pressed={isPublic}
+              >
                 <span className="battle-visibility-toggle-copy">
-                  {isPublic ? <Globe size={15} /> : <Lock size={15} />}
+                  {isPublic ? <Globe size={14} /> : <Lock size={14} />}
                   <strong>{isPublic ? t('battle.publicDeck') : t('battle.privateDeck')}</strong>
                 </span>
               </button>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.catalogLabel')}</span>
-              <select value={filters.entityType} onChange={(event) => handleEntityTypeChange(event.target.value)}>
-                {ENTITY_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.translationKey ? t(option.translationKey) : option.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.type')}</span>
-              <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
-                {TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.value === 'all' ? getAnyTypeLabel(filters.entityType, t) : (option.translationKey ? t(option.translationKey) : option.label)}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span><Search size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} /> {t('battle.tagGenre')}</span>
-              <select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
-                <option value="">{t('battle.anyTagGenre')}</option>
-                {tagOptions.map((value) => (<option key={value} value={value}>{value}</option>))}
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.mood')}</span>
-              <select value={filters.mood} onChange={(event) => setFilters((current) => ({ ...current, mood: event.target.value }))} disabled={isSongEntity || isCustomEntityType}>
-                <option value="">{t('battle.anyMood')}</option>
-                {filterOptions.moods.map((mood) => (<option key={mood} value={mood}>{mood}</option>))}
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.search')}</span>
-              <input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder={isCustomEntityType ? 'Custom categories use the editor on the right.' : t('battle.searchPlaceholder')} disabled={isCustomEntityType} />
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.trailerStatus')}</span>
-              <select
-                value={filters.trailerState}
-                onChange={(event) => setFilters((current) => ({
-                  ...current,
-                  trailerState: event.target.value,
-                  trailerProvider: event.target.value === 'none' ? 'all' : current.trailerProvider,
-                }))}
-                disabled={filters.entityType !== TITLE_ENTITY_TYPE || isCustomEntityType}
-              >
-                <option value="all">{t('battle.anyTrailerStatus')}</option>
-                <option value="has">{t('battle.trailerHas')}</option>
-                <option value="none">{t('battle.trailerNone')}</option>
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.trailerPlatform')}</span>
-              <select
-                value={filters.trailerProvider}
-                onChange={(event) => setFilters((current) => ({ ...current, trailerProvider: event.target.value }))}
-                disabled={(filters.entityType !== TITLE_ENTITY_TYPE && filters.entityType !== TRAILER_ENTITY_TYPE) || filters.trailerState === 'none' || isCustomEntityType}
-              >
-                <option value="all">{t('battle.anyTrailerPlatform')}</option>
-                {trailerProviderOptions.map((provider) => (
-                  <option key={provider} value={provider}>{formatTrailerProviderLabel(provider, t)}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="battle-field">
-              <span>{t('battle.deckSize')}</span>
-              <select value={filters.size} onChange={(event) => setFilters((current) => ({ ...current, size: Number(event.target.value) }))}>
-                {SIZE_OPTIONS.map((value) => (<option key={value} value={value}>{value} {getLocalizedEntryUnitLabel(filters.entityType, t)}</option>))}
-              </select>
-            </label>
-
-            <div className="battle-builder-actions battle-builder-toolbar-actions">
-              {!isCustomEntityType ? (
-                <Button variant="ghost" onClick={handleAutoFillDeck} disabled={isCatalogBusy || Boolean(catalogError) || filteredCatalogCount === 0}>{t('battle.fillFromFilters')}</Button>
-              ) : null}
-              <Button variant="ghost" onClick={handleClearDeck} disabled={isLoading}>{t('battle.clearDeck')}</Button>
-              <Link className="btn btn-ghost" to="/battle">{t('battle.backToBattle')}</Link>
+            </div>
+            <div className="battle-builder-topbar-right">
+              <Link className="btn btn-ghost btn-sm" to="/battle">{t('battle.backToBattle')}</Link>
               <Button variant="secondary" onClick={() => saveDeck()} disabled={isCatalogBusy || isSaving || Boolean(catalogError)}>{t('battle.saveDeck')}</Button>
               <Button onClick={() => saveDeck({ startAfterSave: true })} disabled={isCatalogBusy || isSaving || Boolean(catalogError)}>{t('battle.saveAndStart')}</Button>
             </div>
           </div>
 
-          <div className="battle-builder-summary">
-            <div className="battle-builder-summary-card">
-              <span>{isCustomEntityType ? 'Custom entries' : t('battle.filteredResults')}</span>
-              <strong>{isCustomEntityType ? filledSlotCount : filteredCatalogCount}</strong>
-              <small>{isCustomEntityType ? 'Validated cards currently placed into this deck.' : t('battle.builderSummaryHint')}</small>
-            </div>
-            <div className="battle-builder-summary-card">
-              <span>{isCustomEntityType ? 'Active slot' : mediaResultsLabel}</span>
-              <strong>{isCustomEntityType ? activeSlotIndex + 1 : filteredReadyMediaCount}</strong>
-              <small>{isCustomEntityType ? `Editing card ${activeSlotIndex + 1} of ${deckSlots.length}` : t('battle.builderSummaryHint')}</small>
-            </div>
-            <div className="battle-builder-summary-card">
-              <span>{mediaDeckLabel}</span>
-              <strong>{deckReadyMediaCount}</strong>
-              <small>{t('battle.deckComposition', { count: filledSlotCount, size: deckSlots.length })}</small>
+          {/* Row 2: entity type tabs */}
+          <div className="battle-builder-type-bar glass-heavy">
+            <span className="battle-builder-type-label">{t('battle.catalogLabel')}</span>
+            <div className="battle-builder-type-tabs">
+              {ENTITY_TYPE_OPTIONS.map((option) => {
+                const label = option.translationKey ? t(option.translationKey) : option.label;
+                const isActive = filters.entityType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`battle-type-tab ${isActive ? 'is-active' : ''}`}
+                    onClick={() => handleEntityTypeChange(option.value)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="battle-builder-filter-summary glass-heavy">
-            <span className="battle-builder-filter-summary-label">{t('battle.filterSummary')}</span>
-            <div className="battle-builder-filter-chip-row">
-              {activeFilterSummary.length > 0 ? activeFilterSummary.map((item) => (
-                <span key={item} className="battle-builder-filter-chip">{item}</span>
-              )) : (
-                <span className="battle-builder-filter-chip is-muted">{t('battle.filterSummaryEmpty')}</span>
+          {/* Row 3: filters (hidden for custom types) */}
+          {!isCustomEntityType && (
+            <div className="battle-builder-filter-bar glass-heavy">
+              <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))} disabled={isSongEntity} className="battle-filter-select">
+                {TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.value === 'all' ? getAnyTypeLabel(filters.entityType, t) : (option.translationKey ? t(option.translationKey) : option.label)}</option>
+                ))}
+              </select>
+              <select value={filters.tag} onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))} disabled={isSongEntity} className="battle-filter-select">
+                <option value="">{t('battle.anyTagGenre')}</option>
+                {tagOptions.map((value) => (<option key={value} value={value}>{value}</option>))}
+              </select>
+              <select value={filters.mood} onChange={(event) => setFilters((current) => ({ ...current, mood: event.target.value }))} disabled={isSongEntity} className="battle-filter-select">
+                <option value="">{t('battle.anyMood')}</option>
+                {filterOptions.moods.map((mood) => (<option key={mood} value={mood}>{mood}</option>))}
+              </select>
+              {filters.entityType === TITLE_ENTITY_TYPE && (
+                <select
+                  value={filters.trailerState}
+                  onChange={(event) => setFilters((current) => ({
+                    ...current,
+                    trailerState: event.target.value,
+                    trailerProvider: event.target.value === 'none' ? 'all' : current.trailerProvider,
+                  }))}
+                  className="battle-filter-select"
+                >
+                  <option value="all">{t('battle.anyTrailerStatus')}</option>
+                  <option value="has">{t('battle.trailerHas')}</option>
+                  <option value="none">{t('battle.trailerNone')}</option>
+                </select>
               )}
+              {(filters.entityType === TITLE_ENTITY_TYPE || filters.entityType === TRAILER_ENTITY_TYPE) && filters.trailerState !== 'none' && trailerProviderOptions.length > 0 && (
+                <select
+                  value={filters.trailerProvider}
+                  onChange={(event) => setFilters((current) => ({ ...current, trailerProvider: event.target.value }))}
+                  className="battle-filter-select"
+                >
+                  <option value="all">{t('battle.anyTrailerPlatform')}</option>
+                  {trailerProviderOptions.map((provider) => (
+                    <option key={provider} value={provider}>{formatTrailerProviderLabel(provider, t)}</option>
+                  ))}
+                </select>
+              )}
+              <div className="battle-filter-search-wrap">
+                <Search size={14} className="battle-filter-search-icon" />
+                <input
+                  className="battle-filter-search"
+                  value={filters.query}
+                  onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
+                  placeholder={t('battle.searchPlaceholder')}
+                />
+              </div>
+              <div className="battle-filter-actions">
+                <Button variant="ghost" size="sm" onClick={handleAutoFillDeck} disabled={isCatalogBusy || Boolean(catalogError) || filteredCatalogCount === 0}>{t('battle.fillFromFilters')}</Button>
+                <Button variant="ghost" size="sm" onClick={handleClearDeck} disabled={isLoading}>{t('battle.clearDeck')}</Button>
+              </div>
             </div>
-          </div>
+          )}
+          {isCustomEntityType && (
+            <div className="battle-builder-filter-bar glass-heavy">
+              <span className="battle-builder-type-label">Custom media — use the editor on the right to add cards</span>
+              <div className="battle-filter-actions" style={{ marginLeft: 'auto' }}>
+                <Button variant="ghost" size="sm" onClick={handleClearDeck} disabled={isLoading}>{t('battle.clearDeck')}</Button>
+              </div>
+            </div>
+          )}
 
           <div className="battle-builder-grid">
             <div className="battle-builder-preview glass-heavy">
               <div className="battle-preview-head">
                 <strong>{deckName.trim() || battleDeck.label}</strong>
-                <span>{t('battle.deckComposition', { count: filledSlotCount, size: deckSlots.length })}</span>
+                <span className={filledSlotCount >= deckSlots.length ? 'battle-deck-count-full' : filledSlotCount >= 8 ? 'battle-deck-count-ready' : ''}>{filledSlotCount} / {deckSlots.length}</span>
+              </div>
+              <div className="battle-deck-progress-track">
+                <div
+                  className={`battle-deck-progress-fill ${filledSlotCount >= deckSlots.length ? 'is-full' : filledSlotCount >= 8 ? 'is-ready' : ''}`}
+                  style={{ width: `${Math.round((filledSlotCount / deckSlots.length) * 100)}%` }}
+                />
               </div>
               {isLoading ? (
                 <div className="battle-slot-focus">
@@ -1482,6 +1464,11 @@ export function BattleBuilderPage() {
                 <p>{catalogError}</p>
               ) : (
                 <div className="battle-slot-focus">
+                  {filledSlotCount === 0 && (
+                    <p className="battle-deck-empty-hint">
+                      {isCustomEntityType ? 'Use the editor on the right to add cards' : 'Click Add on any item in the catalog →'}
+                    </p>
+                  )}
                   <div className="battle-slot-scroller">
                     {deckSlots.map((title, index) => (
                       <div
