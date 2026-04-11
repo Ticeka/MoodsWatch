@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { DonateModal } from '@/features/donate';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { Header, Footer } from '@/shared/components/layout/Header';
 import { CoffeeSupportModal } from '@/shared/components/layout/CoffeeSupportModal';
@@ -7,6 +8,7 @@ import {
   SUPPORT_MODAL_OPEN_EVENT,
   SUPPORT_STRIPE_COFFEE_URL,
 } from '@/shared/config/support';
+import { useDonateConfig } from '@/shared/hooks/useDonateConfig';
 import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
 import './Layout.css';
 
@@ -18,8 +20,10 @@ export function Layout() {
   const { pick } = useLanguage();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [donateOpen, setDonateOpen] = useState(false);
   const location = useLocation();
   const supportConfig = useSupportConfig();
+  const donateConfig = useDonateConfig();
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
@@ -90,6 +94,11 @@ export function Layout() {
     setSupportModalOpen(false);
   }, []);
 
+  const handleOpenPromptPay = useCallback(() => {
+    setSupportModalOpen(false);
+    setDonateOpen(true);
+  }, []);
+
   return (
     <div className="app-wrapper">
       <Header onOpenCommandPalette={openPalette} />
@@ -107,8 +116,13 @@ export function Layout() {
         open={supportModalOpen}
         onClose={closeSupportModal}
         onSupport={handleSupportCoffee}
+        onPromptPay={handleOpenPromptPay}
         config={supportConfig}
+        donateEnabled={donateConfig.enabled}
       />
+      {donateConfig.enabled ? (
+        <DonateModal open={donateOpen} onClose={() => setDonateOpen(false)} config={donateConfig} />
+      ) : null}
     </div>
   );
 }

@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo } from 'react';
-import { Coffee, Heart, Sparkles, X } from 'lucide-react';
+import { Coffee, Heart, QrCode, Sparkles, X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { BRAND_NAME } from '@/shared/config/brand';
 import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
 
-export function CoffeeSupportModal({ pick, open, onClose, onSupport, config }) {
+export function CoffeeSupportModal({ pick, open, onClose, onSupport, onPromptPay, config, donateEnabled = false }) {
   const hasStripeLink = Boolean(SUPPORT_STRIPE_COFFEE_URL);
   const primaryLabel = useMemo(
     () => config ? pick(config.primaryCtaTh, config.primaryCtaEn) : pick('เลี้ยงกาแฟให้ทีมหน่อย', 'Buy us a coffee'),
     [config, pick]
+  );
+  const promptPayLabel = useMemo(
+    () => pick('โดเนทผ่าน PromptPay', 'Donate via PromptPay'),
+    [pick]
   );
 
   useEffect(() => {
@@ -97,6 +101,16 @@ export function CoffeeSupportModal({ pick, open, onClose, onSupport, config }) {
           >
             {primaryLabel}
           </Button>
+          {donateEnabled ? (
+            <Button
+              variant="secondary"
+              className="coffee-support-promptpay"
+              onClick={onPromptPay}
+              icon={<QrCode size={16} />}
+            >
+              {promptPayLabel}
+            </Button>
+          ) : null}
           <Button variant="ghost" className="coffee-support-secondary" onClick={onClose}>
             {pick(config?.secondaryCtaTh || 'ไว้ก่อน เดี๋ยวกลับมา', config?.secondaryCtaEn || 'Maybe later')}
           </Button>

@@ -238,6 +238,15 @@
   box-shadow: var(--shadow-md);
 }
 
+.coffee-support-promptpay.btn.btn-secondary {
+  box-shadow: var(--shadow-sm);
+}
+
+.coffee-support-promptpay.btn.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
 .coffee-support-secondary.btn {
   background: transparent;
 }
