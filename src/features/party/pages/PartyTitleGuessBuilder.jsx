@@ -1171,7 +1171,7 @@ export function PartyTitleGuessBuilderPage() {
             <div className="party-title-guess-builder-shell-head">
               <div>
                 <span className="party-title-guess-builder-kicker">{pick('ข้อมูลชุด', 'Set details')}</span>
-                <h2>{isEditMode ? pick('แก้รายละเอียดและคำถามของชุดนี้', 'Update this set and its questions') : pick('ตั้งค่าชุดก่อนบันทึก', 'Set up your set before saving')}</h2>
+                <h2>{isEditMode ? pick('แก้ไขชุดคำถาม', 'Edit set') : pick('ตั้งค่าชุด', 'Set details')}</h2>
               </div>
               <span className="party-title-guess-builder-count">
                 {draftQuestions.length} {pick('คำถาม', 'questions')}
@@ -1203,34 +1203,6 @@ export function PartyTitleGuessBuilderPage() {
               </label>
             </div>
 
-            <div className="party-title-guess-builder-overview" aria-label={pick('สรุปชุดคำถาม', 'Set summary')}>
-              <div className="party-title-guess-builder-overview-grid">
-                <article className="party-title-guess-builder-overview-card">
-                  <span>{pick('คำถามทั้งหมด', 'Total questions')}</span>
-                  <strong>{draftQuestions.length}</strong>
-                </article>
-                <article className="party-title-guess-builder-overview-card">
-                  <span>{pick('สถานะข้อปัจจุบัน', 'Current draft')}</span>
-                  <strong>{pick(`${filledSlotCount}/4 ใบ`, `${filledSlotCount}/4 cards`)}</strong>
-                </article>
-                <article className="party-title-guess-builder-overview-card">
-                  <span>{pick('การมองเห็น', 'Visibility')}</span>
-                  <strong>{getTitleGuessVisibilityLabel(meta.visibility, pick)}</strong>
-                </article>
-              </div>
-              <div className="party-title-guess-builder-overview-pills">
-                <span className="party-mini-pill">
-                  {editingQuestionId
-                    ? pick('กำลังแก้ไขคำถามเดิม', 'Editing an existing question')
-                    : pick('กำลังเพิ่มคำถามใหม่', 'Building a new question')}
-                </span>
-                <span className={`party-mini-pill${draftQuestions.length > 0 ? ' success' : ''}`}>
-                  {draftQuestions.length > 0
-                    ? pick('พร้อมบันทึกชุด', 'Ready to save')
-                    : pick('ยังไม่มีคำถามในชุด', 'No questions yet')}
-                </span>
-              </div>
-            </div>
 
             <label className="party-field party-title-guess-builder-meta-description">
               <span>{pick('คำอธิบาย', 'Description')}</span>
@@ -1241,9 +1213,6 @@ export function PartyTitleGuessBuilderPage() {
                 placeholder={pick('อธิบายธีมหรือระดับความยากของชุดนี้', 'Describe the vibe or difficulty of this set')}
                 maxLength={240}
               />
-              <small className="party-title-guess-builder-hint">
-                {pick('ข้อความนี้จะแสดงใต้ชื่อชุดตอนโฮสต์เลือกใช้งานในห้อง', 'This description appears under the set name when a host chooses it in the room.')}
-              </small>
             </label>
 
             {!user?.id ? (
@@ -1259,13 +1228,12 @@ export function PartyTitleGuessBuilderPage() {
             <div className="party-title-guess-builder-question-list">
               <div className="party-title-guess-builder-section-head">
                 <strong>{pick('คำถามในชุดนี้', 'Questions in this set')}</strong>
-                <span>{pick('ตรวจสอบหรือลบข้อที่ไม่ต้องการก่อนบันทึก', 'Review or remove any question before saving')}</span>
               </div>
 
               {draftQuestions.length === 0 ? (
                 <div className="party-title-guess-builder-empty">
                   <CheckCircle2 size={18} />
-                  <p>{pick('ยังไม่มีคำถามในชุดนี้ เริ่มจากเลือกเรื่องแล้วจัดคำใบ้ 4 ใบทางด้านขวา', 'There are no questions yet. Start by choosing a title and arranging 4 clue cards on the right.')}</p>
+                  <p>{pick('ยังไม่มีคำถาม — สร้างคำถามจากแผงด้านขวา', 'No questions yet — build one from the right panel.')}</p>
                 </div>
               ) : (
                 <>
@@ -1382,11 +1350,11 @@ export function PartyTitleGuessBuilderPage() {
           <section className="party-builder-panel--refresh party-title-guess-builder-shell">
             <div className="party-title-guess-builder-shell-head">
               <div>
-                <span className="party-title-guess-builder-kicker">{pick('คำถามปัจจุบัน', 'Current question')}</span>
-                <h2>{pick('จัดคำถามทีละข้อ', 'Build one question at a time')}</h2>
+                <span className="party-title-guess-builder-kicker">{pick('สร้างคำถาม', 'Build a question')}</span>
+                <h2>{pick('เลือกเรื่อง → จัด 4 การ์ด → เพิ่มเข้าชุด', 'Choose title → Fill 4 cards → Add to set')}</h2>
               </div>
               <span className="party-title-guess-builder-count">
-                {pick('การ์ด 1 เปิดก่อน', 'Card 1 reveals first')}
+                {filledSlotCount}/4 {pick('การ์ด', 'cards')}
               </span>
             </div>
 
@@ -1416,7 +1384,6 @@ export function PartyTitleGuessBuilderPage() {
             <div className={`party-title-guess-builder-step party-title-guess-builder-step--title${answerMode === 'custom' ? ' is-custom' : ''}`}>
               <div className="party-title-guess-builder-section-head">
                 <strong>{pick('1. เลือกเรื่อง', '1. Choose a title')}</strong>
-                <span>{pick('เลือกจากแคตตาล็อก หรือสร้างคำตอบเองสำหรับข้อที่อยากออกแบบเอง', 'Choose from the catalog, or create your own answer for a self-made question')}</span>
               </div>
 
               <div className="party-title-guess-builder-mode-toggle" role="tablist" aria-label={pick('รูปแบบคำตอบ', 'Answer mode')}>
@@ -1482,9 +1449,9 @@ export function PartyTitleGuessBuilderPage() {
                       }}
                     />
                   </div>
-                  <small className={`party-title-guess-search-note${titleSearchError ? ' is-error' : ''}`}>
-                    {titleSearchError || pick('เลือกจากรายการเพื่อให้คำตอบตรงกับชื่อเรื่องในระบบ', 'Choose from the list so the answer matches the catalog title.')}
-                  </small>
+                  {titleSearchError ? (
+                    <small className="party-title-guess-search-note is-error">{titleSearchError}</small>
+                  ) : null}
                 </div>
               ) : (
                 <label className="party-field">
@@ -1496,9 +1463,6 @@ export function PartyTitleGuessBuilderPage() {
                     placeholder={pick('เช่น Attack on Titan หรือ Gintama', 'For example: Attack on Titan or Gintama')}
                     maxLength={120}
                   />
-                  <small className="party-title-guess-builder-hint">
-                    {pick('ใช้เมื่อต้องการสร้างคำตอบและคำใบ้เอง โดยไม่อิง title ในระบบ', 'Use this when you want to create your own answer and clues without relying on a catalog title.')}
-                  </small>
                 </label>
               )}
 
@@ -1524,11 +1488,6 @@ export function PartyTitleGuessBuilderPage() {
                         <span className="party-mini-pill">{pick('มีอยู่แล้วในชุด', 'Already in this set')}</span>
                       ) : null}
                     </div>
-                    {titleAlreadyAdded ? (
-                      <p>{pick('เรื่องนี้ถูกเพิ่มไว้แล้วใน set ด้านซ้าย', 'This title is already in the set on the left.')}</p>
-                    ) : (
-                      <p>{pick('แสดงตัวละครของเรื่องนี้ทั้งหมดที่พร้อมใช้เป็นการ์ดคำใบ้', 'Showing all usable characters from this title for clue cards.')}</p>
-                    )}
                   </div>
                   <Button
                     variant="ghost"
@@ -1553,7 +1512,6 @@ export function PartyTitleGuessBuilderPage() {
                         {pick(`${filledSlotCount}/4 การ์ดพร้อม`, `${filledSlotCount}/4 cards ready`)}
                       </span>
                     </div>
-                    <p>{pick('ข้อนี้จะใช้คำตอบที่คุณสร้างเอง และคำใบ้ทั้ง 4 ใบก็สามารถกำหนดเองได้', 'This question will use the answer you created, and all 4 clue cards can be customized manually.')}</p>
                   </div>
                 </div>
               ) : null}
@@ -1561,10 +1519,8 @@ export function PartyTitleGuessBuilderPage() {
 
             <div className={`party-title-guess-builder-step party-title-guess-builder-step--slots${answerMode === 'custom' ? ' is-custom' : ''}`}>
               <div className="party-title-guess-builder-section-head">
-                <strong>{pick('2. วางตัวละครลงการ์ด 1-4', '2. Place characters into cards 1-4')}</strong>
-                <span>{answerMode === 'custom'
-                  ? pick(`กรอกคำใบ้และรูปให้ครบ ${filledSlotCount}/4 ใบ ตามลำดับที่อยากเปิด`, `Fill all ${filledSlotCount}/4 self-made cards in the reveal order you want.`)
-                  : pick(`เลือกการ์ดที่ active อยู่ตอนนี้ แล้วใส่ตัวละครให้ครบ ${filledSlotCount}/4 ตามลำดับคำใบ้ที่คุณต้องการ`, `Pick the active card and fill all 4 slots (${filledSlotCount}/4) in the clue order you want.` )}</span>
+                <strong>{pick('2. จัดคำใบ้ 4 ใบ', '2. Arrange 4 clue cards')}</strong>
+                <span className="party-title-guess-builder-slot-progress">{filledSlotCount}/4</span>
               </div>
 
               <div className={`party-title-guess-builder-slot-grid${answerMode === 'custom' ? ' is-custom' : ''}`}>
@@ -1670,9 +1626,6 @@ export function PartyTitleGuessBuilderPage() {
                                     }}
                                   />
                                 </div>
-                                <small className="party-title-guess-builder-custom-slot-note">
-                                  {pick('ใช้ได้ทั้งวาง URL ตรง ๆ หรืออัปโหลดไฟล์จากเครื่อง', 'You can paste an image URL directly or upload a file from your device.')}
-                                </small>
                               </div>
                             </div>
                           ) : null}
@@ -1753,9 +1706,6 @@ export function PartyTitleGuessBuilderPage() {
                                     }}
                                   />
                                 </div>
-                                <small className="party-title-guess-builder-custom-slot-note">
-                                  {pick('ถ้ายังไม่มีรูปตอนนี้ คุณใส่แค่ข้อความไว้ก่อนแล้วค่อยกลับมาเพิ่มรูปก็ได้', 'If you do not have an image yet, you can save the clue label first and come back to add the image later.')}
-                                </small>
                               </div>
                             </div>
                           </div>
@@ -1775,8 +1725,7 @@ export function PartyTitleGuessBuilderPage() {
 
             <div className="party-title-guess-builder-step">
               <div className="party-title-guess-builder-section-head">
-                <strong>{answerMode === 'custom' ? pick('3. ตรวจคำใบ้ที่สร้างเอง', '3. Review your self-made clues') : pick('3. เลือกตัวละครจากเรื่องนี้', '3. Pick characters from this title')}</strong>
-                <span>{answerMode === 'custom' ? pick('กรอกชื่อคำใบ้และใส่รูปให้ครบทั้ง 4 ใบจากการ์ดด้านบน', 'Fill in the clue names and images for all 4 cards above.') : pick('เลือกตัวละครตัวไหนก็ได้ แล้ววางเรียงตามจังหวะคำใบ้ที่คุณอยากให้ผู้เล่นเห็น', 'Pick any character you want, then arrange them in the reveal order players should see.')}</span>
+                <strong>{answerMode === 'custom' ? pick('3. ตรวจคำใบ้', '3. Review clues') : pick('3. เลือกตัวละคร', '3. Pick characters')}</strong>
               </div>
 
               {answerMode === 'catalog' ? (
@@ -1898,20 +1847,13 @@ export function PartyTitleGuessBuilderPage() {
                 <strong>
                   {selectedTitle
                     ? getTitleGuessBuilderDisplayTitle(selectedTitle)
-                    : pick('ข้อปัจจุบันยังไม่เลือกเรื่อง', 'No title selected yet')}
+                    : pick('ยังไม่เลือกเรื่อง', 'No title selected')}
                 </strong>
                 <span>
                   {hasComposerDraft
-                    ? editingQuestionId
-                      ? pick(`กำลังแก้ไขคำถามนี้ ${filledSlotCount}/4 ใบ`, `Editing this question ${filledSlotCount}/4 cards ready`)
-                      : pick(`การ์ดพร้อมแล้ว ${filledSlotCount}/4 ใบ`, `${filledSlotCount}/4 cards ready`)
-                    : pick('เริ่มจากเลือกเรื่องแล้วค่อยจัด 4 การ์ด', 'Start by choosing a title, then fill the 4 cards')}
+                    ? pick(`${filledSlotCount}/4 การ์ดพร้อม`, `${filledSlotCount}/4 cards ready`)
+                    : pick('เลือกเรื่อง → จัด 4 การ์ด', 'Choose a title → fill 4 cards')}
                 </span>
-                <small className="party-title-guess-builder-footer-note">
-                  {editingQuestionId
-                    ? pick('กดอัปเดตคำถามเพื่อแทนที่ข้อเดิม แล้วค่อยบันทึกทั้งชุดทางฝั่งซ้าย', 'Update the question to replace the old one, then save the whole set from the left panel.')
-                    : pick('เมื่อเรียงครบทั้ง 4 ใบแล้ว ให้เพิ่มคำถามเข้าไปในชุดก่อนบันทึก', 'Once all 4 cards are ready, add the question to the set before saving.')}
-                </small>
               </div>
               <div className="party-title-guess-builder-footer-actions">
                 <Button

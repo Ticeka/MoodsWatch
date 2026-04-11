@@ -2530,8 +2530,10 @@
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--bg-elevated)), color-mix(in srgb, var(--accent, #f59e0b) 6%, var(--bg-primary)));
 }
 .party-title-guess-builder-section-head {
-  display: grid;
-  gap: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 .party-title-guess-builder-section-head strong {
   color: var(--text-primary);
@@ -2540,6 +2542,12 @@
 .party-title-guess-builder-section-head span {
   color: var(--text-secondary);
   font-size: 0.8rem;
+}
+.party-title-guess-builder-slot-progress {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary-500);
+  flex-shrink: 0;
 }
 .party-title-guess-builder-question-list {
   display: grid;

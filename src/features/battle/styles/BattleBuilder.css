@@ -787,61 +787,28 @@
 
 .battle-custom-builder-panel {
   display: grid;
-  gap: 0.85rem;
-}
-
-.battle-custom-builder-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(220px, 0.9fr);
-  gap: 0.9rem;
-  padding: 0.95rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent-500) 14%, var(--border-default));
-  background:
-    radial-gradient(circle at right top, color-mix(in srgb, var(--peach-400) 15%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 96%, transparent), color-mix(in srgb, var(--bg-secondary) 98%, transparent));
-}
-
-.battle-custom-builder-copy {
-  display: grid;
-  gap: 0.45rem;
-  align-content: start;
-}
-
-.battle-custom-builder-copy h3 {
-  margin: 0;
-  font-size: clamp(1rem, 1.5vw, 1.3rem);
-  line-height: 1.05;
-  font-family: var(--font-heading);
-  letter-spacing: -0.03em;
-  color: var(--text-primary);
-}
-
-.battle-custom-builder-copy p {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: var(--text-secondary);
-}
-
-.battle-custom-preview-card {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
   gap: 0.75rem;
-  padding: 0.8rem;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-default) 75%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent);
+}
+
+/* Slot header row: thumbnail + info */
+.battle-custom-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
 }
 
 .battle-custom-preview-art {
-  width: 88px;
+  width: 54px;
   aspect-ratio: 3 / 4;
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
+  flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 96%, transparent), color-mix(in srgb, var(--paper-tint) 86%, transparent));
+  background: color-mix(in srgb, var(--bg-tertiary) 85%, black);
 }
 
 .battle-custom-preview-art img {
@@ -858,154 +825,60 @@
   color: var(--text-tertiary);
 }
 
-.battle-custom-preview-copy {
+.battle-custom-slot-info {
   display: grid;
-  gap: 0.35rem;
-  align-content: start;
+  gap: 0.2rem;
   min-width: 0;
 }
 
-.battle-custom-preview-copy strong {
-  font-size: 0.95rem;
-  line-height: 1.2;
-  color: var(--text-primary);
-}
-
-.battle-custom-preview-copy span {
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-}
-
-.battle-custom-preview-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.battle-custom-builder-note {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.95rem 1rem;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
-  background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
-}
-
-.battle-custom-builder-note-head {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.battle-custom-builder-note-head strong {
+.battle-custom-slot-title {
   font-size: 0.9rem;
+  font-weight: 700;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.battle-custom-builder-note-head span {
-  font-size: 0.82rem;
-  line-height: 1.5;
+.battle-custom-slot-sub {
+  font-size: 0.78rem;
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.battle-custom-builder-note-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
+.battle-custom-slot-num {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  margin-top: 0.1rem;
 }
 
-.battle-custom-builder-tip {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.7rem;
-  align-items: start;
-  padding: 0.7rem 0.75rem;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--paper-tint) 74%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-default) 65%, transparent);
-}
-
-.battle-custom-builder-tip-icon {
-  width: 30px;
-  height: 30px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 999px;
-  color: var(--accent-700);
-  background: color-mix(in srgb, var(--accent-500) 12%, transparent);
-}
-
-.battle-custom-builder-tip strong {
-  display: block;
-  margin-bottom: 0.15rem;
-  font-size: 0.84rem;
-  color: var(--text-primary);
-}
-
-.battle-custom-builder-note p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
+/* Form */
 .battle-custom-builder-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
-.battle-custom-builder-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.battle-custom-builder-action-panel {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0.8rem;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--paper-tint) 92%, transparent), color-mix(in srgb, var(--bg-secondary) 94%, transparent));
-}
-
-.battle-custom-builder-action-label {
-  display: inline-flex;
+/* Actions row */
+.battle-custom-builder-actions-row {
+  display: flex;
   align-items: center;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.battle-custom-builder-actions {
-  justify-content: flex-start;
-}
-
-.battle-custom-action-btn {
-  min-width: 0;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .battle-custom-action-btn--import {
   border-style: dashed;
 }
 
-.battle-custom-builder-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.2rem 0.1rem 0;
-}
-
-.battle-custom-builder-footer small {
+/* Field optional label */
+.battle-field-optional {
+  font-weight: 400;
+  font-size: 0.75rem;
   color: var(--text-tertiary);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  max-width: 48ch;
 }
 
 .battle-custom-validation {

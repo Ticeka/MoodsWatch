@@ -1528,109 +1528,71 @@ export function BattleBuilderPage() {
               </div>
               {isCustomEntityType ? (
                 <div className="battle-custom-builder-panel">
-                  <div className="battle-custom-builder-hero">
-                    <div className="battle-custom-builder-copy">
-                      <span className="battle-builder-filter-summary-label">{isCustomImageEntityType ? 'Custom image studio' : 'Custom video studio'}</span>
-                      <h3>Card {activeSlotIndex + 1} of {deckSlots.length}</h3>
-                      <p>{isCustomImageEntityType ? 'Drop in posters, visuals, or manga spreads from outside the catalog. You can add one link carefully or batch in several files at once.' : 'Mix in trailers, clips, or your own uploads when the catalog is not enough. Link-based cards and batch file imports both land directly in your deck.'}</p>
+                  {/* Slot header + preview */}
+                  <div className="battle-custom-slot-row">
+                    <div className="battle-custom-preview-art">
+                      {customDraftPreviewArtwork
+                        ? <img src={customDraftPreviewArtwork} alt="" loading="lazy" />
+                        : <div className="battle-custom-preview-art-placeholder">{isCustomImageEntityType ? <ImageIcon size={20} /> : <Play size={20} />}</div>
+                      }
                     </div>
-                    <div className="battle-custom-preview-card">
-                      <div className="battle-custom-preview-art">
-                        {customDraftPreviewArtwork ? <img src={customDraftPreviewArtwork} alt="" loading="lazy" /> : <div className="battle-custom-preview-art-placeholder">{isCustomImageEntityType ? <ImageIcon size={20} /> : <Play size={20} />}</div>}
-                      </div>
-                      <div className="battle-custom-preview-copy">
-                        <strong>{customDraftTitle}</strong>
-                        <span>{customDraftSubtitle}</span>
-                        <div className="battle-custom-preview-chips">
-                          <span className="battle-builder-filter-chip">{isCustomImageEntityType ? 'Image card' : 'Video card'}</span>
-                          <span className="battle-builder-filter-chip">{activeCustomEntry ? 'Editing filled slot' : 'Empty slot ready'}</span>
-                        </div>
-                      </div>
+                    <div className="battle-custom-slot-info">
+                      <strong className="battle-custom-slot-title">{customDraftTitle || (isCustomImageEntityType ? 'ยังไม่มีชื่อ' : 'ยังไม่มีชื่อ')}</strong>
+                      <span className="battle-custom-slot-sub">{customDraftSubtitle || (isCustomImageEntityType ? 'วางลิงก์รูปภาพด้านล่าง' : 'วางลิงก์วิดีโอด้านล่าง')}</span>
+                      <span className="battle-custom-slot-num">การ์ด {activeSlotIndex + 1} / {deckSlots.length}</span>
                     </div>
                   </div>
-                  <div className="battle-custom-builder-note">
-                    <div className="battle-custom-builder-note-head">
-                      <strong>Two easy ways to add media</strong>
-                      <span>{isCustomImageEntityType ? 'Use links for one-offs, or batch import files when you are building a full image deck fast.' : 'Use links for hosted videos, or batch import files straight from your device for quick setup.'}</span>
-                    </div>
-                    <div className="battle-custom-builder-note-grid">
-                      <div className="battle-custom-builder-tip">
-                        <span className="battle-custom-builder-tip-icon"><Link2 size={14} /></span>
-                        <div>
-                          <strong>Paste a link</strong>
-                          <p>{isCustomImageEntityType ? 'Best for public direct image URLs.' : 'Best for YouTube, Dailymotion, or direct video URLs.'}</p>
-                        </div>
-                      </div>
-                      <div className="battle-custom-builder-tip">
-                        <span className="battle-custom-builder-tip-icon">{isCustomImageEntityType ? <ImageIcon size={14} /> : <Play size={14} />}</span>
-                        <div>
-                          <strong>Import multiple files</strong>
-                          <p>{isCustomImageEntityType ? 'Choose several images and let the builder place them into empty slots for you.' : 'Choose several video files and the builder will line them up across empty slots.'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+
+                  {/* Form */}
+                  <label className="battle-field">
+                    <span>{isCustomImageEntityType ? 'ลิงก์รูปภาพ' : 'ลิงก์วิดีโอ'}</span>
+                    <input
+                      value={customDraft.url}
+                      onChange={(event) => { setCustomDraft((current) => ({ ...current, url: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }}
+                      onBlur={handleCustomUrlBlur}
+                      placeholder={isCustomImageEntityType ? 'https://...image.jpg' : 'https://youtube.com/watch?v=...'}
+                    />
+                  </label>
                   <div className="battle-custom-builder-form-grid">
                     <label className="battle-field">
-                      <span>Card name</span>
-                      <input value={customDraft.label} onChange={(event) => { setCustomDraft((current) => ({ ...current, label: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder={isCustomImageEntityType ? 'For example: Best poster reveal' : 'Leave blank for YouTube auto-fill, or type your own title'} />
+                      <span>ชื่อการ์ด</span>
+                      <input value={customDraft.label} onChange={(event) => { setCustomDraft((current) => ({ ...current, label: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder={isCustomImageEntityType ? 'เช่น ปกสวยที่สุด' : 'เว้นว่างให้ดึงชื่อจาก YouTube อัตโนมัติ'} />
                     </label>
                     <label className="battle-field">
-                      <span>Subtitle</span>
-                      <input value={customDraft.subtitle} onChange={(event) => { setCustomDraft((current) => ({ ...current, subtitle: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder="Optional source or note" />
+                      <span>คำบรรยาย <span className="battle-field-optional">(ไม่บังคับ)</span></span>
+                      <input value={customDraft.subtitle} onChange={(event) => { setCustomDraft((current) => ({ ...current, subtitle: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder="แหล่งที่มา หรือโน้ต" />
                     </label>
                   </div>
-                  <label className="battle-field">
-                    <span>External link</span>
-                    <input value={customDraft.url} onChange={(event) => { setCustomDraft((current) => ({ ...current, url: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} onBlur={handleCustomUrlBlur} placeholder={isCustomImageEntityType ? 'https://...image.jpg' : 'https://youtube.com/watch?v=...'} />
-                  </label>
-                  <div className="battle-custom-builder-action-grid">
-                    <div className="battle-custom-builder-action-panel">
-                      <span className="battle-custom-builder-action-label">From link</span>
-                      <div className="battle-builder-actions battle-custom-builder-actions">
-                        <Button variant="ghost" className="battle-custom-action-btn" onClick={handleValidateCustomEntry} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isValidatingCustomEntry ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}>
-                          Check link
-                        </Button>
-                        <Button className="battle-custom-action-btn" onClick={handleApplyCustomEntryToSlot} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />}>
-                          {deckSlots[activeSlotIndex] ? 'Update active slot' : 'Add to active slot'}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="battle-custom-builder-action-panel">
-                      <span className="battle-custom-builder-action-label">Batch import</span>
-                      <div className="battle-builder-actions battle-custom-builder-actions">
-                        <Button
-                          variant="ghost"
-                          className="battle-custom-action-btn battle-custom-action-btn--import"
-                          onClick={() => customFileInputRef.current?.click()}
-                          disabled={isImportingCustomFiles || isValidatingCustomEntry}
-                          icon={(isImportingCustomFiles || isValidatingCustomEntry) ? <Loader2 size={16} className="animate-spin" /> : (isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />)}
-                        >
-                          {isCustomImageEntityType ? 'Choose image files' : 'Choose video files'}
-                        </Button>
-                        <input
-                          ref={customFileInputRef}
-                          type="file"
-                          style={{ display: 'none' }}
-                          accept={isCustomImageEntityType ? 'image/*' : 'video/*'}
-                          multiple
-                          onChange={handleCustomFilesSelected}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="battle-custom-builder-footer">
-                    <small>{isCustomImageEntityType ? 'Tip: tall images usually feel best in battle cards because the slot preview is portrait-first.' : 'Tip: YouTube links create nicer previews, while uploaded files are best when you want private clips in the deck.'}</small>
-                    <span className="battle-builder-filter-chip">{filledSlotCount} / {deckSlots.length} slots filled</span>
-                  </div>
-                  {customValidation.status !== 'idle' ? (
+
+                  {/* Validation */}
+                  {customValidation.status !== 'idle' && (
                     <div className={`battle-custom-validation is-${customValidation.status}`}>
-                      {customValidation.status === 'valid' ? <CheckCircle2 size={16} /> : null}
-                      {customValidation.status === 'invalid' ? <AlertTriangle size={16} /> : null}
-                      {customValidation.status === 'checking' ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {customValidation.status === 'valid' && <CheckCircle2 size={16} />}
+                      {customValidation.status === 'invalid' && <AlertTriangle size={16} />}
+                      {customValidation.status === 'checking' && <Loader2 size={16} className="animate-spin" />}
                       <span>{customValidation.message}</span>
                     </div>
-                  ) : null}
+                  )}
+
+                  {/* Actions */}
+                  <div className="battle-custom-builder-actions-row">
+                    <Button variant="ghost" onClick={handleValidateCustomEntry} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isValidatingCustomEntry ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}>
+                      ตรวจสอบลิงก์
+                    </Button>
+                    <Button onClick={handleApplyCustomEntryToSlot} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />}>
+                      {deckSlots[activeSlotIndex] ? 'อัปเดตการ์ดนี้' : 'เพิ่มการ์ดนี้'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="battle-custom-action-btn--import"
+                      onClick={() => customFileInputRef.current?.click()}
+                      disabled={isImportingCustomFiles || isValidatingCustomEntry}
+                      icon={(isImportingCustomFiles || isValidatingCustomEntry) ? <Loader2 size={16} className="animate-spin" /> : (isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />)}
+                    >
+                      {isCustomImageEntityType ? 'นำเข้าไฟล์รูป' : 'นำเข้าไฟล์วิดีโอ'}
+                    </Button>
+                    <input ref={customFileInputRef} type="file" style={{ display: 'none' }} accept={isCustomImageEntityType ? 'image/*' : 'video/*'} multiple onChange={handleCustomFilesSelected} />
+                  </div>
                 </div>
               ) : isCatalogBusy ? (
                 <div className="battle-catalog-grid">
