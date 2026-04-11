@@ -1,5 +1,6 @@
 import {
   CHARACTER_ENTITY_TYPE,
+  TEXT_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   YOUTUBE_ENTITY_TYPE,
@@ -38,6 +39,7 @@ export function getEntityTypeLabel(entityType, pick) {
     [CHARACTER_ENTITY_TYPE]: pick('ตัวละคร', 'Characters'),
     [THEME_SONG_ENTITY_TYPE]: pick('เพลงประกอบ', 'Theme Songs'),
     [YOUTUBE_ENTITY_TYPE]: 'YouTube',
+    [TEXT_ENTITY_TYPE]: pick('ข้อความ', 'Text'),
   };
 
   return labels[normalized] || pick('เรื่อง', 'Titles');
@@ -146,6 +148,13 @@ export function getEntityModeSummary(entityType, pick) {
     return {
       title: pick('จัด Tier จากลิงก์ YouTube', 'Build a YouTube tier'),
       description: pick('วางลิงก์วิดีโอที่อยากเทียบกัน แล้วจัดอันดับได้ทันที', 'Paste the videos you want to compare and rank them right away.'),
+    };
+  }
+
+  if (normalizeCatalogEntityType(entityType) === TEXT_ENTITY_TYPE) {
+    return {
+      title: pick('จัด Tier จากข้อความ', 'Build a text tier'),
+      description: pick('พิมพ์ข้อความ แล้วระบบจะเปลี่ยนเป็นการ์ดรูปให้อัตโนมัติ', 'Type any text and it will be turned into an image card automatically.'),
     };
   }
 

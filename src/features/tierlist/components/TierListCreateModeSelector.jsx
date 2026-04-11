@@ -1,7 +1,7 @@
 import React from 'react';
 import { ENTITY_TYPE_OPTIONS } from '@/features/tierlist/constants';
 import { getEntityTypeLabel } from '@/features/tierlist/lib/tierlistLabels';
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, TEXT_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE } from '@/shared/lib/catalogEntities';
 
 export function TierListCreateModeSelector({
   entityType,
@@ -30,6 +30,8 @@ export function TierListCreateModeSelector({
                     ? pick('เลือกเรื่องก่อน แล้วค่อยเจาะ OP/ED ด้านใน', 'Pick a title first, then drill into its OP/ED tracks')
                     : option.value === YOUTUBE_ENTITY_TYPE
                       ? pick('วางลิงก์ YouTube แล้วสร้างพูลจากวิดีโอได้ทันที', 'Paste YouTube links and build a pool directly from videos')
+                      : option.value === TEXT_ENTITY_TYPE
+                        ? pick('พิมพ์ข้อความแล้วเก็บเป็นการ์ดรูป พื้นขาวตัวอักษรดำ', 'Type text and save it as an image card with white background and black text')
                     : ''}
             </span>
           </button>

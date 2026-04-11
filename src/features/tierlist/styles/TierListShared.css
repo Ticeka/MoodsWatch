@@ -912,11 +912,63 @@
   scrollbar-color: color-mix(in srgb, var(--border-default) 80%, transparent) transparent;
 }
 
-/* Tiles inside pool are full-width cells */
+/* Tiles inside pool are full-width cells — height driven by aspect-ratio */
 .tiermaker-pool .tiermaker-tile {
   width: 100%;
-  height: 147px;
-  aspect-ratio: 3 / 4;
+  height: auto;
+}
+
+/* Song / YouTube → 16:9 landscape, span 2 columns to fill space */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="song"] {
+  aspect-ratio: 16 / 9;
+  grid-column: span 2;
+}
+
+/* Song tiles in tier rows — match row height, widen to 16:9 */
+.tiermaker-dropzone .tiermaker-tile[data-artwork-type="song"] {
+  width: calc(var(--tier-tile-height, 147px) * 16 / 9);
+  height: var(--tier-tile-height, 147px);
+  aspect-ratio: unset;
+}
+
+/* Character → square */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="character"] {
+  aspect-ratio: 1 / 1;
+}
+
+/* Anime / movie poster → 2:3 portrait */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="title"] {
+  aspect-ratio: 2 / 3;
+}
+
+/* Text card → square, size S (default = 1 col) */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="text"] {
+  aspect-ratio: 1 / 1;
+}
+
+/* Text card 2 cols */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="text"][data-tile-size="2"] {
+  grid-column: span 2;
+}
+
+/* Text card 3 cols */
+.tiermaker-pool .tiermaker-tile[data-artwork-type="text"][data-tile-size="3"] {
+  grid-column: span 3;
+}
+
+/* Text tiles in tier rows — square matching row height, wider for M/L */
+.tiermaker-dropzone .tiermaker-tile[data-artwork-type="text"] {
+  width: var(--tier-tile-height, 147px);
+  height: var(--tier-tile-height, 147px);
+  aspect-ratio: unset;
+}
+
+.tiermaker-dropzone .tiermaker-tile[data-artwork-type="text"][data-tile-size="2"] {
+  width: calc(var(--tier-tile-height, 147px) * 2);
+}
+
+.tiermaker-dropzone .tiermaker-tile[data-artwork-type="text"][data-tile-size="3"] {
+  width: calc(var(--tier-tile-height, 147px) * 3);
 }
 
 /* Empty / loading state */
@@ -1857,7 +1909,7 @@
   }
 
   .tiermaker-pool .tiermaker-tile {
-    height: 117px;
+    height: auto;
   }
 
   .tiermaker-dropzone {

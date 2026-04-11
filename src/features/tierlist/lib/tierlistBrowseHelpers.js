@@ -19,6 +19,7 @@ import {
 } from '@/features/tierlist/lib/tierlistPageUtils';
 import {
   CHARACTER_ENTITY_TYPE,
+  TEXT_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   YOUTUBE_ENTITY_TYPE,
@@ -62,19 +63,25 @@ export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
     };
   }
 
-  return {
+  const base = {
     id: Number(item?.id),
     title: String(item?.title || ''),
     title_en: String(item?.title || ''),
     title_th: String(item?.title || ''),
     sourceTitleName: String(item?.subtitle || ''),
     subtitle: String(item?.subtitle || ''),
-    cover: String(item?.imageUrl || ''),
-    image_url: String(item?.imageUrl || ''),
+    cover: String(item?.imageUrl || item?.cover || item?.image_url || ''),
+    image_url: String(item?.imageUrl || item?.cover || item?.image_url || ''),
     source_url: String(item?.sourceUrl || ''),
     entityType: resolvedEntityType,
     isCustomTierItem: true,
   };
+
+  if (resolvedEntityType === TEXT_ENTITY_TYPE && item?.textTileSize) {
+    base.textTileSize = item.textTileSize;
+  }
+
+  return base;
 }
 
 export function buildEntityMaps(titles = [], customItems = [], customEntityType = TITLE_ENTITY_TYPE) {

@@ -1,4 +1,4 @@
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, TEXT_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE } from '@/shared/lib/catalogEntities';
 
 export const BROWSE_PAGE_SIZE = 9;
 export const MANAGE_LISTS_PAGE_SIZE = 12;
@@ -14,6 +14,7 @@ export const ENTITY_TYPE_OPTIONS = [
   { value: CHARACTER_ENTITY_TYPE, label: 'Characters' },
   { value: THEME_SONG_ENTITY_TYPE, label: 'Theme Songs' },
   { value: YOUTUBE_ENTITY_TYPE, label: 'YouTube' },
+  { value: TEXT_ENTITY_TYPE, label: 'Text' },
 ];
 
 export const CREATE_SORT_OPTIONS = [

@@ -4,6 +4,7 @@ import { getDisplayName } from '@/features/tierlist/lib/tierlistLabels';
 import { TierListArtworkImage as ArtworkImage } from '@/features/tierlist/components/TierListArtworkImage';
 import {
   isCharacterEntity,
+  isTextEntity,
   isThemeSongEntity,
   isYoutubeEntity,
 } from '@/shared/lib/catalogEntities';
@@ -21,6 +22,8 @@ export function TierTitleCard({
   const pointerSessionRef = useRef(null);
   const isSong = isThemeSongEntity(title) || isYoutubeEntity(title);
   const isCharacter = isCharacterEntity(title);
+  const isText = isTextEntity(title);
+  const artworkType = isSong ? 'song' : isCharacter ? 'character' : isText ? 'text' : 'title';
   const canPreviewSong = isSong && title?.video_url && typeof onPreviewSong === 'function';
   const canOpenDetail = typeof onOpenDetail === 'function';
   const isYouTubeCustom = isSong && title?.isCustomTierItem && (title?.trailer_site === 'youtube' || title?.trailerSite === 'youtube');
@@ -34,6 +37,8 @@ export function TierTitleCard({
       className={`tiermaker-tile${isDragging ? ' is-dragging-origin' : ''}${canOpenDetail ? ' can-open-detail' : ''}`}
       title={cardTitle}
       data-tier-tile="true"
+      data-artwork-type={artworkType}
+      data-tile-size={title?.textTileSize != null ? String(title.textTileSize) : undefined}
       onPointerDown={(event) => {
         if (event.button !== 0 || !onPointerDragStart) {
           return;
@@ -95,7 +100,7 @@ export function TierTitleCard({
     >
       <div className={`tierlist-item-thumb${isSong ? ' is-song' : ''}`}>
         <ArtworkImage entity={title} alt="" loading={eager ? 'eager' : 'lazy'} />
-        <span className="tiermaker-entity-chip">{entityChip}</span>
+        {!isSong && <span className="tiermaker-entity-chip">{entityChip}</span>}
         {title?.is_adult ? <span className="tiermaker-age-chip">18+</span> : null}
         {isSong ? (
           <>

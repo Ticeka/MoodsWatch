@@ -21,7 +21,8 @@ import { fetchSongsForTitle, preloadSongsForTitle, splitByAdultFlag, toCustomTie
 import { getCurrentUsername } from '@/features/tierlist/lib/tierlistPageUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { CHARACTER_ENTITY_TYPE, TEXT_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
+import { generateTextTileImage } from '@/features/tierlist/lib/textTileCanvas';
 import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import '../styles/TierList.css';
 
@@ -89,6 +90,11 @@ export function TierListCreatePage() {
     title: '',
     subtitle: '',
   });
+  const [textDraft, setTextDraft] = useState('');
+  const [textBgColor, setTextBgColor] = useState('#ffffff');
+  const [textFgColor, setTextFgColor] = useState('#111111');
+  const [textPreviewSrc, setTextPreviewSrc] = useState('');
+  const textPreviewTimerRef = useRef(null);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectedEntityCache, setSelectedEntityCache] = useState(new Map());
@@ -307,6 +313,7 @@ export function TierListCreatePage() {
   const isCharacterMode = normalizedEntityType === CHARACTER_ENTITY_TYPE;
   const isThemeSongMode = normalizedEntityType === THEME_SONG_ENTITY_TYPE;
   const isYoutubeMode = normalizedEntityType === YOUTUBE_ENTITY_TYPE;
+  const isTextMode = normalizedEntityType === TEXT_ENTITY_TYPE;
   const isSongMode = isThemeSongMode || isYoutubeMode;
   // Derived above together with the other create-page mode flags.
   const modeSummary = useMemo(() => getEntityModeSummary(entityType, pick), [entityType, pick]);
@@ -371,8 +378,8 @@ export function TierListCreatePage() {
     [selectedEntityCache, selectedIds]
   );
 
-  const selectedItems = isSongMode ? [...selectedSongEntities, ...selectedCustomEntities] : selectedTitles;
-  const minimumRequired = isSongMode ? 2 : 8;
+  const selectedItems = isSongMode ? [...selectedSongEntities, ...selectedCustomEntities] : isTextMode ? [...selectedCustomEntities] : selectedTitles;
+  const minimumRequired = isSongMode || isTextMode ? 2 : 8;
   const hasActiveFilters = typeFilter !== 'all'
     || sortBy !== 'popularity'
     || statusFilter !== 'all'
@@ -523,6 +530,37 @@ export function TierListCreatePage() {
     }
   };
 
+  const handleAddTextItem = () => {
+    const text = textDraft.trim();
+    if (!text) {
+      toast.error(pick('พิมพ์ข้อความก่อน', 'Enter some text first'));
+      return;
+    }
+    const imageUrl = generateTextTileImage(text, { bgColor: textBgColor, fgColor: textFgColor });
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const item = {
+      id,
+      title: text,
+      subtitle: pick('ข้อความ', 'Text'),
+      imageUrl,
+      entityType: TEXT_ENTITY_TYPE,
+      isCustomTierItem: true,
+      title_en: text,
+      title_th: text,
+      cover: imageUrl,
+      image_url: imageUrl,
+    };
+    setCustomItems((prev) => [...prev, item]);
+    setSelectedIds((prev) => new Set([...prev, id]));
+    setSelectedEntityCache((prev) => {
+      const next = new Map(prev);
+      next.set(id, item);
+      return next;
+    });
+    setTextDraft('');
+    toast.success(pick('เพิ่มการ์ดข้อความเข้า pool แล้ว', 'Added text card to the pool'));
+  };
+
   const removeCustomItem = (itemId) => {
     const normalizedId = Number(itemId);
     setCustomItems((prev) => prev.filter((item) => Number(item.id) !== normalizedId));
@@ -562,7 +600,9 @@ export function TierListCreatePage() {
       toast.error(
         isSongMode
           ? pick('กรุณาเลือกอย่างน้อย 2 เพลง', 'Please select at least 2 songs')
-          : pick('กรุณาเลือกอย่างน้อย 8 เรื่อง', 'Please select at least 8 titles')
+          : isTextMode
+            ? pick('กรุณาเพิ่มอย่างน้อย 2 การ์ดข้อความ', 'Please add at least 2 text cards')
+            : pick('กรุณาเลือกอย่างน้อย 8 เรื่อง', 'Please select at least 8 titles')
       );
       return;
     }
@@ -584,6 +624,7 @@ export function TierListCreatePage() {
           trailerSite: entry.trailer_site || '',
           trailerVideoId: entry.trailer_video_id || '',
           trailerThumbnailUrl: entry.trailer_thumbnail_url || entry.cover || entry.image_url || '',
+          ...(entry.textTileSize ? { textTileSize: entry.textTileSize } : {}),
         }));
       const catalogItems = entitiesToUse.filter((entry) => !entry?.isCustomTierItem);
       const template = createTemplateFromCatalog(catalogItems, {
@@ -592,10 +633,12 @@ export function TierListCreatePage() {
             ? pick('เทมเพลต YouTube ใหม่', 'New YouTube Template')
             : isSongMode
               ? pick('เทมเพลตเพลงใหม่', 'New Song Template')
-              : pick('เทมเพลตใหม่', 'New Template')
+              : isTextMode
+                ? pick('เทมเพลตข้อความใหม่', 'New Text Template')
+                : pick('เทมเพลตใหม่', 'New Template')
         ),
         description: templateDesc.trim(),
-        category: isYoutubeMode ? 'youtube' : isSongMode ? 'songs' : category,
+        category: isYoutubeMode ? 'youtube' : isSongMode ? 'songs' : isTextMode ? 'text' : category,
         entityType,
         isPublic: true,
         isSystem: false,
@@ -625,17 +668,20 @@ export function TierListCreatePage() {
         ? { ...savedTemplate, entityType: YOUTUBE_ENTITY_TYPE }
         : isThemeSongMode
           ? { ...savedTemplate, entityType: THEME_SONG_ENTITY_TYPE }
+          : isTextMode
+            ? { ...savedTemplate, entityType: TEXT_ENTITY_TYPE }
         : savedTemplate;
       const list = buildTierListFromTemplate(savedTemplate);
+      const resolvedEntityType = isYoutubeMode ? YOUTUBE_ENTITY_TYPE : isThemeSongMode ? THEME_SONG_ENTITY_TYPE : isTextMode ? TEXT_ENTITY_TYPE : list.entityType;
       const seeded = seedPoolFromCatalog({
         ...list,
-        entityType: isYoutubeMode ? YOUTUBE_ENTITY_TYPE : isThemeSongMode ? THEME_SONG_ENTITY_TYPE : list.entityType,
+        entityType: resolvedEntityType,
       }, entitiesToUse.map((e) => Number(e.id)));
       const ownerUsername = getCurrentUsername(user);
       const nextList = {
         ...seeded,
         templateId: normalizedSavedTemplate.id,
-        entityType: isYoutubeMode ? YOUTUBE_ENTITY_TYPE : isThemeSongMode ? THEME_SONG_ENTITY_TYPE : seeded.entityType,
+        entityType: resolvedEntityType,
         ownerName: ownerUsername || 'You',
         ownerUsername,
         ownerUserId: user?.id || null,
@@ -788,6 +834,8 @@ export function TierListCreatePage() {
     );
   }
 
+  const textPreviewPx = 338;
+
   return (
     <div className="tierlist-page">
       <TierListCreateHero
@@ -823,6 +871,7 @@ export function TierListCreatePage() {
         isLoading={isLoading}
         isSaving={isSaving}
         isSongMode={isSongMode}
+        isTextMode={isTextMode}
         isYoutubeMode={isYoutubeMode}
         isSubmittingCustomVideo={isSubmittingCustomVideo}
         isUploadingCover={isUploadingCover}
@@ -901,6 +950,98 @@ export function TierListCreatePage() {
             title={pick('โหมด YouTube พร้อมแล้ว', 'YouTube mode is ready')}
             message={pick('เพิ่มลิงก์ YouTube จากแผงด้านบนได้เลย รายการที่เพิ่มจะเข้า pool ทันที แล้วค่อยกด Create & Play เมื่อครบตามที่ต้องการ', 'Add YouTube links from the panel above. Each link goes straight into the pool, then hit Create & Play when you have enough items.')}
           />
+        </section>
+      ) : isTextMode ? (
+        <section className="container tierlist-section" ref={pickerSectionRef}>
+          <div className="tierlist-text-builder">
+              {/* Left — preview */}
+              <div className="tierlist-text-builder-preview">
+                <span className="tierlist-text-tile-preview-label">
+                  {pick('ตัวอย่างขนาดจริง', 'Actual size preview')}
+                </span>
+                {textPreviewSrc ? (
+                  <img
+                    src={textPreviewSrc}
+                    alt="preview"
+                    style={{ width: textPreviewPx, height: textPreviewPx }}
+                    className="tierlist-text-tile-preview-img"
+                  />
+                ) : (
+                  <div
+                    className="tierlist-text-builder-placeholder"
+                    style={{ width: textPreviewPx, height: textPreviewPx }}
+                  >
+                    {pick('พรีวิวจะแสดงที่นี่', 'Preview appears here')}
+                  </div>
+                )}
+              </div>
+              {/* Right — input + color + button */}
+              <div className="tierlist-text-builder-form">
+                <div className="tierlist-create-external-head">
+                  <strong>{pick('เพิ่มการ์ดข้อความ', 'Add Text Card')}</strong>
+                </div>
+                <label className="tierlist-field">
+                  <span>{pick('ข้อความ', 'Text')}</span>
+                  <textarea
+                    value={textDraft}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTextDraft(val);
+                      clearTimeout(textPreviewTimerRef.current);
+                      textPreviewTimerRef.current = setTimeout(() => {
+                        setTextPreviewSrc(val.trim() ? generateTextTileImage(val.trim(), { bgColor: textBgColor, fgColor: textFgColor }) : '');
+                      }, 300);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddTextItem();
+                    }}
+                    placeholder={pick('พิมพ์ข้อความที่ต้องการ...', 'Type your text here...')}
+                    rows={4}
+                    className="tierlist-text-tile-input"
+                  />
+                </label>
+                <div className="tierlist-text-color-row">
+                  <label className="tierlist-text-color-field">
+                    <span>{pick('พื้นหลัง', 'Background')}</span>
+                    <input
+                      type="color"
+                      value={textBgColor}
+                      onChange={(e) => {
+                        setTextBgColor(e.target.value);
+                        clearTimeout(textPreviewTimerRef.current);
+                        textPreviewTimerRef.current = setTimeout(() => {
+                          if (textDraft.trim()) setTextPreviewSrc(generateTextTileImage(textDraft.trim(), { bgColor: e.target.value, fgColor: textFgColor }));
+                        }, 100);
+                      }}
+                      className="tierlist-text-color-input"
+                    />
+                  </label>
+                  <label className="tierlist-text-color-field">
+                    <span>{pick('ตัวอักษร', 'Text color')}</span>
+                    <input
+                      type="color"
+                      value={textFgColor}
+                      onChange={(e) => {
+                        setTextFgColor(e.target.value);
+                        clearTimeout(textPreviewTimerRef.current);
+                        textPreviewTimerRef.current = setTimeout(() => {
+                          if (textDraft.trim()) setTextPreviewSrc(generateTextTileImage(textDraft.trim(), { bgColor: textBgColor, fgColor: e.target.value }));
+                        }, 100);
+                      }}
+                      className="tierlist-text-color-input"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleAddTextItem}
+                  disabled={!textDraft.trim()}
+                >
+                  {pick('เพิ่มเข้า pool', 'Add to pool')}
+                </button>
+              </div>
+            </div>
         </section>
       ) : (
         /* Normal title/character picker */

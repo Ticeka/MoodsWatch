@@ -8,6 +8,7 @@ export const YOUTUBE_ENTITY_TYPE = 'youtube';
 export const TRAILER_ENTITY_TYPE = 'trailer';
 export const CUSTOM_IMAGE_ENTITY_TYPE = 'custom_image';
 export const CUSTOM_VIDEO_ENTITY_TYPE = 'custom_video';
+export const TEXT_ENTITY_TYPE = 'custom_text';
 
 const CHARACTER_ROLE_LABELS = {
   MAIN: 'Main character',
@@ -95,6 +96,7 @@ export function normalizeCatalogEntityType(value) {
   if (value === TRAILER_ENTITY_TYPE) return TRAILER_ENTITY_TYPE;
   if (value === CUSTOM_IMAGE_ENTITY_TYPE) return CUSTOM_IMAGE_ENTITY_TYPE;
   if (value === CUSTOM_VIDEO_ENTITY_TYPE) return CUSTOM_VIDEO_ENTITY_TYPE;
+  if (value === TEXT_ENTITY_TYPE) return TEXT_ENTITY_TYPE;
   return TITLE_ENTITY_TYPE;
 }
 
@@ -120,6 +122,10 @@ export function isCustomImageEntity(entity) {
 
 export function isCustomVideoEntity(entity) {
   return entity?.entityType === CUSTOM_VIDEO_ENTITY_TYPE;
+}
+
+export function isTextEntity(entity) {
+  return entity?.entityType === TEXT_ENTITY_TYPE;
 }
 
 export function getCatalogEntityName(entity) {
