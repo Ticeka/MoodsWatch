@@ -34,6 +34,7 @@ import {
   CHARACTER_ENTITY_TYPE,
   CUSTOM_IMAGE_ENTITY_TYPE,
   CUSTOM_VIDEO_ENTITY_TYPE,
+  TEXT_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
@@ -42,9 +43,11 @@ import {
   getCatalogEntityName,
   isCustomImageEntity,
   isCustomVideoEntity,
+  isTextEntity,
   isThemeSongEntity,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
+import { generateTextTileImage } from '@/features/tierlist/lib/textTileCanvas';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
@@ -64,6 +67,7 @@ const ENTITY_TYPE_OPTIONS = [
   { value: TRAILER_ENTITY_TYPE, translationKey: 'battle.entryUnitTrailers' },
   { value: CUSTOM_IMAGE_ENTITY_TYPE, label: 'Custom images' },
   { value: CUSTOM_VIDEO_ENTITY_TYPE, label: 'Custom videos' },
+  { value: TEXT_ENTITY_TYPE, label: 'Text cards' },
 ];
 const SIZE_OPTIONS = [8, 16, 24, 32, 48];
 const BATTLE_CATALOG_PAGE_SIZE = 6;
@@ -90,6 +94,7 @@ function getEntryUnitLabel(entityType, options = {}) {
   if (normalized === THEME_SONG_ENTITY_TYPE) return options.singular ? 'battle.entryUnitSong' : 'battle.entryUnitSongs';
   if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) return options.singular ? 'image' : 'images';
   if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) return options.singular ? 'video' : 'videos';
+  if (normalized === TEXT_ENTITY_TYPE) return options.singular ? 'text card' : 'text cards';
   return options.singular ? 'battle.entryUnitTitle' : 'battle.entryUnitTitles';
 }
 
@@ -99,6 +104,7 @@ function getAnyTypeLabel(entityType, t) {
   if (normalized === THEME_SONG_ENTITY_TYPE) return t('battle.allSongs');
   if (normalized === CUSTOM_IMAGE_ENTITY_TYPE) return 'Custom images';
   if (normalized === CUSTOM_VIDEO_ENTITY_TYPE) return 'Custom videos';
+  if (normalized === TEXT_ENTITY_TYPE) return 'Text cards';
   return t('battle.allTitles');
 }
 
@@ -117,6 +123,7 @@ function getBattleSongRoleLabel(title) {
 
 function hasBattleMedia(title) {
   if (isCustomImageEntity(title)) return Boolean(title?.cover);
+  if (isTextEntity(title)) return Boolean(title?.cover);
   if (isCustomVideoEntity(title)) return Boolean(normalizeTrailer(title || {})?.watchUrl || title?.trailer_url);
   if (isThemeSongEntity(title)) return Boolean(title?.video_url);
   return Boolean(normalizeTrailer(title || {}));
@@ -146,6 +153,9 @@ function getBattleEntryBadges(title, t, options = {}) {
     if (!options.compact && title.is_nsfw) badges.push({ tone: 'warning', label: t('battle.nsfw') });
     return badges;
   }
+  if (isTextEntity(title)) {
+    return [{ tone: 'ready', label: 'Text card' }];
+  }
   if (isCustomImageEntity(title)) {
     return [
       { tone: 'ready', label: 'Custom image' },
@@ -172,6 +182,7 @@ function getActiveBattleFilterSummary(filters, t) {
   const items = [];
   if (filters.entityType === CUSTOM_IMAGE_ENTITY_TYPE) items.push('Custom images');
   if (filters.entityType === CUSTOM_VIDEO_ENTITY_TYPE) items.push('Custom videos');
+  if (filters.entityType === TEXT_ENTITY_TYPE) items.push('Text cards');
   if (filters.type && filters.type !== 'all') items.push(filters.type[0].toUpperCase() + filters.type.slice(1));
   if (filters.tag) items.push(`#${filters.tag}`);
   if (filters.mood) items.push(filters.mood);
@@ -515,6 +526,11 @@ export function BattleBuilderPage() {
   const [isValidatingCustomEntry, setIsValidatingCustomEntry] = useState(false);
   const [isImportingCustomFiles, setIsImportingCustomFiles] = useState(false);
   const customFileInputRef = useRef(null);
+  const [textDraft, setTextDraft] = useState('');
+  const [textBgColor, setTextBgColor] = useState('#ffffff');
+  const [textFgColor, setTextFgColor] = useState('#111111');
+  const [textPreviewSrc, setTextPreviewSrc] = useState('');
+  const textPreviewTimerRef = useRef(null);
   const deferredFilters = useDeferredValue(filters);
   const debouncedQuery = useDebouncedValue(filters.query, 300);
   const editDeckId = searchParams.get('deckId');
@@ -528,7 +544,8 @@ export function BattleBuilderPage() {
   const isTrailerEntity = filters.entityType === TRAILER_ENTITY_TYPE;
   const isCustomImageEntityType = filters.entityType === CUSTOM_IMAGE_ENTITY_TYPE;
   const isCustomVideoEntityType = filters.entityType === CUSTOM_VIDEO_ENTITY_TYPE;
-  const isCustomEntityType = isCustomImageEntityType || isCustomVideoEntityType;
+  const isTextEntityType = filters.entityType === TEXT_ENTITY_TYPE;
+  const isCustomEntityType = isCustomImageEntityType || isCustomVideoEntityType || isTextEntityType;
   const activeCustomEntry = isCustomEntityType ? deckSlots[activeSlotIndex] : null;
   const usesRemoteCatalog = !isCustomEntityType;
   const debouncedCatalogFilters = useMemo(() => ({
@@ -540,6 +557,10 @@ export function BattleBuilderPage() {
       return '';
     }
 
+    if (isTextEntityType) {
+      return textPreviewSrc || getTitleArtwork(activeCustomEntry);
+    }
+
     if (isCustomImageEntityType && customDraft.url.trim()) {
       return customDraft.url.trim();
     }
@@ -549,10 +570,14 @@ export function BattleBuilderPage() {
     }
 
     return getTitleArtwork(activeCustomEntry);
-  }, [activeCustomEntry, customDraft.url, isCustomEntityType, isCustomImageEntityType, isCustomVideoEntityType]);
-  const customDraftTitle = String(customDraft.label || '').trim() || (isCustomImageEntityType ? 'Untitled image card' : 'Untitled video card');
-  const customDraftSubtitle = String(customDraft.subtitle || '').trim()
-    || (isCustomImageEntityType ? 'Bring in posters, stills, or scans from anywhere.' : 'Use trailers, clips, or uploads that feel battle-worthy.');
+  }, [activeCustomEntry, customDraft.url, isCustomEntityType, isCustomImageEntityType, isCustomVideoEntityType, isTextEntityType, textPreviewSrc]);
+  const customDraftTitle = isTextEntityType
+    ? (textDraft.trim() || 'Text card preview')
+    : (String(customDraft.label || '').trim() || (isCustomImageEntityType ? 'Untitled image card' : 'Untitled video card'));
+  const customDraftSubtitle = isTextEntityType
+    ? 'Type text below to preview and add it as a card'
+    : (String(customDraft.subtitle || '').trim()
+      || (isCustomImageEntityType ? 'Bring in posters, stills, or scans from anywhere.' : 'Use trailers, clips, or uploads that feel battle-worthy.'));
 
   // Song battle mode: auto-fetch songs for a title and start a battle session
   useEffect(() => {
@@ -885,6 +910,16 @@ export function BattleBuilderPage() {
       return;
     }
 
+    if (isTextEntityType) {
+      const activeEntry = deckSlots[activeSlotIndex];
+      if (activeEntry?.entityType === TEXT_ENTITY_TYPE) {
+        setTextDraft(getDisplayName(activeEntry) || '');
+      } else {
+        setTextDraft('');
+      }
+      return;
+    }
+
     const activeEntry = deckSlots[activeSlotIndex];
     if (activeEntry?.entityType === filters.entityType) {
       setCustomDraft({
@@ -903,7 +938,7 @@ export function BattleBuilderPage() {
 
     setCustomDraft(createEmptyCustomDraft());
     setCustomValidation({ status: 'idle', message: '' });
-  }, [activeSlotIndex, deckSlots, filters.entityType, isCustomEntityType]);
+  }, [activeSlotIndex, deckSlots, filters.entityType, isCustomEntityType, isTextEntityType]);
 
   const assignTitleToSlot = (title, preferredIndex = 0) => {
     if (!title) return false;
@@ -983,6 +1018,52 @@ export function BattleBuilderPage() {
       index === activeSlotIndex ? result.entry : entry
     )));
     toast.success(activeSlotIndex + 1 <= filledSlotCount ? 'Custom card updated.' : 'Custom card added.');
+  };
+
+  // Text tile debounced preview
+  useEffect(() => {
+    if (!isTextEntityType) return undefined;
+    clearTimeout(textPreviewTimerRef.current);
+    if (!textDraft.trim()) { setTextPreviewSrc(''); return undefined; }
+    textPreviewTimerRef.current = setTimeout(() => {
+      setTextPreviewSrc(generateTextTileImage(textDraft, { bgColor: textBgColor, fgColor: textFgColor }));
+    }, 300);
+    return () => clearTimeout(textPreviewTimerRef.current);
+  }, [textDraft, textBgColor, textFgColor, isTextEntityType]);
+
+  const handleAddTextCardToSlot = () => {
+    const trimmed = textDraft.trim();
+    if (!trimmed) return;
+    const imageDataUrl = generateTextTileImage(trimmed, { bgColor: textBgColor, fgColor: textFgColor });
+    const entry = {
+      id: makeCustomBattleEntryId(),
+      entityType: TEXT_ENTITY_TYPE,
+      slug: `text-card-${Date.now()}`,
+      type: 'custom',
+      subtype: 'text',
+      title_en: trimmed,
+      title_th: trimmed,
+      title_native: '',
+      cover: imageDataUrl,
+      banner: imageDataUrl,
+      synopsis: '',
+      score: null,
+      popularity: 0,
+      is_adult: false,
+      genres: [],
+      tags: [],
+      moods: [],
+      role: 'Text card',
+      sourceTitleName: 'Text card',
+    };
+    const emptyIndex = deckSlots.findIndex((s, i) => !s && i >= activeSlotIndex);
+    const targetIndex = emptyIndex >= 0 ? emptyIndex : deckSlots.findIndex((s) => !s);
+    if (targetIndex < 0) { toast.error(t('battle.deckFull')); return; }
+    setDeckSlots((current) => current.map((s, i) => (i === targetIndex ? entry : s)));
+    setActiveSlotIndex(targetIndex);
+    setTextDraft('');
+    setTextPreviewSrc('');
+    toast.success('Text card added.');
   };
 
   const handleCustomFilesSelected = async (event) => {
@@ -1529,70 +1610,103 @@ export function BattleBuilderPage() {
               {isCustomEntityType ? (
                 <div className="battle-custom-builder-panel">
                   {/* Slot header + preview */}
-                  <div className="battle-custom-slot-row">
-                    <div className="battle-custom-preview-art">
+                  <div className={`battle-custom-slot-row${isTextEntityType ? ' is-text-mode' : ''}`}>
+                    <div className={`battle-custom-preview-art${isTextEntityType ? ' is-text' : ''}`}>
                       {customDraftPreviewArtwork
                         ? <img src={customDraftPreviewArtwork} alt="" loading="lazy" />
-                        : <div className="battle-custom-preview-art-placeholder">{isCustomImageEntityType ? <ImageIcon size={20} /> : <Play size={20} />}</div>
+                        : <div className="battle-custom-preview-art-placeholder">{isTextEntityType ? <Layers size={20} /> : isCustomImageEntityType ? <ImageIcon size={20} /> : <Play size={20} />}</div>
                       }
                     </div>
                     <div className="battle-custom-slot-info">
-                      <strong className="battle-custom-slot-title">{customDraftTitle || (isCustomImageEntityType ? 'ยังไม่มีชื่อ' : 'ยังไม่มีชื่อ')}</strong>
-                      <span className="battle-custom-slot-sub">{customDraftSubtitle || (isCustomImageEntityType ? 'วางลิงก์รูปภาพด้านล่าง' : 'วางลิงก์วิดีโอด้านล่าง')}</span>
+                      <strong className="battle-custom-slot-title">{customDraftTitle}</strong>
+                      <span className="battle-custom-slot-sub">{customDraftSubtitle}</span>
                       <span className="battle-custom-slot-num">การ์ด {activeSlotIndex + 1} / {deckSlots.length}</span>
                     </div>
                   </div>
 
-                  {/* Form */}
-                  <label className="battle-field">
-                    <span>{isCustomImageEntityType ? 'ลิงก์รูปภาพ' : 'ลิงก์วิดีโอ'}</span>
-                    <input
-                      value={customDraft.url}
-                      onChange={(event) => { setCustomDraft((current) => ({ ...current, url: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }}
-                      onBlur={handleCustomUrlBlur}
-                      placeholder={isCustomImageEntityType ? 'https://...image.jpg' : 'https://youtube.com/watch?v=...'}
-                    />
-                  </label>
-                  <div className="battle-custom-builder-form-grid">
-                    <label className="battle-field">
-                      <span>ชื่อการ์ด</span>
-                      <input value={customDraft.label} onChange={(event) => { setCustomDraft((current) => ({ ...current, label: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder={isCustomImageEntityType ? 'เช่น ปกสวยที่สุด' : 'เว้นว่างให้ดึงชื่อจาก YouTube อัตโนมัติ'} />
-                    </label>
-                    <label className="battle-field">
-                      <span>คำบรรยาย <span className="battle-field-optional">(ไม่บังคับ)</span></span>
-                      <input value={customDraft.subtitle} onChange={(event) => { setCustomDraft((current) => ({ ...current, subtitle: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder="แหล่งที่มา หรือโน้ต" />
-                    </label>
-                  </div>
+                  {isTextEntityType ? (
+                    <>
+                      {/* Text form */}
+                      <label className="battle-field">
+                        <span>ข้อความบนการ์ด</span>
+                        <textarea
+                          className="battle-text-tile-input"
+                          value={textDraft}
+                          onChange={(event) => setTextDraft(event.target.value)}
+                          placeholder="พิมพ์ข้อความที่นี่..."
+                          rows={4}
+                        />
+                      </label>
+                      <div className="battle-text-color-row">
+                        <label className="battle-text-color-field">
+                          <span>พื้นหลัง</span>
+                          <input type="color" value={textBgColor} onChange={(event) => setTextBgColor(event.target.value)} />
+                        </label>
+                        <label className="battle-text-color-field">
+                          <span>ตัวอักษร</span>
+                          <input type="color" value={textFgColor} onChange={(event) => setTextFgColor(event.target.value)} />
+                        </label>
+                      </div>
+                      <div className="battle-custom-builder-actions-row">
+                        <Button onClick={handleAddTextCardToSlot} disabled={!textDraft.trim()} icon={<Layers size={16} />}>
+                          เพิ่มการ์ดนี้
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Form */}
+                      <label className="battle-field">
+                        <span>{isCustomImageEntityType ? 'ลิงก์รูปภาพ' : 'ลิงก์วิดีโอ'}</span>
+                        <input
+                          value={customDraft.url}
+                          onChange={(event) => { setCustomDraft((current) => ({ ...current, url: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }}
+                          onBlur={handleCustomUrlBlur}
+                          placeholder={isCustomImageEntityType ? 'https://...image.jpg' : 'https://youtube.com/watch?v=...'}
+                        />
+                      </label>
+                      <div className="battle-custom-builder-form-grid">
+                        <label className="battle-field">
+                          <span>ชื่อการ์ด</span>
+                          <input value={customDraft.label} onChange={(event) => { setCustomDraft((current) => ({ ...current, label: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder={isCustomImageEntityType ? 'เช่น ปกสวยที่สุด' : 'เว้นว่างให้ดึงชื่อจาก YouTube อัตโนมัติ'} />
+                        </label>
+                        <label className="battle-field">
+                          <span>คำบรรยาย <span className="battle-field-optional">(ไม่บังคับ)</span></span>
+                          <input value={customDraft.subtitle} onChange={(event) => { setCustomDraft((current) => ({ ...current, subtitle: event.target.value })); setCustomValidation({ status: 'idle', message: '' }); }} placeholder="แหล่งที่มา หรือโน้ต" />
+                        </label>
+                      </div>
 
-                  {/* Validation */}
-                  {customValidation.status !== 'idle' && (
-                    <div className={`battle-custom-validation is-${customValidation.status}`}>
-                      {customValidation.status === 'valid' && <CheckCircle2 size={16} />}
-                      {customValidation.status === 'invalid' && <AlertTriangle size={16} />}
-                      {customValidation.status === 'checking' && <Loader2 size={16} className="animate-spin" />}
-                      <span>{customValidation.message}</span>
-                    </div>
+                      {/* Validation */}
+                      {customValidation.status !== 'idle' && (
+                        <div className={`battle-custom-validation is-${customValidation.status}`}>
+                          {customValidation.status === 'valid' && <CheckCircle2 size={16} />}
+                          {customValidation.status === 'invalid' && <AlertTriangle size={16} />}
+                          {customValidation.status === 'checking' && <Loader2 size={16} className="animate-spin" />}
+                          <span>{customValidation.message}</span>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="battle-custom-builder-actions-row">
+                        <Button variant="ghost" onClick={handleValidateCustomEntry} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isValidatingCustomEntry ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}>
+                          ตรวจสอบลิงก์
+                        </Button>
+                        <Button onClick={handleApplyCustomEntryToSlot} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />}>
+                          {deckSlots[activeSlotIndex] ? 'อัปเดตการ์ดนี้' : 'เพิ่มการ์ดนี้'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="battle-custom-action-btn--import"
+                          onClick={() => customFileInputRef.current?.click()}
+                          disabled={isImportingCustomFiles || isValidatingCustomEntry}
+                          icon={(isImportingCustomFiles || isValidatingCustomEntry) ? <Loader2 size={16} className="animate-spin" /> : (isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />)}
+                        >
+                          {isCustomImageEntityType ? 'นำเข้าไฟล์รูป' : 'นำเข้าไฟล์วิดีโอ'}
+                        </Button>
+                        <input ref={customFileInputRef} type="file" style={{ display: 'none' }} accept={isCustomImageEntityType ? 'image/*' : 'video/*'} multiple onChange={handleCustomFilesSelected} />
+                      </div>
+                    </>
                   )}
-
-                  {/* Actions */}
-                  <div className="battle-custom-builder-actions-row">
-                    <Button variant="ghost" onClick={handleValidateCustomEntry} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isValidatingCustomEntry ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}>
-                      ตรวจสอบลิงก์
-                    </Button>
-                    <Button onClick={handleApplyCustomEntryToSlot} disabled={isValidatingCustomEntry || !customDraft.url.trim() || (isCustomImageEntityType && !customDraft.label.trim())} icon={isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />}>
-                      {deckSlots[activeSlotIndex] ? 'อัปเดตการ์ดนี้' : 'เพิ่มการ์ดนี้'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="battle-custom-action-btn--import"
-                      onClick={() => customFileInputRef.current?.click()}
-                      disabled={isImportingCustomFiles || isValidatingCustomEntry}
-                      icon={(isImportingCustomFiles || isValidatingCustomEntry) ? <Loader2 size={16} className="animate-spin" /> : (isCustomImageEntityType ? <ImageIcon size={16} /> : <Play size={16} />)}
-                    >
-                      {isCustomImageEntityType ? 'นำเข้าไฟล์รูป' : 'นำเข้าไฟล์วิดีโอ'}
-                    </Button>
-                    <input ref={customFileInputRef} type="file" style={{ display: 'none' }} accept={isCustomImageEntityType ? 'image/*' : 'video/*'} multiple onChange={handleCustomFilesSelected} />
-                  </div>
                 </div>
               ) : isCatalogBusy ? (
                 <div className="battle-catalog-grid">

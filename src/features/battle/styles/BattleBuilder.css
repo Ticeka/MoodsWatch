@@ -666,6 +666,58 @@
   background: color-mix(in srgb, var(--bg-secondary) 96%, transparent);
 }
 
+.battle-text-tile-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.battle-text-tile-input:focus {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-500) 16%, transparent);
+}
+
+.battle-field input[type="color"] {
+  padding: 0.2rem 0.4rem;
+  height: 38px;
+  cursor: pointer;
+}
+
+.battle-text-color-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.battle-text-color-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.battle-text-color-field input[type="color"] {
+  width: 36px;
+  height: 32px;
+  padding: 0.15rem 0.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .battle-visibility-toggle {
   display: grid;
   align-items: start;
@@ -809,6 +861,11 @@
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
   background: color-mix(in srgb, var(--bg-tertiary) 85%, black);
+}
+
+.battle-custom-preview-art.is-text {
+  width: 90px;
+  aspect-ratio: 1 / 1;
 }
 
 .battle-custom-preview-art img {
