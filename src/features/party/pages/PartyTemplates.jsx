@@ -5,6 +5,8 @@ import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/api/partyRemoteApi';
+import { fetchPublicBattleDecks } from '@/features/battle/api/battleRemoteApi';
+import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { PartyTemplateCard } from '../components/PartyTemplateCard';
 import { PartyTemplateFilters } from '../components/PartyTemplateFilters';
 import '../components/PartyTemplates.css';
@@ -22,7 +24,7 @@ function useDebounce(value, delay = 500) {
   return dv;
 }
 
-function normalizeListingItems(songTemplates = [], titleGuessSets = []) {
+function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDecks = []) {
   const normalizedSongTemplates = (songTemplates || []).map((template) => ({
     ...template,
     id: `song:${template.id}`,
@@ -44,13 +46,42 @@ function normalizeListingItems(songTemplates = [], titleGuessSets = []) {
     tags: [],
   }));
 
-  return [...normalizedSongTemplates, ...normalizedTitleGuessSets];
+  const normalizedBattleDecks = (battleDecks || []).map((deck) => {
+    const titles = Array.isArray(deck.titles) ? deck.titles : [];
+    const firstCover = titles.map(getTitleArtwork).find((url) => url && !url.endsWith('.svg'));
+    return {
+      id: `battle:${deck.id}`,
+      contentId: deck.id,
+      contentType: 'battle-deck',
+      name: deck.label || 'Battle Deck',
+      description: '',
+      coverUrl: firstCover || '',
+      creatorName: deck.ownerDisplayName || deck.ownerUsername || '',
+      ownerUserId: deck.ownerUserId || '',
+      modeScope: 'vote',
+      isOfficial: false,
+      likes: 0,
+      playCount: Math.max(0, Number(deck.playCount || 0)),
+      itemCount: titles.length,
+      tags: ['battle'],
+      updatedAt: deck.updatedAt || deck.createdAt || '',
+    };
+  });
+
+  return [...normalizedSongTemplates, ...normalizedTitleGuessSets, ...normalizedBattleDecks];
 }
 
 function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } = {}) {
   return items.filter((item) => {
-    if (setType !== 'all' && item.contentType !== setType) {
-      return false;
+    if (setType !== 'all') {
+      if (setType === 'battle-deck') {
+        if (item.contentType !== 'battle-deck') return false;
+      } else if (item.contentType === 'battle-deck') {
+        // battle decks only show when explicitly filtered or in vote mode
+        if (setType !== 'all') return false;
+      } else if (item.contentType !== setType) {
+        return false;
+      }
     }
 
     if (filterMode === 'all') {
@@ -70,11 +101,12 @@ function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } 
     }
 
     if (filterMode === 'quiz') {
+      if (item.contentType === 'battle-deck') return false;
       return item.modeScope === 'quiz' || item.modeScope === 'all';
     }
 
     if (filterMode === 'vote') {
-      return item.modeScope === 'vote' || item.modeScope === 'all';
+      return item.modeScope === 'vote' || item.modeScope === 'all' || item.contentType === 'battle-deck';
     }
 
     return true;
@@ -127,6 +159,10 @@ function buildRoomReturnSelectionUrl(returnTo, template) {
     return `${returnTo}${separator}titleGuessSetId=${encodeURIComponent(template.contentId)}&modeType=title-guess`;
   }
 
+  if (template.contentType === 'battle-deck') {
+    return `${returnTo}${separator}battleDeckId=${encodeURIComponent(template.contentId)}&modeType=vote`;
+  }
+
   return `${returnTo}${separator}templateId=${encodeURIComponent(template.contentId)}`;
 }
 
@@ -171,10 +207,11 @@ export function PartyTemplatesPage() {
         userId: user?.id,
         limit: FETCH_LIMIT,
       }),
+      fetchPublicBattleDecks({ limit: FETCH_LIMIT, offset: 0 }).catch(() => []),
     ])
-      .then(([songResult, titleGuessSets]) => {
+      .then(([songResult, titleGuessSets, battleDecks]) => {
         if (!ignore) {
-          setItems(normalizeListingItems(songResult?.templates || [], titleGuessSets || []));
+          setItems(normalizeListingItems(songResult?.templates || [], titleGuessSets || [], battleDecks || []));
         }
       })
       .catch((err) => {
@@ -215,6 +252,15 @@ export function PartyTemplatesPage() {
   const handleCardClick = useCallback((template) => {
     if (template.contentType === 'song-set') {
       navigate(`/party/templates/${template.contentId}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}&mode=${encodeURIComponent(filterMode)}` : ''}`, { viewTransition: true });
+      return;
+    }
+
+    if (template.contentType === 'battle-deck') {
+      if (returnTo) {
+        navigate(buildRoomReturnSelectionUrl(returnTo, template), { viewTransition: true });
+      } else {
+        toast(pick('Battle Deck สามารถเลือกใช้ได้ตอนตั้งค่าห้อง Vote Battle', 'Battle Decks can be selected from the Vote Battle room setup flow.'));
+      }
       return;
     }
 

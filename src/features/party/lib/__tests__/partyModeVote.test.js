@@ -38,7 +38,20 @@ function makeYoutubeSong(videoId) {
   };
 }
 
+function makeImageOnlySong(id) {
+  return {
+    id,
+    songTitle: `Image ${id}`,
+    sourceTitleName: `Source ${id}`,
+    artistName: '',
+    mediaUrl: '',
+    coverUrl: `https://example.com/${id}.jpg`,
+    themeType: 'OP',
+  };
+}
+
 const FOUR_SONGS = ['a', 'b', 'c', 'd'].map(makeSong);
+const FOUR_IMAGE_ONLY_SONGS = ['ia', 'ib', 'ic', 'id'].map(makeImageOnlySong);
 const TWO_SONGS = ['x', 'y'].map(makeSong);
 const ONE_SONG = ['lone'].map(makeSong);
 
@@ -174,6 +187,50 @@ describe('advancePartyVoteMatch — phase transitions', () => {
       }
       iterations++;
     }
+  });
+
+  test('skips playback phases for image-only contenders', () => {
+    let match = buildPartyVoteSnapshot(FOUR_IMAGE_ONLY_SONGS, {});
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('intro-a');
+    expect(match.phaseEndsAt).toBeTruthy();
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('intro-b');
+    expect(match.phaseEndsAt).toBeTruthy();
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('vote');
+    expect(match.phaseEndsAt).toBeTruthy();
+  });
+
+  test('only skips the playback phase for image-only songs', () => {
+    const mixedSongs = [
+      makeImageOnlySong('image-a'),
+      makeSong('song-b'),
+      makeSong('song-c'),
+      makeSong('song-d'),
+    ];
+    let match = buildPartyVoteSnapshot(mixedSongs, { entrantCount: 4 });
+    match = {
+      ...match,
+      currentBattle: {
+        ...match.currentBattle,
+        songA: Object.keys(match.allSongs).find((id) => match.allSongs[id]?.isImageOnly) || match.currentBattle.songA,
+        songB: Object.keys(match.allSongs).find((id) => !match.allSongs[id]?.isImageOnly && id !== match.currentBattle.songA) || match.currentBattle.songB,
+      },
+    };
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('intro-a');
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('intro-b');
+
+    match = advancePartyVoteMatch(match);
+    expect(match.phase).toBe('play-b');
+    expect(match.phaseEndsAt).toBeNull();
   });
 });
 

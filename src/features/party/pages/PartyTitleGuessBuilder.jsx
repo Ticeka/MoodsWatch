@@ -325,6 +325,9 @@ export function PartyTitleGuessBuilderPage() {
   const [editingQuestionId, setEditingQuestionId] = useState('');
   const [answerMode, setAnswerMode] = useState('catalog');
   const [manualAnswerTitle, setManualAnswerTitle] = useState('');
+  const [characterRoleFilter, setCharacterRoleFilter] = useState('all');
+  const [dragOverQuestionId, setDragOverQuestionId] = useState('');
+  const [draggingQuestionId, setDraggingQuestionId] = useState('');
   const [saving, setSaving] = useState(false);
   const [loadingBase, setLoadingBase] = useState(Boolean(editSetId));
   const [saveError, setSaveError] = useState('');
@@ -393,19 +396,45 @@ export function PartyTitleGuessBuilderPage() {
   const filteredCharacters = useMemo(() => {
     const normalizedFilter = normalizeTitleGuessSearchValue(characterFilter);
     return characterPool.filter((character) => {
-      if (!normalizedFilter) {
-        return true;
+      if (normalizedFilter) {
+        const matchesName = [
+          character?.name,
+          character?.nativeName,
+          character?.guessNote,
+        ]
+          .map((value) => normalizeTitleGuessSearchValue(value))
+          .some((value) => value.includes(normalizedFilter));
+        if (!matchesName) {
+          return false;
+        }
       }
 
-      return [
-        character?.name,
-        character?.nativeName,
-        character?.guessNote,
-      ]
-        .map((value) => normalizeTitleGuessSearchValue(value))
-        .some((value) => value.includes(normalizedFilter));
+      if (characterRoleFilter === 'lead') {
+        return Boolean(
+          character?.isPrimaryProtagonist
+          || character?.isPrimaryHeroine
+          || character?.leadType === 'protagonist'
+          || character?.leadType === 'heroine'
+        );
+      }
+      if (characterRoleFilter === 'main') {
+        const isLead = Boolean(
+          character?.isPrimaryProtagonist
+          || character?.isPrimaryHeroine
+          || character?.leadType === 'protagonist'
+          || character?.leadType === 'heroine'
+        );
+        return !isLead && String(character?.role || '').toUpperCase() === 'MAIN';
+      }
+      if (characterRoleFilter === 'supporting') {
+        return String(character?.role || '').toUpperCase() === 'SUPPORTING';
+      }
+      if (characterRoleFilter === 'background') {
+        return String(character?.role || '').toUpperCase() === 'BACKGROUND';
+      }
+      return true;
     });
-  }, [characterFilter, characterPool]);
+  }, [characterFilter, characterPool, characterRoleFilter]);
 
   const filledSlotCount = useMemo(
     () => cardSlots.filter(Boolean).length,
@@ -587,7 +616,12 @@ export function PartyTitleGuessBuilderPage() {
 
   useEffect(() => {
     setCharacterPage(1);
-  }, [characterFilter, selectedTitle?.id]);
+    setCharacterRoleFilter('all');
+  }, [selectedTitle?.id]);
+
+  useEffect(() => {
+    setCharacterPage(1);
+  }, [characterFilter]);
 
   useEffect(() => {
     setCharacterPage((current) => Math.min(current, Math.max(1, Math.ceil(filteredCharacters.length / TITLE_GUESS_CHARACTER_PAGE_SIZE))));
@@ -1241,7 +1275,25 @@ export function PartyTitleGuessBuilderPage() {
                   {pagedQuestions.map((question, index) => (
                     <article
                       key={question.id}
-                      className={`party-title-guess-builder-question-card${String(editingQuestionId || '') === String(question.id || '') ? ' is-editing' : ''}`}
+                      className={`party-title-guess-builder-question-card${String(editingQuestionId || '') === String(question.id || '') ? ' is-editing' : ''}${draggingQuestionId === question.id ? ' is-dragging' : ''}${dragOverQuestionId === question.id && dragOverQuestionId !== draggingQuestionId ? ' is-drag-over' : ''}`}
+                      draggable
+                      onDragStart={() => setDraggingQuestionId(question.id)}
+                      onDragEnd={() => { setDraggingQuestionId(''); setDragOverQuestionId(''); }}
+                      onDragOver={(event) => { event.preventDefault(); setDragOverQuestionId(question.id); }}
+                      onDrop={() => {
+                        if (!draggingQuestionId || draggingQuestionId === question.id) return;
+                        setDraftQuestions((current) => {
+                          const fromIndex = current.findIndex((q) => q.id === draggingQuestionId);
+                          const toIndex = current.findIndex((q) => q.id === question.id);
+                          if (fromIndex < 0 || toIndex < 0) return current;
+                          const next = [...current];
+                          const [moved] = next.splice(fromIndex, 1);
+                          next.splice(toIndex, 0, moved);
+                          return next;
+                        });
+                        setDraggingQuestionId('');
+                        setDragOverQuestionId('');
+                      }}
                     >
                       <div className="party-title-guess-builder-question-copy">
                         <span>{pick(`ข้อ ${(questionPage - 1) * TITLE_GUESS_QUESTION_PAGE_SIZE + index + 1}`, `Question ${(questionPage - 1) * TITLE_GUESS_QUESTION_PAGE_SIZE + index + 1}`)}</span>
@@ -1729,6 +1781,7 @@ export function PartyTitleGuessBuilderPage() {
               </div>
 
               {answerMode === 'catalog' ? (
+              <>
               <label className="party-field">
                 <span>{pick('ค้นหาตัวละคร', 'Filter characters')}</span>
                 <input
@@ -1739,6 +1792,27 @@ export function PartyTitleGuessBuilderPage() {
                   disabled={!selectedTitle || characterLoading || characterPool.length === 0}
                 />
               </label>
+              {selectedTitle && !characterLoading && characterPool.length > 0 ? (
+                <div className="party-title-guess-builder-role-filter" role="group" aria-label={pick('กรองตาม role', 'Filter by role')}>
+                  {[
+                    { id: 'all', label: pick('ทั้งหมด', 'All') },
+                    { id: 'lead', label: pick('Lead', 'Lead') },
+                    { id: 'main', label: pick('Main side', 'Main side') },
+                    { id: 'supporting', label: pick('Supporting', 'Supporting') },
+                    { id: 'background', label: pick('Background', 'Background') },
+                  ].map((role) => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      className={`party-title-guess-builder-role-btn${characterRoleFilter === role.id ? ' is-active' : ''}`}
+                      onClick={() => { setCharacterRoleFilter(role.id); setCharacterPage(1); }}
+                    >
+                      {role.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              </>
               ) : null}
 
               {answerMode === 'custom' ? (

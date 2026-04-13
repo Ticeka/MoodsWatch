@@ -45,6 +45,14 @@ function tieBreak(battleId, songA, songB) {
   return hash % 2 === 0 ? songA : songB;
 }
 
+function isVoteSongImageOnly(match, songId) {
+  if (!match || !songId) {
+    return false;
+  }
+
+  return Boolean(match.allSongs?.[songId]?.isImageOnly);
+}
+
 export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
   const poolSize = getVoteBracketSize(settings.entrantCount, playablePool.length);
   const shuffled = shufflePartyItems(playablePool).slice(0, poolSize);
@@ -56,6 +64,7 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
   const allSongs = {};
   shuffled.forEach(song => {
     const songId = getPartyRuntimeSongKey(song);
+    const isYt = String(song.provider || '').toLowerCase() === 'youtube';
     allSongs[songId] = {
       id: songId,
       themeType: song.themeType || 'OP',
@@ -67,6 +76,7 @@ export function buildPartyVoteSnapshot(playablePool = [], settings = {}) {
       coverUrl: song.coverUrl || '',
       provider: song.provider || 'catalog',
       providerMediaId: song.providerMediaId || null,
+      isImageOnly: !isYt && !song.mediaUrl && Boolean(song.coverUrl),
     };
   });
 
@@ -138,9 +148,13 @@ export function advancePartyVoteMatch(match) {
       break;
 
     case 'intro-a':
-      nextMatch.phase = 'play-a';
+      nextMatch.phase = isVoteSongImageOnly(nextMatch, nextMatch.currentBattle?.songA)
+        ? 'intro-b'
+        : 'play-a';
       nextMatch.phaseStartedAt = new Date(now).toISOString();
-      nextMatch.phaseEndsAt = null;
+      nextMatch.phaseEndsAt = nextMatch.phase === 'play-a'
+        ? null
+        : new Date(now + t.introMs).toISOString();
       break;
 
     case 'play-a':
@@ -150,9 +164,13 @@ export function advancePartyVoteMatch(match) {
       break;
 
     case 'intro-b':
-      nextMatch.phase = 'play-b';
+      nextMatch.phase = isVoteSongImageOnly(nextMatch, nextMatch.currentBattle?.songB)
+        ? 'vote'
+        : 'play-b';
       nextMatch.phaseStartedAt = new Date(now).toISOString();
-      nextMatch.phaseEndsAt = null;
+      nextMatch.phaseEndsAt = nextMatch.phase === 'play-b'
+        ? null
+        : new Date(now + ((s.voteSec ?? t.voteSec) * 1000)).toISOString();
       break;
 
     case 'play-b':

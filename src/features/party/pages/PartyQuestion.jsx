@@ -14,6 +14,8 @@ export const PartyQuestionView = React.memo(function PartyQuestionView({
   onPlaybackStarted,
   onPlaybackComplete,
   onSubmit,
+  reactionFeed,
+  onReaction,
   pick,
 }) {
   const leaderboard = usePartyLeaderboard(guestToken, partyProfile);
@@ -32,10 +34,13 @@ export const PartyQuestionView = React.memo(function PartyQuestionView({
         round={currentRound}
         answer={currentAnswer}
         answerCount={answerCount}
+        currentRoundAnswers={currentRoundAnswers}
         leaderboard={leaderboard}
         phaseEndsAtMs={phaseEndsAtMs}
         onSubmit={onSubmit}
         submitting={busyAction === 'answer'}
+        reactionFeed={reactionFeed}
+        onReaction={onReaction}
         pick={pick}
       />
     ) : (

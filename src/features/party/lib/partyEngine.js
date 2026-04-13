@@ -27,6 +27,28 @@ const PARTY_VIRTUAL_PRESETS = [
     basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
     speedBonus: 40,
   },
+  {
+    id: 'pixel-reveal',
+    label: 'Pixel Reveal',
+    labelTh: 'ปิดรูปแบบพิกเซล',
+    description: 'Guess the title as the cover art is gradually unblurred.',
+    descriptionTh: 'ทายชื่อเรื่องจากภาพปกที่ค่อยๆ คลายความพิกเซลออกทีละขั้น',
+    answerMode: 'typing',
+    target: 'title',
+    basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
+    speedBonus: 40,
+  },
+  {
+    id: 'pixel-reveal-choice',
+    label: 'Pixel Reveal Choice',
+    labelTh: 'ปิดรูปแบบพิกเซล 4 ตัวเลือก',
+    description: 'Guess the title from 4 choices as the cover art unblurs step by step.',
+    descriptionTh: 'ทายชื่อเรื่องจาก 4 ตัวเลือกขณะภาพปกค่อยๆ คลายพิกเซลออก',
+    answerMode: 'choice',
+    target: 'title',
+    basePoints: PARTY_TITLE_GUESS_BASE_POINTS[0],
+    speedBonus: 40,
+  },
 ];
 
 export const PARTY_TITLE_GUESS_PRESETS = PARTY_VIRTUAL_PRESETS.filter((preset) => preset.target === 'title');
@@ -86,7 +108,7 @@ export const PARTY_PRESETS = [
     target: 'song',
     basePoints: 180,
     speedBonus: 70,
-  },
+  },
 ];
 
 export const PARTY_CATEGORY_OPTIONS = [
@@ -266,8 +288,18 @@ export function getPartyRuntimeSongKey(song) {
     }
   }
 
-  const fallbackId = song.id ?? song.songId ?? song.song_id ?? '';
-  return String(fallbackId || '').trim();
+  const songId = song.id ?? song.songId ?? song.song_id ?? '';
+  if (songId) {
+    return String(songId).trim();
+  }
+
+  // Image-only items (no song ID, no YouTube): key by template item ID
+  const templateItemId = song.templateItemId ?? '';
+  if (templateItemId) {
+    return `img:${templateItemId}`;
+  }
+
+  return '';
 }
 
 function clamp(value, min, max) {
@@ -321,8 +353,9 @@ export function createPartySettings(input = {}) {
     ? 'vote'
     : (input.modeType === 'title-guess' ? 'title-guess' : 'quiz');
   const requestedTitleGuessPresetId = String(input.presetId || '').trim();
+  const TITLE_GUESS_PRESET_IDS = ['title-guess-choice', 'pixel-reveal', 'pixel-reveal-choice'];
   const preset = modeType === 'title-guess'
-    ? getPartyPresetById(requestedTitleGuessPresetId === 'title-guess-choice' ? 'title-guess-choice' : 'title-guess')
+    ? getPartyPresetById(TITLE_GUESS_PRESET_IDS.includes(requestedTitleGuessPresetId) ? requestedTitleGuessPresetId : 'title-guess')
     : getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
@@ -375,6 +408,7 @@ export function createPartySettings(input = {}) {
     titleGuessQuestionCount: modeType === 'title-guess'
       ? Math.max(0, Number(input.titleGuessQuestionCount ?? input.setQuestionCount ?? 0))
       : 0,
+    battleDeckId: modeType === 'vote' ? String(input.battleDeckId || '').trim() : '',
   };
 }
 
@@ -482,6 +516,7 @@ function buildTitleGuessRound(question = {}) {
     choiceTarget: 'source',
     choiceTargetLabel: 'Title',
     choiceTargetLabelTh: 'ชื่อเรื่อง',
+    coverUrl: String(question?.coverUrl ?? question?.cover_url ?? '').trim(),
     clues,
     totalClues: clues.length,
     difficultyTier: clamp(Number(question?.difficultyTier ?? question?.difficulty_tier ?? 2), 1, 5),
@@ -954,9 +989,10 @@ export function scorePartyAnswer({
   }
 
   if (preset.id === 'title-guess' || round?.kind === 'title-guess') {
+    const isPixelReveal = preset.id === 'pixel-reveal' || preset.id === 'pixel-reveal-choice';
     const selectedOption = (round.options || []).find((option) => option.id === selectedOptionId) || null;
     const exactChoiceCorrect = Boolean(selectedOption?.isCorrect);
-    const franchiseChoiceCorrect = Boolean(
+    const franchiseChoiceCorrect = !isPixelReveal && Boolean(
       selectedOption
       && !selectedOption.isCorrect
       && selectedOption.franchiseAnswerKey
@@ -964,13 +1000,13 @@ export function scorePartyAnswer({
       && selectedOption.franchiseAnswerKey === round.franchiseAnswerKey
     );
     const exactTypingCorrect = isAnswerMatch(typedTitle, round.sourceTitleAliases);
-    const franchiseTypingCorrect = Array.isArray(round?.franchiseAliases) && round.franchiseAliases.length > 0
+    const franchiseTypingCorrect = !isPixelReveal && Array.isArray(round?.franchiseAliases) && round.franchiseAliases.length > 0
       ? isAnswerMatch(typedTitle, round.franchiseAliases)
       : false;
-    const sameFranchiseTitleTypingCorrect = Array.isArray(round?.sameFranchiseTitleAliases) && round.sameFranchiseTitleAliases.length > 0
+    const sameFranchiseTitleTypingCorrect = !isPixelReveal && Array.isArray(round?.sameFranchiseTitleAliases) && round.sameFranchiseTitleAliases.length > 0
       ? isAnswerMatch(typedTitle, round.sameFranchiseTitleAliases)
       : false;
-    const franchiseSelectedTypingCorrect = Boolean(
+    const franchiseSelectedTypingCorrect = !isPixelReveal && Boolean(
       selectedFranchiseAnswerKey
       && round.franchiseAnswerKey
       && selectedFranchiseAnswerKey === round.franchiseAnswerKey

@@ -26,6 +26,7 @@ import {
   getPartyPresetById,
 } from '@/features/party/lib/partyEngine';
 import { resumePartyAudioContext } from '@/features/party/lib/partyAudio';
+import { broadcastPartyRoomEvent } from '@/features/party/api/partyRealtimeApi';
 import {
   closePartyRoom,
   extendPartyQuestionPhase,
@@ -33,6 +34,7 @@ import {
   fetchPartyTemplates,
   fetchPartyTemplateDetail,
   fetchPartyTemplateSongPool,
+  fetchPartyTemplateSongPoolForVote,
   fetchPublishedPartySongPresets,
   fetchPartyTitleGuessSets,
   getPartyBackendHint,
@@ -72,6 +74,8 @@ import {
   PartyIdentityAvatar,
   PresetCard,
 } from '@/features/party/components/PartyRoomShared';
+import { fetchPublicBattleDecks } from '@/features/battle/api/battleRemoteApi';
+import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { PartyFinalView } from './PartyFinal';
 import { PartyLobbyView } from './PartyLobby';
 import { PartyQuestionView } from './PartyQuestion';
@@ -80,6 +84,56 @@ import { PartyVoteRoomView } from '../components/PartyVoteRoomView';
 import '../styles/Party.css';
 
 const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 900;
+
+function mapBattleDeckToPartyPool(deck = {}) {
+  const titles = Array.isArray(deck?.titles) ? deck.titles : [];
+  return titles.map((title, index) => {
+    const hasYouTube = title.trailer_video_id && (!title.trailer_site || title.trailer_site === 'youtube');
+    const directUrl = title.video_url || title.trailer_url || '';
+    const hasMedia = !!(hasYouTube || directUrl);
+
+    return {
+      id: 0,
+      templateItemId: Number(title.id || index + 1),
+      themeType: title.theme_type || '',
+      songTitle: title.song_title || title.title_en || title.name_full || '',
+      artistName: title.artist_name || '',
+      mediaUrl: hasYouTube ? '' : directUrl,
+      sourceTitleId: Number(title.id || 0),
+      sourceTitleName: title.title_en || title.name_full || '',
+      coverUrl: getTitleArtwork(title),
+      provider: hasYouTube ? 'youtube' : 'catalog',
+      providerMediaId: hasYouTube ? title.trailer_video_id : null,
+      isImageOnly: !hasMedia,
+    };
+  });
+}
+
+async function fetchBattleDeckById(deckId) {
+  const targetId = String(deckId || '').trim();
+  if (!targetId) {
+    return null;
+  }
+
+  const pageSize = 100;
+  for (let offset = 0; offset < 1000; offset += pageSize) {
+    const decks = await fetchPublicBattleDecks({ limit: pageSize, offset });
+    if (!Array.isArray(decks) || decks.length === 0) {
+      return null;
+    }
+
+    const matchedDeck = decks.find((deck) => String(deck?.id || '') === targetId);
+    if (matchedDeck) {
+      return matchedDeck;
+    }
+
+    if (decks.length < pageSize) {
+      return null;
+    }
+  }
+
+  return null;
+}
 
 export function PartyRoomPage() {
   const { roomCode } = useParams();
@@ -101,6 +155,7 @@ export function PartyRoomPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [busyAction, setBusyAction] = useState('');
+  const [reactionFeed, setReactionFeed] = useState([]);
   const [roomSettingsDraft, setRoomSettingsDraft] = useState(() => createPartySettings({}));
   const roomSettingsDraftStorageKey = useMemo(() => getPartyRoomSettingsDraftKey(roomCode), [roomCode]);
   const [selectedTemplateIntent, setSelectedTemplateIntent] = useState(null);
@@ -128,6 +183,7 @@ export function PartyRoomPage() {
   const lastAppliedRoomSettingsSnapshotRef = useRef('');
   const isAutosavingRef = useRef(false);
   const roomSettingsDraftHydratedKeyRef = useRef('');
+  const battleDeckPoolIdRef = useRef('');
 
   const pendingTemplateSelection = useMemo(() => {
     const templateId = searchParams.get('templateId');
@@ -165,6 +221,13 @@ export function PartyRoomPage() {
       modeType: 'title-guess',
     };
   }, [searchParams]);
+
+  const pendingBattleDeckId = useMemo(() => {
+    const battleDeckId = searchParams.get('battleDeckId');
+    return battleDeckId ? String(battleDeckId).trim() : null;
+  }, [searchParams]);
+
+  const [battleDeckPool, setBattleDeckPool] = useState(null);
 
   useEffect(() => {
     activeRoomCodeRef.current = roomCode;
@@ -213,6 +276,8 @@ export function PartyRoomPage() {
     }
 
     setSelectedTemplateIntent(pendingTemplateSelection);
+    setBattleDeckPool(null);
+    battleDeckPoolIdRef.current = '';
     setRoomSettingsDraft((current) => createPartySettings({
       ...current,
       templateId: pendingTemplateSelection.templateId,
@@ -223,6 +288,7 @@ export function PartyRoomPage() {
       categoryId: 'all',
       songPresetId: '',
       songPresetName: '',
+      battleDeckId: '',
     }));
 
     navigate(`/party/room/${roomCode}`, { replace: true });
@@ -233,6 +299,9 @@ export function PartyRoomPage() {
       return;
     }
 
+    setSelectedTemplateIntent(null);
+    setBattleDeckPool(null);
+    battleDeckPoolIdRef.current = '';
     setRoomSettingsDraft((current) => createPartySettings({
       ...current,
       modeType: 'title-guess',
@@ -246,6 +315,50 @@ export function PartyRoomPage() {
 
     navigate(`/party/room/${roomCode}`, { replace: true });
   }, [navigate, pendingTitleGuessSelection, roomCode]);
+
+  useEffect(() => {
+    if (!pendingBattleDeckId) {
+      return;
+    }
+
+    let ignore = false;
+    setSelectedTemplateIntent(null);
+    fetchBattleDeckById(pendingBattleDeckId)
+      .then((deck) => {
+        if (ignore) return;
+        if (!deck || !Array.isArray(deck.titles) || deck.titles.length < 2) {
+          toast.error(pick('ไม่พบ Battle Deck หรือมีรายการไม่พอ', 'Battle Deck not found or not enough entries'));
+          return;
+        }
+
+        const pool = mapBattleDeckToPartyPool(deck);
+
+        setBattleDeckPool(pool);
+        battleDeckPoolIdRef.current = String(deck.id || '');
+        setRoomSettingsDraft((current) => createPartySettings({
+          ...current,
+          modeType: 'vote',
+          templateId: '',
+          templateName: deck.label || 'Battle Deck',
+          templateCoverUrl: pool[0]?.coverUrl || '',
+          templatePlayableCount: pool.length,
+          modeScope: 'vote',
+          categoryId: 'all',
+          songPresetId: '',
+          songPresetName: '',
+          battleDeckId: String(deck.id || ''),
+        }));
+        navigate(`/party/room/${roomCode}`, { replace: true });
+      })
+      .catch(() => {
+        if (!ignore) {
+          toast.error(pick('โหลด Battle Deck ไม่สำเร็จ', 'Failed to load Battle Deck'));
+          navigate(`/party/room/${roomCode}`, { replace: true });
+        }
+      });
+
+    return () => { ignore = true; };
+  }, [navigate, pendingBattleDeckId, pick, roomCode]);
 
   const loadBundle = React.useCallback(async ({ silent = false, force = false } = {}) => {
     if (loadPromiseRef.current && !force) {
@@ -315,6 +428,19 @@ export function PartyRoomPage() {
     const unsubscribe = subscribeToPartyRoom(
       room.id,
       (event) => {
+        if (event?.type === 'REACTION') {
+          const entry = {
+            id: `reaction-${Date.now()}-${Math.random()}`,
+            emoji: String(event.emoji || '🔥'),
+            memberName: String(event.memberName || ''),
+            x: 10 + Math.random() * 80,
+          };
+          setReactionFeed((current) => [...current.slice(-8), entry]);
+          window.setTimeout(() => {
+            setReactionFeed((current) => current.filter((item) => item.id !== entry.id));
+          }, 2400);
+          return;
+        }
         applyEvent(event);
       },
       (status) => {
@@ -509,13 +635,20 @@ export function PartyRoomPage() {
     return [...new Set(options)].sort((a, b) => a - b);
   }, [draftTitleGuessMaxRounds, isDraftTitleGuessMode, roomSettingsDraft.roundCount]);
   const draftVoteEntrantOptions = useMemo(() => {
-    if (!roomSettingsDraft.templateId || roomSettingsDraft.modeType !== 'vote' || draftTemplatePlayableCount <= 0) {
-      return [2, 4, 8, 16];
+    const battlePoolSize = Array.isArray(battleDeckPool) ? battleDeckPool.length : 0;
+    const effectivePoolSize = battlePoolSize > 0 ? battlePoolSize : draftTemplatePlayableCount;
+
+    if (roomSettingsDraft.modeType !== 'vote' || effectivePoolSize <= 0) {
+      if (!roomSettingsDraft.templateId) return [2, 4, 8, 16];
     }
 
-    const options = [2, 4, 8, 16].filter((count) => count <= draftTemplatePlayableCount);
-    return options.length > 0 ? options : [2];
-  }, [draftTemplatePlayableCount, roomSettingsDraft.modeType, roomSettingsDraft.templateId]);
+    if (effectivePoolSize > 0) {
+      const options = [2, 4, 8, 16].filter((count) => count <= effectivePoolSize);
+      return options.length > 0 ? options : [2];
+    }
+
+    return [2, 4, 8, 16];
+  }, [battleDeckPool, draftTemplatePlayableCount, roomSettingsDraft.modeType, roomSettingsDraft.templateId]);
   const draftTemplateValidation = useMemo(() => {
     const targetResult = draftTemplateCompatibility?.targetResult;
     if (!roomSettingsDraft.templateId || !draftTemplatePoolLoaded || !targetResult) {
@@ -620,6 +753,7 @@ export function PartyRoomPage() {
         categoryId: 'all',
         songPresetId: '',
         songPresetName: '',
+        battleDeckId: '',
       });
 
       lastAppliedRoomSettingsSnapshotRef.current = nextSnapshot;
@@ -638,12 +772,13 @@ export function PartyRoomPage() {
       })
       .catch((error) => {
         console.error('Failed to load published party song presets', error);
+        toast.error(pick('โหลดชุดเพลงไม่สำเร็จ', 'Failed to load song presets'));
       });
 
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [pick]);
 
   useEffect(() => {
     if (room?.status !== 'lobby') {
@@ -665,6 +800,7 @@ export function PartyRoomPage() {
       })
       .catch((error) => {
         console.error('Failed to load title guess sets', error);
+        toast.error(pick('โหลดชุดทายชื่อเรื่องไม่สำเร็จ', 'Failed to load Guess the Title sets'));
         if (!ignore) {
           setTitleGuessSetOptions([]);
         }
@@ -678,7 +814,7 @@ export function PartyRoomPage() {
     return () => {
       ignore = true;
     };
-  }, [isHost, room?.status, roomSettingsDraft.modeType]);
+  }, [isHost, pick, room?.status, roomSettingsDraft.modeType]);
 
   useEffect(() => {
     if (room?.status !== 'lobby') {
@@ -704,12 +840,13 @@ export function PartyRoomPage() {
       })
       .catch((error) => {
         console.error('Failed to load room template options', error);
+        toast.error(pick('โหลดเทมเพลตไม่สำเร็จ', 'Failed to load templates'));
       });
 
     return () => {
       ignore = true;
     };
-  }, [room?.status, roomSettingsDraft.modeType]);
+  }, [pick, room?.status, roomSettingsDraft.modeType]);
 
   useEffect(() => {
     if (!isDraftTitleGuessMode || !draftSelectedTitleGuessSet) {
@@ -744,6 +881,65 @@ export function PartyRoomPage() {
   }, [draftSelectedTitleGuessSet, isDraftTitleGuessMode]);
 
   useEffect(() => {
+    const activeBattleDeckId = String(roomSettingsDraft.battleDeckId || '').trim();
+    if (!activeBattleDeckId) {
+      setBattleDeckPool(null);
+      battleDeckPoolIdRef.current = '';
+      return undefined;
+    }
+
+    if (
+      battleDeckPoolIdRef.current === activeBattleDeckId
+      && Array.isArray(battleDeckPool)
+      && battleDeckPool.length > 0
+    ) {
+      return undefined;
+    }
+
+    let ignore = false;
+    fetchBattleDeckById(activeBattleDeckId)
+      .then((deck) => {
+        if (ignore) {
+          return;
+        }
+
+        if (!deck || !Array.isArray(deck.titles) || deck.titles.length < 2) {
+          setBattleDeckPool(null);
+          return;
+        }
+
+        const pool = mapBattleDeckToPartyPool(deck);
+        setBattleDeckPool(pool);
+        battleDeckPoolIdRef.current = String(deck.id || '');
+        setRoomSettingsDraft((current) => {
+          if (String(current.battleDeckId || '').trim() !== activeBattleDeckId) {
+            return current;
+          }
+
+          return createPartySettings({
+            ...current,
+            modeType: 'vote',
+            templateId: '',
+            templateName: deck.label || current.templateName || 'Battle Deck',
+            templateCoverUrl: pool[0]?.coverUrl || current.templateCoverUrl || '',
+            templatePlayableCount: pool.length,
+            modeScope: 'vote',
+          });
+        });
+      })
+      .catch(() => {
+        if (!ignore) {
+          setBattleDeckPool(null);
+          battleDeckPoolIdRef.current = '';
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [battleDeckPool, roomSettingsDraft.battleDeckId]);
+
+  useEffect(() => {
     if (!roomSettingsDraft.templateId) {
       setDraftTemplatePlayablePool([]);
       setDraftTemplatePoolLoaded(false);
@@ -755,7 +951,10 @@ export function PartyRoomPage() {
 
     Promise.all([
       fetchPartyTemplateDetail(roomSettingsDraft.templateId).catch(() => null),
-      fetchPartyTemplateSongPool(roomSettingsDraft.templateId).catch(() => []),
+      (roomSettingsDraft.modeType === 'vote'
+        ? fetchPartyTemplateSongPoolForVote(roomSettingsDraft.templateId)
+        : fetchPartyTemplateSongPool(roomSettingsDraft.templateId)
+      ).catch(() => []),
     ]).then(([templateDetail, playablePool]) => {
       if (ignore) {
         return;
@@ -801,7 +1000,7 @@ export function PartyRoomPage() {
     return () => {
       ignore = true;
     };
-  }, [roomSettingsDraft.templateId]);
+  }, [roomSettingsDraft.modeType, roomSettingsDraft.templateId]);
 
   useEffect(() => {
     if (!roomSettingsDraft.templateId || draftTemplatePlayableCount <= 0) {
@@ -1167,7 +1366,10 @@ export function PartyRoomPage() {
       if (roomSettingsDraft.templateId) {
         const pool = draftTemplatePlayablePool.length > 0 || draftTemplatePoolLoaded
           ? draftTemplatePlayablePool
-          : await fetchPartyTemplateSongPool(roomSettingsDraft.templateId).catch(() => null);
+          : await (roomSettingsDraft.modeType === 'vote'
+              ? fetchPartyTemplateSongPoolForVote(roomSettingsDraft.templateId)
+              : fetchPartyTemplateSongPool(roomSettingsDraft.templateId)
+            ).catch(() => null);
         if (pool !== null) {
           const compatibility = analyzePartyTemplateCompatibility(pool, roomSettingsDraft);
           if (!compatibility.targetResult?.compatible) {
@@ -1256,7 +1458,9 @@ export function PartyRoomPage() {
 
     try {
       setBusyAction('start');
-      const nextRoom = await startPartyMatch(room, members);
+      const nextRoom = await startPartyMatch(room, {
+        prebuiltPool: roomSettingsDraft.battleDeckId ? battleDeckPool : null,
+      });
       applyEvent({
         type: 'ROOM_UPDATED',
         payload: {
@@ -1280,6 +1484,23 @@ export function PartyRoomPage() {
       setBusyAction('');
     }
   };
+
+  const handleReaction = React.useCallback((emoji) => {
+    if (!room?.id) return;
+    const memberName = String(partyProfile?.displayName || currentMember?.member_name || '').trim();
+    // Show immediately for the sender (Supabase broadcast doesn't loop back to self)
+    const entry = {
+      id: `reaction-self-${Date.now()}-${Math.random()}`,
+      emoji: String(emoji || '🔥'),
+      memberName,
+      x: 10 + Math.random() * 80,
+    };
+    setReactionFeed((current) => [...current.slice(-8), entry]);
+    window.setTimeout(() => {
+      setReactionFeed((current) => current.filter((item) => item.id !== entry.id));
+    }, 2400);
+    void broadcastPartyRoomEvent(room.id, { type: 'REACTION', emoji, memberName });
+  }, [currentMember?.member_name, partyProfile?.displayName, room?.id]);
 
   const handleSubmitAnswer = async (payload) => {
     if (!room || !currentMember) {
@@ -1395,6 +1616,7 @@ export function PartyRoomPage() {
       onChange: handleRoomSettingsChange,
       onSave: handleSaveRoomSettings,
       onReset: handleResetRoomSettingsDraft,
+      onClearBattleDeck: () => setBattleDeckPool(null),
     }
     : null;
 
@@ -1629,6 +1851,8 @@ export function PartyRoomPage() {
                   onPlaybackStarted={handleQuestionPlaybackStarted}
                   onPlaybackComplete={setPlaybackEndedAtMs}
                   onSubmit={handleSubmitAnswer}
+                  reactionFeed={reactionFeed}
+                  onReaction={handleReaction}
                   pick={pick}
                 />
               )}

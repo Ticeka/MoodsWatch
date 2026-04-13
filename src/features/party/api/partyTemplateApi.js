@@ -90,6 +90,7 @@ function mapPartyTemplateSongItem(row) {
 
   return {
     id: isYoutube ? 0 : Number(row?.song_id || 0),
+    templateItemId: Number(row?.id || 0),
     themeType: row?.theme_type || 'OP',
     songTitle: row?.song_title || '',
     songAliases: buildUniquePartyAliases([row?.song_title]),
@@ -476,6 +477,33 @@ export async function fetchPartyTemplateSongPool(templateId) {
     return (data || [])
       .map(mapPartyTemplateSongItem)
       .filter(isRuntimePlayableSong);
+  });
+}
+
+/**
+ * Like fetchPartyTemplateSongPool but also includes image-only items (coverUrl present,
+ * no mediaUrl). Used for vote battle mode where audio is optional.
+ */
+export async function fetchPartyTemplateSongPoolForVote(templateId) {
+  if (!supabase || !templateId) return [];
+
+  const cacheKey = `vote:${String(templateId).trim()}`;
+  return getOrCreatePartySongPoolCacheValue(partyTemplateSongPoolCache, cacheKey, async () => {
+    const { data, error } = await supabase
+      .from('party_song_template_items')
+      .select('*')
+      .eq('template_id', templateId)
+      .order('position', { ascending: true });
+
+    if (error) return [];
+
+    return (data || [])
+      .map(mapPartyTemplateSongItem)
+      .filter((item) => {
+        if (isRuntimePlayableSong(item)) return true;
+        // Image-only: has a cover image and at least a title or identifier
+        return Boolean(item.coverUrl && (item.templateItemId || item.sourceTitleName || item.songTitle));
+      });
   });
 }
 

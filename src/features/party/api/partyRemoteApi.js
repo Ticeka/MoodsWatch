@@ -73,6 +73,7 @@ import {
   __resetPartyTemplateCachesForTests,
   fetchPartyPresetSongPool,
   fetchPartyTemplateSongPool,
+  fetchPartyTemplateSongPoolForVote,
   fetchPublishedPartySongPresets,
   fetchPartyTemplates,
   fetchPartyTemplateDetail,
@@ -107,6 +108,7 @@ export {
   fetchPartyRoomMembers,
   fetchPublishedPartySongPresets,
   fetchPartyTemplateSongPool,
+  fetchPartyTemplateSongPoolForVote,
   fetchPartyTemplates,
   fetchPartyTemplateDetail,
   uploadPartyTemplateCover,
@@ -393,6 +395,9 @@ export async function fetchPartySongPool(settings = {}) {
     return [];
   }
   if (normalizedSettings.templateId) {
+    if (normalizedSettings.modeType === 'vote') {
+      return fetchPartyTemplateSongPoolForVote(normalizedSettings.templateId);
+    }
     return fetchPartyTemplateSongPool(normalizedSettings.templateId);
   }
   if (normalizedSettings.songPresetId) {
@@ -438,7 +443,7 @@ export async function fetchPartySongPool(settings = {}) {
   });
 }
 
-export async function startPartyMatch(room) {
+export async function startPartyMatch(room, { prebuiltPool = null } = {}) {
   if (!supabase || !room?.id) {
     return null;
   }
@@ -468,7 +473,9 @@ export async function startPartyMatch(room) {
     const questionPool = await fetchPartyTitleGuessQuestionPool(settings);
     snapshot = buildPartyTitleGuessSnapshot(questionPool, settings);
   } else {
-    const pool = await fetchPartySongPool(settings);
+    const pool = Array.isArray(prebuiltPool) && prebuiltPool.length > 0
+      ? prebuiltPool
+      : await fetchPartySongPool(settings);
     if (settings.templateId) {
       const compatibility = analyzePartyTemplateCompatibility(pool, settings);
       if (!compatibility.targetResult?.compatible) {

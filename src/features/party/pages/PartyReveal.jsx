@@ -51,6 +51,7 @@ export const PartyRevealView = React.memo(function PartyRevealView({
   return (
     currentRound?.kind === 'title-guess' ? (
       <PartyTitleGuessRevealStage
+        room={room}
         round={currentRound}
         answers={currentRoundAnswers}
         leaderboard={animatedLeaderboard}

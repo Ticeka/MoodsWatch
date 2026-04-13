@@ -112,6 +112,18 @@ export function getTemplatePlayableCount(items = []) {
   return items.filter(isTemplateItemPlayable).length;
 }
 
+/**
+ * Looser playability check for vote battle mode.
+ * Accepts image-only items (coverUrl present, no mediaUrl) in addition to audio/video items.
+ */
+export function isVoteItemPlayable(item = {}) {
+  if (isTemplateItemPlayable(item)) return true;
+  return Boolean(
+    item.coverUrl
+    && (item.id || item.templateItemId || item.sourceTitleName || item.songTitle),
+  );
+}
+
 function getTemplateSongTitle(item = {}) {
   return String(item.songTitle ?? item.song_title ?? item.title ?? '').trim();
 }
@@ -424,13 +436,15 @@ export function analyzePartyTemplateCompatibility(items = [], settingsOrPreset =
       ),
     ])
   );
-  const voteResult = buildVoteCompatibilityResult(metrics, 2);
+  const votePlayableCount = Array.isArray(items) ? items.filter(isVoteItemPlayable).length : 0;
+  const voteMetrics = { ...metrics, playableSongCount: votePlayableCount };
+  const voteResult = buildVoteCompatibilityResult(voteMetrics, 2);
   const compatiblePresets = PARTY_TEMPLATE_PRESET_IDS.filter((presetId) => presetResults[presetId]?.compatible);
   const target = getTemplateCompatibilityTarget(settingsOrPreset);
   const targetResult = !target
     ? null
     : target.type === 'vote'
-      ? buildVoteCompatibilityResult(metrics, target.requiredCount)
+      ? buildVoteCompatibilityResult(voteMetrics, target.requiredCount)
       : buildPresetCompatibilityResult(target.id, metrics, target.requiredCount);
 
   return {

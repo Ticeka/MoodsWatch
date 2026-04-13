@@ -46,6 +46,7 @@ export function BattleCountdown({ battleIndex, totalBattles, currentMatch, secon
 
 export function TrackIntroCard({ songKey, songData, pick }) {
   const isA = songKey === 'A';
+  const isImageOnly = Boolean(songData?.isImageOnly);
   const [audioCtx] = useState(() => typeof window !== 'undefined' && window.AudioContext ? new (window.AudioContext || window.webkitAudioContext)() : null);
 
   useEffect(() => {
@@ -58,14 +59,18 @@ export function TrackIntroCard({ songKey, songData, pick }) {
       {isA ? null : <div className="clash-vs-glitch">V.S.</div>}
       <div className={`track-intro-card slide-in-heavy-${isA ? 'left' : 'right'}`}>
         <div className="track-intro-label">
-          {pick(`TRACK ${songKey}`, `TRACK ${songKey}`)}
+          {isImageOnly ? pick(`ผู้เข้าแข่งขัน ${songKey}`, `CONTENDER ${songKey}`) : pick(`TRACK ${songKey}`, `TRACK ${songKey}`)}
         </div>
         <div className="track-intro-cover">
           {songData?.coverUrl ? <img src={songData.coverUrl} alt="Cover" /> : <div className="cover-placeholder" />}
         </div>
         <div className="track-intro-info">
-          <h3>{songData?.songTitle || 'Unknown Track'}</h3>
-          <p>{songData?.sourceTitleName || 'Unknown Source'} - {songData?.artistName || 'Unknown Artist'}</p>
+          <h3>{songData?.songTitle || songData?.sourceTitleName || (isImageOnly ? pick('ผู้เข้าแข่งขัน', 'Contender') : 'Unknown Track')}</h3>
+          {!isImageOnly ? (
+            <p>{songData?.sourceTitleName || 'Unknown Source'} - {songData?.artistName || 'Unknown Artist'}</p>
+          ) : songData?.sourceTitleName && songData?.songTitle ? (
+            <p>{songData.sourceTitleName}</p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -83,6 +88,7 @@ export function TrackPlayback({
   pick,
 }) {
   const isYouTubeSong = songData?.provider === 'youtube' && Boolean(songData?.providerMediaId);
+  const isImageOnly = Boolean(songData?.isImageOnly) || (!isYouTubeSong && !songData?.mediaUrl && Boolean(songData?.coverUrl));
   const videoRef = useRef(null);
   const progressFillRef = useRef(null);
   const ytPlayerRef = useRef(null);
@@ -105,6 +111,41 @@ export function TrackPlayback({
   const playbackModeValue = playbackMode === 'full' ? 'full' : 'preview';
   const fallbackDurationMs = Math.max(1, Number(totalSec || 12)) * 1000;
   const [displayDurationMs, setDisplayDurationMs] = useState(fallbackDurationMs);
+
+  // Image-only timer: auto-advance after totalSec with no audio
+  useEffect(() => {
+    if (!isImageOnly || !isPlaying) {
+      return undefined;
+    }
+
+    const durationMs = Math.max(1000, Number(totalSec || 12) * 1000);
+    const startedAt = Date.now();
+    let completed = false;
+
+    const intervalId = window.setInterval(() => {
+      if (completed) return;
+      const elapsed = Date.now() - startedAt;
+      const clamped = Math.min(elapsed, durationMs);
+      setPlaybackElapsedMs(clamped);
+      setDisplayDurationMs(durationMs);
+      if (progressFillRef.current) {
+        progressFillRef.current.style.transform = `scaleX(${clamped / durationMs})`;
+      }
+      if (elapsed >= durationMs) {
+        completed = true;
+        window.clearInterval(intervalId);
+        if (progressFillRef.current) {
+          progressFillRef.current.style.transform = 'scaleX(1)';
+        }
+        onPlaybackComplete?.(Date.now());
+      }
+    }, 100);
+
+    return () => {
+      completed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isImageOnly, isPlaying, totalSec, onPlaybackComplete]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -493,10 +534,22 @@ export function TrackPlayback({
       <div className="track-playback-card playback-pulse">
         <div className="track-playback-header">
           <Zap size={20} className="playback-icon" />
-          <span>{pick(`กำลังเล่น TRACK ${songKey}`, `NOW PLAYING TRACK ${songKey}`)}</span>
+          <span>{isImageOnly
+            ? pick(`ผู้เข้าแข่งขัน ${songKey}`, `CONTENDER ${songKey}`)
+            : pick(`กำลังเล่น TRACK ${songKey}`, `NOW PLAYING TRACK ${songKey}`)}</span>
         </div>
 
-        {isYouTubeSong ? (
+        {isImageOnly ? (
+          <div className="track-playback-image-only-wrapper">
+            {songData?.coverUrl ? (
+              <img
+                src={songData.coverUrl}
+                alt={songData.songTitle || songData.sourceTitleName || ''}
+                className="track-playback-image-only-cover"
+              />
+            ) : null}
+          </div>
+        ) : isYouTubeSong ? (
           <div className="track-playback-video-wrapper">
             <PartyYouTubePlayer
               key={`yt-vote-${songData.providerMediaId}`}
@@ -566,18 +619,20 @@ export function TrackPlayback({
           <div className="playback-details">
             <h4 title={songData?.songTitle}>{songData?.songTitle || 'Unknown'}</h4>
             <p title={songData?.sourceTitleName}>{songData?.sourceTitleName || 'Source'}</p>
-            <div className="track-playback-meta">
-              <span className={`track-buffer-pill ${bufferReady ? 'is-ready' : ''}`}>
-                {bufferReady
-                  ? pick('คลิปพร้อมแล้ว', 'Clip ready')
-                  : pick(`บัฟเฟอร์ ${bufferPercent}%`, `Buffer ${bufferPercent}%`)}
-              </span>
-              {slowNetwork && !playbackFailed ? (
-                <span className="track-buffer-pill is-warning">
-                  {pick('เน็ตช้า กำลังรอบัฟเฟอร์เพิ่ม', 'Slow network, waiting for more buffer')}
+            {!isImageOnly ? (
+              <div className="track-playback-meta">
+                <span className={`track-buffer-pill ${bufferReady ? 'is-ready' : ''}`}>
+                  {bufferReady
+                    ? pick('คลิปพร้อมแล้ว', 'Clip ready')
+                    : pick(`บัฟเฟอร์ ${bufferPercent}%`, `Buffer ${bufferPercent}%`)}
                 </span>
-              ) : null}
-            </div>
+                {slowNetwork && !playbackFailed ? (
+                  <span className="track-buffer-pill is-warning">
+                    {pick('เน็ตช้า กำลังรอบัฟเฟอร์เพิ่ม', 'Slow network, waiting for more buffer')}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {sideAction ? (
             <div className="track-playback-side-action">
@@ -592,27 +647,29 @@ export function TrackPlayback({
 
         <div className="track-playback-controls-row">
           <span className="track-playback-time">{progressLabel} / {totalLabel}</span>
-          <div className="track-playback-volume">
-            <button
-              type="button"
-              className="track-playback-volume-toggle"
-              onClick={() => setVolume((current) => (Number(current || 0) > 0 ? 0 : 85))}
-              aria-label={pick(isMuted ? 'เปิดเสียง' : 'ปิดเสียง', isMuted ? 'Unmute' : 'Mute')}
-            >
-              {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={normalizedVolume}
-              onChange={(event) => setVolume(Number(event.target.value))}
-              className="track-playback-volume-slider"
-              aria-label={pick('ระดับเสียง', 'Volume')}
-            />
-            <span className="track-playback-volume-value">{normalizedVolume}%</span>
-          </div>
+          {!isImageOnly ? (
+            <div className="track-playback-volume">
+              <button
+                type="button"
+                className="track-playback-volume-toggle"
+                onClick={() => setVolume((current) => (Number(current || 0) > 0 ? 0 : 85))}
+                aria-label={pick(isMuted ? 'เปิดเสียง' : 'ปิดเสียง', isMuted ? 'Unmute' : 'Mute')}
+              >
+                {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={normalizedVolume}
+                onChange={(event) => setVolume(Number(event.target.value))}
+                className="track-playback-volume-slider"
+                aria-label={pick('ระดับเสียง', 'Volume')}
+              />
+              <span className="track-playback-volume-value">{normalizedVolume}%</span>
+            </div>
+          ) : null}
         </div>
 
         {bufferingPlayback ? (
@@ -667,11 +724,12 @@ export function VoteFaceoff({ battle, allSongs, hasVoted, selectedSongId, onVote
   const songB = allSongs[battle.songB];
   const votedA = selectedSongId === battle.songA;
   const votedB = selectedSongId === battle.songB;
+  const bothImageOnly = Boolean(songA?.isImageOnly && songB?.isImageOnly);
 
   return (
     <div className="vote-phase-faceoff">
       <div className="faceoff-header">
-        <span>{pick('เลือกเพลงที่ควรเข้ารอบ', 'VOTE THE BEST TRACK')}</span>
+        <span>{bothImageOnly ? pick('เลือกตัวที่ชอบที่สุด', 'VOTE YOUR FAVORITE') : pick('เลือกเพลงที่ควรเข้ารอบ', 'VOTE THE BEST TRACK')}</span>
         <div className="faceoff-timer" aria-label={pick(`เหลือเวลา ${secondsLeft} วินาที`, `${secondsLeft} seconds left`)}>{secondsLeft}s</div>
       </div>
       <div className="faceoff-arena">
@@ -799,7 +857,9 @@ export function RevealResult({ battle, allSongs, secondsLeft, revealSec, freezeM
       <h2 className="reveal-title effect-pop">
         {summary.is_tie
           ? pick('TIE BREAKER!', 'TIE BREAKER!')
-          : pick(`TRACK ${isAWin ? 'A' : 'B'} WINS!`, `TRACK ${isAWin ? 'A' : 'B'} WINS!`)}
+          : songA?.isImageOnly || songB?.isImageOnly
+            ? pick(`${isAWin ? 'A' : 'B'} ชนะ!`, `${isAWin ? 'A' : 'B'} WINS!`)
+            : pick(`TRACK ${isAWin ? 'A' : 'B'} WINS!`, `TRACK ${isAWin ? 'A' : 'B'} WINS!`)}
       </h2>
       <div className="faceoff-arena reveal-arena">
         <div className={`faceoff-side side-a ${isAWin ? 'winner-scale' : 'loser-dim'}`}>
@@ -868,7 +928,9 @@ export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost
       </div>
       <div className="champion-header">
         <h1>{pick('ULTIMATE CHAMPION', 'ULTIMATE CHAMPION')}</h1>
-        <p className="champion-subtitle">{pick('เพลงสุดท้ายที่ยืนอยู่ในแบทเทิลนี้', 'The last track standing in this battle')}</p>
+        <p className="champion-subtitle">{champion?.isImageOnly
+          ? pick('ผู้ชนะสุดท้ายในแบทเทิลนี้', 'The ultimate winner of this battle')
+          : pick('เพลงสุดท้ายที่ยืนอยู่ในแบทเทิลนี้', 'The last track standing in this battle')}</p>
       </div>
       <div className="champion-card shine-effect">
         {isYouTubeChampion ? (
@@ -892,9 +954,15 @@ export function ChampionShowcase({ championId, allSongs, onRematch, pick, isHost
             <img src={champion.coverUrl} alt="Cover" className="champion-cover" />
           </div>
         ) : null}
-        <h2>{champion?.songTitle || 'Undisputed Track'}</h2>
-        <h3>{champion?.sourceTitleName || 'Source'}</h3>
-        <p>{champion?.artistName || 'Artist'}</p>
+        <h2>{champion?.songTitle || champion?.sourceTitleName || (champion?.isImageOnly ? pick('แชมเปี้ยน', 'Champion') : 'Undisputed Track')}</h2>
+        {!champion?.isImageOnly ? (
+          <>
+            <h3>{champion?.sourceTitleName || 'Source'}</h3>
+            <p>{champion?.artistName || 'Artist'}</p>
+          </>
+        ) : champion?.sourceTitleName && champion?.songTitle ? (
+          <h3>{champion.sourceTitleName}</h3>
+        ) : null}
       </div>
       {isHost ? (
         <button className="rematch-btn mt-6" onClick={onRematch}>

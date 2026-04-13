@@ -333,8 +333,8 @@ export async function fetchPartyTitleGuessCharacters(titleId) {
   });
 }
 
-function normalizePartyTitleGuessDraftQuestions(questions = []) {
-  return (Array.isArray(questions) ? questions : [])
+function normalizePartyTitleGuessDraftQuestions(questions = [], { strict = false } = {}) {
+  const mapped = (Array.isArray(questions) ? questions : [])
     .map((question, index) => {
       const normalizedClues = (Array.isArray(question?.clues) ? question.clues : [])
         .slice(0, 4)
@@ -377,11 +377,32 @@ function normalizePartyTitleGuessDraftQuestions(questions = []) {
         sortOrder: Number(question?.sortOrder ?? index) || index,
         clues: sortedClues,
       };
-    })
-    .filter((question) => (
-      question.answerAliases.length > 0
-      && question.clues.length === 4
-    ));
+    });
+
+  const valid = mapped.filter((question) => (
+    question.answerAliases.length > 0
+    && question.clues.length === 4
+  ));
+
+  if (strict && valid.length < mapped.length) {
+    const incompleteIndexes = mapped
+      .map((question, index) => {
+        if (question.answerAliases.length === 0) {
+          return `ข้อ ${index + 1} (ไม่มีชื่อเรื่อง / missing answer title)`;
+        }
+        if (question.clues.length < 4) {
+          return `ข้อ ${index + 1} "${question.answerTitle || '?'}" (มีคำใบ้ ${question.clues.length}/4 ใบ)`;
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    throw new Error(
+      `คำถามบางข้อยังไม่ครบ กรุณาแก้ไขก่อนบันทึก:\n${incompleteIndexes.join('\n')}`
+    );
+  }
+
+  return valid;
 }
 
 async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = []) {
@@ -394,6 +415,7 @@ async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = [
     throw new Error('Add at least one complete Guess the Title question before saving.');
   }
 
+  // Fetch existing question ids before touching anything.
   const { data: existingQuestionRows, error: existingQuestionsError } = await supabase
     .from('party_title_guess_questions')
     .select('id')
@@ -407,26 +429,8 @@ async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = [
     .map((row) => Number(row?.id || 0))
     .filter((value) => value > 0);
 
-  if (existingQuestionIds.length > 0) {
-    const { error: deleteCluesError } = await supabase
-      .from('party_title_guess_clues')
-      .delete()
-      .in('question_id', existingQuestionIds);
-
-    if (deleteCluesError && !getMissingRelation(deleteCluesError, 'party_title_guess_clues')) {
-      throw deleteCluesError;
-    }
-
-    const { error: deleteQuestionsError } = await supabase
-      .from('party_title_guess_questions')
-      .delete()
-      .eq('set_id', normalizedSetId);
-
-    if (deleteQuestionsError) {
-      throw deleteQuestionsError;
-    }
-  }
-
+  // Insert new questions first with status='draft' so old data stays intact
+  // until all inserts succeed.
   const { data: createdQuestionRows, error: questionError } = await supabase
     .from('party_title_guess_questions')
     .insert(normalizedQuestions.map((question, index) => ({
@@ -439,7 +443,7 @@ async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = [
       franchise_aliases: question.franchiseAliases,
       cover_url: question.coverUrl || null,
       difficulty_tier: question.difficultyTier,
-      status: 'ready',
+      status: 'draft',
       sort_order: index,
       source_strategy: 'manual',
       note: question.note || null,
@@ -455,6 +459,8 @@ async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = [
       .map((row) => [Number(row?.sort_order ?? -1), Number(row?.id || 0)])
       .filter(([, questionId]) => questionId > 0),
   );
+
+  const newQuestionIds = [...questionIdBySortOrder.values()];
 
   const clueRows = normalizedQuestions.flatMap((question, index) => {
     const questionId = questionIdBySortOrder.get(index);
@@ -480,7 +486,48 @@ async function replacePartyTitleGuessSetQuestions(setId, normalizedQuestions = [
       .insert(clueRows);
 
     if (clueError) {
+      // Clue insert failed — clean up the draft questions so we don't leave orphans.
+      if (newQuestionIds.length > 0) {
+        await supabase
+          .from('party_title_guess_questions')
+          .delete()
+          .in('id', newQuestionIds);
+      }
       throw clueError;
+    }
+  }
+
+  // All new rows are safely inserted. Now delete the old questions (cascades to clues
+  // if FK cascade is set, otherwise delete clues first).
+  if (existingQuestionIds.length > 0) {
+    const { error: deleteCluesError } = await supabase
+      .from('party_title_guess_clues')
+      .delete()
+      .in('question_id', existingQuestionIds);
+
+    if (deleteCluesError && !getMissingRelation(deleteCluesError, 'party_title_guess_clues')) {
+      throw deleteCluesError;
+    }
+
+    const { error: deleteQuestionsError } = await supabase
+      .from('party_title_guess_questions')
+      .delete()
+      .in('id', existingQuestionIds);
+
+    if (deleteQuestionsError) {
+      throw deleteQuestionsError;
+    }
+  }
+
+  // Promote new questions from 'draft' to 'ready'.
+  if (newQuestionIds.length > 0) {
+    const { error: activateError } = await supabase
+      .from('party_title_guess_questions')
+      .update({ status: 'ready' })
+      .in('id', newQuestionIds);
+
+    if (activateError) {
+      throw activateError;
     }
   }
 }
@@ -490,7 +537,7 @@ export async function createPartyTitleGuessSet(setData = {}, questions = [], cre
     throw new Error('No database connection');
   }
 
-  const normalizedQuestions = normalizePartyTitleGuessDraftQuestions(questions);
+  const normalizedQuestions = normalizePartyTitleGuessDraftQuestions(questions, { strict: true });
 
   if (normalizedQuestions.length === 0) {
     throw new Error('Add at least one complete Guess the Title question before saving.');
@@ -675,7 +722,7 @@ export async function updatePartyTitleGuessSet(setId, setData = {}, questions = 
     throw new Error('A valid Guess the Title set id is required.');
   }
 
-  const normalizedQuestions = normalizePartyTitleGuessDraftQuestions(questions);
+  const normalizedQuestions = normalizePartyTitleGuessDraftQuestions(questions, { strict: true });
   if (normalizedQuestions.length === 0) {
     throw new Error('Add at least one complete Guess the Title question before saving.');
   }

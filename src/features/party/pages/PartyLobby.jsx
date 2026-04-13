@@ -70,7 +70,13 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const requiredReadyCount = useMemo(() => getPartyRequiredReadyCount(members.length), [members.length]);
   const editorIsVote = hostEditor?.settings?.modeType === 'vote';
   const editorIsTitleGuess = hostEditor?.settings?.modeType === 'title-guess';
+  const editorIsPixelReveal = editorIsTitleGuess && (hostEditor?.settings?.presetId === 'pixel-reveal' || hostEditor?.settings?.presetId === 'pixel-reveal-choice');
   const editorTemplateName = hostEditor?.settings?.templateName || '';
+  const editorBattleDeckId = hostEditor?.settings?.battleDeckId || '';
+  const hasSelectedTemplateSource = Boolean(hostEditor?.settings?.templateId || editorBattleDeckId);
+  const voteOnlySelectionActive = Boolean(editorBattleDeckId)
+    || Boolean(hostEditor?.settings?.templateId && hostEditor?.settings?.modeScope === 'vote');
+  const quizOnlySelectionActive = Boolean(hostEditor?.settings?.templateId && hostEditor?.settings?.modeScope === 'quiz');
   const selectedTitleGuessSet = hostEditor?.selectedTitleGuessSet || null;
   const selectedTitleGuessSetName = selectedTitleGuessSet?.name || hostEditor?.settings?.titleGuessSetName || '';
   const selectedTitleGuessSetCoverUrl = selectedTitleGuessSet?.coverUrl || '';
@@ -214,11 +220,15 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
               ) : (
                 <div className="party-host-template-hero">
                   <div className="party-host-template-hero-copy">
-                    <span className="party-host-template-hero-kicker">{pick('ชุดเพลง', 'Song set')}</span>
+                    <span className="party-host-template-hero-kicker">
+                      {editorBattleDeckId ? pick('Battle Deck', 'Battle Deck') : pick('ชุดเพลง', 'Song set')}
+                    </span>
                     <strong>
-                      {hostEditor.settings.templateId
+                      {editorBattleDeckId
                         ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
-                        : pick('ยังไม่ได้เลือก', 'Not selected')}
+                        : hostEditor.settings.templateId
+                          ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
+                          : pick('ยังไม่ได้เลือก', 'Not selected')}
                     </strong>
                   </div>
                   <div className="party-host-template-hero-actions">
@@ -227,19 +237,25 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                       className="party-gradient-action party-host-template-hero-btn"
                       onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
                     >
-                      {hostEditor.settings.templateId ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
+                      {hasSelectedTemplateSource ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
                     </Button>
-                    {hostEditor.settings.templateId ? (
+                    {hasSelectedTemplateSource ? (
                       <Button
                         variant="outline"
-                        onClick={() => hostEditor.onChange((current) => ({
-                          ...current,
-                          templateId: '',
-                          templateName: '',
-                          templateCoverUrl: '',
-                          templatePlayableCount: 0,
-                          modeScope: 'all',
-                        }))}
+                        onClick={() => {
+                          hostEditor.onChange((current) => ({
+                            ...current,
+                            templateId: '',
+                            templateName: '',
+                            templateCoverUrl: '',
+                            templatePlayableCount: 0,
+                            modeScope: 'all',
+                            battleDeckId: '',
+                          }));
+                          if (hostEditor.onClearBattleDeck) {
+                            hostEditor.onClearBattleDeck();
+                          }
+                        }}
                       >
                         {pick('ล้าง', 'Clear')}
                       </Button>
@@ -251,38 +267,53 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
               <div className="party-host-mode-row">
                 <button
                   type="button"
-                  className={`party-lobby-mode-card is-quiz${hostEditor.settings.modeType === 'quiz' ? ' is-active' : ''}${hostEditor.settings.templateId && hostEditor.settings.modeScope === 'vote' ? ' is-disabled' : ''}`}
+                  className={`party-lobby-mode-card is-quiz${hostEditor.settings.modeType === 'quiz' ? ' is-active' : ''}${voteOnlySelectionActive ? ' is-disabled' : ''}`}
                   onClick={() => hostEditor.onChange((current) => ({
                     ...current,
                     modeType: 'quiz',
                     timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
                   }))}
-                  disabled={hostEditor.settings.templateId && hostEditor.settings.modeScope === 'vote'}
+                  disabled={voteOnlySelectionActive}
                 >
                   <span className="party-lobby-mode-card-emoji">🎵</span>
                   <span className="party-lobby-mode-card-name">Music Quiz</span>
                 </button>
                 <button
                   type="button"
-                  className={`party-lobby-mode-card is-vote${hostEditor.settings.modeType === 'vote' ? ' is-active' : ''}${hostEditor.settings.templateId && hostEditor.settings.modeScope === 'quiz' ? ' is-disabled' : ''}`}
+                  className={`party-lobby-mode-card is-vote${hostEditor.settings.modeType === 'vote' ? ' is-active' : ''}${quizOnlySelectionActive ? ' is-disabled' : ''}`}
                   onClick={() => hostEditor.onChange((current) => ({ ...current, modeType: 'vote' }))}
-                  disabled={hostEditor.settings.templateId && hostEditor.settings.modeScope === 'quiz'}
+                  disabled={quizOnlySelectionActive}
                 >
                   <span className="party-lobby-mode-card-vs">VS</span>
                   <span className="party-lobby-mode-card-name">Vote Battle</span>
                 </button>
                 <button
                   type="button"
-                  className={`party-lobby-mode-card is-title-guess${editorIsTitleGuess ? ' is-active' : ''}`}
+                  className={`party-lobby-mode-card is-title-guess${editorIsTitleGuess && !editorIsPixelReveal ? ' is-active' : ''}`}
                   onClick={() => hostEditor.onChange((current) => ({
                     ...current,
                     modeType: 'title-guess',
+                    presetId: 'title-guess',
                     timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
                     revealSec: Math.max(8, Number(current.revealSec || 12)),
                   }))}
                 >
                   <span className="party-lobby-mode-card-emoji">🃏</span>
                   <span className="party-lobby-mode-card-name">{pick('ทายชื่อเรื่อง', 'Guess the Title')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`party-lobby-mode-card is-pixel-reveal${editorIsPixelReveal ? ' is-active' : ''}`}
+                  onClick={() => hostEditor.onChange((current) => ({
+                    ...current,
+                    modeType: 'title-guess',
+                    presetId: 'pixel-reveal',
+                    timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
+                    revealSec: Math.max(8, Number(current.revealSec || 12)),
+                  }))}
+                >
+                  <span className="party-lobby-mode-card-emoji">🖼️</span>
+                  <span className="party-lobby-mode-card-name">{pick('ปิดรูปพิกเซล', 'Pixel Reveal')}</span>
                 </button>
               </div>
 
@@ -317,9 +348,9 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   </label>
                 ) : null}
 
-                {editorIsTitleGuess ? (
+                {editorIsTitleGuess && !editorIsPixelReveal ? (
                   <label className="pgc-select-field">
-                    <span className="pgc-label">{pick('เนเธซเธกเธ”เน€เธเธก', 'Game mode')}</span>
+                    <span className="pgc-label">{pick('รูปแบบคำตอบ', 'Answer mode')}</span>
                     <select
                       className="pgc-select"
                       value={hostEditor.settings.presetId || 'title-guess'}
@@ -328,7 +359,26 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                         presetId: event.target.value === 'title-guess-choice' ? 'title-guess-choice' : 'title-guess',
                       }))}
                     >
-                      {PARTY_TITLE_GUESS_PRESETS.map((preset) => (
+                      {PARTY_TITLE_GUESS_PRESETS.filter((p) => p.id === 'title-guess' || p.id === 'title-guess-choice').map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {pick(preset.labelTh, preset.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {editorIsPixelReveal ? (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('รูปแบบคำตอบ', 'Answer mode')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.presetId || 'pixel-reveal'}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        presetId: event.target.value === 'pixel-reveal-choice' ? 'pixel-reveal-choice' : 'pixel-reveal',
+                      }))}
+                    >
+                      {PARTY_TITLE_GUESS_PRESETS.filter((p) => p.id === 'pixel-reveal' || p.id === 'pixel-reveal-choice').map((preset) => (
                         <option key={preset.id} value={preset.id}>
                           {pick(preset.labelTh, preset.label)}
                         </option>
@@ -372,10 +422,10 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                       ))}
                     </select>
                   </label>
-                ) : hostEditor.settings.templateId ? (
+                ) : hasSelectedTemplateSource ? (
                   <div className="pgc-select-field">
                     <span className="pgc-label">{pick('คลังเพลง', 'Song pool')}</span>
-                    <div className="party-host-pill-muted">{pick('จากเทมเพลต', 'From template')}</div>
+                    <div className="party-host-pill-muted">{editorBattleDeckId ? pick('จาก Battle Deck', 'From Battle Deck') : pick('จากเท���เพลต', 'From template')}</div>
                   </div>
                 ) : (
                   <label className="pgc-select-field">
@@ -587,27 +637,22 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                 </label>
               </div>
 
-              <div className="party-host-settings-actions">
-                <Button
-                  variant="primary"
-                  onClick={hostEditor.onSave}
-                  disabled={
-                    !hostEditor.hasPendingChanges
-                    || hostEditor.isSaving
-                    || (hostEditor.settings.templateId && !hostEditor.templateValidation.ok)
-                    || (editorIsTitleGuess && !String(hostEditor.settings.titleGuessSetId || '').trim())
-                  }
-                >
-                  {hostEditor.isSaving ? pick('กำลังบันทึก...', 'Saving...') : pick('บันทึก', 'Save')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={hostEditor.onReset}
-                  disabled={!hostEditor.hasPendingChanges || hostEditor.isSaving}
-                >
-                  {pick('ยกเลิก', 'Reset')}
-                </Button>
-              </div>
+              {hostEditor.hasPendingChanges ? (
+                <div className="party-host-settings-actions">
+                  <Button
+                    variant="outline"
+                    onClick={hostEditor.onReset}
+                    disabled={hostEditor.isSaving}
+                  >
+                    {pick('ยกเลิก', 'Reset')}
+                  </Button>
+                  {hostEditor.isSaving ? (
+                    <span className="party-host-autosave-hint">{pick('กำลังบันทึก...', 'Saving...')}</span>
+                  ) : (
+                    <span className="party-host-autosave-hint">{pick('บันทึกอัตโนมัติ', 'Auto-saving')}</span>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="party-lobby-start-panel party-lobby-start-panel--embedded">

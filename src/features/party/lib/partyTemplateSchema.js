@@ -44,6 +44,7 @@ export const PARTY_TEMPLATE_ITEM_SOURCE_KIND = {
   CATALOG: 'catalog',
   YOUTUBE_VIDEO: 'youtube_video',
   YOUTUBE_PLAYLIST: 'youtube_playlist',
+  IMAGE: 'image',
 };
 
 /**
