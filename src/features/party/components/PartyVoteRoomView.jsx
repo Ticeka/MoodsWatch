@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { LayoutPanelTop, Theater } from 'lucide-react';
 import { getPartyPresetById } from '@/features/party/lib/partyEngine';
 import {
   resumePartyAudioContext,
@@ -25,6 +26,18 @@ import './PartyVoteRoom.css';
 function getVoteChampionId(match) {
   if (!match) return null;
   return match.championSongId || match.currentBattle?.winnerSongId || (Array.isArray(match.queue) ? match.queue[match.queue.length - 1] || null : null);
+}
+
+const PARTY_VOTE_VIEW_MODE_KEY = 'party-vote-view-mode';
+const PARTY_VOTE_MODE_TRANSITION_MS = 240;
+
+function readVoteViewMode() {
+  if (typeof window === 'undefined') {
+    return 'live';
+  }
+
+  const storedMode = String(window.localStorage.getItem(PARTY_VOTE_VIEW_MODE_KEY) || '').trim().toLowerCase();
+  return storedMode === 'theater' ? 'theater' : 'live';
 }
 
 export function PartyVoteRoomView({
@@ -57,6 +70,13 @@ export function PartyVoteRoomView({
   });
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [isSubmittingSkipVote, setIsSubmittingSkipVote] = useState(false);
+  const [viewMode, setViewMode] = useState(() => readVoteViewMode());
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isModeTransitioning, setIsModeTransitioning] = useState(false);
+  const experienceShellRef = useRef(null);
+  const pendingPostExitModeRef = useRef(null);
+  const modeTransitionTimeoutRef = useRef(null);
+  const fullscreenRequestTimeoutRef = useRef(null);
 
   const { selectedSongId, hasVoted, setBattleContext, castVote, resetVoteMatch } = usePartyVoteStore();
   const answers = usePartyRoomStore((state) => state.answers);
@@ -65,6 +85,10 @@ export function PartyVoteRoomView({
   const applyRoomEvent = usePartyRoomStore((state) => state.applyEvent);
   const removeChatMessage = usePartyRoomStore((state) => state.removeChatMessage);
   const shouldShowLiveChat = phase === 'play-a' || phase === 'play-b';
+  const isTheaterMode = viewMode === 'theater';
+  const isClipPlaybackPhase = shouldShowLiveChat;
+  const isTheaterPlaybackMode = isTheaterMode && isClipPlaybackPhase;
+  const shouldUseViewingShell = room?.status !== 'lobby' && match && isClipPlaybackPhase;
   const chatScopeKey = battle?.id ? `${battle.id}:${phase}` : '';
   const visibleChatMessages = useMemo(() => (
     chatScopeKey
@@ -107,12 +131,174 @@ export function PartyVoteRoomView({
   const hasSkipVoted = skipVoteState.memberTokens.includes(String(currentMember?.member_token || ''));
   const skipVoteCount = skipVoteState.memberTokens.length;
   const skipVotesRemaining = Math.max(0, members.length - skipVoteCount);
+  const phaseLabel = useMemo(() => {
+    switch (phase) {
+      case 'countdown':
+        return pick('เตรียมแมตช์', 'Get ready');
+      case 'intro-a':
+      case 'intro-b':
+        return pick('เปิดตัวผู้เข้าแข่ง', 'Contender intro');
+      case 'play-a':
+      case 'play-b':
+        return pick('กำลังเล่นตัวอย่าง', 'Now playing');
+      case 'vote':
+        return pick('เปิดโหวตแล้ว', 'Voting live');
+      case 'reveal':
+        return pick('กำลังเฉลยผล', 'Results');
+      case 'final':
+        return pick('แชมเปี้ยน', 'Champion');
+      default:
+        return pick('ล็อบบี้', 'Lobby');
+    }
+  }, [phase, pick]);
 
   useEffect(() => {
     if (battle?.id) {
       setBattleContext(battle.id, myExistingVote);
     }
   }, [battle?.id, myExistingVote, setBattleContext]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(PARTY_VOTE_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
+
+  const beginModeTransition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      setIsModeTransitioning(true);
+      return;
+    }
+
+    if (modeTransitionTimeoutRef.current) {
+      window.clearTimeout(modeTransitionTimeoutRef.current);
+    }
+
+    setIsModeTransitioning(true);
+    modeTransitionTimeoutRef.current = window.setTimeout(() => {
+      setIsModeTransitioning(false);
+      modeTransitionTimeoutRef.current = null;
+    }, PARTY_VOTE_MODE_TRANSITION_MS);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const handleFullscreenChange = () => {
+      const isActive = document.fullscreenElement === experienceShellRef.current;
+      setIsFullscreen(isActive);
+
+      if (!isActive && pendingPostExitModeRef.current) {
+        const nextMode = pendingPostExitModeRef.current;
+        pendingPostExitModeRef.current = null;
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            setViewMode(nextMode);
+          }, 60);
+        } else {
+          setViewMode(nextMode);
+        }
+      }
+    };
+
+    handleFullscreenChange();
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const node = experienceShellRef.current;
+    if (!node || room?.status === 'lobby' || !match || !isClipPlaybackPhase) {
+      if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+        void document.exitFullscreen().catch(() => null);
+      }
+      return undefined;
+    }
+
+    if (viewMode === 'theater') {
+      if (document.fullscreenElement !== node && typeof node.requestFullscreen === 'function') {
+        if (fullscreenRequestTimeoutRef.current && typeof window !== 'undefined') {
+          window.clearTimeout(fullscreenRequestTimeoutRef.current);
+        }
+        if (typeof window !== 'undefined') {
+          fullscreenRequestTimeoutRef.current = window.setTimeout(() => {
+            void node.requestFullscreen().catch(() => null);
+            fullscreenRequestTimeoutRef.current = null;
+          }, 140);
+        } else {
+          void node.requestFullscreen().catch(() => null);
+        }
+      }
+      return () => {
+        if (fullscreenRequestTimeoutRef.current && typeof window !== 'undefined') {
+          window.clearTimeout(fullscreenRequestTimeoutRef.current);
+          fullscreenRequestTimeoutRef.current = null;
+        }
+      };
+    }
+
+    return undefined;
+  }, [isClipPlaybackPhase, match, room?.status, viewMode]);
+
+  useEffect(() => () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (modeTransitionTimeoutRef.current) {
+      window.clearTimeout(modeTransitionTimeoutRef.current);
+      modeTransitionTimeoutRef.current = null;
+    }
+    if (fullscreenRequestTimeoutRef.current) {
+      window.clearTimeout(fullscreenRequestTimeoutRef.current);
+      fullscreenRequestTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleViewModeChange = useCallback((nextMode) => {
+    if (nextMode !== 'live' && nextMode !== 'theater') {
+      return;
+    }
+
+    const currentNode = experienceShellRef.current;
+    const isCurrentlyFullscreen = typeof document !== 'undefined' && document.fullscreenElement === currentNode;
+    const wantsTheater = nextMode === 'theater';
+
+    if (wantsTheater && viewMode === 'theater' && isCurrentlyFullscreen) {
+      return;
+    }
+
+    if (!wantsTheater && viewMode === 'live' && !isCurrentlyFullscreen) {
+      return;
+    }
+
+    beginModeTransition();
+
+    if (wantsTheater) {
+      setViewMode('theater');
+      return;
+    }
+
+    if (isCurrentlyFullscreen && typeof document !== 'undefined' && typeof document.exitFullscreen === 'function') {
+      pendingPostExitModeRef.current = 'live';
+      void document.exitFullscreen().catch(() => {
+        pendingPostExitModeRef.current = null;
+        setViewMode('live');
+      });
+      return;
+    }
+
+    setViewMode('live');
+  }, [beginModeTransition, viewMode]);
 
   useEffect(() => {
     if (phase === 'lobby' || !match) {
@@ -374,18 +560,51 @@ export function PartyVoteRoomView({
   }
 
   return (
-    <div className="party-vote-room anime-theme">
-      {shouldShowLiveChat ? (
-        <div className="party-vote-live-shell">
-          <div className="party-vote-live-layout">
-            <div className="party-vote-main-panel">
-              {content}
+    <div className={`party-vote-room anime-theme ${isTheaterPlaybackMode ? 'is-theater-mode' : ''} ${isModeTransitioning ? 'is-mode-transitioning' : ''}`.trim()}>
+      {shouldUseViewingShell ? (
+        <div
+          ref={experienceShellRef}
+          className={`party-vote-experience-shell ${isTheaterPlaybackMode ? 'is-theater' : ''} ${isFullscreen ? 'is-fullscreen' : ''}`.trim()}
+        >
+          <div className="party-vote-view-toolbar">
+            <div className="party-vote-view-toolbar-copy">
+              <span className="party-vote-view-kicker">{pick('Vote Battle View', 'Vote Battle View')}</span>
+              <strong>{phaseLabel}</strong>
             </div>
-            <div className="party-vote-chat-panel">
-              <PartyLiveChat
-                messages={visibleChatMessages}
-                onSendMessage={handleSendChatMessage}
-              />
+            <div className="party-vote-view-toggle" role="tablist" aria-label={pick('โหมดรับชม', 'Viewing mode')}>
+              <button
+                type="button"
+                className={`party-vote-view-toggle-btn ${!isTheaterMode ? 'is-active' : ''}`.trim()}
+                onClick={() => handleViewModeChange('live')}
+                aria-pressed={!isTheaterMode}
+              >
+                <LayoutPanelTop size={16} />
+                <span>{pick('ปกติ', 'Live')}</span>
+              </button>
+              <button
+                type="button"
+                className={`party-vote-view-toggle-btn ${isTheaterMode ? 'is-active' : ''}`.trim()}
+                onClick={() => handleViewModeChange('theater')}
+                aria-pressed={isTheaterMode}
+              >
+                <Theater size={16} />
+                <span>{pick(isFullscreen ? 'Theater เต็มจอ' : 'Theater', isFullscreen ? 'Theater Fullscreen' : 'Theater')}</span>
+              </button>
+            </div>
+          </div>
+          <div className={`party-vote-live-shell ${isTheaterPlaybackMode ? 'is-theater' : ''}`.trim()}>
+            <div className={`party-vote-live-layout ${isTheaterPlaybackMode ? 'is-theater' : ''}`.trim()}>
+              <div className={`party-vote-main-panel ${isTheaterPlaybackMode ? 'is-theater' : ''}`.trim()}>
+                {content}
+              </div>
+              {shouldShowLiveChat ? (
+                <div className={`party-vote-chat-panel ${isTheaterPlaybackMode ? 'is-theater' : ''}`.trim()}>
+                  <PartyLiveChat
+                    messages={visibleChatMessages}
+                    onSendMessage={handleSendChatMessage}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

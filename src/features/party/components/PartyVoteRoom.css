@@ -13,6 +13,124 @@
   text-transform: uppercase;
 }
 
+.party-vote-room.anime-theme.is-theater-mode {
+  padding-inline: clamp(0.75rem, 2vw, 1.5rem);
+  min-height: 100vh;
+}
+
+.party-vote-experience-shell {
+  width: 100%;
+  max-width: 1760px;
+  display: grid;
+  gap: 0.85rem;
+  transition:
+    max-width 220ms ease,
+    gap 220ms ease,
+    background 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+.party-vote-experience-shell.is-theater {
+  max-width: 1880px;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen {
+  max-width: none;
+  min-height: 100vh;
+  height: 100vh;
+  padding: 0;
+  gap: 0;
+  background:
+    radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 30%),
+    #05070d;
+}
+
+.party-vote-experience-shell.is-fullscreen:fullscreen {
+  width: 100vw;
+  max-width: none;
+}
+
+.party-vote-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)),
+    rgba(6, 8, 14, 0.9);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+  transition:
+    border-radius 220ms ease,
+    padding 220ms ease,
+    border-color 220ms ease,
+    background 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-view-toolbar {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+
+.party-vote-view-toolbar-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.party-vote-view-kicker {
+  color: rgba(255,255,255,0.62);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+}
+
+.party-vote-view-toolbar-copy strong {
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.party-vote-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.party-vote-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255,255,255,0.76);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.party-vote-view-toggle-btn.is-active {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+.party-vote-view-toggle-btn:hover {
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .party-vote-live-layout {
   width: 100%;
   max-width: 1760px;
@@ -21,6 +139,15 @@
   gap: 0.25rem;
   align-items: stretch;
   justify-content: center;
+  transition:
+    grid-template-columns 220ms ease,
+    gap 220ms ease;
+}
+
+.party-vote-live-layout.is-theater {
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr) 24rem;
+  gap: 0;
 }
 
 .party-vote-live-layout.is-detached {
@@ -37,6 +164,29 @@
   border-radius: 12px;
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.68);
   overflow: hidden;
+  transition:
+    height 220ms ease,
+    border-radius 220ms ease,
+    background 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+.party-vote-live-shell.is-theater {
+  max-width: none;
+  background:
+    linear-gradient(180deg, rgba(8, 10, 18, 0.98), rgba(8, 10, 18, 0.94)),
+    rgba(10, 10, 15, 0.96);
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-live-shell {
+  height: calc(100vh - 4.7rem);
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
 }
 
 .party-vote-live-shell .vote-phase-playback,
@@ -92,10 +242,22 @@
   display: flex;
   justify-content: center;
   padding: 1rem 0.35rem 1rem 1rem;
+  transition:
+    padding 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
 }
 
 .party-vote-main-panel.is-detached {
   padding: 0;
+}
+
+.party-vote-main-panel.is-theater {
+  padding: clamp(0.75rem, 1.5vw, 1.2rem);
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-main-panel.is-theater {
+  padding: clamp(0.9rem, 1.8vw, 1.5rem);
 }
 
 .party-vote-chat-panel {
@@ -106,12 +268,41 @@
   align-self: stretch;
   padding: 0.9rem 1rem 0.9rem 0.45rem;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    padding 220ms ease,
+    border-color 220ms ease,
+    background 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
 }
 
 .party-vote-chat-panel.is-detached {
   padding: 0;
   border-left: 0;
   align-self: start;
+}
+
+.party-vote-chat-panel.is-theater {
+  padding: 0.9rem 1rem 0.9rem 0.45rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+}
+
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-experience-shell,
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-view-toolbar,
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-live-shell,
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-main-panel,
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-chat-panel {
+  will-change: transform, opacity;
+}
+
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-main-panel,
+.party-vote-room.anime-theme.is-mode-transitioning .party-vote-chat-panel {
+  opacity: 0.92;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-chat-panel.is-theater {
+  padding: 1rem;
 }
 
 /* Phase: Countdown */
@@ -1171,10 +1362,24 @@
   .party-vote-room.anime-theme {
     padding: 1rem;
   }
+  .party-vote-view-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .party-vote-view-toggle {
+    justify-content: stretch;
+  }
+  .party-vote-view-toggle-btn {
+    flex: 1;
+    justify-content: center;
+  }
   .party-vote-live-shell {
     border-radius: 12px;
   }
   .party-vote-live-layout {
+    grid-template-columns: 1fr;
+  }
+  .party-vote-live-layout.is-theater {
     grid-template-columns: 1fr;
   }
   .party-vote-live-layout.is-detached {
@@ -1189,6 +1394,11 @@
   .party-vote-chat-panel.is-detached {
     padding: 0;
     border-top: 0;
+  }
+  .party-vote-chat-panel.is-theater {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0 0.8rem 0.8rem;
   }
   .party-vote-main-panel {
     padding: 0.8rem;
@@ -1251,10 +1461,16 @@
   .party-vote-live-layout {
     grid-template-columns: minmax(0, 1fr) 20rem;
   }
+  .party-vote-live-layout.is-theater {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
 }
 
 @media (max-width: 960px) {
   .party-vote-live-layout {
+    grid-template-columns: 1fr;
+  }
+  .party-vote-live-layout.is-theater {
     grid-template-columns: 1fr;
   }
   .party-vote-live-layout.is-detached {
@@ -1266,6 +1482,10 @@
   .party-vote-chat-panel.is-detached {
     padding: 0;
     border-top: 0;
+  }
+  .party-vote-chat-panel.is-theater {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 }
 
@@ -1342,6 +1562,37 @@
    ========================================= */
 [data-theme="light"] .party-vote-room.anime-theme {
   color: #111;
+}
+
+[data-theme="light"] .party-vote-view-toolbar,
+[data-theme="light"] .party-vote-live-shell.is-theater {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.92)),
+    #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .party-vote-view-kicker {
+  color: rgba(15, 23, 42, 0.5);
+}
+
+[data-theme="light"] .party-vote-view-toggle {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .party-vote-view-toggle-btn {
+  color: rgba(15, 23, 42, 0.72);
+}
+
+[data-theme="light"] .party-vote-view-toggle-btn.is-active {
+  background: rgba(15, 23, 42, 0.1);
+  color: #111;
+}
+
+[data-theme="light"] .party-vote-chat-panel.is-theater {
+  background: linear-gradient(180deg, rgba(15,23,42,0.03), rgba(15,23,42,0.015));
+  border-left-color: rgba(15, 23, 42, 0.08);
 }
 
 [data-theme="light"] .battle-badge, 
