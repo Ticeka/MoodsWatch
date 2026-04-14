@@ -83,7 +83,7 @@ import { PartyRevealView } from './PartyReveal';
 import { PartyVoteRoomView } from '../components/PartyVoteRoomView';
 import '../styles/Party.css';
 
-const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 900;
+const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 300;
 
 function mapBattleDeckToPartyPool(deck = {}) {
   const titles = Array.isArray(deck?.titles) ? deck.titles : [];
@@ -1314,9 +1314,17 @@ export function PartyRoomPage() {
       if (selectedTemplateIntent && String(nextSettings.templateId || '') !== String(selectedTemplateIntent.templateId || '')) {
         setSelectedTemplateIntent(null);
       }
+
+      if (room?.id) {
+        void broadcastPartyRoomEvent(room.id, {
+          type: 'SETTINGS_PREVIEW',
+          settings: nextSettings,
+        });
+      }
+
       return nextSettings;
     });
-  }, [selectedTemplateIntent]);
+  }, [room?.id, selectedTemplateIntent]);
 
   const handleResetRoomSettingsDraft = React.useCallback(() => {
     if (!room?.settings) {
@@ -1458,6 +1466,11 @@ export function PartyRoomPage() {
 
     try {
       setBusyAction('start');
+      
+      if (hasPendingRoomSettings) {
+        await handleSaveRoomSettings({ silent: true });
+      }
+
       const nextRoom = await startPartyMatch(room, {
         prebuiltPool: roomSettingsDraft.battleDeckId ? battleDeckPool : null,
       });

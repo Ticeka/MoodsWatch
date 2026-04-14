@@ -246,6 +246,20 @@ export const usePartyRoomStore = create((set) => ({
     };
 
     switch (event?.type) {
+      case 'SETTINGS_PREVIEW':
+        if (!state.room) {
+          return state;
+        }
+        return {
+          ...realtimeMeta,
+          room: {
+            ...state.room,
+            settings: {
+              ...(state.room.settings || {}),
+              ...(payload.settings || {})
+            }
+          }
+        };
       case 'ROOM_SYNC':
         return sanitizeBundle(payload.bundle, {
           lastEventAt: state.lastEventAt,
