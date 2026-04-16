@@ -17,15 +17,16 @@ export function TierListEmptyPanel({ icon, title, message, action }) {
   );
 }
 
-export function TierListErrorPanel({ message, onRetry, backLabel, backTo }) {
+export function TierListErrorPanel({ message, onRetry, backLabel, backTo, onBack }) {
   return (
     <div className="glass-heavy tierlist-empty-state">
       <ErrorState message={message} onRetry={onRetry} />
-      {backLabel && backTo ? (
+      {backLabel && (onBack || backTo) ? (
         <div className="tierlist-template-actions">
-          <Link className="btn btn-ghost btn-sm" to={backTo}>
-            {backLabel}
-          </Link>
+          {onBack
+            ? <button className="btn btn-ghost btn-sm" onClick={onBack}>{backLabel}</button>
+            : <Link className="btn btn-ghost btn-sm" to={backTo}>{backLabel}</Link>
+          }
         </div>
       ) : null}
     </div>

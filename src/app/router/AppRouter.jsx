@@ -28,6 +28,7 @@ import {
   AuthPage,
   BattleBrowsePage,
   BattleBuilderPage,
+  BattleDeckDetailPage,
   BattleDeckLibraryPage,
   BattleHubPage,
   BattleLeaderboardPage,
@@ -36,6 +37,7 @@ import {
   DiscoverPage,
   FeedPage,
   HomePage,
+  HomeV2MockupPage,
   PartyHubPage,
   PartyRoomDirectoryPage,
   PartyRoomPage,
@@ -77,8 +79,10 @@ export function AppRouter() {
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<HomePage />} />
+            <Route path="mockup-v2" element={<HomeV2MockupPage />} />
             <Route path="battle" element={<BattleHubPage />} />
             <Route path="battle/browse" element={<BattleBrowsePage />} />
+            <Route path="battle/deck/:deckId" element={<BattleDeckDetailPage />} />
             <Route path="battle/build" element={<BattleBuilderPage />} />
             <Route path="battle/decks" element={<BattleDeckLibraryPage />} />
             <Route path="battle/leaderboard" element={<BattleLeaderboardPage />} />

@@ -19,6 +19,11 @@ import {
   advancePartyVoteMatch,
 } from '../lib/partyModeVote.js';
 import {
+  buildPartyTierlistSnapshot,
+  advancePartyTierlistMatch,
+  tallyTierlistVotes,
+} from '../lib/partyModeTierlist.js';
+import {
   PARTY_TEMPLATE_SOURCE_RESOLUTION_STATUS,
 } from '../lib/partyTemplateSchema.js';
 import {
@@ -150,6 +155,9 @@ export {
 
 const PARTY_SONG_POOL_PAGE_SIZE = 60;
 const PARTY_SONG_POOL_MAX_PAGES = 3;
+const TIERLIST_CATEGORY_CHARACTER_PREFIX = 'character::';
+const TIERLIST_CATEGORY_THEME_SONG_PREFIX = 'theme_song::';
+const TIERLIST_CATEGORY_YOUTUBE_PREFIX = 'youtube::';
 const PARTY_SONG_POOL_CACHE_TTL_MS = 2 * 60 * 1000;
 const partySongPoolCache = new Map();
 
@@ -313,6 +321,24 @@ function filterSongsByCategory(songs = [], categoryId = 'all') {
   return songs;
 }
 
+function getTierlistTemplateEntityType(templateRow) {
+  const rawCategory = String(templateRow?.category || '').trim().toLowerCase();
+
+  if (rawCategory.startsWith(TIERLIST_CATEGORY_CHARACTER_PREFIX)) {
+    return 'character';
+  }
+
+  if (rawCategory.startsWith(TIERLIST_CATEGORY_THEME_SONG_PREFIX)) {
+    return 'theme_song';
+  }
+
+  if (rawCategory.startsWith(TIERLIST_CATEGORY_YOUTUBE_PREFIX)) {
+    return 'youtube';
+  }
+
+  return 'title';
+}
+
 function buildPartySongPoolCacheKey(settings = {}) {
   const normalizedSettings = createPartySettings(settings);
   return JSON.stringify({
@@ -443,6 +469,129 @@ export async function fetchPartySongPool(settings = {}) {
   });
 }
 
+/**
+ * Fetch tierlist template items for party tierlist mode.
+ * Loads the template from Supabase and resolves entity data (titles/characters/custom items).
+ */
+async function fetchPartyTierlistItems(settings = {}) {
+  const templateId = String(settings.tierlistTemplateId || settings.templateId || '').trim();
+  if (!templateId || !supabase) {
+    throw new Error('A tierlist template is required for this mode.');
+  }
+
+  // Fetch template
+  const { data: templateRow, error: templateError } = await supabase
+    .from('tierlist_templates')
+    .select('id, title, title_ids, custom_items, category, default_rows')
+    .eq('id', templateId)
+    .maybeSingle();
+
+  if (templateError) {
+    throw templateError;
+  }
+  if (!templateRow) {
+    throw new Error('Tierlist template not found.');
+  }
+
+  const titleIds = Array.isArray(templateRow.title_ids) ? templateRow.title_ids : [];
+  const customItems = Array.isArray(templateRow.custom_items) ? templateRow.custom_items : [];
+  const entityType = getTierlistTemplateEntityType(templateRow);
+
+  // Resolve catalog entities by type
+  const items = [];
+
+  if (titleIds.length > 0) {
+    const CHUNK_SIZE = 200;
+    for (let i = 0; i < titleIds.length; i += CHUNK_SIZE) {
+      const chunk = titleIds.slice(i, i + CHUNK_SIZE).map(Number).filter(Boolean);
+      if (chunk.length === 0) continue;
+
+      let entityRows = [];
+      if (entityType === 'character') {
+        const { data } = await supabase
+          .from('title_characters')
+          .select('id, name_full, name_native, image_url')
+          .in('id', chunk);
+        entityRows = (data || []).map((row) => ({
+          id: row.id,
+          title: row.name_full || row.name_native || '',
+          imageUrl: row.image_url || '',
+          subtitle: row.name_native || '',
+          entityType: 'character',
+        }));
+      } else if (entityType === 'theme_song') {
+        const { data } = await supabase
+          .from('title_theme_songs')
+          .select(`
+            id, canonical_title_id, song_title, artist_name, video_url,
+            source_title:canonical_titles!title_theme_songs_canonical_title_id_fkey (
+              canonical_title, title_en, title_th, cover_image, banner_image
+            )
+          `)
+          .in('id', chunk);
+        entityRows = (data || []).map((row) => ({
+          id: row.id,
+          title: row.song_title || '',
+          imageUrl: row.source_title?.cover_image || row.source_title?.banner_image || '',
+          subtitle: row.artist_name || row.source_title?.title_th || row.source_title?.title_en || row.source_title?.canonical_title || '',
+          entityType: 'theme_song',
+          mediaUrl: row.video_url || '',
+          isVideo: Boolean(row.video_url),
+        }));
+      } else {
+        // Default: canonical titles
+        const { data } = await supabase
+          .from('canonical_titles')
+          .select('id, canonical_title, title_en, title_th, cover_image, banner_image')
+          .in('id', chunk);
+        entityRows = (data || []).map((row) => ({
+          id: row.id,
+          title: row.title_th || row.title_en || row.canonical_title || '',
+          imageUrl: row.cover_image || row.banner_image || '',
+          subtitle: row.title_en || row.canonical_title || '',
+          entityType: 'title',
+        }));
+      }
+
+      items.push(...entityRows);
+    }
+  }
+
+  // Add custom items
+  customItems.forEach((item) => {
+    const imageUrl = String(item?.imageUrl ?? item?.image_url ?? '').trim();
+    if (!imageUrl) return;
+    items.push({
+      id: item?.id ?? -(items.length + 1),
+      title: String(item?.title ?? item?.label ?? '').trim() || 'Custom item',
+      imageUrl,
+      subtitle: String(item?.subtitle ?? item?.artist_name ?? '').trim(),
+      entityType: String(item?.entityType ?? item?.entity_type ?? entityType).trim(),
+      mediaUrl: String(item?.mediaUrl ?? item?.media_url ?? item?.videoUrl ?? item?.video_url ?? '').trim(),
+      provider: String(item?.provider || '').trim(),
+      providerMediaId: String(item?.providerMediaId ?? item?.provider_media_id ?? item?.trailerVideoId ?? item?.trailer_video_id ?? '').trim(),
+      trailerSite: String(item?.trailerSite ?? item?.trailer_site ?? '').trim(),
+      isVideo: Boolean(
+        item?.isVideo
+        || item?.mediaUrl
+        || item?.media_url
+        || item?.videoUrl
+        || item?.video_url
+        || item?.providerMediaId
+        || item?.provider_media_id
+        || item?.trailerVideoId
+        || item?.trailer_video_id
+      ),
+    });
+  });
+
+  if (items.length === 0) {
+    throw new Error('This tierlist template has no items to vote on.');
+  }
+
+  return items;
+}
+
 export async function startPartyMatch(room, { prebuiltPool = null } = {}) {
   if (!supabase || !room?.id) {
     return null;
@@ -472,6 +621,9 @@ export async function startPartyMatch(room, { prebuiltPool = null } = {}) {
   if (settings.modeType === 'title-guess') {
     const questionPool = await fetchPartyTitleGuessQuestionPool(settings);
     snapshot = buildPartyTitleGuessSnapshot(questionPool, settings);
+  } else if (settings.modeType === 'tierlist') {
+    const tierlistItems = await fetchPartyTierlistItems(settings);
+    snapshot = buildPartyTierlistSnapshot(tierlistItems, settings);
   } else {
     const pool = Array.isArray(prebuiltPool) && prebuiltPool.length > 0
       ? prebuiltPool
@@ -662,13 +814,17 @@ export async function advancePartyRoom(room) {
   }
 
   const isVoteMode = activeModeType === 'vote';
-  const needsVoteTally = isVoteMode && room.current_match?.phase === 'vote';
+  const isTierlistMode = activeModeType === 'tierlist';
+  const needsVoteTally = (isVoteMode && room.current_match?.phase === 'vote')
+    || (isTierlistMode && room.current_match?.phase === 'vote');
 
   // For vote->reveal transition we MUST read DB before writing, so skip optimistic path.
   if (!needsVoteTally) {
     const localNextMatch = isVoteMode
       ? advancePartyVoteMatch(room.current_match)
-      : advancePartyMatch(room.current_match);
+      : isTierlistMode
+        ? advancePartyTierlistMatch(room.current_match)
+        : advancePartyMatch(room.current_match);
     const localNextStatus = localNextMatch?.phase === 'final' ? 'finished' : 'live';
     const { data: optimisticData, error: optimisticError } = await supabase
       .from('party_rooms')
@@ -734,9 +890,33 @@ export async function advancePartyRoom(room) {
     freshRoom.current_match.currentBattle.winnerSongId = String(voteSummary?.winning_song_id || '');
   }
 
+  // Authoritative tierlist vote tally from DB before advancing to reveal.
+  if (freshModeType === 'tierlist' && freshRoom.current_match?.phase === 'vote') {
+    const roundId = freshRoom.current_match.currentVote?.roundId;
+    if (roundId) {
+      const { data: voteRecords } = await supabase
+        .from('party_room_answers')
+        .select('selected_option_id')
+        .eq('room_id', freshRoom.id)
+        .eq('match_id', String(freshRoom.current_match.id))
+        .eq('round_id', String(roundId));
+
+      const result = tallyTierlistVotes(
+        freshRoom.current_match.tierRows,
+        voteRecords || [],
+      );
+      freshRoom.current_match.currentVote = {
+        ...freshRoom.current_match.currentVote,
+        result,
+      };
+    }
+  }
+
   const nextMatch = freshModeType === 'vote'
     ? advancePartyVoteMatch(freshRoom.current_match)
-    : advancePartyMatch(freshRoom.current_match);
+    : freshModeType === 'tierlist'
+      ? advancePartyTierlistMatch(freshRoom.current_match)
+      : advancePartyMatch(freshRoom.current_match);
   const nextStatus = nextMatch?.phase === 'final' ? 'finished' : 'live';
 
   const { data, error } = await supabase
@@ -1018,6 +1198,257 @@ export async function submitPartyVote({
   return data;
 }
 
+/**
+ * Submit a tier vote for the current tierlist item.
+ * Players select which tier (S/A/B/C/D) the item belongs to.
+ */
+export async function submitPartyTierlistVote({
+  room,
+  member,
+  roundId,
+  selectedTierLabel,
+} = {}) {
+  if (!supabase || !room?.id || !member?.member_token || !room?.current_match) {
+    return null;
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match || freshRoom.settings?.modeType !== 'tierlist') {
+    throw new Error('This room is not in an active tierlist session.');
+  }
+
+  if (freshRoom.current_match.phase !== 'vote') {
+    throw new Error('Voting is currently closed.');
+  }
+
+  const currentRoundId = freshRoom.current_match.currentVote?.roundId;
+  if (!currentRoundId || String(currentRoundId) !== String(roundId)) {
+    throw new Error('This voting round has already advanced.');
+  }
+
+  const now = Date.now();
+  const phaseStartedAt = new Date(freshRoom.current_match.phaseStartedAt || now).getTime();
+  const elapsedMs = Math.max(0, now - phaseStartedAt);
+
+  const { data, error } = await supabase
+    .from('party_room_answers')
+    .upsert({
+      room_id: freshRoom.id,
+      match_id: freshRoom.current_match.id,
+      round_id: String(currentRoundId),
+      member_token: member.member_token,
+      member_name: member.display_name,
+      answer_mode: 'choice',
+      selected_option_id: String(selectedTierLabel || ''),
+      title_correct: false,
+      song_correct: false,
+      points_awarded: 0,
+      elapsed_ms: elapsedMs,
+      submitted_at: new Date(now).toISOString(),
+    }, { onConflict: 'round_id,member_token' })
+    .select(PARTY_ROOM_ANSWER_SELECT)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Host override: skip, force-place, or extend time for the current tierlist item.
+ * @param {Object} room - current room
+ * @param {Object} override - { action: 'skip' | 'place' | 'extend', tierLabel?, extendSec? }
+ */
+export async function applyPartyTierlistHostOverride({ room, override } = {}) {
+  if (!supabase || !room?.id || !room?.current_match) {
+    return null;
+  }
+
+  const freshRoom = await fetchPartyRoomRecordById(room.id);
+  if (!freshRoom?.current_match || freshRoom.current_match.modeType !== 'tierlist') {
+    throw new Error('This room is not in a tierlist session.');
+  }
+
+  const match = { ...freshRoom.current_match };
+
+  if (override.action === 'advance') {
+    if (match.phase === 'vote' && match.currentVote?.roundId) {
+      const { data: voteRecords, error: voteError } = await supabase
+        .from('party_room_answers')
+        .select('selected_option_id')
+        .eq('room_id', freshRoom.id)
+        .eq('match_id', String(match.id))
+        .eq('round_id', String(match.currentVote.roundId));
+
+      if (voteError) {
+        throw voteError;
+      }
+
+      const result = tallyTierlistVotes(match.tierRows || [], voteRecords || []);
+      match.currentVote = {
+        ...match.currentVote,
+        result,
+      };
+    }
+
+    const nextMatch = advancePartyTierlistMatch(match);
+    if (!nextMatch) {
+      throw new Error('Unable to advance the tierlist round.');
+    }
+
+    const nextStatus = nextMatch.phase === 'final' ? 'finished' : freshRoom.status;
+    const { data, error } = await supabase
+      .from('party_rooms')
+      .update({
+        status: nextStatus,
+        current_match: nextMatch,
+      })
+      .eq('id', freshRoom.id)
+      .eq('host_member_token', freshRoom.host_member_token)
+      .eq('updated_at', freshRoom.updated_at)
+      .select(PARTY_ROOM_SELECT);
+
+    if (error) {
+      throw error;
+    }
+
+    const nextRoom = takeFirstRecord(data);
+    if (nextRoom) {
+      await broadcastPartyRoomEvent(freshRoom.id, {
+        type: 'MATCH_ADVANCED',
+        payload: { room: buildPartyRoomRealtimePatch(nextRoom, freshRoom, { forceKeys: ['status', 'current_match', 'updated_at'] }) },
+      });
+    }
+
+    return nextRoom || freshRoom;
+  }
+
+  if (override.action === 'extend') {
+    // Extend current phase timer
+    const extendMs = (Number(override.extendSec) || 10) * 1000;
+    const currentEnd = match.phaseEndsAt ? new Date(match.phaseEndsAt).getTime() : Date.now();
+    match.phaseEndsAt = new Date(currentEnd + extendMs).toISOString();
+  } else {
+    // Set hostOverride for the state machine to handle on next advance
+    match.hostOverride = {
+      action: override.action,
+      tierLabel: override.tierLabel || null,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('party_rooms')
+    .update({ current_match: match })
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('updated_at', freshRoom.updated_at)
+    .select(PARTY_ROOM_SELECT);
+
+  if (error) {
+    throw error;
+  }
+
+  const nextRoom = takeFirstRecord(data);
+  if (nextRoom) {
+    await broadcastPartyRoomEvent(freshRoom.id, {
+      type: 'MATCH_ADVANCED',
+      payload: { room: buildPartyRoomRealtimePatch(nextRoom, freshRoom, { forceKeys: ['current_match', 'updated_at'] }) },
+    });
+  }
+
+  return nextRoom || freshRoom;
+}
+
+export async function submitPartyTierlistSkipVote({
+  room,
+  member,
+  roundId,
+} = {}) {
+  if (!supabase || !room?.id || !member?.member_token || !room?.current_match) {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const freshRoom = await fetchPartyRoomRecordById(room.id);
+    if (!freshRoom?.current_match || freshRoom.settings?.modeType !== 'tierlist') {
+      throw new Error('This room is not in an active tierlist session.');
+    }
+
+    const currentPhase = freshRoom.current_match.phase;
+    const currentVote = freshRoom.current_match.currentVote || null;
+    if (currentPhase !== 'show-item' || !currentVote || String(currentVote.roundId || '') !== String(roundId || '')) {
+      throw new Error('Skipping is only available while the room is watching this item.');
+    }
+
+    const members = await fetchPartyRoomMembers(freshRoom.id);
+    const requiredVotes = getPartySkipVoteThreshold(members.length);
+    const memberToken = String(member.member_token || '');
+    const existingSkipVotes = currentVote?.skipVotes;
+    const memberTokens = existingSkipVotes?.phase === currentPhase && Array.isArray(existingSkipVotes?.memberTokens)
+      ? [...new Set(existingSkipVotes.memberTokens.map((token) => String(token || '')).filter(Boolean))]
+      : [];
+
+    if (memberTokens.includes(memberToken)) {
+      return {
+        advanced: false,
+        alreadyVoted: true,
+        votes: memberTokens.length,
+        requiredVotes,
+      };
+    }
+
+    const nextMatch = {
+      ...freshRoom.current_match,
+      currentVote: {
+        ...currentVote,
+        skipVotes: {
+          phase: currentPhase,
+          memberTokens: [...memberTokens, memberToken],
+          requiredVotes,
+        },
+      },
+    };
+
+    const { data, error } = await supabase
+      .from('party_rooms')
+      .update({
+        current_match: nextMatch,
+      })
+      .eq('id', freshRoom.id)
+      .eq('updated_at', freshRoom.updated_at)
+      .select(PARTY_ROOM_SELECT);
+
+    if (error) {
+      const message = String(error?.message || '').toLowerCase();
+      const details = String(error?.details || '').toLowerCase();
+      if (message.includes('0 rows') || details.includes('0 rows')) {
+        continue;
+      }
+      throw error;
+    }
+
+    const nextRoom = takeFirstRecord(data);
+    if (nextRoom) {
+      await broadcastPartyRoomEvent(freshRoom.id, {
+        type: 'MATCH_ADVANCED',
+        payload: { room: buildPartyRoomRealtimePatch(nextRoom, freshRoom, { forceKeys: ['current_match', 'updated_at'] }) },
+      });
+    }
+
+    return {
+      advanced: false,
+      alreadyVoted: false,
+      votes: memberTokens.length + 1,
+      requiredVotes,
+      room: nextRoom || freshRoom,
+    };
+  }
+
+  throw new Error('This item changed while recording the skip vote. Please try again.');
+}
+
 export async function submitPartySkipVote({
   room,
   member,
@@ -1144,25 +1575,49 @@ export async function submitPartyLiveChatMessage({
     return null;
   }
 
-  if (normalizedPhase !== 'play-a' && normalizedPhase !== 'play-b') {
-    throw new Error('Live chat is only available while media is playing.');
-  }
-
   const freshRoom = await fetchPartyRoomRecordById(room.id);
   const currentMatch = freshRoom?.current_match || null;
   const currentBattle = currentMatch?.currentBattle || null;
+  const currentTierVote = currentMatch?.currentVote || null;
   const currentPhase = String(currentMatch?.phase || '').trim();
+  const modeType = String(freshRoom?.settings?.modeType || currentMatch?.modeType || '').trim();
 
-  if (!currentMatch || freshRoom.settings?.modeType !== 'vote') {
-    throw new Error('This room is not in an active vote battle.');
+  let scopeKey = '';
+  if (!currentMatch || !modeType) {
+    throw new Error('This room is not in an active party match.');
   }
 
-  if (currentPhase !== normalizedPhase) {
-    throw new Error('This chat moment has already moved on.');
-  }
+  if (modeType === 'vote') {
+    if (normalizedPhase !== 'play-a' && normalizedPhase !== 'play-b') {
+      throw new Error('Live chat is only available while media is playing.');
+    }
 
-  if (!currentBattle || String(currentBattle.id || '') !== normalizedBattleId) {
-    throw new Error('This battle has already advanced.');
+    if (currentPhase !== normalizedPhase) {
+      throw new Error('This chat moment has already moved on.');
+    }
+
+    if (!currentBattle || String(currentBattle.id || '') !== normalizedBattleId) {
+      throw new Error('This battle has already advanced.');
+    }
+
+    scopeKey = `${normalizedBattleId}:${normalizedPhase}`;
+  } else if (modeType === 'tierlist') {
+    const allowedTierlistPhases = new Set(['show-item', 'vote', 'reveal']);
+    if (!allowedTierlistPhases.has(normalizedPhase)) {
+      throw new Error('Chat is only available during the active tierlist round.');
+    }
+
+    if (currentPhase !== normalizedPhase) {
+      throw new Error('This tierlist moment has already moved on.');
+    }
+
+    if (!currentTierVote || String(currentTierVote.roundId || '') !== normalizedBattleId) {
+      throw new Error('This tierlist round has already advanced.');
+    }
+
+    scopeKey = `tierlist:${normalizedBattleId}`;
+  } else {
+    throw new Error('Live chat is not available in this mode.');
   }
 
   const message = {
@@ -1170,7 +1625,7 @@ export async function submitPartyLiveChatMessage({
     roomId: String(freshRoom.id || ''),
     battleId: normalizedBattleId,
     phase: normalizedPhase,
-    scopeKey: `${normalizedBattleId}:${normalizedPhase}`,
+    scopeKey,
     memberToken: String(member.member_token || ''),
     memberName: String(member.display_name || member.memberName || 'Player').trim() || 'Player',
     avatarKey: String(member.avatar_key || member.avatarKey || 'rose').trim() || 'rose',

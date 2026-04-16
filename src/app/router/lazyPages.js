@@ -5,7 +5,9 @@ function lazyFeatureExport(factory, exportName) {
 }
 
 export const HomePage = lazyFeatureExport(() => import('@/features/titles'), 'Home');
+export const HomeV2MockupPage = lazyFeatureExport(() => import('@/features/titles'), 'HomeV2Mockup');
 export const BattleHubPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleHub');
+export const BattleDeckDetailPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleDeckDetailPage');
 export const BattleBrowsePage = lazyFeatureExport(() => import('@/features/battle'), 'BattleBrowsePage');
 export const BattleBuilderPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleBuilderPage');
 export const BattleDeckLibraryPage = lazyFeatureExport(() => import('@/features/battle'), 'BattleDeckLibraryPage');

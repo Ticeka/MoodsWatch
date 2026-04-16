@@ -4,8 +4,10 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, ChevronLeft, ChevronRight, LibrarySquare, Loader2, Music, Plus } from 'lucide-react';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/api/partyRemoteApi';
 import { fetchPublicBattleDecks } from '@/features/battle/api/battleRemoteApi';
+import { fetchRemoteTemplates } from '@/features/tierlist/api/tierlistRemoteQueriesApi';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
 import { PartyTemplateCard } from '../components/PartyTemplateCard';
 import { PartyTemplateFilters } from '../components/PartyTemplateFilters';
@@ -24,7 +26,7 @@ function useDebounce(value, delay = 500) {
   return dv;
 }
 
-function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDecks = []) {
+function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDecks = [], tierlistTemplates = []) {
   const normalizedSongTemplates = (songTemplates || []).map((template) => ({
     ...template,
     id: `song:${template.id}`,
@@ -68,7 +70,33 @@ function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDe
     };
   });
 
-  return [...normalizedSongTemplates, ...normalizedTitleGuessSets, ...normalizedBattleDecks];
+  const normalizedTierlistTemplates = (tierlistTemplates || [])
+    .filter((t) => {
+      const titleCount = Array.isArray(t?.titleIds) ? t.titleIds.length : 0;
+      const customCount = Array.isArray(t?.customItems) ? t.customItems.filter((i) => i?.imageUrl).length : 0;
+      return titleCount + customCount > 0;
+    })
+    .map((template) => ({
+      ...template,
+      id: `tierlist:${template.id}`,
+      contentId: template.id,
+      contentType: 'tierlist',
+      name: template.title || '',
+      description: template.description || '',
+      coverUrl: template.previewArtworkUrl || template.manualPreviewArtworkUrl || '',
+      creatorName: '',
+      modeScope: 'tierlist',
+      isOfficial: Boolean(template.isSystem),
+      likes: 0,
+      playCount: Number(template.plays || 0),
+      itemCount: (Array.isArray(template.titleIds) ? template.titleIds.length : 0)
+        + (Array.isArray(template.customItems) ? template.customItems.filter((i) => i?.imageUrl).length : 0),
+      tags: [],
+      updatedAt: template.updatedAt || template.createdAt || '',
+      defaultRows: template.defaultRows || [],
+    }));
+
+  return [...normalizedSongTemplates, ...normalizedTitleGuessSets, ...normalizedBattleDecks, ...normalizedTierlistTemplates];
 }
 
 function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } = {}) {
@@ -76,9 +104,10 @@ function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } 
     if (setType !== 'all') {
       if (setType === 'battle-deck') {
         if (item.contentType !== 'battle-deck') return false;
-      } else if (item.contentType === 'battle-deck') {
-        // battle decks only show when explicitly filtered or in vote mode
-        if (setType !== 'all') return false;
+      } else if (setType === 'tierlist') {
+        if (item.contentType !== 'tierlist') return false;
+      } else if (item.contentType === 'battle-deck' || item.contentType === 'tierlist') {
+        return false;
       } else if (item.contentType !== setType) {
         return false;
       }
@@ -88,8 +117,17 @@ function filterListingItems(items = [], { setType = 'all', filterMode = 'all' } 
       return true;
     }
 
+    if (filterMode === 'tierlist') {
+      return item.contentType === 'tierlist';
+    }
+
     if (filterMode === 'title-guess') {
       return item.contentType === 'title-guess';
+    }
+
+    // Hide tierlist items from non-tierlist filter modes
+    if (item.contentType === 'tierlist') {
+      return false;
     }
 
     if (item.contentType === 'title-guess') {
@@ -155,6 +193,10 @@ function sortListingItems(items = [], sortBy = 'recent') {
 
 function buildRoomReturnSelectionUrl(returnTo, template) {
   const separator = returnTo.includes('?') ? '&' : '?';
+  if (template.contentType === 'tierlist') {
+    return `${returnTo}${separator}templateId=${encodeURIComponent(template.contentId)}&templateName=${encodeURIComponent(template.name || '')}&modeType=tierlist`;
+  }
+
   if (template.contentType === 'title-guess') {
     return `${returnTo}${separator}titleGuessSetId=${encodeURIComponent(template.contentId)}&modeType=title-guess`;
   }
@@ -168,21 +210,42 @@ function buildRoomReturnSelectionUrl(returnTo, template) {
 
 export function PartyTemplatesPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { pick } = useLanguage();
   const { user } = useAuth();
+  const { showAdult } = useAgeGate();
   const returnTo = searchParams.get('returnTo') || '';
   const requestedMode = String(searchParams.get('mode') || 'all').trim().toLowerCase();
 
-  const [currentTab, setCurrentTab] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState(
-    ['quiz', 'vote', 'mixed', 'title-guess'].includes(requestedMode) ? requestedMode : 'all'
-  );
-  const [setType, setSetType] = useState(requestedMode === 'title-guess' ? 'title-guess' : 'all');
-  const [sortBy, setSortBy] = useState('recent');
+  // Filter/search/page state is persisted in URL so browser back restores it
+  const currentTab = searchParams.get('tab') || 'all';
+  const searchQuery = searchParams.get('q') || '';
+  const filterMode = searchParams.get('filter') !== null
+    ? (searchParams.get('filter') || 'all')
+    : (['quiz', 'vote', 'mixed', 'title-guess', 'tierlist'].includes(requestedMode) ? requestedMode : 'all');
+  const setType = searchParams.get('type') !== null
+    ? (searchParams.get('type') || 'all')
+    : (requestedMode === 'title-guess' ? 'title-guess' : requestedMode === 'tierlist' ? 'tierlist' : 'all');
+  const sortBy = searchParams.get('sort') || 'recent';
+  const page = Math.max(1, Number(searchParams.get('page') || '1'));
+
+  const updateParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '' || (value === 'all' && key !== 'mode')) {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      // Reset page to 1 unless explicitly setting page
+      if (!('page' in updates)) next.delete('page');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
   const [items, setItems] = useState([]);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -208,10 +271,15 @@ export function PartyTemplatesPage() {
         limit: FETCH_LIMIT,
       }),
       fetchPublicBattleDecks({ limit: FETCH_LIMIT, offset: 0 }).catch(() => []),
+      fetchRemoteTemplates(user?.id || null, {
+        includePublic: true,
+        includeOwned: true,
+        showAdult: showAdult === true ? true : false,
+      }).catch(() => []),
     ])
-      .then(([songResult, titleGuessSets, battleDecks]) => {
+      .then(([songResult, titleGuessSets, battleDecks, tierlistTemplates]) => {
         if (!ignore) {
-          setItems(normalizeListingItems(songResult?.templates || [], titleGuessSets || [], battleDecks || []));
+          setItems(normalizeListingItems(songResult?.templates || [], titleGuessSets || [], battleDecks || [], tierlistTemplates || []));
         }
       })
       .catch((err) => {
@@ -229,7 +297,7 @@ export function PartyTemplatesPage() {
     return () => {
       ignore = true;
     };
-  }, [currentTab, debouncedSearch, user?.id]);
+  }, [currentTab, debouncedSearch, showAdult, user?.id]);
 
   useEffect(() => {
     const cleanup = loadTemplates();
@@ -260,6 +328,15 @@ export function PartyTemplatesPage() {
         navigate(buildRoomReturnSelectionUrl(returnTo, template), { viewTransition: true });
       } else {
         toast(pick('Battle Deck สามารถเลือกใช้ได้ตอนตั้งค่าห้อง Vote Battle', 'Battle Decks can be selected from the Vote Battle room setup flow.'));
+      }
+      return;
+    }
+
+    if (template.contentType === 'tierlist') {
+      if (returnTo) {
+        navigate(buildRoomReturnSelectionUrl(returnTo, template), { viewTransition: true });
+      } else {
+        toast(pick('Tierlist เทมเพลตสามารถเลือกใช้ได้ตอนตั้งค่าห้อง Tierlist Vote', 'Tierlist templates can be selected from the Tierlist Vote room setup flow.'));
       }
       return;
     }
@@ -322,40 +399,33 @@ export function PartyTemplatesPage() {
         <PartyTemplateFilters
           currentTab={currentTab}
           onTabChange={(nextTab) => {
-            setPage(1);
             setLoading(true);
             setFetchError(null);
-            setCurrentTab(nextTab);
+            updateParams({ tab: nextTab });
           }}
           searchQuery={searchQuery}
           onSearchChange={(nextQuery) => {
-            setPage(1);
             setLoading(true);
             setFetchError(null);
-            setSearchQuery(nextQuery);
+            updateParams({ q: nextQuery || null });
           }}
           filterMode={filterMode}
           onFilterModeChange={(nextMode) => {
-            setPage(1);
-            setFilterMode(nextMode);
-            if (nextMode === 'title-guess') {
-              setSetType('title-guess');
-            }
+            const extra = nextMode === 'title-guess' ? { type: 'title-guess' } : {};
+            updateParams({ filter: nextMode, ...extra });
           }}
           setType={setType}
           onSetTypeChange={(nextType) => {
-            setPage(1);
-            setSetType(nextType);
-            if (nextType === 'title-guess' && filterMode !== 'title-guess') {
-              setFilterMode('title-guess');
-            } else if (nextType === 'song-set' && filterMode === 'title-guess') {
-              setFilterMode('all');
-            }
+            const extraFilter = nextType === 'title-guess' && filterMode !== 'title-guess'
+              ? { filter: 'title-guess' }
+              : nextType === 'song-set' && filterMode === 'title-guess'
+                ? { filter: null }
+                : {};
+            updateParams({ type: nextType, ...extraFilter });
           }}
           sortBy={sortBy}
           onSortByChange={(nextSort) => {
-            setPage(1);
-            setSortBy(nextSort);
+            updateParams({ sort: nextSort });
           }}
         />
 
@@ -396,7 +466,7 @@ export function PartyTemplatesPage() {
               <div className="party-templates-pagination">
                 <button
                   className="pt-page-btn"
-                  onClick={() => setPage((p) => Math.max(1, Math.min(totalPages, p) - 1))}
+                  onClick={() => updateParams({ page: Math.max(1, currentPage - 1) === 1 ? null : Math.max(1, currentPage - 1) })}
                   disabled={currentPage === 1}
                   aria-label="Previous page"
                 >
@@ -419,7 +489,7 @@ export function PartyTemplatesPage() {
                         <button
                           key={pageItem}
                           className={`pt-page-btn ${pageItem === currentPage ? 'is-active' : ''}`}
-                          onClick={() => setPage(pageItem)}
+                          onClick={() => updateParams({ page: pageItem === 1 ? null : pageItem })}
                         >
                           {pageItem}
                         </button>
@@ -428,7 +498,7 @@ export function PartyTemplatesPage() {
 
                 <button
                   className="pt-page-btn"
-                  onClick={() => setPage((p) => Math.min(totalPages, Math.min(totalPages, p) + 1))}
+                  onClick={() => updateParams({ page: Math.min(totalPages, currentPage + 1) })}
                   disabled={currentPage === totalPages}
                   aria-label="Next page"
                 >

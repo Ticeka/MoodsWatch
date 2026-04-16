@@ -316,6 +316,7 @@ export function PartyAutoAdvance({
   playbackEndedAtMs,
   revealPlaybackStartedAtMs,
   answerGraceMs,
+  disabled = false,
   onAdvanced,
   onAdvanceError,
 }) {
@@ -324,7 +325,7 @@ export function PartyAutoAdvance({
   const isVotePlaybackPhase = currentMatch?.phase === 'play-a' || currentMatch?.phase === 'play-b';
 
   useEffect(() => {
-    if (!isHost || !room || currentMatch?.phase === 'final') {
+    if (disabled || !isHost || !room || currentMatch?.phase === 'final') {
       return undefined;
     }
 
@@ -335,7 +336,7 @@ export function PartyAutoAdvance({
     return () => {
       window.clearInterval(timer);
     };
-  }, [currentMatch?.phase, currentMatch?.phaseEndsAt, isHost, room]);
+  }, [currentMatch?.phase, currentMatch?.phaseEndsAt, disabled, isHost, room]);
 
   const revealAdvanceAtMs = revealPlaybackStartedAtMs
     ? revealPlaybackStartedAtMs + (Number(currentMatch?.revealSec || room?.settings?.revealSec || 12) * 1000)
@@ -350,7 +351,7 @@ export function PartyAutoAdvance({
       : phaseEndsAtMs;
 
   useEffect(() => {
-    if (!isHost || !room || currentMatch?.phase === 'final' || !advanceAtMs) {
+    if (disabled || !isHost || !room || currentMatch?.phase === 'final' || !advanceAtMs) {
       return;
     }
 
@@ -371,7 +372,7 @@ export function PartyAutoAdvance({
           advancingRef.current = false;
         }, 400);
       });
-  }, [advanceAtMs, currentMatch?.phase, currentMatch?.phaseEndsAt, isHost, now, onAdvanceError, onAdvanced, room]);
+  }, [advanceAtMs, currentMatch?.phase, currentMatch?.phaseEndsAt, disabled, isHost, now, onAdvanceError, onAdvanced, room]);
 
   return null;
 }

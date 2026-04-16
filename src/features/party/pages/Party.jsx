@@ -81,6 +81,7 @@ import { PartyLobbyView } from './PartyLobby';
 import { PartyQuestionView } from './PartyQuestion';
 import { PartyRevealView } from './PartyReveal';
 import { PartyVoteRoomView } from '../components/PartyVoteRoomView';
+import { PartyTierlistRoomView } from '../components/PartyTierlistRoomView';
 import '../styles/Party.css';
 
 const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 300;
@@ -195,7 +196,7 @@ export function PartyRoomPage() {
     const modeType = searchParams.get('modeType');
     const modeScope = searchParams.get('modeScope') || 'all';
     const presetId = searchParams.get('presetId');
-    const resolvedMode = (modeType === 'vote' || modeType === 'quiz')
+    const resolvedMode = (modeType === 'vote' || modeType === 'quiz' || modeType === 'tierlist')
       ? modeType
       : modeScope === 'vote'
         ? 'vote'
@@ -280,8 +281,10 @@ export function PartyRoomPage() {
     battleDeckPoolIdRef.current = '';
     setRoomSettingsDraft((current) => createPartySettings({
       ...current,
-      templateId: pendingTemplateSelection.templateId,
-      templateName: pendingTemplateSelection.templateName || current.templateName,
+      templateId: pendingTemplateSelection.modeType === 'tierlist' ? '' : pendingTemplateSelection.templateId,
+      templateName: pendingTemplateSelection.modeType === 'tierlist' ? '' : (pendingTemplateSelection.templateName || current.templateName),
+      tierlistTemplateId: pendingTemplateSelection.modeType === 'tierlist' ? pendingTemplateSelection.templateId : '',
+      tierlistTemplateName: pendingTemplateSelection.modeType === 'tierlist' ? (pendingTemplateSelection.templateName || '') : '',
       modeType: pendingTemplateSelection.modeType,
       modeScope: pendingTemplateSelection.modeScope,
       presetId: pendingTemplateSelection.presetId || current.presetId,
@@ -821,7 +824,7 @@ export function PartyRoomPage() {
       return undefined;
     }
 
-    if (roomSettingsDraft.modeType === 'title-guess') {
+    if (roomSettingsDraft.modeType === 'title-guess' || roomSettingsDraft.modeType === 'tierlist') {
       setTemplateOptions([]);
       return undefined;
     }
@@ -1466,7 +1469,13 @@ export function PartyRoomPage() {
 
     try {
       setBusyAction('start');
-      
+
+      if (roomSettingsDraft.modeType === 'tierlist' && !String(roomSettingsDraft.tierlistTemplateId || '').trim()) {
+        toast.error(pick('เลือกเทมเพลต Tierlist ก่อนเริ่ม', 'Select a Tierlist template before starting'));
+        setBusyAction('');
+        return;
+      }
+
       if (hasPendingRoomSettings) {
         await handleSaveRoomSettings({ silent: true });
       }
@@ -1715,6 +1724,11 @@ export function PartyRoomPage() {
           playbackEndedAtMs={playbackEndedAtMs}
           revealPlaybackStartedAtMs={revealPlaybackStartedAtMs}
           answerGraceMs={answerGraceMs}
+          disabled={
+            room?.settings?.modeType === 'tierlist'
+              && currentMatch?.phase !== 'vote'
+              && currentMatch?.phase !== 'reveal'
+          }
           onAdvanced={(nextRoom) => {
             applyEvent({
               type: 'ROOM_UPDATED',
@@ -1768,7 +1782,24 @@ export function PartyRoomPage() {
           </div>
         ) : null}
 
-        {room?.settings?.modeType === 'vote' ? (
+        {room?.settings?.modeType === 'tierlist' ? (
+          <PartyTierlistRoomView
+            room={room}
+            guestToken={guestToken}
+            partyProfile={partyProfile}
+            currentMember={currentMember}
+            isHost={isHost}
+            busyAction={busyAction}
+            pick={pick}
+            onToggleReady={handleToggleReady}
+            onCloseRoom={handleCloseRoom}
+            onRematch={handleRematch}
+            onStartMatch={handleStartMatch}
+            hostEditor={hostEditor}
+            reactionFeed={reactionFeed}
+            onReaction={handleReaction}
+          />
+        ) : room?.settings?.modeType === 'vote' ? (
           <PartyVoteRoomView
             room={room}
             guestToken={guestToken}

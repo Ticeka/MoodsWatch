@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, Compass, Crown, Loader2, Medal, Play, Sparkles } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
@@ -11,6 +11,7 @@ import { buildEntityMaps, fetchCharacterEntitiesByIds, fetchThemeSongEntitiesByI
 import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, hasVisibleTierListTitles, sortListsByRecentAndPopularity } from '@/features/tierlist/lib/tierlistPageUtils';
 import { getTemplatePreviewArtworkSource, getTemplatePreviewMediaStyle, normalizeTemplatePreviewFit } from '@/features/tierlist/lib/tierlistPreviewUtils';
 import { Button } from '@/shared/components/ui/Button';
+import { PlayModeModal } from '@/shared/components/ui/PlayModeModal';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
@@ -29,6 +30,7 @@ export function TierListTemplatePage() {
   const [isTemplateLoading, setIsTemplateLoading] = useState(true);
   const [isPreviewLoading, setIsPreviewLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [showModeModal, setShowModeModal] = useState(false);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -199,8 +201,9 @@ export function TierListTemplatePage() {
           <TierListErrorPanel
             message={loadError || pick('ไม่พบเทมเพลต', 'Template not found')}
             onRetry={() => window.location.reload()}
-            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
+            backLabel={pick('ย้อนกลับ', 'Back')}
             backTo="/tierlist"
+            onBack={() => navigate(-1)}
           />
         </section>
       </div>
@@ -214,16 +217,30 @@ export function TierListTemplatePage() {
   const heroCoverArtwork = getTemplatePreviewArtworkSource(template, previewTitles[0]);
   const previewPodium = previewTitles.slice(0, 3);
 
+  const heroCover = heroCoverArtwork || previewTitles[0]?.cover || '';
+
   return (
     <div className="tierlist-page">
+
+      <PlayModeModal
+        isOpen={showModeModal}
+        onClose={() => setShowModeModal(false)}
+        onSolo={handlePlay}
+        onMulti={() => { setShowModeModal(false); navigate('/party'); }}
+        title={template.title}
+        cover={heroCover}
+        multiLabel="Play with Friends"
+        multiHint="Create a party room and rank together"
+      />
+
       <section className="container tierlist-hero tierlist-create-hero tierlist-create-rail">
         <div className="tierlist-create-hero">
           <span className="tierlist-kicker"><Sparkles size={14} /> {pick('รายละเอียดเทมเพลต', 'Template Detail')}</span>
           <h1>{template.title}</h1>
           <p>{template.description || pick('ยังไม่มีคำอธิบาย', 'No description yet.')}</p>
           <div className="tierlist-hero-actions">
-            <Link className="btn btn-ghost" to="/tierlist">{pick('กลับไปหน้ารวม', 'Back to Browse')}</Link>
-            <Button variant="primary" iconRight={<ArrowRight size={14} />} onClick={handlePlay}>
+            <button className="btn btn-ghost" onClick={() => navigate(-1)}>{pick('ย้อนกลับ', 'Back')}</button>
+            <Button variant="primary" iconRight={<ArrowRight size={14} />} onClick={() => setShowModeModal(true)}>
               {pick('เล่นเทมเพลตนี้', 'Play This Template')}
             </Button>
           </div>

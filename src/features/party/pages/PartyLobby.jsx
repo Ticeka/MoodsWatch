@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, ChevronDown, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
 import {
@@ -12,6 +12,109 @@ import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import { useHydratedPartyMembers } from '@/features/party/lib/usePartyRoomSelectors';
 import { PartyJoinRequestsPanel } from '@/features/party/components/PartyJoinRequestsPanel';
 import { PartyPlayerList } from '../components/PartyRoomShared';
+
+const PARTY_MODE_DEFS = [
+  {
+    key: 'quiz',
+    emoji: '🎵',
+    nameTh: 'Music Quiz',
+    nameEn: 'Music Quiz',
+    hintTh: 'ทายชื่อเพลงจากคลิปเสียง',
+    hintEn: 'Guess songs from audio clips',
+    colorClass: 'is-quiz',
+    modeType: 'quiz',
+  },
+  {
+    key: 'vote',
+    vs: true,
+    nameTh: 'Vote Battle',
+    nameEn: 'Vote Battle',
+    hintTh: 'โหวตแบบ 1v1 ว่าชอบอะไรมากกว่า',
+    hintEn: '1v1 bracket — vote your favourite',
+    colorClass: 'is-vote',
+    modeType: 'vote',
+  },
+  {
+    key: 'title-guess',
+    emoji: '🃏',
+    nameTh: 'ทายชื่อเรื่อง',
+    nameEn: 'Guess the Title',
+    hintTh: 'ดูภาพ/เบาะแส แล้วทายชื่อ anime/manga',
+    hintEn: 'See clues and guess anime/manga titles',
+    colorClass: 'is-title-guess',
+    modeType: 'title-guess',
+    presetId: 'title-guess',
+  },
+  {
+    key: 'pixel-reveal',
+    emoji: '🖼️',
+    nameTh: 'ปิดรูปพิกเซล',
+    nameEn: 'Pixel Reveal',
+    hintTh: 'ภาพถูกบังด้วยพิกเซล — ทายก่อนใครเฉลย',
+    hintEn: 'Pixelated image — guess before it reveals',
+    colorClass: 'is-pixel-reveal',
+    modeType: 'title-guess',
+    presetId: 'pixel-reveal',
+  },
+  {
+    key: 'tierlist',
+    emoji: '🏆',
+    nameTh: 'Tierlist โหวต',
+    nameEn: 'Tierlist Vote',
+    hintTh: 'ทุกคนจัด tier พร้อมกัน แล้วเปรียบผล',
+    hintEn: 'Everyone ranks together, then compare',
+    colorClass: 'is-tierlist',
+    modeType: 'tierlist',
+  },
+];
+
+function getActiveModeKey(settings) {
+  if (!settings) return 'quiz';
+  if (settings.modeType === 'vote') return 'vote';
+  if (settings.modeType === 'tierlist') return 'tierlist';
+  if (settings.modeType === 'title-guess') {
+    const pid = settings.presetId || '';
+    return pid === 'pixel-reveal' || pid === 'pixel-reveal-choice' ? 'pixel-reveal' : 'title-guess';
+  }
+  return 'quiz';
+}
+
+function ModePickerModal({ activeModeKey, onSelect, onClose, voteOnlySelectionActive, quizOnlySelectionActive, pick }) {
+  return (
+    <div className="party-mode-modal-overlay" onClick={onClose}>
+      <div className="party-mode-modal" role="dialog" aria-modal="true" aria-label={pick('เลือกโหมดเกม', 'Choose game mode')} onClick={(e) => e.stopPropagation()}>
+        <div className="party-mode-modal-head">
+          <strong>{pick('เลือกโหมดเกม', 'Choose Game Mode')}</strong>
+          <button className="party-mode-modal-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
+        </div>
+        <div className="party-mode-modal-grid">
+          {PARTY_MODE_DEFS.map((mode) => {
+            const isActive = mode.key === activeModeKey;
+            const isDisabled = (mode.key === 'vote' && quizOnlySelectionActive) || (mode.key === 'quiz' && voteOnlySelectionActive);
+            return (
+              <button
+                key={mode.key}
+                type="button"
+                className={`party-mode-modal-card party-lobby-mode-card ${mode.colorClass}${isActive ? ' is-active' : ''}${isDisabled ? ' is-disabled' : ''}`}
+                onClick={() => { if (!isDisabled) { onSelect(mode); onClose(); } }}
+                disabled={isDisabled}
+              >
+                <span className="party-mode-modal-card-top">
+                  {mode.vs
+                    ? <span className="party-lobby-mode-card-vs">VS</span>
+                    : <span className="party-lobby-mode-card-emoji">{mode.emoji}</span>}
+                  {isActive && <span className="party-mode-modal-active-badge">{pick('ใช้งานอยู่', 'Active')}</span>}
+                </span>
+                <span className="party-lobby-mode-card-name">{pick(mode.nameTh, mode.nameEn)}</span>
+                <span className="party-mode-modal-card-hint">{pick(mode.hintTh, mode.hintEn)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function getResolvedPoolCopy({
   isTitleGuessMode,
@@ -50,6 +153,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   pick,
 }) {
   const navigate = useNavigate();
+  const [showModeModal, setShowModeModal] = useState(false);
   const roomId = room?.id;
   const members = useHydratedPartyMembers(guestToken, partyProfile);
   const isVoteMode = room?.settings?.modeType === 'vote';
@@ -69,6 +173,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
   const readyCount = useMemo(() => members.filter((member) => member.is_ready).length, [members]);
   const requiredReadyCount = useMemo(() => getPartyRequiredReadyCount(members.length), [members.length]);
   const editorIsVote = hostEditor?.settings?.modeType === 'vote';
+  const editorIsTierlist = hostEditor?.settings?.modeType === 'tierlist';
   const editorIsTitleGuess = hostEditor?.settings?.modeType === 'title-guess';
   const editorIsPixelReveal = editorIsTitleGuess && (hostEditor?.settings?.presetId === 'pixel-reveal' || hostEditor?.settings?.presetId === 'pixel-reveal-choice');
   const editorTemplateName = hostEditor?.settings?.templateName || '';
@@ -166,157 +271,196 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
             </div>
 
             <div className="party-host-settings-editor">
-              {editorIsTitleGuess ? (
-                <div className="party-host-template-hero party-host-template-hero--title-guess">
-                  <div className="party-host-template-hero-art" aria-hidden="true">
-                    {selectedTitleGuessSetCoverUrl ? (
-                      <img
-                        className="party-host-template-hero-art-image"
-                        src={selectedTitleGuessSetCoverUrl}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <span className="party-host-template-hero-art-fallback">🃏</span>
-                    )}
-                  </div>
-                  <div className="party-host-template-hero-copy">
-                    <span className="party-host-template-hero-kicker">{pick('ชุดคำถาม', 'Question set')}</span>
-                    <strong>
-                      {selectedTitleGuessSetName || pick('ยังไม่ได้เลือก', 'Not selected')}
-                    </strong>
-                    <span className="party-host-template-hero-meta">
-                      {selectedTitleGuessQuestionCount > 0
-                        ? pick(`${selectedTitleGuessQuestionCount} ข้อพร้อมเล่น`, `${selectedTitleGuessQuestionCount} ready questions`)
-                        : pick('เลือกชุดเพื่อเริ่มจัดห้อง', 'Pick a set before starting the room')}
-                    </span>
-                  </div>
-                  <div className="party-host-title-guess-side">
-                    {selectedTitleGuessSet ? (
-                      <div className="party-host-title-guess-stats" aria-label={pick('ข้อมูลชุดคำถาม', 'Question set metadata')}>
-                        <span>{selectedTitleGuessSet.isOfficial ? pick('ชุดทางการ', 'Official set') : (selectedTitleGuessSet.creatorName || pick('ชุดคอมมูนิตี้', 'Community set'))}</span>
-                        <span>{pick(`${selectedTitleGuessSet.playCount || 0} ครั้ง`, `${selectedTitleGuessSet.playCount || 0} plays`)}</span>
-                        <span>{pick(`${selectedTitleGuessSet.likeCount || 0} ถูกใจ`, `${selectedTitleGuessSet.likeCount || 0} likes`)}</span>
-                      </div>
-                    ) : null}
-                    <div className="party-host-template-hero-actions party-host-template-hero-actions--title-guess">
+
+              {/* ── ขั้นที่ 1: เลือกโหมด ── */}
+              <div className="party-setup-step">
+                <div className="party-setup-step-head">
+                  <span className="party-setup-step-num">1</span>
+                  <strong>{pick('เลือกโหมดเกม', 'Game Mode')}</strong>
+                </div>
+                {(() => {
+                  const activeKey = getActiveModeKey(hostEditor.settings);
+                  const activeDef = PARTY_MODE_DEFS.find((m) => m.key === activeKey) || PARTY_MODE_DEFS[0];
+                  return (
+                    <button
+                      type="button"
+                      className={`party-mode-picker-btn party-lobby-mode-card ${activeDef.colorClass} is-active`}
+                      onClick={() => setShowModeModal(true)}
+                    >
+                      <span className="party-mode-picker-btn-left">
+                        {activeDef.vs
+                          ? <span className="party-lobby-mode-card-vs">VS</span>
+                          : <span className="party-lobby-mode-card-emoji">{activeDef.emoji}</span>}
+                        <span>
+                          <span className="party-lobby-mode-card-name">{pick(activeDef.nameTh, activeDef.nameEn)}</span>
+                          <span className="party-mode-picker-btn-hint">{pick(activeDef.hintTh, activeDef.hintEn)}</span>
+                        </span>
+                      </span>
+                      <ChevronDown size={16} className="party-mode-picker-btn-chevron" />
+                    </button>
+                  );
+                })()}
+              </div>
+
+              {/* ── ขั้นที่ 2: เลือกเนื้อหา ── */}
+              <div className="party-setup-step">
+                <div className="party-setup-step-head">
+                  <span className="party-setup-step-num">2</span>
+                  <strong>
+                    {editorIsTitleGuess
+                      ? pick('เลือกชุดคำถาม', 'Question Set')
+                      : editorIsTierlist
+                        ? pick('เลือกเทมเพลต', 'Template')
+                        : pick('เลือกเนื้อหา', 'Content')}
+                  </strong>
+                </div>
+                {editorIsTierlist ? (
+                  <div className="party-host-template-hero">
+                    <div className="party-host-template-hero-copy">
+                      <span className="party-host-template-hero-kicker">{pick('เทมเพลต Tierlist', 'Tierlist Template')}</span>
+                      <strong>
+                        {hostEditor.settings.tierlistTemplateId
+                          ? (hostEditor.settings.tierlistTemplateName || pick('เลือกแล้ว', 'Selected'))
+                          : pick('ยังไม่ได้เลือก', 'Not selected')}
+                      </strong>
+                      {hostEditor.settings.tierlistItemCount > 0 && (
+                        <span className="party-host-template-hero-meta">
+                          {pick(`${hostEditor.settings.tierlistItemCount} ไอเทมพร้อมโหวต`, `${hostEditor.settings.tierlistItemCount} items ready to vote`)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="party-host-template-hero-actions">
                       <Button
                         variant="primary"
                         className="party-gradient-action party-host-template-hero-btn"
-                        onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=title-guess`)}
+                        onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=tierlist`)}
                       >
-                        {selectedTitleGuessSet ? pick('เปลี่ยนชุด', 'Change set') : pick('เลือกชุด', 'Browse sets')}
+                        {hostEditor.settings.tierlistTemplateId ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => navigate(`/party/templates/create?mode=title-guess&returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}`)}
-                      >
-                        {pick('สร้างชุดใหม่', 'Create new set')}
-                      </Button>
+                      {hostEditor.settings.tierlistTemplateId ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            hostEditor.onChange((current) => ({
+                              ...current,
+                              tierlistTemplateId: '',
+                              tierlistTemplateName: '',
+                              tierlistTemplateCoverUrl: '',
+                              tierlistItemCount: 0,
+                              tierlistRows: [],
+                            }));
+                          }}
+                        >
+                          {pick('ล้าง', 'Clear')}
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="party-host-template-hero">
-                  <div className="party-host-template-hero-copy">
-                    <span className="party-host-template-hero-kicker">
-                      {editorBattleDeckId ? pick('Battle Deck', 'Battle Deck') : pick('ชุดเพลง', 'Song set')}
-                    </span>
-                    <strong>
-                      {editorBattleDeckId
-                        ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
-                        : hostEditor.settings.templateId
+                ) : editorIsTitleGuess ? (
+                  <div className="party-host-template-hero party-host-template-hero--title-guess">
+                    <div className="party-host-template-hero-art" aria-hidden="true">
+                      {selectedTitleGuessSetCoverUrl ? (
+                        <img
+                          className="party-host-template-hero-art-image"
+                          src={selectedTitleGuessSetCoverUrl}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <span className="party-host-template-hero-art-fallback">🃏</span>
+                      )}
+                    </div>
+                    <div className="party-host-template-hero-copy">
+                      <span className="party-host-template-hero-kicker">{pick('ชุดคำถาม', 'Question set')}</span>
+                      <strong>
+                        {selectedTitleGuessSetName || pick('ยังไม่ได้เลือก', 'Not selected')}
+                      </strong>
+                      <span className="party-host-template-hero-meta">
+                        {selectedTitleGuessQuestionCount > 0
+                          ? pick(`${selectedTitleGuessQuestionCount} ข้อพร้อมเล่น`, `${selectedTitleGuessQuestionCount} ready questions`)
+                          : pick('เลือกชุดเพื่อเริ่มจัดห้อง', 'Pick a set before starting the room')}
+                      </span>
+                    </div>
+                    <div className="party-host-title-guess-side">
+                      {selectedTitleGuessSet ? (
+                        <div className="party-host-title-guess-stats" aria-label={pick('ข้อมูลชุดคำถาม', 'Question set metadata')}>
+                          <span>{selectedTitleGuessSet.isOfficial ? pick('ชุดทางการ', 'Official set') : (selectedTitleGuessSet.creatorName || pick('ชุดคอมมูนิตี้', 'Community set'))}</span>
+                          <span>{pick(`${selectedTitleGuessSet.playCount || 0} ครั้ง`, `${selectedTitleGuessSet.playCount || 0} plays`)}</span>
+                          <span>{pick(`${selectedTitleGuessSet.likeCount || 0} ถูกใจ`, `${selectedTitleGuessSet.likeCount || 0} likes`)}</span>
+                        </div>
+                      ) : null}
+                      <div className="party-host-template-hero-actions party-host-template-hero-actions--title-guess">
+                        <Button
+                          variant="primary"
+                          className="party-gradient-action party-host-template-hero-btn"
+                          onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=title-guess`)}
+                        >
+                          {selectedTitleGuessSet ? pick('เปลี่ยนชุด', 'Change set') : pick('เลือกชุด', 'Browse sets')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => navigate(`/party/templates/create?mode=title-guess&returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}`)}
+                        >
+                          {pick('สร้างชุดใหม่', 'Create new set')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="party-host-template-hero">
+                    <div className="party-host-template-hero-copy">
+                      <span className="party-host-template-hero-kicker">
+                        {editorBattleDeckId ? pick('Battle Deck', 'Battle Deck') : pick('ชุดเพลง', 'Song set')}
+                      </span>
+                      <strong>
+                        {editorBattleDeckId
                           ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
-                          : pick('ยังไม่ได้เลือก', 'Not selected')}
-                    </strong>
-                  </div>
-                  <div className="party-host-template-hero-actions">
-                    <Button
-                      variant="primary"
-                      className="party-gradient-action party-host-template-hero-btn"
-                      onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
-                    >
-                      {hasSelectedTemplateSource ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
-                    </Button>
-                    {hasSelectedTemplateSource ? (
+                          : hostEditor.settings.templateId
+                            ? (editorTemplateName || pick('เลือกแล้ว', 'Selected'))
+                            : pick('ยังไม่ได้เลือก (ไม่บังคับ)', 'Not selected (optional)')}
+                      </strong>
+                    </div>
+                    <div className="party-host-template-hero-actions">
                       <Button
-                        variant="outline"
-                        onClick={() => {
-                          hostEditor.onChange((current) => ({
-                            ...current,
-                            templateId: '',
-                            templateName: '',
-                            templateCoverUrl: '',
-                            templatePlayableCount: 0,
-                            modeScope: 'all',
-                            battleDeckId: '',
-                          }));
-                          if (hostEditor.onClearBattleDeck) {
-                            hostEditor.onClearBattleDeck();
-                          }
-                        }}
+                        variant="primary"
+                        className="party-gradient-action party-host-template-hero-btn"
+                        onClick={() => navigate(`/party/templates?returnTo=${encodeURIComponent(`/party/room/${room?.room_code || ''}`)}&mode=${encodeURIComponent(hostEditor.settings.modeType || 'all')}`)}
                       >
-                        {pick('ล้าง', 'Clear')}
+                        {hasSelectedTemplateSource ? pick('เปลี่ยน', 'Change') : pick('เลือก', 'Browse')}
                       </Button>
-                    ) : null}
+                      {hasSelectedTemplateSource ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            hostEditor.onChange((current) => ({
+                              ...current,
+                              templateId: '',
+                              templateName: '',
+                              templateCoverUrl: '',
+                              templatePlayableCount: 0,
+                              modeScope: 'all',
+                              battleDeckId: '',
+                            }));
+                            if (hostEditor.onClearBattleDeck) {
+                              hostEditor.onClearBattleDeck();
+                            }
+                          }}
+                        >
+                          {pick('ล้าง', 'Clear')}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              <div className="party-host-mode-row">
-                <button
-                  type="button"
-                  className={`party-lobby-mode-card is-quiz${hostEditor.settings.modeType === 'quiz' ? ' is-active' : ''}${voteOnlySelectionActive ? ' is-disabled' : ''}`}
-                  onClick={() => hostEditor.onChange((current) => ({
-                    ...current,
-                    modeType: 'quiz',
-                    timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
-                  }))}
-                  disabled={voteOnlySelectionActive}
-                >
-                  <span className="party-lobby-mode-card-emoji">🎵</span>
-                  <span className="party-lobby-mode-card-name">Music Quiz</span>
-                </button>
-                <button
-                  type="button"
-                  className={`party-lobby-mode-card is-vote${hostEditor.settings.modeType === 'vote' ? ' is-active' : ''}${quizOnlySelectionActive ? ' is-disabled' : ''}`}
-                  onClick={() => hostEditor.onChange((current) => ({ ...current, modeType: 'vote' }))}
-                  disabled={quizOnlySelectionActive}
-                >
-                  <span className="party-lobby-mode-card-vs">VS</span>
-                  <span className="party-lobby-mode-card-name">Vote Battle</span>
-                </button>
-                <button
-                  type="button"
-                  className={`party-lobby-mode-card is-title-guess${editorIsTitleGuess && !editorIsPixelReveal ? ' is-active' : ''}`}
-                  onClick={() => hostEditor.onChange((current) => ({
-                    ...current,
-                    modeType: 'title-guess',
-                    presetId: 'title-guess',
-                    timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
-                    revealSec: Math.max(8, Number(current.revealSec || 12)),
-                  }))}
-                >
-                  <span className="party-lobby-mode-card-emoji">🃏</span>
-                  <span className="party-lobby-mode-card-name">{pick('ทายชื่อเรื่อง', 'Guess the Title')}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`party-lobby-mode-card is-pixel-reveal${editorIsPixelReveal ? ' is-active' : ''}`}
-                  onClick={() => hostEditor.onChange((current) => ({
-                    ...current,
-                    modeType: 'title-guess',
-                    presetId: 'pixel-reveal',
-                    timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
-                    revealSec: Math.max(8, Number(current.revealSec || 12)),
-                  }))}
-                >
-                  <span className="party-lobby-mode-card-emoji">🖼️</span>
-                  <span className="party-lobby-mode-card-name">{pick('ปิดรูปพิกเซล', 'Pixel Reveal')}</span>
-                </button>
+                )}
               </div>
 
+              {/* ── ขั้นที่ 3: ปรับการตั้งค่า ── */}
+              <div className="party-setup-step">
+                <div className="party-setup-step-head">
+                  <span className="party-setup-step-num">3</span>
+                  <strong>{pick('ปรับการตั้งค่า', 'Settings')}</strong>
+                </div>
               <div className="party-host-settings-grid">
                 {hostEditor.settings.modeType === 'quiz' ? (
                   <label className="pgc-select-field">
@@ -387,7 +531,7 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   </label>
                 ) : null}
 
-                {editorIsTitleGuess ? (
+                {editorIsTierlist ? null : editorIsTitleGuess ? (
                   <label className="pgc-select-field pgc-select-field--wide">
                     <span className="pgc-label">{pick('ชุดคำถาม', 'Question set')}</span>
                     <select
@@ -473,73 +617,79 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   </label>
                 )}
 
-                <label className="pgc-select-field">
-                  <span className="pgc-label">
-                    {editorIsVote ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}
-                  </span>
-                  <select
-                    className="pgc-select"
-                    value={editorIsVote ? hostEditor.settings.entrantCount : hostEditor.settings.roundCount}
-                    onChange={(event) => hostEditor.onChange((current) => (
-                      editorIsVote
-                        ? { ...current, entrantCount: Number(event.target.value) }
-                        : { ...current, roundCount: Number(event.target.value) }
-                    ))}
-                  >
-                    {(editorIsVote
-                      ? hostEditor.voteEntrantOptions
-                      : editorIsTitleGuess
-                        ? hostEditor.titleGuessRoundOptions
-                        : hostEditor.quizRoundOptions
-                    ).map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!editorIsTierlist && (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">
+                      {editorIsVote ? pick('เพลงเริ่ม', 'Songs') : pick('รอบ', 'Rounds')}
+                    </span>
+                    <select
+                      className="pgc-select"
+                      value={editorIsVote ? hostEditor.settings.entrantCount : hostEditor.settings.roundCount}
+                      onChange={(event) => hostEditor.onChange((current) => (
+                        editorIsVote
+                          ? { ...current, entrantCount: Number(event.target.value) }
+                          : { ...current, roundCount: Number(event.target.value) }
+                      ))}
+                    >
+                      {(editorIsVote
+                        ? hostEditor.voteEntrantOptions
+                        : editorIsTitleGuess
+                          ? hostEditor.titleGuessRoundOptions
+                          : hostEditor.quizRoundOptions
+                      ).map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-                <label className="pgc-select-field">
-                  <span className="pgc-label">
-                    {editorIsVote
-                      ? pick('เวลาเพลง', 'Song time')
-                      : editorIsTitleGuess
-                        ? pick('เวลาแต่ละใบ', 'Clue time')
-                        : pick('เวลาคลิป', 'Clip')}
-                  </span>
-                  <select
-                    className="pgc-select"
-                    value={hostEditor.settings.timePerRoundSec}
-                    onChange={(event) => hostEditor.onChange((current) => ({
-                      ...current,
-                      timePerRoundSec: Number(event.target.value),
-                    }))}
-                  >
-                    {hostEditor.clipTimeOptions.map((seconds) => (
-                      <option key={seconds} value={seconds}>
-                        {seconds} {pick('วิ', 'sec')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!editorIsTierlist && (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">
+                      {editorIsVote
+                        ? pick('เวลาเพลง', 'Song time')
+                        : editorIsTitleGuess
+                          ? pick('เวลาแต่ละใบ', 'Clue time')
+                          : pick('เวลาคลิป', 'Clip')}
+                    </span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.timePerRoundSec}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        timePerRoundSec: Number(event.target.value),
+                      }))}
+                    >
+                      {hostEditor.clipTimeOptions.map((seconds) => (
+                        <option key={seconds} value={seconds}>
+                          {seconds} {pick('วิ', 'sec')}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
-                <label className="pgc-select-field">
-                  <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal')}</span>
-                  <select
-                    className="pgc-select"
-                    value={hostEditor.settings.revealSec}
-                    onChange={(event) => hostEditor.onChange((current) => ({
-                      ...current,
-                      revealSec: Number(event.target.value),
-                    }))}
-                  >
-                    {[6, 8, 10, 12, 15, 20].map((seconds) => (
-                      <option key={seconds} value={seconds}>
-                        {seconds} {pick('วิ', 'sec')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!editorIsTierlist && (
+                  <label className="pgc-select-field">
+                    <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal')}</span>
+                    <select
+                      className="pgc-select"
+                      value={hostEditor.settings.revealSec}
+                      onChange={(event) => hostEditor.onChange((current) => ({
+                        ...current,
+                        revealSec: Number(event.target.value),
+                      }))}
+                    >
+                      {[6, 8, 10, 12, 15, 20].map((seconds) => (
+                        <option key={seconds} value={seconds}>
+                          {seconds} {pick('วิ', 'sec')}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 {editorIsVote ? (
                   <label className="pgc-select-field">
@@ -560,7 +710,55 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                     </select>
                   </label>
                 ) : null}
+
+                {editorIsTierlist ? (
+                  <>
+                    <label className="pgc-select-field">
+                      <span className="pgc-label">{pick('เวลาโหวต', 'Vote time')}</span>
+                      <select
+                        className="pgc-select"
+                        value={hostEditor.settings.tierlistVoteSec || 12}
+                        onChange={(event) => hostEditor.onChange((current) => ({
+                          ...current,
+                          tierlistVoteSec: Number(event.target.value),
+                        }))}
+                      >
+                        {[5, 8, 10, 12, 15, 20, 25, 30].map((seconds) => (
+                          <option key={seconds} value={seconds}>
+                            {seconds} {pick('วิ', 'sec')}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="pgc-select-field">
+                      <span className="pgc-label">{pick('เวลาเฉลย', 'Reveal time')}</span>
+                      <select
+                        className="pgc-select"
+                        value={hostEditor.settings.tierlistRevealSec || 5}
+                        onChange={(event) => hostEditor.onChange((current) => ({
+                          ...current,
+                          tierlistRevealSec: Number(event.target.value),
+                        }))}
+                      >
+                        {[3, 4, 5, 7, 10, 15].map((seconds) => (
+                          <option key={seconds} value={seconds}>
+                            {seconds} {pick('วิ', 'sec')}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : null}
               </div>
+
+              {editorIsTierlist && !hostEditor.settings.tierlistTemplateId ? (
+                <div className="party-host-settings-alert is-info">
+                  {pick(
+                    'กดปุ่ม "เลือก" ด้านบนเพื่อเลือกเทมเพลต Tierlist ที่จะใช้โหวต (แสดงเฉพาะที่มีไอเทมพร้อมเล่น)',
+                    'Tap "Browse" above to pick a Tierlist template to vote on (only playable templates are shown)',
+                  )}
+                </div>
+              ) : null}
 
               {hostEditor.settings.templateId && hostEditor.templateCompatibility ? (
                 <div className="party-host-settings-alert is-info">
@@ -653,7 +851,39 @@ export const PartyLobbyView = React.memo(function PartyLobbyView({
                   )}
                 </div>
               ) : null}
-            </div>
+              </div>{/* end party-setup-step step-3 */}
+            </div>{/* end party-host-settings-editor */}
+
+            {showModeModal && (
+              <ModePickerModal
+                activeModeKey={getActiveModeKey(hostEditor.settings)}
+                onSelect={(mode) => {
+                  if (mode.modeType === 'title-guess') {
+                    hostEditor.onChange((current) => ({
+                      ...current,
+                      modeType: 'title-guess',
+                      presetId: mode.presetId || 'title-guess',
+                      timePerRoundSec: Math.min(10, Math.max(4, Number(current.timePerRoundSec || 7))),
+                      revealSec: Math.max(8, Number(current.revealSec || 12)),
+                    }));
+                  } else if (mode.modeType === 'quiz') {
+                    hostEditor.onChange((current) => ({
+                      ...current,
+                      modeType: 'quiz',
+                      timePerRoundSec: Math.min(20, Number(current.timePerRoundSec || 12)),
+                    }));
+                  } else if (mode.modeType === 'vote') {
+                    hostEditor.onChange((current) => ({ ...current, modeType: 'vote' }));
+                  } else if (mode.modeType === 'tierlist') {
+                    hostEditor.onChange((current) => ({ ...current, modeType: 'tierlist' }));
+                  }
+                }}
+                onClose={() => setShowModeModal(false)}
+                voteOnlySelectionActive={voteOnlySelectionActive}
+                quizOnlySelectionActive={quizOnlySelectionActive}
+                pick={pick}
+              />
+            )}
 
             <div className="party-lobby-start-panel party-lobby-start-panel--embedded">
               <div className="party-lobby-start-panel-row">

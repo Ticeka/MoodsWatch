@@ -395,6 +395,42 @@
   box-shadow: 0 20px 48px rgba(10, 10, 20, 0.28);
 }
 
+.battle-card--text {
+  max-width: min(620px, 100%);
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--paper, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--ink-900) 12%, transparent);
+  box-shadow: none;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-self: stretch;
+  height: 100%;
+}
+
+.battle-card--text:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent-500) 28%, transparent);
+  box-shadow: none;
+}
+
+.battle-card-text-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-muted) 92%, #ffffff);
+}
+
+.battle-card-text-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
 .battle-card--media .battle-card-media-wrap {
   border-radius: 12px 12px 0 0;
   aspect-ratio: 16 / 10;
@@ -518,6 +554,25 @@
   min-height: 5.5rem;
 }
 
+.battle-card-info--text {
+  background: var(--paper, #ffffff);
+  border-top: 1px solid color-mix(in srgb, var(--ink-900) 8%, transparent);
+  box-shadow: none;
+}
+
+.battle-card-info--text h2 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.35;
+}
+
+.battle-card-info--text .battle-card-info-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
 .battle-card-info-text {
   flex: 1;
   min-width: 0;
@@ -586,6 +641,12 @@
   border: 1px solid color-mix(in srgb, var(--primary-400) 25%, transparent);
   flex-shrink: 0;
   align-self: flex-start;
+}
+
+.battle-card-song-type-badge--text {
+  background: color-mix(in srgb, var(--primary-500) 10%, #ffffff);
+  color: var(--primary-700, var(--primary-500));
+  border-color: color-mix(in srgb, var(--primary-500) 20%, transparent);
 }
 
 /* ── Play Bar ────────────────────────────────────────── */

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layers } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
@@ -23,6 +23,7 @@ import '../styles/TierList.css';
 
 export function TierListBrowsePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { pick } = useLanguage();
   const { user, isLoading: isAuthLoading } = useAuth();
   const { showAdult } = useAgeGate();
@@ -34,11 +35,29 @@ export function TierListBrowsePage() {
   const isBrowseMountedRef = useRef(true);
   const [titles, setTitles] = useState([]);
   const [songEntities, setSongEntities] = useState([]);
-  const [query, setQuery] = useState('');
-  const [entityTypeFilter, setEntityTypeFilter] = useState('all');
-  const [category, setCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('popular');
-  const [page, setPage] = useState(1);
+
+  // Filter/search/page state persisted in URL so browser back restores it
+  const query = searchParams.get('q') || '';
+  const entityTypeFilter = searchParams.get('type') || 'all';
+  const category = searchParams.get('cat') || 'all';
+  const sortBy = searchParams.get('sort') || 'popular';
+  const page = Math.max(1, Number(searchParams.get('page') || '1'));
+
+  const updateParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '' || value === 'all') {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      if (!('page' in updates)) next.delete('page');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
   const [library, setLibrary] = useState({ templates: [], lists: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [isCatalogHydrating, setIsCatalogHydrating] = useState(true);
@@ -437,32 +456,23 @@ export function TierListBrowsePage() {
 
   const handleBrowseTabSelect = (tabValue) => {
     const isEntityTab = tabValue === 'all' || ENTITY_TYPE_OPTIONS.some((option) => option.value === tabValue);
-
     if (isEntityTab) {
-      setEntityTypeFilter(tabValue);
-      setCategory('all');
+      updateParams({ type: tabValue, cat: null });
     } else if (tabValue.startsWith('cat:')) {
-      setCategory(tabValue.replace('cat:', ''));
+      updateParams({ cat: tabValue.replace('cat:', '') });
     }
-    setPage(1);
   };
 
   const handleBrowseQueryChange = (nextQuery) => {
-    setQuery(nextQuery);
-    setPage(1);
+    updateParams({ q: nextQuery || null });
   };
 
   const handleBrowseSortChange = (nextSort) => {
-    setSortBy(nextSort);
-    setPage(1);
+    updateParams({ sort: nextSort === 'popular' ? null : nextSort });
   };
 
   const handleClearBrowseFilters = () => {
-    setEntityTypeFilter('all');
-    setCategory('all');
-    setQuery('');
-    setSortBy('popular');
-    setPage(1);
+    updateParams({ type: null, cat: null, q: null, sort: null, page: null });
   };
 
   if (loadError && !isLoading) {
@@ -511,8 +521,8 @@ export function TierListBrowsePage() {
           isCatalogHydrating={isCatalogHydrating}
           isLoading={isLoading}
           onClearFilters={handleClearBrowseFilters}
-          onNextPage={() => setPage((current) => Math.min(pagedTemplates.totalPages, current + 1))}
-          onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
+          onNextPage={() => updateParams({ page: Math.min(pagedTemplates.totalPages, page + 1) })}
+          onPreviousPage={() => updateParams({ page: Math.max(1, page - 1) === 1 ? null : Math.max(1, page - 1) })}
           onQueryChange={handleBrowseQueryChange}
           onSortByChange={handleBrowseSortChange}
           pagedTemplates={pagedTemplates}

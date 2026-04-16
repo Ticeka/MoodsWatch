@@ -19,7 +19,8 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
 
   const isTitleGuess = contentType === 'title-guess';
   const isBattleDeck = contentType === 'battle-deck';
-  const resolvedCoverUrl = isTitleGuess || isBattleDeck ? coverUrl : getTemplateCoverUrl(coverUrl);
+  const isTierlist = contentType === 'tierlist';
+  const resolvedCoverUrl = isTitleGuess || isBattleDeck || isTierlist ? coverUrl : getTemplateCoverUrl(coverUrl);
 
   return (
     <article
@@ -74,15 +75,15 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
           )}
           <div className="party-template-card-type-badge">
             <Play size={12} fill="currentColor" />
-            <span>{isBattleDeck ? pick('Battle Deck', 'Battle Deck') : isTitleGuess ? pick('เดาชื่อเรื่อง', 'Guess set') : pick('เลือกไปเล่น', 'Use in party')}</span>
+            <span>{isTierlist ? pick('Tierlist', 'Tierlist') : isBattleDeck ? pick('Battle Deck', 'Battle Deck') : isTitleGuess ? pick('เดาชื่อเรื่อง', 'Guess set') : pick('เลือกไปเล่น', 'Use in party')}</span>
           </div>
         </div>
       </div>
 
       <div className="party-template-card-body">
         <div className="party-template-tags">
-          <span className={`party-tag ${isTitleGuess ? 'tag-mode-title-guess' : ''} ${isBattleDeck ? 'tag-mode-vote' : ''}`}>
-            {isBattleDeck ? pick('Battle Deck', 'Battle Deck') : isTitleGuess ? pick('ทายชื่อเรื่อง', 'Guess the Title') : pick('ชุดเพลง', 'Song set')}
+          <span className={`party-tag ${isTitleGuess ? 'tag-mode-title-guess' : ''} ${isBattleDeck ? 'tag-mode-vote' : ''} ${isTierlist ? 'tag-mode-tierlist' : ''}`}>
+            {isTierlist ? pick('Tierlist', 'Tierlist') : isBattleDeck ? pick('Battle Deck', 'Battle Deck') : isTitleGuess ? pick('ทายชื่อเรื่อง', 'Guess the Title') : pick('ชุดเพลง', 'Song set')}
           </span>
           {tags.slice(0, 2).map((tag) => (
             <span key={tag} className="party-tag">{tag}</span>
@@ -104,7 +105,7 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
         <div className="party-template-meta">
           <div className="meta-item">
             {isTitleGuess ? <Sparkles size={14} /> : <Layers size={14} />}
-            <span>{itemCount} {pick(isBattleDeck ? 'รายการ' : isTitleGuess ? 'ข้อ' : 'เพลง', isBattleDeck ? 'entries' : isTitleGuess ? 'questions' : 'songs')}</span>
+            <span>{itemCount} {pick(isTierlist ? 'ไอเทม' : isBattleDeck ? 'รายการ' : isTitleGuess ? 'ข้อ' : 'เพลง', isTierlist ? 'items' : isBattleDeck ? 'entries' : isTitleGuess ? 'questions' : 'songs')}</span>
           </div>
           <div className="meta-item">
             <Users size={14} />

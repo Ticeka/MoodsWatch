@@ -26,6 +26,7 @@ import {
   isCharacterEntity,
   isCustomImageEntity,
   isCustomVideoEntity,
+  isTextEntity,
   isThemeSongEntity,
   isTrailerEntity,
 } from '@/shared/lib/catalogEntities';
@@ -284,6 +285,7 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
   const isSong = isThemeSongEntity(title);
   const isCustomImage = isCustomImageEntity(title);
   const isCustomVideo = isCustomVideoEntity(title);
+  const isTextCard = isTextEntity(title);
 
   if (isSong) {
     let embedUrl = null;
@@ -475,6 +477,28 @@ function BattleMatchCard({ title, trailer, voteLabel, voteIcon, onVote, onPlayTr
                 {pick('รายละเอียด', 'Details')}
               </Button>
             ) : null}
+            <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  if (isTextCard) {
+    const imageUrl = getTitleArtwork(title);
+
+    return (
+      <article className="battle-card battle-card--text">
+        <div className="battle-card-text-frame">
+          {imageUrl ? <img src={imageUrl} alt="" className="battle-card-text-image" /> : null}
+        </div>
+        <div className="battle-card-info battle-card-info--text">
+          <div className="battle-card-info-text">
+            <span className="battle-card-song-type-badge battle-card-song-type-badge--text">Text card</span>
+            <h2>{displayName}</h2>
+            <p className="battle-card-info-sub">{getMetaLine(title)}</p>
+          </div>
+          <div className="battle-card-actions">
             <Button variant="primary" icon={voteIcon} onClick={onVote}>{voteLabel}</Button>
           </div>
         </div>

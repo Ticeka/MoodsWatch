@@ -197,6 +197,7 @@ import {
 	  resolvePartyYoutubeUrl,
 	  syncPartyTemplateYoutubePlaylist,
 	  startPartyMatch,
+    submitPartyTierlistSkipVote,
 	  submitPartySkipVote,
   subscribeToPartyRoom,
   togglePartyMemberReady,
@@ -874,6 +875,76 @@ describe('partyRemote realtime optimizations', () => {
     }));
     expect(mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.currentBattle?.skipVotes).toEqual({
       phase: 'play-a',
+      memberTokens: ['guest-1'],
+      requiredVotes: 2,
+    });
+  });
+
+  it('records a tierlist skip request for the host to review without auto-advancing', async () => {
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: { modeType: 'tierlist' },
+      current_match: {
+        id: 'tierlist-match-1',
+        modeType: 'tierlist',
+        phase: 'show-item',
+        currentVote: {
+          itemId: 'item-1',
+          roundId: 'tl-round-1',
+        },
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [
+      { member_token: 'host-1' },
+      { member_token: 'guest-1' },
+      { member_token: 'guest-2' },
+    ];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      host_member_token: 'host-1',
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: { modeType: 'tierlist' },
+      current_match: {
+        id: 'tierlist-match-1',
+        modeType: 'tierlist',
+        phase: 'show-item',
+        currentVote: {
+          itemId: 'item-1',
+          roundId: 'tl-round-1',
+          skipVotes: {
+            phase: 'show-item',
+            memberTokens: ['guest-1'],
+            requiredVotes: 2,
+          },
+        },
+      },
+    }];
+
+    const result = await submitPartyTierlistSkipVote({
+      room: {
+        id: 'room-1',
+        current_match: { id: 'tierlist-match-1' },
+      },
+      member: {
+        member_token: 'guest-1',
+        display_name: 'Guest 1',
+      },
+      roundId: 'tl-round-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      advanced: false,
+      votes: 1,
+      requiredVotes: 2,
+    }));
+    expect(
+      mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update')?.payload?.current_match?.currentVote?.skipVotes
+    ).toEqual({
+      phase: 'show-item',
       memberTokens: ['guest-1'],
       requiredVotes: 2,
     });
@@ -1744,6 +1815,121 @@ describe('partyRemote template CRUD', () => {
 
     expect(nextRoom?.status).toBe('live');
     expect(mockState.rpcCalls.some((call) => call.fn === 'increment_party_title_guess_play_count')).toBe(true);
+  });
+
+  it('startPartyMatch loads tierlist templates from category-based schema without entity_type', async () => {
+    const hostToken = getPartyGuestToken();
+
+    mockState.partyRoomsSelectResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'lobby',
+      updated_at: '2026-03-29T10:00:01.000Z',
+      settings: {
+        modeType: 'tierlist',
+        tierlistTemplateId: 'template-1',
+        tierlistItemCount: 2,
+      },
+    }];
+    mockState.partyRoomMembersSelectResponse = [{
+      room_id: 'room-1',
+      member_token: hostToken,
+      is_ready: true,
+      joined_at: '2026-03-29T10:00:00.000Z',
+    }];
+    mockState.partyRoomsUpdateResponse = [{
+      id: 'room-1',
+      room_code: 'ABCD12',
+      host_member_token: hostToken,
+      status: 'live',
+      updated_at: '2026-03-29T10:00:02.000Z',
+      settings: {
+        modeType: 'tierlist',
+        tierlistTemplateId: 'template-1',
+        tierlistItemCount: 2,
+      },
+      current_match: {
+        id: 'tierlist-match-1',
+        modeType: 'tierlist',
+      },
+    }];
+
+    mockState.from.mockImplementation((table) => {
+      if (table === 'party_room_members') {
+        return {
+          update: vi.fn((payload) => createPartyRoomMembersUpdateBuilder(payload)),
+          select: vi.fn(() => createPartyRoomMembersSelectBuilder()),
+        };
+      }
+
+      if (table === 'party_rooms') {
+        return {
+          update: vi.fn((payload) => createPartyRoomsUpdateBuilder(payload)),
+          select: vi.fn(() => createPartyRoomsSelectBuilder()),
+        };
+      }
+
+      if (table === 'tierlist_templates') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  id: 'template-1',
+                  title: 'Best Shonen',
+                  category: 'general',
+                  title_ids: [101, 202],
+                  custom_items: [],
+                  default_rows: ['S', 'A', 'B'],
+                },
+                error: null,
+              })),
+            })),
+          })),
+        };
+      }
+
+      if (table === 'canonical_titles') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({
+              data: [
+                {
+                  id: 101,
+                  canonical_title: 'Fullmetal Alchemist: Brotherhood',
+                  title_en: 'Fullmetal Alchemist: Brotherhood',
+                  title_th: 'แขนกล คนแปรธาตุ',
+                  cover_image: 'https://cdn.example.com/fmab.jpg',
+                  banner_image: '',
+                },
+                {
+                  id: 202,
+                  canonical_title: 'Hunter x Hunter',
+                  title_en: 'Hunter x Hunter',
+                  title_th: '',
+                  cover_image: 'https://cdn.example.com/hxh.jpg',
+                  banner_image: '',
+                },
+              ],
+              error: null,
+            })),
+          })),
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const nextRoom = await startPartyMatch({ id: 'room-1' });
+    const updateOperation = mockState.operations.find((entry) => entry.table === 'party_rooms' && entry.action === 'update');
+    const allItems = updateOperation?.payload?.current_match?.allItems || {};
+
+    expect(nextRoom?.status).toBe('live');
+    expect(Object.values(allItems)).toHaveLength(2);
+    expect(Object.values(allItems)[0]).toEqual(expect.objectContaining({
+      entityType: 'title',
+    }));
   });
 
   it('startPartyMatch filters out title guess questions whose clues do not match the answer title', async () => {

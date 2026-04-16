@@ -1,5 +1,6 @@
 export * from './api';
 export { BattleBrowsePage } from './pages/BattleBrowsePage';
+export { BattleDeckDetailPage } from './pages/BattleDeckDetailPage';
 export { BattleBuilderPage } from './pages/BattleBuilderPage';
 export { BattleDeckLibraryPage } from './pages/BattleDeckLibraryPage';
 export { BattleHub } from './pages/BattleHubPage';

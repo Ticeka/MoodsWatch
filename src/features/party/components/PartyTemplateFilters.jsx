@@ -59,6 +59,7 @@ export function PartyTemplateFilters({
             <option value="quiz">{pick('เฉพาะ Music Quiz', 'Music Quiz only')}</option>
             <option value="vote">{pick('เฉพาะ Vote Battle', 'Vote Battle only')}</option>
             <option value="title-guess">{pick('เฉพาะทายชื่อเรื่อง', 'Guess the Title only')}</option>
+            <option value="tierlist">{pick('เฉพาะ Tierlist', 'Tierlist only')}</option>
             <option value="mixed">{pick('ใช้ได้ทั้งสองโหมด', 'Works in both modes')}</option>
           </select>
         </div>
@@ -72,6 +73,7 @@ export function PartyTemplateFilters({
             <option value="all">{pick('ทุกประเภทชุด', 'All set types')}</option>
             <option value="song-set">{pick('ชุดเพลง', 'Song sets')}</option>
             <option value="title-guess">{pick('ชุดทายชื่อเรื่อง', 'Guess the Title sets')}</option>
+            <option value="tierlist">{pick('เทมเพลต Tierlist', 'Tierlist templates')}</option>
           </select>
         </div>
 

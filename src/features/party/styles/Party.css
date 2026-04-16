@@ -1316,6 +1316,11 @@
   background: linear-gradient(135deg, #38bdf8 0%, #6366f1 60%, #a855f7 100%);
   box-shadow: 0 4px 14px rgba(99, 102, 241, 0.28);
 }
+.party-lobby-mode-card.is-tierlist {
+  background: linear-gradient(135deg, #10b981 0%, #059669 52%, #0d9488 100%);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.28);
+}
+.party-lobby-mode-card.is-tierlist.is-active { box-shadow: 0 8px 24px rgba(16, 185, 129, 0.46); }
 
 .party-lobby-mode-card:not(.is-active) {
   filter: saturate(0.5) brightness(0.75);
@@ -1424,6 +1429,165 @@
 .party-host-toggle-grid .pgc-toggle-item input[type='checkbox']:checked::before {
   transform: translateX(1.1rem);
 }
+/* ── Setup step guide ── */
+.party-setup-step {
+  display: grid;
+  gap: 0.65rem;
+}
+.party-setup-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.party-setup-step-head strong {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.party-setup-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.18);
+  border: 1.5px solid rgba(var(--color-primary-rgb, 99, 102, 241), 0.35);
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--primary, #6366f1);
+  flex-shrink: 0;
+}
+
+/* ── Mode picker trigger button ── */
+.party-mode-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 4rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  border: none;
+  text-align: left;
+  flex-direction: row !important;
+  gap: 0.75rem;
+}
+.party-mode-picker-btn-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.party-mode-picker-btn-left > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.party-mode-picker-btn-hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: none;
+}
+.party-mode-picker-btn-chevron {
+  flex-shrink: 0;
+  opacity: 0.8;
+  color: #fff;
+}
+
+/* ── Mode picker modal ── */
+.party-mode-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+  animation: pgw-fade-in 0.18s ease;
+}
+.party-mode-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 1.25rem;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  animation: pgw-slide-up 0.22s ease;
+}
+.party-mode-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-default);
+}
+.party-mode-modal-head strong {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+.party-mode-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.party-mode-modal-close:hover {
+  background: var(--bg-tertiary, var(--bg-secondary));
+}
+.party-mode-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+.party-mode-modal-card {
+  position: relative;
+  min-height: 7.5rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+.party-mode-modal-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+}
+.party-mode-modal-active-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.15em 0.55em;
+  backdrop-filter: blur(4px);
+}
+.party-mode-modal-card-hint {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.4;
+}
+
 .party-host-settings-editor {
   display: grid;
   gap: 0.9rem;
@@ -4260,6 +4424,7 @@
   .party-host-settings-grid,
   .party-host-toggle-grid,
   .party-host-mode-row { grid-template-columns: 1fr; }
+  .party-mode-modal-grid { grid-template-columns: 1fr; }
   .party-host-settings-actions { flex-direction: column; }
   .party-host-template-hero { flex-direction: column; align-items: stretch; gap: 0.5rem; }
   .party-host-template-hero-actions { flex-direction: row; flex-wrap: wrap; }

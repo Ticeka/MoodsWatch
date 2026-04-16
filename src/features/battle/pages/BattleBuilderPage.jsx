@@ -338,8 +338,44 @@ async function resolveCustomVideoDraft(draft) {
 async function validateCustomBattleEntry(entityType, draft, existingId = null) {
   const rawUrl = String(draft?.url || '').trim();
 
-  if (!rawUrl) {
+  if (entityType !== TEXT_ENTITY_TYPE && !rawUrl) {
     return { ok: false, message: 'Please paste a link before adding this card.' };
+  }
+
+  if (entityType === TEXT_ENTITY_TYPE) {
+    const label = String(draft?.label || '').trim();
+    const subtitle = String(draft?.subtitle || '').trim();
+    const imageDataUrl = rawUrl || generateTextTileImage(label);
+
+    if (!label) {
+      return { ok: false, message: 'Please enter text before adding this card.' };
+    }
+
+    return {
+      ok: true,
+      entry: {
+        id: Number(existingId) || makeCustomBattleEntryId(),
+        entityType: TEXT_ENTITY_TYPE,
+        slug: `text-card-${Math.abs(Number(existingId) || Date.now())}`,
+        type: 'custom',
+        subtype: 'text',
+        title_en: label,
+        title_th: label,
+        title_native: '',
+        cover: imageDataUrl,
+        banner: imageDataUrl,
+        synopsis: '',
+        score: null,
+        popularity: 0,
+        is_adult: false,
+        genres: [],
+        tags: [],
+        moods: [],
+        role: 'Text card',
+        sourceTitleName: subtitle || 'Text card',
+      },
+      message: 'Text card ready to add.',
+    };
   }
 
   if (entityType === CUSTOM_IMAGE_ENTITY_TYPE) {

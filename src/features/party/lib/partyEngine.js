@@ -351,7 +351,9 @@ function computeSpeedBonus(elapsedMs, limitMs, maxBonus) {
 export function createPartySettings(input = {}) {
   const modeType = input.modeType === 'vote'
     ? 'vote'
-    : (input.modeType === 'title-guess' ? 'title-guess' : 'quiz');
+    : input.modeType === 'tierlist'
+      ? 'tierlist'
+      : (input.modeType === 'title-guess' ? 'title-guess' : 'quiz');
   const requestedTitleGuessPresetId = String(input.presetId || '').trim();
   const TITLE_GUESS_PRESET_IDS = ['title-guess-choice', 'pixel-reveal', 'pixel-reveal-choice'];
   const preset = modeType === 'title-guess'
@@ -409,6 +411,14 @@ export function createPartySettings(input = {}) {
       ? Math.max(0, Number(input.titleGuessQuestionCount ?? input.setQuestionCount ?? 0))
       : 0,
     battleDeckId: modeType === 'vote' ? String(input.battleDeckId || '').trim() : '',
+    // Tierlist mode fields
+    tierlistTemplateId: modeType === 'tierlist' ? String(input.tierlistTemplateId || input.templateId || '').trim() : '',
+    tierlistTemplateName: modeType === 'tierlist' ? String(input.tierlistTemplateName || input.templateName || '').trim() : '',
+    tierlistTemplateCoverUrl: modeType === 'tierlist' ? String(input.tierlistTemplateCoverUrl || input.templateCoverUrl || '').trim() : '',
+    tierlistItemCount: modeType === 'tierlist' ? Math.max(0, Number(input.tierlistItemCount || 0)) : 0,
+    tierlistRows: modeType === 'tierlist' && Array.isArray(input.tierlistRows) ? input.tierlistRows : [],
+    tierlistVoteSec: modeType === 'tierlist' ? clamp(Number(input.tierlistVoteSec || 12), 5, 30) : 0,
+    tierlistRevealSec: modeType === 'tierlist' ? clamp(Number(input.tierlistRevealSec || 5), 3, 15) : 0,
   };
 }
 

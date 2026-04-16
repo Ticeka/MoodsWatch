@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Globe, Layers, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
   CHARACTER_ENTITY_TYPE,
@@ -63,6 +63,7 @@ function getEntityFilterLabel(value, t) {
 
 export function BattleBrowsePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { t } = useLanguage();
   const { hiddenTitleIds } = useHiddenTitles();
@@ -71,11 +72,28 @@ export function BattleBrowsePage() {
   const [publicDecks, setPublicDecks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [entityFilter, setEntityFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('updated');
-  const [page, setPage] = useState(0);
+
+  // Filter/search/page state persisted in URL so browser back restores it
+  const query = searchParams.get('q') || '';
+  const typeFilter = searchParams.get('type') || 'all';
+  const entityFilter = searchParams.get('entity') || 'all';
+  const sortBy = searchParams.get('sort') || 'updated';
+  const page = Math.max(0, Number(searchParams.get('page') || '0'));
+
+  const updateParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '' || value === 'all') {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      if (!('page' in updates)) next.delete('page');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,11 +262,7 @@ export function BattleBrowsePage() {
   };
 
   const clearFilters = () => {
-    setQuery('');
-    setTypeFilter('all');
-    setEntityFilter('all');
-    setSortBy('updated');
-    setPage(0);
+    updateParams({ q: null, type: null, entity: null, sort: null, page: null });
   };
 
   return (
@@ -279,8 +293,7 @@ export function BattleBrowsePage() {
                 <input
                   value={query}
                   onChange={(event) => {
-                    setQuery(event.target.value);
-                    setPage(0);
+                    updateParams({ q: event.target.value || null });
                   }}
                   placeholder={t('battle.browseSearchPlaceholder')}
                   aria-label={t('battle.browseSearchLabel')}
@@ -290,10 +303,7 @@ export function BattleBrowsePage() {
                     type="button"
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      setQuery('');
-                      setPage(0);
-                    }}
+                    onClick={() => updateParams({ q: null })}
                     aria-label={t('battle.clearSearch')}
                   >
                     <X size={14} />
@@ -307,8 +317,7 @@ export function BattleBrowsePage() {
               <select
                 value={typeFilter}
                 onChange={(event) => {
-                  setTypeFilter(event.target.value);
-                  setPage(0);
+                  updateParams({ type: event.target.value });
                 }}
                 aria-label={t('battle.browseTypeFilter')}
               >
@@ -324,8 +333,7 @@ export function BattleBrowsePage() {
               <select
                 value={entityFilter}
                 onChange={(event) => {
-                  setEntityFilter(event.target.value);
-                  setPage(0);
+                  updateParams({ entity: event.target.value });
                 }}
                 aria-label={t('battle.browseEntityFilter')}
               >
@@ -340,8 +348,7 @@ export function BattleBrowsePage() {
             <SortSelect
               value={sortBy}
               onChange={(value) => {
-                setSortBy(value);
-                setPage(0);
+                updateParams({ sort: value === 'updated' ? null : value });
               }}
               label={t('battle.browseSortLabel')}
               className="battle-browse-sorter battle-browse-control battle-browse-sort"
@@ -371,17 +378,17 @@ export function BattleBrowsePage() {
             {(query || typeFilter !== 'all' || entityFilter !== 'all') ? (
               <div className="battle-browse-active-filters">
                 {typeFilter !== 'all' ? (
-                  <button type="button" className="battle-browse-chip" onClick={() => setTypeFilter('all')}>
+                  <button type="button" className="battle-browse-chip" onClick={() => updateParams({ type: null })}>
                     {typeFilter} <X size={12} />
                   </button>
                 ) : null}
                 {entityFilter !== 'all' ? (
-                  <button type="button" className="battle-browse-chip" onClick={() => setEntityFilter('all')}>
+                  <button type="button" className="battle-browse-chip" onClick={() => updateParams({ entity: null })}>
                     {getEntityFilterLabel(entityFilter, t)} <X size={12} />
                   </button>
                 ) : null}
                 {query ? (
-                  <button type="button" className="battle-browse-chip" onClick={() => setQuery('')}>
+                  <button type="button" className="battle-browse-chip" onClick={() => updateParams({ q: null })}>
                     "{query}" <X size={12} />
                   </button>
                 ) : null}
@@ -443,7 +450,7 @@ export function BattleBrowsePage() {
                     <button
                       type="button"
                       className="game-page-btn"
-                      onClick={() => setPage((current) => Math.max(0, current - 1))}
+                      onClick={() => updateParams({ page: Math.max(0, visiblePage - 1) === 0 ? null : Math.max(0, visiblePage - 1) })}
                       disabled={visiblePage === 0}
                       aria-label={t('common.previous')}
                     >
@@ -455,7 +462,7 @@ export function BattleBrowsePage() {
                     <button
                       type="button"
                       className="game-page-btn"
-                      onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                      onClick={() => updateParams({ page: Math.min(totalPages - 1, visiblePage + 1) })}
                       disabled={visiblePage >= totalPages - 1}
                       aria-label={t('common.next')}
                     >
