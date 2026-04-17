@@ -1,5 +1,6 @@
 .discover-post-card {
   gap: 1rem;
+  justify-content: flex-start;
 }
 
 .discover-post-head,
@@ -51,6 +52,7 @@
   overflow: hidden;
   white-space: pre-wrap;
   word-break: break-word;
+  min-height: calc(1.65em * 4);
 }
 
 .discover-post-title-link {
@@ -71,6 +73,7 @@
   height: 4.15rem;
   border-radius: 0.9rem;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .discover-post-title-copy {
@@ -100,11 +103,13 @@
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .discover-post-meta {
   display: grid;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .discover-post-date {
@@ -132,6 +137,14 @@
   color: var(--text-secondary);
 }
 
+.discover-post-foot {
+  margin-top: auto;
+}
+
+.discover-post-title-link > svg {
+  flex-shrink: 0;
+}
+
 @media (max-width: 639px) {
   .discover-post-head {
     gap: 0.65rem;
@@ -140,6 +153,7 @@
   .discover-post-content {
     -webkit-line-clamp: 3;
     line-clamp: 3;
+    min-height: calc(1.6em * 3);
   }
 
   .discover-post-foot {

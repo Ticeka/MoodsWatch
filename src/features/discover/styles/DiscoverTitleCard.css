@@ -1,7 +1,10 @@
 .discover-title-card {
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 0.95rem;
   color: inherit;
+  height: 100%;
+  text-decoration: none;
 }
 
 .discover-title-card:hover {
@@ -117,6 +120,12 @@
 .discover-title-copy h3 {
   font-size: 1.06rem;
   line-height: 1.25;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
@@ -124,6 +133,10 @@
   color: var(--text-secondary);
   font-size: 0.84rem;
   line-height: 1.45;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   overflow-wrap: anywhere;
 }
 
@@ -156,6 +169,7 @@
   align-items: center;
   gap: 0.42rem;
   flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .discover-title-tag {

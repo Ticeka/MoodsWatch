@@ -1,5 +1,6 @@
 import React, { useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useLanguage } from '@/shared/contexts/LanguageContext';
 
 function SkeletonCard() {
   return (
@@ -27,6 +28,7 @@ export function SkeletonRow({ count = 6 }) {
 
 export function Carousel({ children }) {
   const ref = useRef(null);
+  const { pick } = useLanguage();
 
   const scroll = useCallback((dir) => {
     if (!ref.current) return;
@@ -36,7 +38,7 @@ export function Carousel({ children }) {
 
   return (
     <div className="hv2-carousel">
-      <button className="hv2-scroll-btn hv2-scroll-left" onClick={() => scroll('left')} aria-label="Scroll left">
+      <button className="hv2-scroll-btn hv2-scroll-left" onClick={() => scroll('left')} aria-label={pick('เลื่อนไปทางซ้าย', 'Scroll left')}>
         <ChevronLeft size={20} />
       </button>
       <div className="hv2-carousel-track" ref={ref}>
@@ -44,7 +46,7 @@ export function Carousel({ children }) {
           {children}
         </div>
       </div>
-      <button className="hv2-scroll-btn hv2-scroll-right" onClick={() => scroll('right')} aria-label="Scroll right">
+      <button className="hv2-scroll-btn hv2-scroll-right" onClick={() => scroll('right')} aria-label={pick('เลื่อนไปทางขวา', 'Scroll right')}>
         <ChevronRight size={20} />
       </button>
     </div>

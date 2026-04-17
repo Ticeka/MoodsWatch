@@ -5,8 +5,10 @@ import PropTypes from 'prop-types';
  * Label + select pattern shared across list/filter surfaces.
  */
 export function SortSelect({ value, onChange, label, className = 'results-sorter', children, selectAriaLabel }) {
+  const classes = ['results-sorter', className].filter(Boolean).join(' ');
+
   return (
-    <label className={className}>
+    <label className={classes}>
       <span>{label}</span>
       <select
         value={value}
