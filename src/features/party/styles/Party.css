@@ -4459,4 +4459,17 @@
   .party-title-guess-builder-character-grid {
     grid-template-columns: 1fr;
   }
+
+  .jigsaw-reveal-frame {
+    max-width: min(100%, 230px);
+  }
+
+  .pixel-reveal-answer-image .jigsaw-reveal-frame {
+    max-width: min(100%, 180px);
+  }
+
+  .pixel-reveal-counter {
+    padding-inline: 0.7rem;
+    font-size: 0.76rem;
+  }
 }

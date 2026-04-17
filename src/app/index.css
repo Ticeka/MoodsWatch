@@ -7,7 +7,7 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -24,6 +24,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 300ms ease, color 300ms ease;
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 img,
@@ -87,6 +89,19 @@ button {
   cursor: pointer;
   border: none;
   background: none;
+}
+
+@media (max-width: 767px) {
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  body {
+    background-image:
+      radial-gradient(circle at 14% 14%, var(--glow-1), transparent 32%),
+      radial-gradient(circle at 86% 88%, var(--glow-2), transparent 30%);
+  }
 }
 
 :root {

@@ -268,11 +268,6 @@
 }
 
 @media (max-width: 480px) {
-  .stats-genre-head,
-  .stats-genre-row {
-    grid-template-columns: 1fr 3.5rem 4.5rem;
-  }
-
   .stats-page {
     padding-bottom: 4rem;
   }
@@ -313,5 +308,59 @@
 
   .stats-bar-label {
     font-size: 0.8rem;
+  }
+
+  .stats-genre-table {
+    border-radius: var(--radius-md);
+  }
+
+  .stats-genre-head {
+    display: none;
+  }
+
+  .stats-genre-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "genre genre"
+      "count score";
+    gap: 0.3rem 0.9rem;
+    padding: 0.8rem 0.9rem;
+    align-items: center;
+  }
+
+  .stats-genre-name {
+    grid-area: genre;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.35;
+  }
+
+  .stats-genre-row span:nth-child(2),
+  .stats-genre-row span:nth-child(3) {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .stats-genre-row span:nth-child(2) {
+    grid-area: count;
+    justify-self: start;
+  }
+
+  .stats-genre-row span:nth-child(2)::before {
+    content: attr(data-label) ": ";
+    color: var(--text-tertiary);
+    font-weight: 600;
+  }
+
+  .stats-genre-row span:nth-child(3) {
+    grid-area: score;
+    justify-self: end;
+  }
+
+  .stats-genre-row span:nth-child(3)::before {
+    content: attr(data-label) ": ";
+    color: var(--text-tertiary);
+    font-weight: 600;
   }
 }

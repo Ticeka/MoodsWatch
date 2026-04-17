@@ -391,4 +391,27 @@
   .composer-title-search {
     padding: 0 12px 10px;
   }
+
+  .composer-tagged-preview {
+    height: 136px;
+  }
+
+  .composer-tagged-cover {
+    height: 118px;
+    max-width: calc(100% - 16px);
+  }
+
+  .composer-tagged-info {
+    padding: 24px 8px 8px;
+    align-items: flex-start;
+  }
+
+  .composer-tagged-name {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.25;
+  }
 }

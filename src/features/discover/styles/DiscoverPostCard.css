@@ -229,3 +229,53 @@
 .discover-post-actions {
   gap: 0.55rem;
 }
+
+@media (max-width: 480px) {
+  .discover-post-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .discover-post-author-copy span {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.3;
+  }
+
+  .discover-post-title-link {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.65rem;
+  }
+
+  .discover-post-title-link > svg {
+    display: none;
+  }
+
+  .discover-post-title-cover {
+    width: 2.5rem;
+    height: 3.5rem;
+    border-radius: 0.7rem;
+  }
+
+  .discover-post-title-copy strong {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.25;
+  }
+
+  .discover-post-actions {
+    gap: 0.5rem;
+    justify-content: flex-start;
+  }
+}

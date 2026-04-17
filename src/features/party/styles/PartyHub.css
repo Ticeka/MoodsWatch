@@ -902,6 +902,22 @@
   .pgc-preset-grid { grid-template-columns: 1fr; gap: 0.6rem; }
 }
 
+@media (max-width: 420px) {
+  .pgh-quick {
+    gap: 0.75rem;
+  }
+
+  .pgh-join-card,
+  .pgh-find-card {
+    padding-inline: 0.9rem;
+  }
+
+  .pgh-find-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 /* ══════════════════════════════════════════════════════
    PARTY GATEWAY (pgw-) — Redesigned /party entry page
    Full light + dark mode. Vivid, game-first aesthetic.

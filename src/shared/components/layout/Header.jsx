@@ -105,11 +105,12 @@ export function Header() {
 
   useEffect(() => {
     let frameId = null;
-    let lastScrolled = window.scrollY > 20;
+    const readScrollY = () => Math.max(window.scrollY || 0, window.__swipePagerScrollY || 0);
+    let lastScrolled = readScrollY() > 20;
 
     const updateScrolled = () => {
       frameId = null;
-      const nextScrolled = window.scrollY > 20;
+      const nextScrolled = readScrollY() > 20;
       if (nextScrolled !== lastScrolled) {
         lastScrolled = nextScrolled;
         setScrolled(nextScrolled);
@@ -134,6 +135,7 @@ export function Header() {
 
     updateScrolled();
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('swipepagerscroll', handleScroll);
     document.addEventListener('mousedown', handleClickOutside);
 
     return () => {
@@ -141,6 +143,7 @@ export function Header() {
         window.cancelAnimationFrame(frameId);
       }
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('swipepagerscroll', handleScroll);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
@@ -367,21 +370,31 @@ export function Header() {
           <Link to="/battle" className={`drawer-link ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BattleVsIcon size={18} /> {t('layout.battle')}
           </Link>
-          <Link to="/tierlist" className={`drawer-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
-            <ListOrdered size={18} /> {t('layout.tierlist')}
+          <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <BookMarked size={18} /> {t('layout.watchlist')}
           </Link>
+          {user && (
+            <Link to="/profile" className={`drawer-link ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <User size={18} /> {t('layout.profile')}
+            </Link>
+          )}
+
+          <div className="drawer-section-divider" aria-hidden="true">
+            <span>{t('layout.more') || 'More'}</span>
+          </div>
+
           <Link to="/party" className={`drawer-link ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <Users2 size={18} /> {t('layout.party')}
           </Link>
-          <Link to="/watchlist" className={`drawer-link ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
-            <BookMarked size={18} /> {t('layout.watchlist')}
+          <Link to="/tierlist" className={`drawer-link ${isTierListActive ? 'active' : ''}`} onClick={closeMobileMenu}>
+            <ListOrdered size={18} /> {t('layout.tierlist')}
           </Link>
           <Link to="/stats" className={`drawer-link ${isActive('/stats') ? 'active' : ''}`} onClick={closeMobileMenu}>
             <BarChart2 size={18} /> {t('layout.stats')}
           </Link>
           {user && (
-            <Link to="/profile" className={`drawer-link ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
-              <User size={18} /> {t('layout.profile')}
+            <Link to="/feed" className={`drawer-link ${isActive('/feed') ? 'active' : ''}`} onClick={closeMobileMenu}>
+              <Users size={18} /> {t('layout.feed')}
             </Link>
           )}
         </div>
@@ -439,39 +452,46 @@ export function Header() {
 
       <nav className="bottom-nav" aria-label={t('layout.bottomNav')}>
         <Link to="/" className={`bottom-nav-item ${isActive('/') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <Home size={20} className="bottom-nav-icon" />
+          <Home size={22} className="bottom-nav-icon" strokeWidth={isActive('/') ? 2.4 : 2} />
           <span className="bottom-nav-label">{t('layout.home')}</span>
         </Link>
         <Link to="/discover" className={`bottom-nav-item ${isActive('/discover') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <Search size={20} className="bottom-nav-icon" />
+          <Search size={22} className="bottom-nav-icon" strokeWidth={isActive('/discover') ? 2.4 : 2} />
           <span className="bottom-nav-label">{t('layout.discover')}</span>
         </Link>
         <Link to="/battle" className={`bottom-nav-item ${isActive('/battle') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <BattleVsIcon size={20} className="bottom-nav-icon" />
+          <BattleVsIcon size={24} className="bottom-nav-icon" />
           <span className="bottom-nav-label">{t('layout.battle')}</span>
         </Link>
-        <Link to="/party" className={`bottom-nav-item ${isActive('/party') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <Users2 size={20} className="bottom-nav-icon" />
-          <span className="bottom-nav-label">{t('layout.party')}</span>
-        </Link>
         <Link to="/watchlist" className={`bottom-nav-item ${isActive('/watchlist') ? 'active' : ''}`} onClick={closeMobileMenu}>
-          <BookMarked size={20} className="bottom-nav-icon" />
+          <BookMarked size={22} className="bottom-nav-icon" strokeWidth={isActive('/watchlist') ? 2.4 : 2} />
           <span className="bottom-nav-label">{t('layout.watchlist')}</span>
         </Link>
-        {user && (
-          <Link to="/profile" className={`bottom-nav-item ${isActive('/profile') ? 'active' : ''}`} onClick={closeMobileMenu}>
-            <User size={20} className="bottom-nav-icon" />
+        {user ? (
+          <Link
+            to="/profile"
+            className={`bottom-nav-item bottom-nav-item-profile ${isActive('/profile') ? 'active' : ''}`}
+            onClick={closeMobileMenu}
+          >
+            {user?.profile?.avatar_url ? (
+              <img src={user.profile.avatar_url} alt="" className="bottom-nav-avatar" />
+            ) : (
+              <span className="bottom-nav-avatar" aria-hidden="true">
+                {userLabel.charAt(0).toUpperCase()}
+              </span>
+            )}
             <span className="bottom-nav-label">{t('layout.profile')}</span>
           </Link>
+        ) : (
+          <Link
+            to="/login"
+            className={`bottom-nav-item ${isActive('/login') ? 'active' : ''}`}
+            onClick={closeMobileMenu}
+          >
+            <User size={22} className="bottom-nav-icon" strokeWidth={2} />
+            <span className="bottom-nav-label">{t('layout.login')}</span>
+          </Link>
         )}
-        <button type="button" onClick={toggleAdult} className={`bottom-nav-item adult-toggle-btn ${showAdult ? 'is-active' : ''}`}>
-          <AdultModeBadgeIcon size={20} active={showAdult} className="bottom-nav-icon" />
-          <span className="bottom-nav-label">{getAdultModeLabel(showAdult)}</span>
-        </button>
-        <button type="button" onClick={toggleTheme} className="bottom-nav-item">
-          {theme === 'dark' ? <Sun size={20} className="bottom-nav-icon" /> : <Moon size={20} className="bottom-nav-icon" />}
-          <span className="bottom-nav-label">{theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}</span>
-        </button>
       </nav>
 
       {dropdownOpen && user && createPortal(

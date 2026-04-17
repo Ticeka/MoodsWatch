@@ -181,11 +181,17 @@ export function getTemplatePreviewMediaStyle(settings = {}) {
 export function getTierEntityArtworkSource(entity) {
   return normalizeArtworkSource(entity?.cover)
     || normalizeArtworkSource(entity?.image_url)
+    || normalizeArtworkSource(entity?.trailer_thumbnail_url)
     || getTitleArtwork(entity)
     || '';
 }
 
 export function getTemplatePreviewArtworkSource(template, fallbackEntity = null) {
+  const manualTemplatePreviewUrl = normalizeArtworkSource(template?.manualPreviewArtworkUrl);
+  if (manualTemplatePreviewUrl) {
+    return manualTemplatePreviewUrl;
+  }
+
   const templatePreviewUrl = normalizeArtworkSource(template?.previewArtworkUrl);
   if (templatePreviewUrl) {
     return templatePreviewUrl;
@@ -196,6 +202,8 @@ export function getTemplatePreviewArtworkSource(template, fallbackEntity = null)
       normalizeArtworkSource(item?.imageUrl)
       || normalizeArtworkSource(item?.cover)
       || normalizeArtworkSource(item?.image_url)
+      || normalizeArtworkSource(item?.trailerThumbnailUrl)
+      || normalizeArtworkSource(item?.trailer_thumbnail_url)
     ))
     .find(Boolean);
   if (customItemArtwork) {

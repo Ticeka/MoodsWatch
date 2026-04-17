@@ -17,6 +17,7 @@ import {
   resolveTemplateCoverUrl,
   sanitizeTemplateCoverUrl,
 } from '../lib/partyTemplateUtils.js';
+import { normalizeArtworkSource } from '@/shared/lib/titleArtwork';
 import {
   applyYoutubeSourceSuggestion,
   extractYoutubeSourceCandidates,
@@ -386,6 +387,117 @@ function mapPartyTemplate(row) {
   };
 }
 
+function getPartyTemplateCoverTitleId(item = {}) {
+  const resolvedId = Number(item?.resolved_source_title_id || item?.resolvedSourceTitleId || 0);
+  if (resolvedId > 0) return resolvedId;
+  const sourceId = Number(item?.source_title_id || item?.sourceTitleId || 0);
+  return sourceId > 0 ? sourceId : 0;
+}
+
+function getPartyTemplateItemCoverCandidate(item = {}, titleCoverMap = new Map()) {
+  const directCover = sanitizeTemplateCoverUrl(
+    item?.cover_url
+    ?? item?.coverUrl
+    ?? item?.image_url
+    ?? item?.imageUrl
+    ?? item?.cover_image
+    ?? item?.banner_image,
+  );
+  if (directCover) {
+    return directCover;
+  }
+
+  const titleId = getPartyTemplateCoverTitleId(item);
+  if (!titleId) {
+    return '';
+  }
+
+  return normalizeArtworkSource(titleCoverMap.get(titleId) || '') || '';
+}
+
+async function fetchPartyTemplateCoverFallbackMap(templateIds = []) {
+  const normalizedTemplateIds = [...new Set(
+    (Array.isArray(templateIds) ? templateIds : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!supabase || normalizedTemplateIds.length === 0) {
+    return new Map();
+  }
+
+  const { data: itemRows, error: itemError } = await supabase
+    .from('party_song_template_items')
+    .select('template_id, position, cover_url, source_title_id, resolved_source_title_id')
+    .in('template_id', normalizedTemplateIds)
+    .order('position', { ascending: true });
+
+  if (itemError) {
+    console.warn('Failed to load template cover fallbacks:', itemError.message || itemError);
+    return new Map();
+  }
+
+  const titleIds = [...new Set(
+    (itemRows || [])
+      .map((item) => getPartyTemplateCoverTitleId(item))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  )];
+
+  const titleCoverMap = new Map();
+  if (titleIds.length > 0) {
+    const { data: titleRows, error: titleError } = await supabase
+      .from('canonical_titles')
+      .select('id, cover_image, banner_image')
+      .in('id', titleIds);
+
+    if (titleError) {
+      console.warn('Failed to load title covers for template fallbacks:', titleError.message || titleError);
+    } else {
+      (titleRows || []).forEach((row) => {
+        const fallbackCover = normalizeArtworkSource(row?.cover_image || row?.banner_image || '');
+        if (fallbackCover) {
+          titleCoverMap.set(Number(row.id), fallbackCover);
+        }
+      });
+    }
+  }
+
+  const coverByTemplateId = new Map();
+  (itemRows || []).forEach((item) => {
+    const templateId = String(item?.template_id || '').trim();
+    if (!templateId || coverByTemplateId.has(templateId)) {
+      return;
+    }
+
+    const candidate = getPartyTemplateItemCoverCandidate(item, titleCoverMap);
+    if (candidate) {
+      coverByTemplateId.set(templateId, candidate);
+    }
+  });
+
+  return coverByTemplateId;
+}
+
+async function applyPartyTemplateCoverFallbacks(templates = []) {
+  const missingCoverTemplates = templates.filter((template) => !sanitizeTemplateCoverUrl(template?.coverUrl));
+  if (missingCoverTemplates.length === 0) {
+    return templates;
+  }
+
+  const fallbackCoverMap = await fetchPartyTemplateCoverFallbackMap(
+    missingCoverTemplates.map((template) => template.id),
+  );
+
+  if (fallbackCoverMap.size === 0) {
+    return templates;
+  }
+
+  return templates.map((template) => ({
+    ...template,
+    coverUrl: sanitizeTemplateCoverUrl(template?.coverUrl) || fallbackCoverMap.get(String(template.id)) || '',
+  }));
+}
+
 async function fetchPartyTemplateCreatorMap(ownerUserIds = []) {
   const ids = [...new Set(
     (Array.isArray(ownerUserIds) ? ownerUserIds : [])
@@ -574,7 +686,7 @@ export async function fetchPartyTemplates({ tab = 'all', mode = 'all', search = 
   const { data, error, count } = await query;
   if (error) throw error;
 
-  const templates = (data || []).map(mapPartyTemplate);
+  const templates = await applyPartyTemplateCoverFallbacks((data || []).map(mapPartyTemplate));
   const creatorMap = await fetchPartyTemplateCreatorMap(templates.map((template) => template.ownerUserId));
   return { templates: applyPartyTemplateCreatorNames(templates, creatorMap), total: count ?? 0 };
 }
@@ -615,10 +727,12 @@ export async function fetchPartyTemplateDetail(templateId) {
 
   const mappedTemplate = mapPartyTemplate(template);
   const creatorMap = await fetchPartyTemplateCreatorMap([mappedTemplate.ownerUserId]);
+  const fallbackCoverMap = await fetchPartyTemplateCoverFallbackMap([mappedTemplate.id]);
+  const fallbackCoverUrl = fallbackCoverMap.get(String(mappedTemplate.id)) || '';
 
   return {
     ...applyPartyTemplateCreatorNames([mappedTemplate], creatorMap)[0],
-    coverUrl: resolveTemplateCoverUrl(template?.cover_url, items || []),
+    coverUrl: sanitizeTemplateCoverUrl(template?.cover_url) || fallbackCoverUrl || resolveTemplateCoverUrl(template?.cover_url, items || []),
     items: items || [],
   };
 }

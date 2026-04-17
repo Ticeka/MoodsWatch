@@ -190,6 +190,44 @@
   }
 }
 
+@media (max-width: 420px) {
+  .search-autocomplete-item-link,
+  .search-autocomplete-item-button {
+    align-items: flex-start;
+  }
+
+  .search-autocomplete-copy {
+    gap: 0.2rem;
+  }
+
+  .search-autocomplete-copy strong,
+  .search-autocomplete-copy span {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+  }
+
+  .search-autocomplete-copy strong {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.25;
+  }
+
+  .search-autocomplete-copy span {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.3;
+  }
+
+  .search-autocomplete-media {
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 0.55rem;
+  }
+}
+
 .search-autocomplete-kind {
   display: inline-flex;
   align-items: center;

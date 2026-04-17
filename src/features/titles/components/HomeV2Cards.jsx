@@ -1,5 +1,6 @@
 import React from 'react';
 import { Disc3, Swords, ListOrdered, Eye, Hash, Play, Youtube, Film, Music2 } from 'lucide-react';
+import { getTemplatePreviewArtworkSource } from '@/features/tierlist/lib/tierlistPreviewUtils';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 
 function formatCount(n) {
@@ -30,6 +31,35 @@ function getPartyPlaceholderVariant(sourceType) {
   return 'party';
 }
 
+function humanizeToken(value = '') {
+  return String(value || '')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function getTierlistCategoryLabel(category, pick) {
+  const normalized = String(category || '').trim().toLowerCase();
+  const labels = {
+    anime: pick('อนิเมะ', 'Anime'),
+    manga: pick('มังงะ', 'Manga'),
+    manhwa: pick('มันฮวา', 'Manhwa'),
+    romance: pick('โรแมนซ์', 'Romance'),
+    action: pick('แอ็กชัน', 'Action'),
+    comedy: pick('คอเมดี้', 'Comedy'),
+    fantasy: pick('แฟนตาซี', 'Fantasy'),
+    drama: pick('ดราม่า', 'Drama'),
+    characters: pick('ตัวละคร', 'Characters'),
+    songs: pick('เพลง', 'Songs'),
+    youtube: 'YouTube',
+    text: pick('ข้อความ', 'Text'),
+    general: pick('ทั่วไป', 'General'),
+  };
+
+  return labels[normalized] || humanizeToken(category) || pick('คอมมูนิตี้', 'Community');
+}
+
 /* ─── Cards ─── */
 
 export function PartyCard({ template, onClick }) {
@@ -44,7 +74,7 @@ export function PartyCard({ template, onClick }) {
     <div className="hv2-card" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
-          ? <img src={coverUrl} alt={templateName} loading="lazy" />
+          ? <img src={coverUrl} alt={templateName} loading="lazy" decoding="async" draggable={false} />
           : <CardPlaceholder icon={PlaceholderIcon} variant={variant} />
         }
         <span className="hv2-badge hv2-badge--party"><Disc3 size={11} /> {pick('ปาร์ตี้', 'Party')}</span>
@@ -74,7 +104,7 @@ export function BattleCard({ deck, onClick }) {
     <div className="hv2-card" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
-          ? <img src={coverUrl} alt={name} loading="lazy" />
+          ? <img src={coverUrl} alt={name} loading="lazy" decoding="async" draggable={false} />
           : <CardPlaceholder icon={Film} variant="battle" />
         }
         <span className="hv2-badge hv2-badge--battle"><Swords size={11} /> {pick('แบทเทิล', 'Battle')}</span>
@@ -93,20 +123,34 @@ export function BattleCard({ deck, onClick }) {
 
 export function TierlistCard({ template, onClick }) {
   const { pick } = useLanguage();
-  const coverUrl = template.manualPreviewArtworkUrl || template.previewArtworkUrl || '';
-  const category = template.category || pick('คอมมูนิตี้', 'Community');
+  const coverUrl = getTemplatePreviewArtworkSource(template) || '';
+  const firstCustomItem = Array.isArray(template?.customItems) ? template.customItems.find(Boolean) : null;
+  const title = String(template?.title || '').trim()
+    || String(firstCustomItem?.title || firstCustomItem?.label || '').trim()
+    || pick('เทียร์ลิสต์ไม่มีชื่อ', 'Untitled tierlist');
+  const subtitle = String(firstCustomItem?.subtitle || firstCustomItem?.artistName || '').trim()
+    || getTierlistCategoryLabel(template?.category, pick);
   return (
     <div className="hv2-card" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
-          ? <img src={coverUrl} alt={template.title} loading="lazy" style={{ objectFit: template.previewArtworkFit || 'cover', objectPosition: template.previewArtworkPosition || 'center' }} />
-          : <CardPlaceholder icon={ListOrdered} variant="tierlist" />
+          ? (
+            <img
+              src={coverUrl}
+              alt={title}
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              style={{ objectFit: template.previewArtworkFit || 'cover', objectPosition: template.previewArtworkPosition || 'center' }}
+            />
+          )
+          : <div className="hv2-placeholder hv2-placeholder--tierlist" aria-hidden="true" />
         }
         <span className="hv2-badge hv2-badge--tierlist"><ListOrdered size={11} /> {pick('เทียร์ลิสต์', 'Tierlist')}</span>
       </div>
       <div className="hv2-card-body">
-        <h3 className="hv2-card-title">{template.title}</h3>
-        <p className="hv2-card-sub">{category}</p>
+        <h3 className="hv2-card-title">{title}</h3>
+        <p className="hv2-card-sub">{subtitle}</p>
         <div className="hv2-card-meta">
           {template.plays > 0 && <span className="hv2-meta"><Play size={11} />{formatCount(template.plays)}</span>}
         </div>
@@ -134,7 +178,7 @@ export function TrendingCard({ title, rank, onClick }) {
     <div className="hv2-card" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
-          ? <img src={coverUrl} alt={name} loading="lazy" />
+          ? <img src={coverUrl} alt={name} loading="lazy" decoding="async" draggable={false} />
           : <CardPlaceholder icon={Film} variant="battle" />
         }
         {rank != null && <span className="hv2-rank">#{rank}</span>}

@@ -1032,4 +1032,26 @@ body.home-scroll-snap {
   .finder-title {
     font-size: 1.2rem;
   }
+
+  .home-page .results-sorter {
+    min-height: 0;
+    padding: 0.45rem 0.7rem;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .home-page .results-sorter > span {
+    width: 100%;
+    font-size: 0.78rem;
+  }
+
+  .home-page .results-sorter select {
+    min-width: 0;
+    width: 100%;
+    padding-right: 0.5rem;
+  }
+
+  .results-page-btn {
+    min-width: 0;
+  }
 }

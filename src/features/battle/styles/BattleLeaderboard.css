@@ -204,18 +204,62 @@
     font-size: 0.825rem;
   }
 
-  .leaderboard-table-head,
-  .leaderboard-row {
-    grid-template-columns: 2rem minmax(0, 1fr) 4.5rem;
-    padding-inline: 0.75rem;
-    font-size: 0.825rem;
-  }
-
   .lb-cover {
     width: 28px;
     height: 40px;
     margin-right: 0.5rem;
   }
 
-  .lb-wins { display: none; }
+  .leaderboard-table-head {
+    display: none;
+  }
+
+  .leaderboard-row {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rank title title"
+      "rank wins winrate";
+    gap: 0.45rem 0.75rem;
+    align-items: start;
+    padding: 0.85rem 0.75rem;
+  }
+
+  .lb-rank {
+    grid-area: rank;
+    align-self: center;
+  }
+
+  .lb-title {
+    grid-area: title;
+    align-items: flex-start;
+  }
+
+  .lb-title-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.3;
+  }
+
+  .lb-stat {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 0.35rem;
+  }
+
+  .lb-wins {
+    grid-area: wins;
+    font-size: 0.82rem;
+  }
+
+  .lb-winrate-col {
+    grid-area: winrate;
+    font-size: 0.82rem;
+    justify-self: end;
+  }
+
+  .lb-stat-sub {
+    font-size: 0.72rem;
+  }
 }

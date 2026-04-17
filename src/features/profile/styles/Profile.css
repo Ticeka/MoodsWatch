@@ -1546,4 +1546,24 @@
   .profile-upload-button {
     width: 100%;
   }
+
+  .profile-timeline-item,
+  .profile-battle-item,
+  .profile-top-item,
+  .profile-hidden-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .profile-timeline-item time,
+  .profile-battle-item time {
+    width: 100%;
+    white-space: normal;
+    padding-left: 1.35rem;
+  }
+
+  .profile-top-item > *,
+  .profile-hidden-card > * {
+    min-width: 0;
+  }
 }

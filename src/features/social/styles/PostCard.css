@@ -453,4 +453,22 @@
   .post-card-title-name {
     font-size: 0.875rem;
   }
+
+  .post-card-image {
+    max-height: 360px;
+  }
+
+  .post-card-title-media {
+    aspect-ratio: 5 / 6;
+  }
+
+  .post-card-title-cover {
+    height: 80%;
+    max-width: calc(100% - 20px);
+  }
+
+  .post-card-title-badge {
+    padding: 3px 8px;
+    font-size: 0.65rem;
+  }
 }

@@ -304,3 +304,64 @@
 [data-theme="dark"] .discover-title-poster-wrap {
   box-shadow: none;
 }
+
+@media (max-width: 480px) {
+  .discover-title-card {
+    gap: 0.6rem;
+  }
+
+  .discover-title-poster-wrap {
+    aspect-ratio: 0.94;
+    border-radius: 0.85rem;
+  }
+
+  .discover-title-poster-top,
+  .discover-title-poster-bottom {
+    padding-inline: 0.55rem;
+  }
+
+  .discover-title-poster-top {
+    top: 0.55rem;
+  }
+
+  .discover-title-poster-bottom {
+    bottom: 0.55rem;
+  }
+
+  .discover-title-chip,
+  .discover-title-tag,
+  .discover-title-stat {
+    min-height: 1.5rem;
+    padding-inline: 0.48rem;
+    font-size: 0.68rem;
+  }
+
+  .discover-title-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .discover-title-stats {
+    justify-content: flex-start;
+  }
+
+  .discover-title-copy h3 {
+    font-size: 0.95rem;
+  }
+
+  .discover-title-supporting {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.3;
+  }
+
+  .discover-title-synopsis {
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+}

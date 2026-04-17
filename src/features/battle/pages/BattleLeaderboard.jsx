@@ -157,11 +157,11 @@ export function BattleLeaderboard() {
                         )}
                         <span className="lb-title-text">{displayTitle}</span>
                       </span>
-                      <span className="lb-col lb-stat">
+                      <span className="lb-col lb-stat lb-wins">
                         <strong>{entry.wins}</strong>
                         <span className="lb-stat-sub">/ {entry.totalVotes}</span>
                       </span>
-                      <span className="lb-col lb-stat">
+                      <span className="lb-col lb-stat lb-winrate-col">
                         <span className={`lb-winrate${entry.winRate >= 0.7 ? ' high' : entry.winRate <= 0.35 ? ' low' : ''}`}>
                           {winPct}
                         </span>

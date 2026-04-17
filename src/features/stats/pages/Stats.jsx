@@ -261,8 +261,8 @@ export function Stats() {
             {stats.genres.slice(0, 25).map((g) => (
               <div key={g.name} className="stats-genre-row">
                 <span className="stats-genre-name">{g.name}</span>
-                <span>{g.count}</span>
-                <span>{g.avgScore != null ? g.avgScore.toFixed(1) : '—'}</span>
+                <span data-label={t('stats.colCount')}>{g.count}</span>
+                <span data-label={t('stats.colAvgScore')}>{g.avgScore != null ? g.avgScore.toFixed(1) : '—'}</span>
               </div>
             ))}
           </div>

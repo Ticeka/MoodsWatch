@@ -1489,6 +1489,165 @@
   .discover-tierlist-bg { min-height: 132px; }
 }
 
+@media (max-width: 480px) {
+  .dv2-container {
+    padding-inline: var(--space-3);
+    gap: var(--space-5);
+  }
+
+  .dv2-search-shell {
+    padding: 0.9rem;
+    gap: 0.9rem;
+  }
+
+  .dv2-searchbox {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0.45rem 0.45rem 0.45rem 0.85rem;
+  }
+
+  .dv2-searchbox-input {
+    padding-block: 0.7rem;
+    font-size: 0.96rem;
+  }
+
+  .dv2-searchbox-submit {
+    padding: 0.65rem 0.8rem;
+    min-height: 2.4rem;
+  }
+
+  .dv2-search-meta {
+    align-items: flex-start;
+  }
+
+  .dv2-helper-chips {
+    width: 100%;
+  }
+
+  .dv2-results-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .dv2-sort {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dv2-sort select {
+    padding-right: 2rem;
+    font-size: 0.84rem;
+  }
+
+  .dv2-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .dv2-title-grid,
+  .dv2-entity-grid,
+  .dv2-post-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .discover-entity-card {
+    padding: 0.85rem;
+  }
+
+  .discover-profile-head {
+    gap: 0.65rem;
+  }
+
+  .discover-profile-avatar {
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+
+  .discover-profile-copy span {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.3;
+  }
+
+  .discover-tierlist-bg {
+    min-height: 116px;
+  }
+
+  .discover-tierlist-content {
+    gap: 0.7rem;
+    padding: 0.85rem;
+  }
+
+  .dv2-saved-card {
+    padding: 0.65rem 0.7rem;
+  }
+
+  .dv2-saved-open strong,
+  .dv2-saved-open > span {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+  }
+
+  .dv2-saved-open strong {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.25;
+  }
+
+  .dv2-saved-open > span {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.3;
+  }
+
+  .dv2-lane {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.7rem;
+    padding: 0.9rem;
+  }
+
+  .dv2-lane-arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .dv2-hero-title {
+    font-size: clamp(1.65rem, 8vw, 2.2rem);
+  }
+
+  .dv2-hero-subtitle {
+    font-size: 0.92rem;
+    line-height: 1.5;
+  }
+
+  .dv2-searchbox-clear {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .dv2-searchbox-submit {
+    padding-inline: 0.72rem;
+    font-size: 0.82rem;
+  }
+
+  .dv2-scope-tab {
+    margin-right: 1rem;
+    font-size: 0.88rem;
+  }
+
+  .dv2-cross-lane {
+    align-items: flex-start;
+    font-size: 0.8rem;
+  }
+}
+
 [data-theme="dark"] .discover-entity-card {
   background: var(--bg-elevated);
   border-color: rgba(255, 255, 255, 0.08);

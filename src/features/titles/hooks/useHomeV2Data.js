@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { fetchPartyTemplates } from '@/features/party/api/partyTemplateApi';
 import { fetchPublicBattleDecks } from '@/features/battle/api/battleRemoteApi';
 import { fetchRemoteTemplates } from '@/features/tierlist/api/tierlistRemoteQueriesApi';
-import { getTrendingTitles, getTitlesByIds } from '@/features/discover/api/discoverTitleCatalogApi';
+import { getTrendingTitles } from '@/features/discover/api/discoverTitleCatalogApi';
+import { buildEntityMaps, getBestEntityMapForIds, resolveTierBrowsePreviewEntitiesForEntries } from '@/features/tierlist/lib/tierlistBrowseHelpers';
 import { fetchPublishedHomepageBlocks } from '@/features/titles/api/homepageApi';
+import { getTemplatePreviewArtworkSource } from '@/features/tierlist/lib/tierlistPreviewUtils';
 
 const EMPTY = [];
 
@@ -53,21 +55,34 @@ export function useTierlistSection(showAdult) {
       .then(async (templates) => {
         if (!templates?.length) return EMPTY;
 
-        // collect first titleId for templates that have no previewArtworkUrl
-        const needsCover = templates.filter(t =>
-          !t.manualPreviewArtworkUrl && !t.previewArtworkUrl && t.titleIds?.length > 0
-        );
+        const { titles, songEntities } = await resolveTierBrowsePreviewEntitiesForEntries(templates).catch(() => ({
+          titles: [],
+          songEntities: [],
+        }));
 
-        if (needsCover.length === 0) return templates;
+        return templates.map((template) => {
+          if (template?.manualPreviewArtworkUrl) {
+            return template;
+          }
 
-        const firstIds = [...new Set(needsCover.map(t => t.titleIds[0]).filter(Boolean))];
-        const fetched = await getTitlesByIds(firstIds).catch(() => []);
-        const coverMap = Object.fromEntries((fetched || []).map(t => [t.id, t.cover]));
+          const entityMaps = buildEntityMaps(
+            [...(titles || []), ...(songEntities || [])],
+            template?.customItems || [],
+            template?.entityType
+          );
+          const entityById = getBestEntityMapForIds(entityMaps, template?.titleIds || [], template?.entityType);
+          const fallbackEntity = (template?.titleIds || [])
+            .map((id) => entityById.get(Number(id)))
+            .find(Boolean) || null;
+          const fallbackPreview = getTemplatePreviewArtworkSource({
+            ...template,
+            previewArtworkUrl: '',
+          }, fallbackEntity) || '';
 
-        return templates.map(t => {
-          if (t.manualPreviewArtworkUrl || t.previewArtworkUrl) return t;
-          const firstId = t.titleIds?.[0];
-          return { ...t, previewArtworkUrl: coverMap[firstId] || '' };
+          return {
+            ...template,
+            previewArtworkUrl: fallbackPreview,
+          };
         });
       }),
     [showAdult],

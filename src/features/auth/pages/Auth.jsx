@@ -26,6 +26,10 @@ export function Auth() {
   const [error, setError] = useState(null);
 
   const isDark = theme === 'dark';
+  const usernameFieldId = 'auth-username';
+  const emailFieldId = 'auth-email';
+  const passwordFieldId = 'auth-password';
+  const confirmPasswordFieldId = 'auth-confirm-password';
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -126,6 +130,20 @@ export function Auth() {
           </span>
         </div>
 
+        <div className="auth-panel-spotlight">
+          <div className="auth-panel-badge">{isLogin ? t('auth.signIn') : t('auth.signUp')}</div>
+          <div className="auth-panel-copy">
+            <h1>{isLogin ? t('auth.welcomeBack') : t('auth.createCozyAccount')}</h1>
+            <p>{t('auth.oauthHint')}</p>
+          </div>
+
+          <div className="auth-panel-highlights" aria-hidden="true">
+            <span>{t('auth.valueFast')}</span>
+            <span>{t('auth.valueSafe')}</span>
+            <span>{t('auth.valueSync')}</span>
+          </div>
+        </div>
+
         <div className="auth-panel-footer-dots">
           <span />
           <span />
@@ -197,10 +215,11 @@ export function Auth() {
 	          <form className="auth-form" onSubmit={handleSubmit}>
             {!isLogin && (
               <div className="auth-field">
-                <label className="auth-field-label">{t('auth.username')}</label>
+                <label className="auth-field-label" htmlFor={usernameFieldId}>{t('auth.username')}</label>
                 <div className="auth-input-wrap">
                   <UserRound size={17} className="auth-input-icon" />
                   <input
+                    id={usernameFieldId}
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -212,10 +231,11 @@ export function Auth() {
             )}
 
             <div className="auth-field">
-              <label className="auth-field-label">{t('auth.email')}</label>
+              <label className="auth-field-label" htmlFor={emailFieldId}>{t('auth.email')}</label>
               <div className="auth-input-wrap">
                 <Mail size={17} className="auth-input-icon" />
                 <input
+                  id={emailFieldId}
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -227,7 +247,7 @@ export function Auth() {
 
             <div className="auth-field">
               <div className="auth-field-row">
-                <label className="auth-field-label">{t('auth.password')}</label>
+                <label className="auth-field-label" htmlFor={passwordFieldId}>{t('auth.password')}</label>
                 {isLogin && (
                   <button type="button" className="auth-forgot">
                     {t('auth.forgotPassword') || 'Forgot password?'}
@@ -237,6 +257,7 @@ export function Auth() {
               <div className="auth-input-wrap">
                 <Lock size={17} className="auth-input-icon" />
                 <input
+                  id={passwordFieldId}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -249,10 +270,11 @@ export function Auth() {
 
             {!isLogin && (
               <div className="auth-field">
-                <label className="auth-field-label">{t('auth.confirmPassword')}</label>
+                <label className="auth-field-label" htmlFor={confirmPasswordFieldId}>{t('auth.confirmPassword')}</label>
                 <div className="auth-input-wrap">
                   <Lock size={17} className="auth-input-icon" />
                   <input
+                    id={confirmPasswordFieldId}
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}

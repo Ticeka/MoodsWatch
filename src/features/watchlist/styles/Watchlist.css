@@ -1119,3 +1119,25 @@
     gap: 0.75rem;
   }
 }
+
+@media (max-width: 420px) {
+  .watchlist-stats-row {
+    justify-content: stretch;
+  }
+
+  .watchlist-stat-chip {
+    flex: 1 1 calc(50% - 0.45rem);
+    min-width: 0;
+    padding-inline: 0.7rem;
+  }
+
+  .watchlist-stat-chip:not(:last-child)::after {
+    display: none;
+  }
+
+  .watchlist-stat-label {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+  }
+}
