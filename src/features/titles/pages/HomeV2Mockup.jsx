@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   HeroBanner,
   MoodQuickChips,
@@ -14,6 +14,17 @@ import {
 import '../styles/HomeV2Mockup.css';
 
 export function HomeV2Mockup() {
+  useEffect(() => {
+    const id = 'hv2-fraunces-font';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400..900;1,400..900&display=swap';
+      document.head.appendChild(link);
+    }
+  }, []);
+
   return (
     <div className="hv2-root">
       <main className="hv2-container">

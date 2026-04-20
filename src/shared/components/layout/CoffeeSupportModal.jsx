@@ -4,7 +4,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { BRAND_NAME } from '@/shared/config/brand';
 import { SUPPORT_STRIPE_COFFEE_URL } from '@/shared/config/support';
 
-export function CoffeeSupportModal({ pick, open, onClose, onSupport, onPromptPay, config, donateEnabled = false }) {
+export function CoffeeSupportModal({ pick, open, onClose, onSupport, onPromptPay, config, donateEnabled = false, dismissToday = false, onDismissTodayChange }) {
   const hasStripeLink = Boolean(SUPPORT_STRIPE_COFFEE_URL);
   const primaryLabel = useMemo(
     () => config ? pick(config.primaryCtaTh, config.primaryCtaEn) : pick('เลี้ยงกาแฟให้ทีมหน่อย', 'Buy us a coffee'),
@@ -114,6 +114,14 @@ export function CoffeeSupportModal({ pick, open, onClose, onSupport, onPromptPay
           <Button variant="ghost" className="coffee-support-secondary" onClick={onClose}>
             {pick(config?.secondaryCtaTh || 'ไว้ก่อน เดี๋ยวกลับมา', config?.secondaryCtaEn || 'Maybe later')}
           </Button>
+          <label className="coffee-support-dismiss-today">
+            <input
+              type="checkbox"
+              checked={dismissToday}
+              onChange={(e) => onDismissTodayChange?.(e.target.checked)}
+            />
+            <span>{pick('ไม่แสดงอีกในวันนี้', "Don't show again today")}</span>
+          </label>
         </div>
 
         {!hasStripeLink ? (

@@ -418,6 +418,27 @@ export async function togglePartyMemberReady(roomId, memberToken, isReady) {
   return data;
 }
 
+export async function updatePartyRoomPresence(roomId, memberToken) {
+  if (!supabase || !roomId || !memberToken) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('party_room_members')
+    .update({ updated_at: now })
+    .eq('room_id', roomId)
+    .eq('member_token', memberToken)
+    .select(PARTY_ROOM_MEMBER_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 export async function leavePartyRoom({ room, memberToken } = {}) {
   if (!supabase || !room?.id || !memberToken) {
     return { room: room || null, roomClosed: false, memberRemoved: false };
@@ -463,28 +484,31 @@ export async function leavePartyRoom({ room, memberToken } = {}) {
     };
   }
 
-  const { data: closedRows, error: closeError } = await supabase
+  const { data: deletedRows, error: deleteRoomError } = await supabase
     .from('party_rooms')
-    .update({ status: 'closed' })
+    .delete()
     .eq('id', freshRoom.id)
-    .neq('status', 'closed')
     .select(PARTY_ROOM_SELECT);
 
-  if (closeError) {
-    throw closeError;
+  if (deleteRoomError) {
+    throw deleteRoomError;
   }
 
-  const closedRoom = takeFirstRecord(closedRows) || (await fetchPartyRoomRecordById(freshRoom.id)) || freshRoom;
+  const deletedRoom = takeFirstRecord(deletedRows) || {
+    ...freshRoom,
+    status: 'closed',
+    updated_at: new Date().toISOString(),
+  };
 
   await broadcastPartyRoomEvent(freshRoom.id, {
     type: 'ROOM_CLOSED',
     payload: {
-      room: buildPartyRoomRealtimePatch(closedRoom, freshRoom, { forceKeys: ['status', 'updated_at'] }),
+      room: buildPartyRoomRealtimePatch(deletedRoom, freshRoom, { forceKeys: ['status', 'updated_at'] }),
     },
   });
 
   return {
-    room: closedRoom,
+    room: deletedRoom,
     roomClosed: true,
     memberRemoved: true,
     remainingMembers,
@@ -498,7 +522,7 @@ export async function closePartyRoom(room) {
 
   const { data, error } = await supabase
     .from('party_rooms')
-    .update({ status: 'closed' })
+    .delete()
     .eq('id', room.id)
     .eq('host_member_token', room.host_member_token)
     .select(PARTY_ROOM_SELECT)
@@ -518,21 +542,20 @@ export async function closePartyRoom(room) {
   return data;
 }
 
-const PARTY_ROOM_STALE_LOBBY_MINUTES = 120;
+const PARTY_ROOM_ACTIVE_MEMBER_MINUTES = 3;
 
 export async function searchPublicPartyRooms({ query = '', mode = '', page = 0, pageSize = 20 } = {}) {
   if (!supabase) {
     return [];
   }
 
-  const cutoff = new Date(Date.now() - PARTY_ROOM_STALE_LOBBY_MINUTES * 60 * 1000).toISOString();
+  const activeMemberCutoffMs = Date.now() - PARTY_ROOM_ACTIVE_MEMBER_MINUTES * 60 * 1000;
 
   let req = supabase
     .from('party_rooms')
     .select('id, room_code, room_name, visibility, status, host_member_token, settings, created_at, updated_at')
     .eq('visibility', 'public')
     .eq('status', 'lobby')
-    .gte('updated_at', cutoff)
     .order('updated_at', { ascending: false })
     .range(page * pageSize, page * pageSize + pageSize - 1);
 
@@ -564,7 +587,7 @@ export async function searchPublicPartyRooms({ query = '', mode = '', page = 0, 
 
   const { data: members, error: membersError } = await supabase
     .from('party_room_members')
-    .select('room_id')
+    .select('room_id, display_name, avatar_key, avatar_url, is_host, is_ready, joined_at, updated_at')
     .in('room_id', roomIds);
 
   if (membersError) {
@@ -572,13 +595,38 @@ export async function searchPublicPartyRooms({ query = '', mode = '', page = 0, 
   }
 
   const memberCountByRoomId = new Map();
+  const memberPreviewByRoomId = new Map();
   (members || []).forEach((member) => {
     const key = String(member?.room_id || '');
     if (!key) return;
+    const lastSeenMs = Date.parse(member?.updated_at || member?.joined_at || '');
+    if (!Number.isFinite(lastSeenMs) || lastSeenMs < activeMemberCutoffMs) {
+      return;
+    }
     memberCountByRoomId.set(key, (memberCountByRoomId.get(key) || 0) + 1);
+    const preview = memberPreviewByRoomId.get(key) || [];
+    if (preview.length < 4) {
+      preview.push({
+        displayName: String(member?.display_name || '').trim(),
+        avatarKey: String(member?.avatar_key || '').trim(),
+        avatarUrl: String(member?.avatar_url || '').trim(),
+        isHost: Boolean(member?.is_host),
+        isReady: Boolean(member?.is_ready),
+      });
+      memberPreviewByRoomId.set(key, preview);
+    }
   });
 
-  return rooms.filter((room) => (memberCountByRoomId.get(String(room?.id || '')) || 0) > 0);
+  return rooms
+    .filter((room) => (memberCountByRoomId.get(String(room?.id || '')) || 0) > 0)
+    .map((room) => {
+      const key = String(room?.id || '');
+      return {
+        ...room,
+        memberCount: memberCountByRoomId.get(key) || 0,
+        memberPreview: memberPreviewByRoomId.get(key) || [],
+      };
+    });
 }
 
 export async function updatePartyRoomAccess(roomId, { roomName, visibility } = {}) {

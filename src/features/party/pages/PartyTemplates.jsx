@@ -9,6 +9,7 @@ import { fetchPartyTemplates, fetchPartyTitleGuessSets } from '@/features/party/
 import { fetchPublicBattleDecks } from '@/features/battle/api/battleRemoteApi';
 import { fetchRemoteTemplates } from '@/features/tierlist/api/tierlistRemoteQueriesApi';
 import { getTitleArtwork } from '@/shared/lib/titleArtwork';
+import { getYoutubeItemThumbnail, parseYoutubeVideoId } from '@/features/party/lib/partyYoutube';
 import { PartyTemplateCard } from '../components/PartyTemplateCard';
 import { PartyTemplateFilters } from '../components/PartyTemplateFilters';
 import '../components/PartyTemplates.css';
@@ -16,6 +17,51 @@ import '../styles/Party.css';
 
 const PAGE_SIZE = 12;
 const FETCH_LIMIT = 200;
+
+function getTierlistCustomItemArtwork(item = {}) {
+  const directArtwork = String(
+    item?.imageUrl
+    || item?.image_url
+    || item?.cover
+    || item?.coverUrl
+    || item?.cover_url
+    || item?.trailerThumbnailUrl
+    || item?.trailer_thumbnail_url
+    || '',
+  ).trim();
+  if (directArtwork) {
+    return directArtwork;
+  }
+
+  const videoId = String(
+    item?.trailerVideoId
+    || item?.trailer_video_id
+    || item?.providerMediaId
+    || item?.provider_media_id
+    || '',
+  ).trim() || parseYoutubeVideoId(item?.providerUrl || item?.provider_url || item?.url || item?.trailerUrl || '');
+
+  return videoId ? getYoutubeItemThumbnail(videoId, 'hq') : '';
+}
+
+function getTierlistTemplateCoverUrl(template = {}) {
+  const explicitCover = String(template?.previewArtworkUrl || template?.manualPreviewArtworkUrl || '').trim();
+  if (explicitCover) {
+    return explicitCover;
+  }
+
+  return (Array.isArray(template?.customItems) ? template.customItems : [])
+    .map(getTierlistCustomItemArtwork)
+    .find(Boolean) || '';
+}
+
+function getTierlistTemplateItemCount(template = {}) {
+  const titleCount = Array.isArray(template?.titleIds) ? template.titleIds.length : 0;
+  const customCount = Array.isArray(template?.customItems)
+    ? template.customItems.filter((item) => getTierlistCustomItemArtwork(item)).length
+    : 0;
+  return titleCount + customCount;
+}
 
 function useDebounce(value, delay = 500) {
   const [dv, setDv] = useState(value);
@@ -72,9 +118,7 @@ function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDe
 
   const normalizedTierlistTemplates = (tierlistTemplates || [])
     .filter((t) => {
-      const titleCount = Array.isArray(t?.titleIds) ? t.titleIds.length : 0;
-      const customCount = Array.isArray(t?.customItems) ? t.customItems.filter((i) => i?.imageUrl).length : 0;
-      return titleCount + customCount > 0;
+      return getTierlistTemplateItemCount(t) > 0;
     })
     .map((template) => ({
       ...template,
@@ -83,14 +127,13 @@ function normalizeListingItems(songTemplates = [], titleGuessSets = [], battleDe
       contentType: 'tierlist',
       name: template.title || '',
       description: template.description || '',
-      coverUrl: template.previewArtworkUrl || template.manualPreviewArtworkUrl || '',
+      coverUrl: getTierlistTemplateCoverUrl(template),
       creatorName: '',
       modeScope: 'tierlist',
       isOfficial: Boolean(template.isSystem),
       likes: 0,
       playCount: Number(template.plays || 0),
-      itemCount: (Array.isArray(template.titleIds) ? template.titleIds.length : 0)
-        + (Array.isArray(template.customItems) ? template.customItems.filter((i) => i?.imageUrl).length : 0),
+      itemCount: getTierlistTemplateItemCount(template),
       tags: [],
       updatedAt: template.updatedAt || template.createdAt || '',
       defaultRows: template.defaultRows || [],

@@ -36,6 +36,9 @@ import {
 import { LIST_STATUS_OPTIONS, getLocalizedLabel, getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
 import { AchievementBadges } from '@/features/profile/components/AchievementBadges';
+import { fetchFollowState } from '@/features/social/api/socialApi';
+import { useSocialActivityFeed } from '@/features/social/hooks/useSocialFeed';
+import { FollowListModal } from '@/features/social/components/FollowListModal';
 import '../styles/Profile.css';
 
 const PAGE_SIZE = 8;
@@ -172,6 +175,59 @@ export function Profile() {
 
   const prefsDirty = JSON.stringify(normalizeProfilePreferences(prefsDraft)) !== JSON.stringify(normalizeProfilePreferences(storedPrefs));
   const userInitial = (form.name || user?.email || 'M').charAt(0).toUpperCase();
+
+  const tier = useMemo(() => {
+    const n = watchStats.total;
+    if (n >= 500) return { key: 'legend',    icon: '✨', th: 'ตำนาน',       en: 'Legend' };
+    if (n >= 200) return { key: 'diamond',   icon: '💎', th: 'ไดมอนด์',      en: 'Diamond' };
+    if (n >= 100) return { key: 'platinum',  icon: '🏆', th: 'แพลทินัม',    en: 'Platinum' };
+    if (n >= 50)  return { key: 'gold',      icon: '🥇', th: 'โกลด์',        en: 'Gold' };
+    if (n >= 20)  return { key: 'silver',    icon: '🥈', th: 'ซิลเวอร์',    en: 'Silver' };
+    if (n >= 5)   return { key: 'bronze',    icon: '🥉', th: 'บรอนซ์',      en: 'Bronze' };
+    return                 { key: 'rookie',  icon: '🌱', th: 'มือใหม่',     en: 'Rookie' };
+  }, [watchStats.total]);
+
+  const favoriteMoodObjects = useMemo(() => {
+    const idSet = new Set(prefsDraft.favoriteMoods || []);
+    return selectableMoods.filter((mood) => idSet.has(mood.id));
+  }, [prefsDraft.favoriteMoods, selectableMoods]);
+
+  const completionRatio = watchStats.total
+    ? Math.round((watchStats.completed / watchStats.total) * 100)
+    : 0;
+
+  const topTypeGroups = useMemo(
+    () => topSections.filter((section) => section.titles.length > 0),
+    [topSections]
+  );
+
+  const [followSummary, setFollowSummary] = useState({ followersCount: 0, followingCount: 0 });
+  const [followListKind, setFollowListKind] = useState(null);
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchFollowState(userId, null)
+      .then((summary) => { if (!cancelled) setFollowSummary({ followersCount: summary.followersCount, followingCount: summary.followingCount }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const { data: activityData } = useSocialActivityFeed(userId);
+  const activityItems = activityData?.feed ?? [];
+  const activityTitleMap = activityData?.titleMap ?? new Map();
+
+  const [openTopType, setOpenTopType] = useState(null);
+  const activeTopGroup = useMemo(
+    () => topTypeGroups.find((section) => section.typeId === openTopType) || null,
+    [openTopType, topTypeGroups]
+  );
+
+  useEffect(() => {
+    if (!activeTopGroup) return;
+    const onKey = (event) => { if (event.key === 'Escape') setOpenTopType(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTopGroup]);
   const normalizedShareUsername = normalizeProfileUsername(shareForm.username);
   const sharePath = normalizedShareUsername ? `/u/${normalizedShareUsername}` : '';
   const shareUrl = typeof window !== 'undefined' && sharePath ? `${window.location.origin}${sharePath}` : '';
@@ -534,46 +590,173 @@ export function Profile() {
     <div className="profile-page animate-fade-in">
       <section className="section">
         <div className="container">
-          <div className="profile-hero glass-heavy">
-            <div className="profile-hero-main">
-              <div className="profile-avatar-stack">
-                {form.avatarUrl ? <img src={form.avatarUrl} alt="" className="profile-avatar" /> : <div className="profile-avatar profile-avatar-fallback">{userInitial}</div>}
-                <button type="button" className="profile-avatar-edit" onClick={() => setIsEditOpen(true)} aria-label={t('profile.editProfile')}>
-                  <Camera size={16} />
+          {/* ── Editorial hero (MoodsWatch mockup style) ── */}
+          <div className="profile-hero-mw">
+            <div className="profile-mw-avatar-wrap">
+              <div className="profile-mw-avatar-ring">
+                <div className="profile-mw-avatar-inner">
+                  {form.avatarUrl
+                    ? <img src={form.avatarUrl} alt="" className="profile-mw-avatar-img" />
+                    : <div className="profile-mw-avatar-img profile-mw-avatar-fallback">{userInitial}</div>}
+                </div>
+              </div>
+              <button type="button" className="profile-mw-avatar-edit" onClick={() => setIsEditOpen(true)} aria-label={t('profile.editProfile')}>
+                <Camera size={13} />
+              </button>
+            </div>
+
+            <div className="profile-mw-identity">
+              <div className="profile-mw-handle-row">
+                <h1 className="profile-mw-handle">{form.name || initialName || user?.email}</h1>
+                <Button size="sm" variant="secondary" icon={<Edit2 size={13} />} onClick={() => setIsEditOpen(true)}>
+                  {t('profile.editProfile')}
+                </Button>
+                <button type="button" className="profile-mw-gear-btn" onClick={() => setActiveTab('settings')} title={t('profile.preferences')}>
+                  <Settings size={17} />
                 </button>
               </div>
-              <div className="profile-hero-copy">
-                <span className="profile-kicker">{t('profile.profileCenter')}</span>
-                <h1>{form.name || initialName || user?.email}</h1>
-                <p>{prefsDraft.bio || t('profile.profileFallbackBio')}</p>
-                <div className="profile-meta-row">
-                  <span>{t('profile.memberSince', { date: formatProfileDate(profile.created_at || user?.created_at, locale) })}</span>
-                  <span>{t('profile.titlesInLibrary', { count: watchStats.total })}</span>
+
+              <div className="profile-mw-stats">
+                {[
+                  { value: watchStats.total,               label: language === 'th' ? 'เรื่อง' : 'titles', onClick: null },
+                  { value: followSummary.followersCount,   label: language === 'th' ? 'ผู้ติดตาม' : 'followers', onClick: () => setFollowListKind('followers') },
+                  { value: followSummary.followingCount,   label: language === 'th' ? 'กำลังติดตาม' : 'following', onClick: () => setFollowListKind('following') },
+                  { value: watchStats.completed,           label: t('profile.completed'), onClick: null },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    className={`profile-mw-stat${s.onClick ? ' is-clickable' : ''}`}
+                    onClick={s.onClick || undefined}
+                    role={s.onClick ? 'button' : undefined}
+                    tabIndex={s.onClick ? 0 : undefined}
+                    onKeyDown={s.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); s.onClick(); } } : undefined}
+                  >
+                    <strong>{s.value}</strong>
+                    <span>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="profile-mw-bio">
+                {prefsDraft.bio
+                  ? <p>{prefsDraft.bio}</p>
+                  : <p className="profile-mw-bio-placeholder">{t('profile.profileFallbackBio')}</p>}
+                <span className="profile-mw-meta">
+                  {t('profile.memberSince', { date: formatProfileDate(profile.created_at || user?.created_at, locale) })}
+                </span>
+                <div className="profile-mw-pills">
+                  <span className="profile-mw-pill tier">{tier.icon} {language === 'th' ? tier.th : tier.en}</span>
+                  {watchStats.total > 0 && (
+                    <span className="profile-mw-pill rate">★ {completionRatio}% {language === 'th' ? 'ดูจบ' : 'completed'}</span>
+                  )}
+                  {favoriteMoodObjects.length > 0 && (
+                    <span className="profile-mw-pill mood">{favoriteMoodObjects.length} {language === 'th' ? 'มู้ดที่ชอบ' : 'favorite moods'}</span>
+                  )}
+                  <span className="profile-mw-pill neutral">{profileCompletion}% {language === 'th' ? 'โปรไฟล์' : 'profile'}</span>
                 </div>
               </div>
             </div>
-            <div className="profile-hero-side">
-              <div className="profile-completion">
-                <div className="profile-completion-bar"><span style={{ width: `${profileCompletion}%` }} /></div>
-                <small>{t('profile.profileCompletion', { value: profileCompletion })}</small>
-              </div>
-              <div className="profile-hero-actions">
-                <Button icon={<Edit2 size={18} />} onClick={() => setIsEditOpen(true)}>{t('profile.editProfile')}</Button>
-                <Button variant="secondary" icon={<Settings size={18} />} onClick={() => setActiveTab('settings')}>{t('profile.preferences')}</Button>
-              </div>
+          </div>
+
+          {/* ── Highlights strip: top-5 groups + favorite moods ── */}
+          {(favoriteMoodObjects.length > 0 || topTypeGroups.length > 0) && (
+            <div className="profile-mw-highlights">
+              {topTypeGroups.map((section) => {
+                const leadTitle = section.titles[0];
+                const typeIcon = section.typeId === 'anime' ? '📺' : section.typeId === 'manga' ? '📖' : section.typeId === 'manhwa' ? '📱' : '🏆';
+                return (
+                  <button
+                    type="button"
+                    key={`group-${section.typeId}`}
+                    className="profile-mw-highlight is-top"
+                    onClick={() => setOpenTopType(section.typeId)}
+                  >
+                    <div className="profile-mw-highlight-ring profile-mw-top-ring">
+                      <div className="profile-mw-highlight-inner">
+                        {leadTitle?.cover
+                          ? <img src={leadTitle.cover} alt="" className="profile-mw-highlight-cover" />
+                          : <div className="profile-mw-highlight-icon">{typeIcon}</div>}
+                      </div>
+                      <span className="profile-mw-medal profile-mw-medal-1">🥇</span>
+                    </div>
+                    <div className="profile-mw-highlight-label">
+                      {language === 'th' ? 'Top 5 ' : 'Top 5 '}{getTypeLabel(section.typeId)}
+                    </div>
+                  </button>
+                );
+              })}
+              {favoriteMoodObjects.map((mood) => (
+                <div key={mood.id} className="profile-mw-highlight">
+                  <div className="profile-mw-highlight-ring" style={{ background: `linear-gradient(135deg, ${mood.color}, var(--rose-500))` }}>
+                    <div className="profile-mw-highlight-inner">
+                      <div className="profile-mw-highlight-icon">{mood.icon}</div>
+                    </div>
+                  </div>
+                  <div className="profile-mw-highlight-label">{getLocalizedMoodName(mood, language)}</div>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
 
-          <div className="profile-stats-grid">
-            <article className="profile-stat-card"><span>{t('profile.seen')}</span><strong>{watchStats.seen}</strong><small>{t('profile.completedOrDropped')}</small></article>
-            <article className="profile-stat-card"><span>{t('profile.watching')}</span><strong>{watchStats.watching}</strong><small>{t('profile.animeInProgress')}</small></article>
-            <article className="profile-stat-card"><span>{t('profile.reading')}</span><strong>{watchStats.reading}</strong><small>{t('profile.readingProgress')}</small></article>
-            <article className="profile-stat-card"><span>{t('profile.completed')}</span><strong>{watchStats.completed}</strong><small>{t('profile.finishedTitles')}</small></article>
-          </div>
+          {/* ── Top 5 list modal (per type) ── */}
+          {activeTopGroup && (
+            <div className="profile-story-backdrop" onClick={() => setOpenTopType(null)}>
+              <button
+                type="button"
+                className="profile-story-close"
+                onClick={(event) => { event.stopPropagation(); setOpenTopType(null); }}
+                aria-label={t('common.close')}
+              >
+                <X size={22} />
+              </button>
+              <article className="profile-top5-card" onClick={(event) => event.stopPropagation()}>
+                <header className="profile-top5-header">
+                  <div className="profile-top5-kicker">
+                    {language === 'th' ? 'อันดับเรื่องโปรด' : 'Top pick'}
+                  </div>
+                  <h2 className="profile-top5-title">
+                    Top 5 <span className="profile-top5-title-accent">{getTypeLabel(activeTopGroup.typeId)}</span>
+                  </h2>
+                </header>
+                <ol className="profile-top5-list">
+                  {activeTopGroup.titles.map((title) => {
+                    const rank = title._rank;
+                    const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+                    return (
+                      <li key={title.id} className={`profile-top5-item profile-top5-rank-${rank}`}>
+                        <div className={`profile-top5-medal profile-top5-medal-${rank}`}>
+                          {rankIcon ? <span className="profile-top5-medal-emoji">{rankIcon}</span> : <span className="profile-top5-medal-num">#{rank}</span>}
+                        </div>
+                        {title.cover
+                          ? <img src={title.cover} alt="" className="profile-top5-cover" />
+                          : <div className="profile-top5-cover profile-top5-cover-fallback">{getTitleDisplayName(title).charAt(0)}</div>}
+                        <div className="profile-top5-copy">
+                          <strong>{getTitleDisplayName(title)}</strong>
+                          <div className="profile-top5-meta">
+                            {title.year ? <span>{title.year}</span> : null}
+                            {title.score ? <span>★ {title.score}</span> : null}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </article>
+            </div>
+          )}
 
-          <div className="profile-tabs">
-            <button type="button" className={`profile-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}><Grid size={18} />{t('profile.librarySummary')}</button>
-            <button type="button" className={`profile-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><Settings size={18} />{t('profile.preferences')}</button>
+          {/* ── Tabs ── */}
+          <div className="profile-tabs-ig">
+            <button type="button" className={`profile-tab-ig ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+              <Grid size={15} /><span>{t('profile.librarySummary')}</span>
+            </button>
+            <button type="button" className={`profile-tab-ig ${activeTab === 'top5' ? 'active' : ''}`} onClick={() => setActiveTab('top5')}>
+              <Trophy size={15} /><span>Top 5</span>
+              <span className="profile-tab-ig-count">{totalPinnedTopTitles}</span>
+            </button>
+            <button type="button" className={`profile-tab-ig ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+              <Settings size={15} /><span>{t('profile.preferences')}</span>
+            </button>
           </div>
 
           {(libraryError || (activeTab === 'settings' ? hiddenTitlesError : '')) && (
@@ -581,6 +764,192 @@ export function Profile() {
           )}
 
           {activeTab === 'overview' ? (
+            <div className="profile-content-grid">
+              {/* Dashboard: taste card + stat tiles */}
+              <div className="profile-mw-dashboard">
+                <div className="profile-mw-taste-card">
+                  <div className="profile-mw-taste-kicker">{language === 'th' ? 'รสนิยมของคุณ' : 'Your taste'}</div>
+                  <div className="profile-mw-taste-quote">
+                    {prefsDraft.bio
+                      ? `"${prefsDraft.bio}"`
+                      : (language === 'th' ? '"เล่าหน่อยว่าคุณชอบดูอะไรแบบไหน"' : '"tell us what you love to watch"')}
+                  </div>
+                  {favoriteMoodObjects.length > 0 && (
+                    <div className="profile-mw-taste-chips">
+                      {favoriteMoodObjects.slice(0, 6).map((mood) => (
+                        <span key={mood.id} className="profile-mw-taste-chip" style={{ background: `${mood.color}22`, color: mood.color }}>
+                          <span>{mood.icon}</span>
+                          <span>{getLocalizedMoodName(mood, language)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {[
+                  { value: watchStats.total, label: language === 'th' ? 'เรื่องทั้งหมด' : 'Titles watched' },
+                  { value: watchStats.watching + watchStats.reading, label: language === 'th' ? 'กำลังดู' : 'In progress' },
+                  { value: watchStats.completed, label: language === 'th' ? 'ดูจบแล้ว' : 'Completed' },
+                  { value: `${completionRatio}%`, label: language === 'th' ? 'อัตราดูจบ' : 'Completion rate' },
+                ].map((s) => (
+                  <div key={s.label} className="profile-mw-stat-tile">
+                    <div className="profile-mw-stat-value">{s.value}</div>
+                    <div className="profile-mw-stat-label">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="profile-mw-overview-grid">
+                <div className="profile-mw-overview-main">
+                  <section className="profile-mw-section">
+                    <header className="profile-mw-section-head">
+                      <div>
+                        <div className="profile-mw-section-kicker">{language === 'th' ? 'แวดวงของคุณ' : 'Your circle'}</div>
+                        <h2 className="profile-mw-section-title">
+                          {language === 'th' ? 'เพื่อนกำลัง' : 'What your friends are '}
+                          <span className="profile-mw-section-accent">{language === 'th' ? 'ทำอะไรอยู่' : 'up to'}</span>
+                        </h2>
+                      </div>
+                      {activityItems.length > 5 && (
+                        <Link to="/feed" className="profile-mw-section-link">{language === 'th' ? 'ดูทั้งหมด →' : 'See all →'}</Link>
+                      )}
+                    </header>
+                    {activityItems.length > 0 ? (
+                      <div className="profile-mw-activity-card">
+                        {activityItems.slice(0, 5).map((item) => {
+                          const title = item.title_id ? activityTitleMap.get(item.title_id) : null;
+                          const actorName = item.actor_name || item.actor_username || t('profile.publicCommentAnonymous');
+                          const initial = actorName.charAt(0).toUpperCase();
+                          const score = item.metadata?.score;
+                          const verb = {
+                            added: language === 'th' ? 'เพิ่มลิสต์' : 'added',
+                            completed: language === 'th' ? 'ดูจบ' : 'just finished',
+                            dropped: language === 'th' ? 'ดรอป' : 'dropped',
+                            rated: language === 'th' ? `ให้คะแนน ${score ?? '?'}` : `rated ${score ?? '?'}`,
+                            reviewed: language === 'th' ? 'รีวิว' : 'reviewed',
+                            followed: language === 'th' ? 'ติดตาม' : 'followed',
+                          }[item.action_type] || item.action_type;
+                          return (
+                            <div key={item.id} className="profile-mw-activity-row">
+                              <div className="profile-mw-activity-avatar">
+                                {item.actor_avatar_url
+                                  ? <img src={item.actor_avatar_url} alt="" />
+                                  : <div className="profile-mw-activity-avatar-fallback">{initial}</div>}
+                              </div>
+                              <div className="profile-mw-activity-body">
+                                <div className="profile-mw-activity-text">
+                                  {item.actor_username
+                                    ? <Link to={`/u/${item.actor_username}`}><strong>{actorName}</strong></Link>
+                                    : <strong>{actorName}</strong>}
+                                  {' '}{verb}{' '}
+                                  {title && (
+                                    <Link to={`/title/${title.slug}`} className="profile-mw-activity-title-link">{getTitleDisplayName(title)}</Link>
+                                  )}
+                                  {item.action_type === 'followed' && item.metadata?.followed_username && (
+                                    <Link to={`/u/${item.metadata.followed_username}`} className="profile-mw-activity-title-link">{item.metadata.followed_username}</Link>
+                                  )}
+                                  <span className="profile-mw-activity-time">· {formatProfileCommentDate(item.created_at, locale)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="profile-mw-activity-empty">
+                        <p>{language === 'th' ? 'ยังไม่มีความเคลื่อนไหว ลองไปติดตามเพื่อนเพิ่มสิ!' : 'No activity yet. Follow friends to see their moves here.'}</p>
+                        <Link to="/feed" className="profile-mw-section-link">{language === 'th' ? 'ไปที่ฟีด →' : 'Go to feed →'}</Link>
+                      </div>
+                    )}
+                  </section>
+                </div>
+
+                <div className="profile-mw-overview-side">
+                  <AchievementBadges variant="mw" />
+                </div>
+              </div>
+
+              {/* Steam-style wall comments (full width, bottom) */}
+              <section className="profile-mw-wall">
+                <header className="profile-mw-wall-head">
+                  <div>
+                    <div className="profile-mw-section-kicker">{language === 'th' ? 'วอลล์โปรไฟล์' : 'Profile wall'}</div>
+                    <h2 className="profile-mw-section-title">
+                      {language === 'th' ? 'คอมเมนต์' : 'Comments'}
+                      <span className="profile-mw-wall-count">{profileComments.length}</span>
+                    </h2>
+                  </div>
+                </header>
+
+                <form className="profile-mw-wall-form" onSubmit={submitProfileComment}>
+                  <textarea
+                    id="profile-comment-input"
+                    value={profileCommentDraft}
+                    onChange={(event) => {
+                      setProfileCommentDraft(event.target.value);
+                      setProfileCommentError('');
+                      setProfileCommentSuccess('');
+                    }}
+                    placeholder={t('profile.profileCommentPlaceholder')}
+                    maxLength={500}
+                    rows={2}
+                  />
+                  <div className="profile-mw-wall-form-row">
+                    <small>{profileCommentDraft.length}/500</small>
+                    {profileCommentError ? <span className="profile-field-error" style={{ padding: 0, border: 'none', background: 'transparent' }}>{profileCommentError}</span> : null}
+                    {profileCommentSuccess ? <span className="profile-field-success" style={{ padding: 0, border: 'none', background: 'transparent' }}>{profileCommentSuccess}</span> : null}
+                    <Button type="submit" size="sm" icon={isSubmittingProfileComment ? <Loader2 size={14} className="animate-spin" /> : <MessageSquare size={14} />} disabled={isSubmittingProfileComment}>
+                      {isSubmittingProfileComment ? t('profile.profileCommentPosting') : t('profile.profileCommentPost')}
+                    </Button>
+                  </div>
+                </form>
+
+                {isProfileCommentsLoading ? (
+                  <div className="profile-empty-state">
+                    <Loader2 size={20} className="animate-spin" />
+                    <span>{t('profile.profileCommentsLoading')}</span>
+                  </div>
+                ) : profileComments.length > 0 ? (
+                  <ul className="profile-mw-wall-list">
+                    {profileComments.map((entry) => {
+                      const author = entry.author_profile || {};
+                      const authorName = author.name || author.username || t('profile.publicCommentAnonymous');
+                      const authorInitial = authorName.charAt(0).toUpperCase();
+                      return (
+                        <li key={entry.id} className="profile-mw-wall-item">
+                          <div className="profile-mw-wall-avatar">
+                            {author.avatar_url
+                              ? <img src={author.avatar_url} alt="" />
+                              : <div className="profile-mw-wall-avatar-fallback">{authorInitial}</div>}
+                          </div>
+                          <div className="profile-mw-wall-body">
+                            <div className="profile-mw-wall-meta">
+                              <strong>{authorName}</strong>
+                              <span>{formatProfileCommentDate(entry.created_at, locale)}</span>
+                            </div>
+                            <p>{entry.comment_body}</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="profile-mw-wall-delete"
+                            onClick={() => deleteProfileComment(entry.id)}
+                            disabled={deletingCommentId === entry.id}
+                            aria-label={t('profile.profileCommentDelete')}
+                          >
+                            {deletingCommentId === entry.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="profile-mw-wall-empty">
+                    <span>{t('profile.profileCommentsEmpty')}</span>
+                  </div>
+                )}
+              </section>
+
+            </div>
+          ) : activeTab === 'top5' ? (
             <div className="profile-content-grid">
               <article className="profile-section-card profile-top-stage">
                 <div className="profile-section-heading">
@@ -650,91 +1019,6 @@ export function Profile() {
                   </div>
                 )}
               </article>
-
-              <article className="profile-section-card">
-                <AchievementBadges />
-              </article>
-
-              <article className="profile-section-card">
-                <div className="profile-section-heading">
-                  <div>
-                    <h2>{t('profile.profileCommentsTitle')}</h2>
-                    <p>{t('profile.profileCommentsHint')}</p>
-                  </div>
-                  <span className="profile-comments-count">{profileComments.length}</span>
-                </div>
-
-                <form className="profile-comment-form" onSubmit={submitProfileComment}>
-                  <label className="profile-field" htmlFor="profile-comment-input">
-                    <span>{t('profile.profileCommentLabel')}</span>
-                    <textarea
-                      id="profile-comment-input"
-                      value={profileCommentDraft}
-                      onChange={(event) => {
-                        setProfileCommentDraft(event.target.value);
-                        setProfileCommentError('');
-                        setProfileCommentSuccess('');
-                      }}
-                      placeholder={t('profile.profileCommentPlaceholder')}
-                      maxLength={500}
-                      rows={3}
-                    />
-                    <small className="profile-field-hint">{t('profile.profileCommentHint')}</small>
-                  </label>
-                  {profileCommentError ? <p className="profile-field-error">{profileCommentError}</p> : null}
-                  {profileCommentSuccess ? <p className="profile-field-success">{profileCommentSuccess}</p> : null}
-                  <Button type="submit" icon={isSubmittingProfileComment ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />} disabled={isSubmittingProfileComment}>
-                    {isSubmittingProfileComment ? t('profile.profileCommentPosting') : t('profile.profileCommentPost')}
-                  </Button>
-                </form>
-
-                {isProfileCommentsLoading ? (
-                  <div className="profile-empty-state">
-                    <Loader2 size={20} className="animate-spin" />
-                    <span>{t('profile.profileCommentsLoading')}</span>
-                  </div>
-                ) : profileComments.length > 0 ? (
-                  <div className="profile-comment-list">
-                    {profileComments.map((entry) => {
-                      const author = entry.author_profile || {};
-                      const authorName = author.name || author.username || t('profile.publicCommentAnonymous');
-                      const authorInitial = authorName.charAt(0).toUpperCase();
-                      return (
-                        <article key={entry.id} className="profile-comment-item">
-                          <div className="profile-comment-avatar-wrap">
-                            {author.avatar_url ? (
-                              <img src={author.avatar_url} alt="" className="profile-comment-avatar" />
-                            ) : (
-                              <div className="profile-comment-avatar profile-comment-avatar-fallback">{authorInitial}</div>
-                            )}
-                          </div>
-                          <div className="profile-comment-copy">
-                            <div className="profile-comment-meta">
-                              <strong>{authorName}</strong>
-                              <span>{formatProfileCommentDate(entry.created_at, locale)}</span>
-                            </div>
-                            <p>{entry.comment_body}</p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            icon={deletingCommentId === entry.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                            onClick={() => deleteProfileComment(entry.id)}
-                            disabled={deletingCommentId === entry.id}
-                          >
-                            {t('profile.profileCommentDelete')}
-                          </Button>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="profile-empty-state">
-                    <span>{t('profile.profileCommentsEmpty')}</span>
-                  </div>
-                )}
-              </article>
-
             </div>
           ) : (
             <div className="profile-content-grid">
@@ -1100,6 +1384,14 @@ export function Profile() {
           )}
         </div>
       </section>
+
+      {followListKind && (
+        <FollowListModal
+          profileUserId={userId}
+          kind={followListKind}
+          onClose={() => setFollowListKind(null)}
+        />
+      )}
 
       {isEditOpen && (
         <div className="profile-modal-backdrop" onClick={() => setIsEditOpen(false)}>

@@ -203,6 +203,39 @@ export async function fetchFollowState(profileUserId, viewerUserId = null) {
   };
 }
 
+export async function fetchFollowList(profileUserId, kind /* 'followers' | 'following' */) {
+  if (!profileUserId || !supabase) return [];
+
+  const matchColumn = kind === 'following' ? 'follower_id' : 'following_id';
+  const pickColumn = kind === 'following' ? 'following_id' : 'follower_id';
+
+  const { data: edges, error: edgesError } = await supabase
+    .from('user_follows')
+    .select(`id, created_at, ${pickColumn}`)
+    .eq(matchColumn, profileUserId)
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (edgesError) throw edgesError;
+  if (!edges?.length) return [];
+
+  const userIds = [...new Set(edges.map((e) => e[pickColumn]).filter(Boolean))];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('user_profiles')
+    .select('id, name, username, avatar_url, is_profile_public')
+    .in('id', userIds);
+
+  if (profilesError) throw profilesError;
+
+  const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+  return edges
+    .map((edge) => {
+      const profile = profileMap.get(edge[pickColumn]);
+      return profile ? { ...profile, followedAt: edge.created_at } : null;
+    })
+    .filter(Boolean);
+}
+
 export async function followUser(viewerUserId, profileUserId, profileUsername = null) {
   if (!viewerUserId || !profileUserId || !supabase) {
     throw new Error('Follow is not available');

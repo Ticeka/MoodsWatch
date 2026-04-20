@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Compass, Crown, Loader2, Medal, Save } from 'lucide-react';
+import { ChevronLeft, Compass, Crown, Loader2, Medal } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { TierListArtworkImage as ArtworkImage, TierListCommentSection, TierListCommunityCard, TierListEditor, TierListEmptyPanel, TierListErrorPanel } from '@/features/tierlist/components';
@@ -349,8 +349,8 @@ export function TierListPlayPage() {
     <div className="tierlist-play-page">
       <div className="container tierlist-play-topbar">
         <div className="tierlist-play-topbar-left">
-          <Link className="btn btn-ghost btn-sm" to={sourceTemplate ? `/tierlist/template/${sourceTemplate.id}` : '/tierlist'}>
-            <ChevronLeft size={14} /> {sourceTemplate ? pick('กลับไปเทมเพลต', 'Back to Template') : pick('กลับไปหน้ารวม', 'Back to Browse')}
+          <Link className="btn btn-ghost btn-sm" to="/tierlist">
+            <ChevronLeft size={14} /> {pick('กลับไปหน้ารวม', 'Back to Browse')}
           </Link>
           {!canEdit && (() => {
             const slug = tierList.ownerUsername || tierList.ownerName;

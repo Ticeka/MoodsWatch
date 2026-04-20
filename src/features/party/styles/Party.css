@@ -988,6 +988,7 @@
 }
 .party-code-btn:hover { background: var(--bg-tertiary); border-color: var(--border-strong); }
 .party-code-btn.subtle { background: transparent; color: var(--text-secondary); }
+.party-code-btn:disabled { cursor: wait; opacity: 0.62; }
 
 /* Sync banner */
 .party-sync-banner {

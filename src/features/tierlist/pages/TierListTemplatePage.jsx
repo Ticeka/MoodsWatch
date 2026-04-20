@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Compass, Crown, Loader2, Medal, Play, Sparkles } from 'lucide-react';
+import { ArrowRight, Compass, Crown, Loader2, Medal, Sparkles } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getTitlesByIds } from '@/features/discover/lib/recommend';
 import { TierListArtworkImage as ArtworkImage, TierListCommunityCard, TierListEmptyPanel, TierListErrorPanel } from '@/features/tierlist/components';
-import { buildTierListFromTemplate, cleanupDuplicateTierLists, findTierTemplate, loadTierTemplateDetail, saveTierTemplate, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
+import { buildTierListFromTemplate, loadTierTemplateDetail, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
 import { getDisplayName, getMetaLine } from '@/features/tierlist/lib/tierlistLabels';
 import { buildEntityMaps, fetchCharacterEntitiesByIds, fetchThemeSongEntitiesByIds, getBestEntityMapForIds } from '@/features/tierlist/lib/tierlistBrowseHelpers';
 import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, hasVisibleTierListTitles, sortListsByRecentAndPopularity } from '@/features/tierlist/lib/tierlistPageUtils';
@@ -125,31 +125,33 @@ export function TierListTemplatePage() {
 
   const handlePlay = async () => {
     try {
-      const cleanupResult = await cleanupDuplicateTierLists(library, {
-        userId: user?.id || null,
-      });
-      const workingLibrary = cleanupResult.library;
-      const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, workingLibrary, {
-        userId: user?.id || null,
-        preserveOwnership: true,
-      });
-      const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
-      setLibrary(libraryAfterTemplate);
-      setTemplate(savedTemplate);
-      const list = buildTierListFromTemplate(savedTemplate);
-      const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
       const ownerUsername = getCurrentUsername(user);
+      const list = buildTierListFromTemplate(template, {
+        ownerUserId: user?.id || null,
+      });
+      const seeded = seedPoolFromCatalog(list, template.titleIds);
       const nextList = {
         ...seeded,
         ownerName: ownerUsername || 'You',
         ownerUsername,
         ownerUserId: user?.id || null,
       };
+      const nextLibrary = {
+        ...library,
+        templates: [
+          template,
+          ...library.templates.filter((entry) => String(entry?.id || '') !== String(template?.id || '')),
+        ],
+        lists: [
+          nextList,
+          ...library.lists.filter((entry) => String(entry?.id || '') !== String(nextList.id)),
+        ],
+      };
+      setLibrary(nextLibrary);
       navigate(`/tierlist/play/${nextList.id}`, {
         state: {
           initialTierList: nextList,
-          initialLibrary: libraryAfterTemplate,
+          initialLibrary: nextLibrary,
         },
       });
     } catch (error) {
@@ -201,9 +203,8 @@ export function TierListTemplatePage() {
           <TierListErrorPanel
             message={loadError || pick('ไม่พบเทมเพลต', 'Template not found')}
             onRetry={() => window.location.reload()}
-            backLabel={pick('ย้อนกลับ', 'Back')}
+            backLabel={pick('กลับไปหน้ารวม', 'Back to Browse')}
             backTo="/tierlist"
-            onBack={() => navigate(-1)}
           />
         </section>
       </div>
@@ -239,7 +240,7 @@ export function TierListTemplatePage() {
           <h1>{template.title}</h1>
           <p>{template.description || pick('ยังไม่มีคำอธิบาย', 'No description yet.')}</p>
           <div className="tierlist-hero-actions">
-            <button className="btn btn-ghost" onClick={() => navigate(-1)}>{pick('ย้อนกลับ', 'Back')}</button>
+            <button className="btn btn-ghost" onClick={() => navigate('/tierlist')}>{pick('กลับไปหน้ารวม', 'Back to Browse')}</button>
             <Button variant="primary" iconRight={<ArrowRight size={14} />} onClick={() => setShowModeModal(true)}>
               {pick('เล่นเทมเพลตนี้', 'Play This Template')}
             </Button>

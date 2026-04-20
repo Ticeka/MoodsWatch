@@ -9,7 +9,6 @@ import {
   Play,
   Compass,
   Bookmark,
-  Sparkles,
   Clock,
   Users,
   Flame,
@@ -31,22 +30,27 @@ import {
 import { Carousel, SkeletonRow } from './HomeV2Carousel';
 import { PartyCard, BattleCard, TierlistCard, TrendingCard } from './HomeV2Cards';
 
-/* ─── Shared section wrapper ─── */
-function Section({ title, subtitle, icon: Icon, seeAllHref, seeAllLabel = 'See All', children }) {
+/* ─── Shared section wrapper (editorial) ─── */
+function Section({ title, subtitle, eyebrow, accent, icon: Icon, seeAllHref, seeAllLabel = 'See All', children }) {
   const navigate = useNavigate();
   return (
     <section className="hv2-section">
       <div className="hv2-section-head">
         <div className="hv2-section-heading">
+          {eyebrow && <div className="hv2-section-eyebrow">{eyebrow}</div>}
           <h2 className="hv2-section-title">
-            {Icon && <Icon size={20} />}
-            {title}
+            {Icon && <Icon size={18} />}
+            {accent ? (
+              <>
+                {title} <em className="hv2-accent">{accent}</em>
+              </>
+            ) : title}
           </h2>
           {subtitle && <p className="hv2-section-subtitle">{subtitle}</p>}
         </div>
         {seeAllHref && (
           <button className="hv2-see-all" onClick={() => navigate(seeAllHref)}>
-            {seeAllLabel} <ChevronRight size={16} />
+            {seeAllLabel} <ChevronRight size={14} />
           </button>
         )}
       </div>
@@ -76,63 +80,28 @@ export function HeroBanner() {
       'Discover titles by mood, keep a smart watchlist, battle taste with friends, and rank everything you love - all in one place.',
     );
 
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString(pick('th-TH', 'en-US'), { weekday: 'short', month: 'short', day: 'numeric' });
+  const feelingWord = pick('รู้สึก', 'feeling');
+
   return (
     <section className="hv2-hero">
-      <div className="hv2-hero-bg" aria-hidden="true">
-        <div className="hv2-hero-orb hv2-hero-orb--1" />
-        <div className="hv2-hero-orb hv2-hero-orb--2" />
-        <div className="hv2-hero-orb hv2-hero-orb--3" />
-        <div className="hv2-hero-grid" />
-      </div>
-
       <div className="hv2-hero-inner">
-        <div className="hv2-hero-content">
-          <div className="hv2-hero-badge">
-            <Sparkles size={14} /> {pick('พื้นที่เล่นของรสนิยมคุณ', 'Your taste, your playground')}
-          </div>
-          <h1 className="hv2-hero-title">{title}</h1>
-          <p className="hv2-hero-subtitle">{subtitle}</p>
-          <div className="hv2-hero-actions">
-            <button
-              className="hv2-btn hv2-btn--primary"
-              onClick={() => navigate('/discover')}
-            >
-              <Compass size={16} /> {pick('ค้นหาตามมู้ด', 'Find by mood')}
-            </button>
-            <button
-              className="hv2-btn hv2-btn--ghost"
-              onClick={() => navigate('/party/templates')}
-            >
-              <Play size={16} /> {pick('เล่นกับเพื่อน', 'Play with friends')}
-            </button>
-          </div>
-          <div className="hv2-hero-meta">
-            <span><Film size={13} /> {pick('อนิเมะ · หนัง · ซีรีส์ · K-drama · มังงะ', 'Anime · Movies · Series · K-drama · Manga')}</span>
-          </div>
+        <div className="hv2-hero-eyebrow">{dateLabel}</div>
+        <h1 className="hv2-hero-title">
+          {pick('วันนี้คุณ', 'What are you')} <em className="hv2-gradient-word">{feelingWord}</em> {pick('ยังไง?', 'today?')}
+        </h1>
+        <p className="hv2-hero-subtitle">{subtitle}</p>
+        <div className="hv2-hero-actions">
+          <button className="hv2-btn hv2-btn--gradient" onClick={() => navigate('/discover')}>
+            <Compass size={16} /> {pick('ค้นหาตามมู้ด', 'Find my match')}
+          </button>
+          <button className="hv2-btn hv2-btn--ghost" onClick={() => navigate('/party/templates')}>
+            {pick('เล่นกับเพื่อน', 'Play with friends')} <ChevronRight size={14} />
+          </button>
         </div>
-
-        <div className="hv2-hero-visual" aria-hidden="true">
-          <div className="hv2-hero-card hv2-hero-card--1">
-            <div className="hv2-hero-card-dot" style={{ background: '#a855f7' }} />
-            <div>
-              <div className="hv2-hero-card-title">{pick('ห้องปาร์ตี้', 'Party room')}</div>
-              <div className="hv2-hero-card-sub">{pick('เพื่อน 4 คนกำลังโหวต', '4 friends voting')}</div>
-            </div>
-          </div>
-          <div className="hv2-hero-card hv2-hero-card--2">
-            <div className="hv2-hero-card-dot" style={{ background: '#ef4444' }} />
-            <div>
-              <div className="hv2-hero-card-title">{pick('แบทเทิล', 'Battle')}</div>
-              <div className="hv2-hero-card-sub">{pick('S-tier ปะทะ A-tier', 'S-tier vs A-tier')}</div>
-            </div>
-          </div>
-          <div className="hv2-hero-card hv2-hero-card--3">
-            <div className="hv2-hero-card-dot" style={{ background: '#22c55e' }} />
-            <div>
-              <div className="hv2-hero-card-title">{pick('เทียร์ลิสต์', 'Tier list')}</div>
-              <div className="hv2-hero-card-sub">{pick('จัดอันดับครบ Top 100', 'Top 100 ranked')}</div>
-            </div>
-          </div>
+        <div className="hv2-hero-meta">
+          <Film size={13} /> {pick('อนิเมะ · หนัง · ซีรีส์ · K-drama · มังงะ', 'Anime · Movies · Series · K-drama · Manga')}
         </div>
       </div>
     </section>
@@ -234,7 +203,10 @@ export function FeaturePillars() {
     <section className="hv2-pillars-section">
       <div className="hv2-section-head">
         <div className="hv2-section-heading">
-          <h2 className="hv2-section-title">{pick('คุณทำอะไรได้บ้างที่นี่', 'What you can do here')}</h2>
+          <div className="hv2-section-eyebrow">{pick('ทุกสิ่งในที่เดียว', 'All in one place')}</div>
+          <h2 className="hv2-section-title">
+            {pick('คุณทำอะไร', 'What you can')} <em className="hv2-accent">{pick('ได้บ้างที่นี่', 'do here')}</em>
+          </h2>
           <p className="hv2-section-subtitle">{pick('5 วิธีในการค้นหา เล่น และแชร์รสนิยมของคุณ', 'Five ways to explore, play, and share your taste.')}</p>
         </div>
       </div>
@@ -337,11 +309,11 @@ export function ContinueWatchingSection() {
 
   return (
     <Section
-      title={pick('ดูต่อจากที่ค้างไว้', 'Pick up where you left off')}
-      subtitle={pick('ลิสต์ของคุณ พร้อมเสมอเมื่อคุณกลับมา', 'Your watchlist, ready when you are.')}
-      icon={Clock}
+      eyebrow={pick('ลิสต์ของคุณ', 'Your list')}
+      title={pick('ดูต่อ', 'Pick up')}
+      accent={pick('ที่ค้างไว้', 'where you left off')}
       seeAllHref="/watchlist"
-      seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
     >
       <Carousel>
         {visible.map((t) => (
@@ -369,11 +341,11 @@ export function TrendingSection() {
 
   return (
     <Section
-      title={pick('กำลังมาแรงตอนนี้', 'Trending Now')}
-      subtitle={pick('เรื่องที่คอมมูนิตี้กำลังดูในสัปดาห์นี้', 'What the community is watching this week.')}
-      icon={TrendingUp}
+      eyebrow={pick('กำลังมาแรง', 'Trending now')}
+      title={pick('ทุกคน', 'Everyone is')}
+      accent={pick('กำลังดู', 'watching')}
       seeAllHref="/discover"
-      seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
     >
       {loading ? (
         <SkeletonRow />
@@ -438,8 +410,9 @@ export function HowToStartSection() {
     <section className="hv2-howto-section">
       <div className="hv2-section-head">
         <div className="hv2-section-heading">
+          <div className="hv2-section-eyebrow">{pick('เพิ่งเข้ามา?', 'New here?')}</div>
           <h2 className="hv2-section-title">
-            <Sparkles size={20} /> {pick('เพิ่งเข้ามา? เริ่มจากทางลัดพวกนี้ได้เลย', 'New here? Start from one of these')}
+            {pick('เริ่มจาก', 'Start from')} <em className="hv2-accent">{pick('ทางลัดพวกนี้', 'one of these')}</em>
           </h2>
           <p className="hv2-section-subtitle">{pick('3 วิธีสั้น ๆ ให้คุ้นกับ MoodsWatch ภายในไม่ถึงนาที', 'Three quick ways to get the hang of MoodsWatch in under a minute.')}</p>
         </div>
@@ -479,11 +452,11 @@ export function PartySection() {
 
   return (
     <Section
-      title={pick('เกมปาร์ตี้', 'Party Games')}
-      subtitle={pick('เทมเพลตเกมทายและโหวตที่พร้อมเล่นในห้องทันที', 'Quiz and vote templates ready to play in a room.')}
-      icon={Disc3}
+      eyebrow={pick('เล่นกับเพื่อน', 'Play together')}
+      title={pick('ปาร์ตี้', 'Party')}
+      accent={pick('เริ่มเลย', 'right now')}
       seeAllHref="/party/templates"
-      seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
     >
       {loading ? (
         <SkeletonRow />
@@ -507,11 +480,11 @@ export function BattleSection() {
 
   return (
     <Section
-      title={pick('สนามแบทเทิล', 'Battle Arena')}
-      subtitle={pick('โหวตแบบตัวต่อตัว เลือกฝั่งแล้วโชว์เหตุผลของคุณ', 'Head-to-head votes. Pick a side and make your case.')}
-      icon={Swords}
+      eyebrow={pick('ตัวต่อตัว', 'Head-to-head')}
+      title={pick('สนาม', 'Battle')}
+      accent={pick('แบทเทิล', 'arena')}
       seeAllHref="/battle/browse"
-      seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
     >
       {loading ? (
         <SkeletonRow />
@@ -536,11 +509,11 @@ export function TierlistSection() {
 
   return (
     <Section
-      title={pick('เทียร์ลิสต์จากคอมมูนิตี้', 'Community Tier Lists')}
-      subtitle={pick('อันดับที่คอมมูนิตี้กำลังช่วยกันจัดอยู่ตอนนี้', 'Rankings the community is building right now.')}
-      icon={ListOrdered}
+      eyebrow={pick('จัดอันดับจากชาวเรา', 'From the community')}
+      title={pick('เทียร์ลิสต์', 'Tier lists')}
+      accent={pick('ที่กำลังฮอต', 'going viral')}
       seeAllHref="/tierlist"
-      seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
     >
       {loading ? (
         <SkeletonRow />

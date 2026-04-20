@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Loader2, MessageSquare, Sparkles, UserRound } from 'lucide-react';
+import { Loader2, MessageSquare, UserRound, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { Button } from '@/shared/components/ui/Button';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -20,9 +20,12 @@ import {
   fetchWatchlistOverlap,
 } from '@/features/profile/api/publicProfileApi';
 import { FollowButton } from '@/features/social/components/FollowButton';
+import { FollowListModal } from '@/features/social/components/FollowListModal';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { filterTitlesForAgeGate } from '@/shared/lib/ageGate';
+import { getLocalizedMoodName, getMoodOptionsForAgeGate } from '@/shared/data/moods';
 import '../styles/PublicProfile.css';
+import '../styles/Profile.css';
 
 const DEFAULT_WATCH_STATS = {
   total: 0,
@@ -185,6 +188,53 @@ export function PublicProfile() {
   const canPostComment = Boolean(user?.id && canComment && profile?.id);
   const profileInitial = (profile?.name || profile?.username || 'M').charAt(0).toUpperCase();
 
+  const tier = useMemo(() => {
+    const n = watchStats.total;
+    if (n >= 500) return { key: 'legend',    icon: '✨', th: 'ตำนาน',       en: 'Legend' };
+    if (n >= 200) return { key: 'diamond',   icon: '💎', th: 'ไดมอนด์',      en: 'Diamond' };
+    if (n >= 100) return { key: 'platinum',  icon: '🏆', th: 'แพลทินัม',    en: 'Platinum' };
+    if (n >= 50)  return { key: 'gold',      icon: '🥇', th: 'โกลด์',        en: 'Gold' };
+    if (n >= 20)  return { key: 'silver',    icon: '🥈', th: 'ซิลเวอร์',    en: 'Silver' };
+    if (n >= 5)   return { key: 'bronze',    icon: '🥉', th: 'บรอนซ์',      en: 'Bronze' };
+    return                 { key: 'rookie',  icon: '🌱', th: 'มือใหม่',     en: 'Rookie' };
+  }, [watchStats.total]);
+
+  const selectableMoods = useMemo(() => getMoodOptionsForAgeGate(showAdult), [showAdult]);
+
+  const favoriteMoodObjects = useMemo(() => {
+    const ids = Array.isArray(profile?.favorite_moods) ? profile.favorite_moods : [];
+    const idSet = new Set(ids);
+    return selectableMoods.filter((mood) => idSet.has(mood.id));
+  }, [profile?.favorite_moods, selectableMoods]);
+
+  const completionRatio = watchStats.total
+    ? Math.round((watchStats.completed / watchStats.total) * 100)
+    : 0;
+
+  const topTypeGroups = useMemo(
+    () => sections.filter((section) => section.titles.length > 0),
+    [sections]
+  );
+
+  const [followCounts, setFollowCounts] = useState({ followersCount: 0, followingCount: 0 });
+  const handleFollowCountChange = React.useCallback((next) => setFollowCounts(next), []);
+  const [followListKind, setFollowListKind] = useState(null);
+
+  const [openTopType, setOpenTopType] = useState(null);
+  const activeTopGroup = useMemo(
+    () => topTypeGroups.find((section) => section.typeId === openTopType) || null,
+    [openTopType, topTypeGroups]
+  );
+
+  useEffect(() => {
+    if (!activeTopGroup) return;
+    const onKey = (event) => { if (event.key === 'Escape') setOpenTopType(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTopGroup]);
+
+  const getTypeLabel = (typeId) => PROFILE_TYPE_LABELS[typeId]?.[language] || typeId;
+
   const fireProfileNotifications = (savedParentEntry) => {
     const actorName = user?.profile?.name || user?.profile?.username || t('profile.publicCommentAnonymous');
     const notifInserts = [];
@@ -332,85 +382,192 @@ export function PublicProfile() {
   return (
     <section className="section">
       <div className="container public-profile-wrap animate-fade-in">
-        <header className="public-profile-hero">
-          <div className="public-profile-avatar-wrap">
-            {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt="" className="public-profile-avatar" />
-            ) : (
-              <div className="public-profile-avatar fallback">{profileInitial}</div>
-            )}
-          </div>
-          <div className="public-profile-copy">
-            <span className="public-profile-kicker">{t('profile.publicKicker')}</span>
-            <h1>{profile.name || profile.username}</h1>
-            <p className="public-profile-username">@{profile.username}</p>
-            <p>{profile.bio || t('profile.publicNoBio')}</p>
-            <div className="public-profile-meta">
-              <span>{t('profile.memberSince', { date: formatProfileDate(profile.created_at, locale) })}</span>
-              <span>{t('profile.publicPinnedCount', { count: totalPinned })}</span>
+        {/* Editorial hero */}
+        <div className="profile-hero-mw">
+          <div className="profile-mw-avatar-wrap">
+            <div className="profile-mw-avatar-ring">
+              <div className="profile-mw-avatar-inner">
+                {profile.avatar_url
+                  ? <img src={profile.avatar_url} alt="" className="profile-mw-avatar-img" />
+                  : <div className="profile-mw-avatar-img profile-mw-avatar-fallback">{profileInitial}</div>}
+              </div>
             </div>
-            <FollowButton profileUserId={profile.id} profileUsername={profile.username} />
+            <div className={`profile-mw-tier-badge profile-mw-tier-${tier.key}`}>
+              <span>{tier.icon}</span>
+              <span>{language === 'th' ? tier.th : tier.en}</span>
+            </div>
           </div>
-        </header>
 
-        <section className="public-profile-stats-grid">
-          <article className="public-profile-stat-card">
-            <span>{t('profile.seen')}</span>
-            <strong>{watchStats.seen}</strong>
-            <small>{t('profile.completedOrDropped')}</small>
-          </article>
-          <article className="public-profile-stat-card">
-            <span>{t('profile.watching')}</span>
-            <strong>{watchStats.watching}</strong>
-            <small>{t('profile.animeInProgress')}</small>
-          </article>
-          <article className="public-profile-stat-card">
-            <span>{t('profile.reading')}</span>
-            <strong>{watchStats.reading}</strong>
-            <small>{t('profile.readingProgress')}</small>
-          </article>
-          <article className="public-profile-stat-card">
-            <span>{t('profile.completed')}</span>
-            <strong>{watchStats.completed}</strong>
-            <small>{t('profile.finishedTitles')}</small>
-          </article>
-        </section>
+          <div className="profile-mw-identity">
+            <div className="profile-mw-handle-row">
+              <h1 className="profile-mw-handle">{profile.name || profile.username}</h1>
+              <FollowButton profileUserId={profile.id} profileUsername={profile.username} onCountChange={handleFollowCountChange} />
+            </div>
 
-        <article className="public-profile-card">
-          <div className="public-profile-card-head">
-            <h2>{t('profile.publicTopTitle')}</h2>
-            <span>{t('profile.publicPinnedCount', { count: totalPinned })}</span>
-          </div>
-          <div className="public-profile-grid">
-            {sections.map((section) => (
-              <section key={section.typeId} className="public-profile-type-block">
-                <div className="public-profile-type-head">
-                  <strong>{section.label}</strong>
-                  <span>{section.titles.length} / 5</span>
+            <div className="profile-mw-stats">
+              {[
+                { value: watchStats.total,            label: language === 'th' ? 'เรื่อง' : 'titles', onClick: null },
+                { value: followCounts.followersCount, label: language === 'th' ? 'ผู้ติดตาม' : 'followers', onClick: () => setFollowListKind('followers') },
+                { value: followCounts.followingCount, label: language === 'th' ? 'กำลังติดตาม' : 'following', onClick: () => setFollowListKind('following') },
+                { value: watchStats.completed,        label: t('profile.completed'), onClick: null },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className={`profile-mw-stat${s.onClick ? ' is-clickable' : ''}`}
+                  onClick={s.onClick || undefined}
+                  role={s.onClick ? 'button' : undefined}
+                  tabIndex={s.onClick ? 0 : undefined}
+                  onKeyDown={s.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); s.onClick(); } } : undefined}
+                >
+                  <strong>{s.value}</strong>
+                  <span>{s.label}</span>
                 </div>
-                {section.titles.length > 0 ? (
-                  <div className="public-profile-title-list">
-                    {section.titles.map((title, index) => (
-                      <Link key={`${section.typeId}-${title.id}`} to={`/title/${title.slug}`} className="public-profile-title-row">
-                        <span className="public-profile-rank">#{index + 1}</span>
-                        <img src={title.cover || ''} alt="" className="public-profile-thumb" />
-                        <div>
-                          <strong>{getTitleDisplayName(title)}</strong>
-                          <small>{t('profile.publicScore', { score: title.score ?? '-' })}</small>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="public-profile-empty">
-                    <Sparkles size={16} />
-                    <span>{t('profile.publicTopEmpty')}</span>
-                  </div>
+              ))}
+            </div>
+
+            <div className="profile-mw-bio">
+              <p className="public-profile-username" style={{ margin: 0, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: '0.82rem' }}>@{profile.username}</p>
+              {profile.bio
+                ? <p>{profile.bio}</p>
+                : <p className="profile-mw-bio-placeholder">{t('profile.publicNoBio')}</p>}
+              <span className="profile-mw-meta">
+                {t('profile.memberSince', { date: formatProfileDate(profile.created_at, locale) })}
+              </span>
+              <div className="profile-mw-pills">
+                <span className="profile-mw-pill tier">{tier.icon} {language === 'th' ? tier.th : tier.en}</span>
+                {watchStats.total > 0 && (
+                  <span className="profile-mw-pill rate">★ {completionRatio}% {language === 'th' ? 'ดูจบ' : 'completed'}</span>
                 )}
-              </section>
+                {favoriteMoodObjects.length > 0 && (
+                  <span className="profile-mw-pill mood">{favoriteMoodObjects.length} {language === 'th' ? 'มู้ดที่ชอบ' : 'favorite moods'}</span>
+                )}
+                {totalPinned > 0 && (
+                  <span className="profile-mw-pill neutral">🏆 {totalPinned} {language === 'th' ? 'เรื่องโปรด' : 'pinned'}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Highlights strip: top-5 groups + favorite moods */}
+        {(favoriteMoodObjects.length > 0 || topTypeGroups.length > 0) && (
+          <div className="profile-mw-highlights">
+            {topTypeGroups.map((section) => {
+              const leadTitle = section.titles[0];
+              const typeIcon = section.typeId === 'anime' ? '📺' : section.typeId === 'manga' ? '📖' : section.typeId === 'manhwa' ? '📱' : '🏆';
+              return (
+                <button
+                  type="button"
+                  key={`group-${section.typeId}`}
+                  className="profile-mw-highlight is-top"
+                  onClick={() => setOpenTopType(section.typeId)}
+                >
+                  <div className="profile-mw-highlight-ring profile-mw-top-ring">
+                    <div className="profile-mw-highlight-inner">
+                      {leadTitle?.cover
+                        ? <img src={leadTitle.cover} alt="" className="profile-mw-highlight-cover" />
+                        : <div className="profile-mw-highlight-icon">{typeIcon}</div>}
+                    </div>
+                    <span className="profile-mw-medal profile-mw-medal-1">🥇</span>
+                  </div>
+                  <div className="profile-mw-highlight-label">
+                    Top 5 {getTypeLabel(section.typeId)}
+                  </div>
+                </button>
+              );
+            })}
+            {favoriteMoodObjects.map((mood) => (
+              <div key={mood.id} className="profile-mw-highlight">
+                <div className="profile-mw-highlight-ring" style={{ background: `linear-gradient(135deg, ${mood.color}, var(--rose-500))` }}>
+                  <div className="profile-mw-highlight-inner">
+                    <div className="profile-mw-highlight-icon">{mood.icon}</div>
+                  </div>
+                </div>
+                <div className="profile-mw-highlight-label">{getLocalizedMoodName(mood, language)}</div>
+              </div>
             ))}
           </div>
-        </article>
+        )}
+
+        {/* Top 5 list modal */}
+        {activeTopGroup && (
+          <div className="profile-story-backdrop" onClick={() => setOpenTopType(null)}>
+            <button
+              type="button"
+              className="profile-story-close"
+              onClick={(event) => { event.stopPropagation(); setOpenTopType(null); }}
+              aria-label={t('common.close')}
+            >
+              <X size={22} />
+            </button>
+            <article className="profile-top5-card" onClick={(event) => event.stopPropagation()}>
+              <header className="profile-top5-header">
+                <div className="profile-top5-kicker">{language === 'th' ? 'อันดับเรื่องโปรด' : 'Top pick'}</div>
+                <h2 className="profile-top5-title">
+                  Top 5 <span className="profile-top5-title-accent">{getTypeLabel(activeTopGroup.typeId)}</span>
+                </h2>
+              </header>
+              <ol className="profile-top5-list">
+                {activeTopGroup.titles.map((title, index) => {
+                  const rank = index + 1;
+                  const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+                  return (
+                    <li key={title.id} className={`profile-top5-item profile-top5-rank-${rank}`}>
+                      <Link to={`/title/${title.slug}`} style={{ display: 'contents', color: 'inherit', textDecoration: 'none' }} onClick={() => setOpenTopType(null)}>
+                        <div className={`profile-top5-medal profile-top5-medal-${rank}`}>
+                          {rankIcon ? <span className="profile-top5-medal-emoji">{rankIcon}</span> : <span className="profile-top5-medal-num">#{rank}</span>}
+                        </div>
+                        {title.cover
+                          ? <img src={title.cover} alt="" className="profile-top5-cover" />
+                          : <div className="profile-top5-cover profile-top5-cover-fallback">{getTitleDisplayName(title).charAt(0)}</div>}
+                        <div className="profile-top5-copy">
+                          <strong>{getTitleDisplayName(title)}</strong>
+                          <div className="profile-top5-meta">
+                            {title.year ? <span>{title.year}</span> : null}
+                            {title.score ? <span>★ {title.score}</span> : null}
+                          </div>
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ol>
+            </article>
+          </div>
+        )}
+
+        {/* Taste dashboard */}
+        <div className="profile-mw-dashboard">
+          <div className="profile-mw-taste-card">
+            <div className="profile-mw-taste-kicker">{language === 'th' ? 'รสนิยม' : 'Their taste'}</div>
+            <div className="profile-mw-taste-quote">
+              {profile.bio
+                ? `"${profile.bio}"`
+                : (language === 'th' ? '"ยังไม่มีคำอธิบาย"' : '"no bio yet"')}
+            </div>
+            {favoriteMoodObjects.length > 0 && (
+              <div className="profile-mw-taste-chips">
+                {favoriteMoodObjects.slice(0, 6).map((mood) => (
+                  <span key={mood.id} className="profile-mw-taste-chip" style={{ background: `${mood.color}22`, color: mood.color }}>
+                    <span>{mood.icon}</span>
+                    <span>{getLocalizedMoodName(mood, language)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {[
+            { value: watchStats.total, label: language === 'th' ? 'เรื่องทั้งหมด' : 'Titles watched' },
+            { value: watchStats.watching + watchStats.reading, label: language === 'th' ? 'กำลังดู' : 'In progress' },
+            { value: watchStats.completed, label: language === 'th' ? 'ดูจบแล้ว' : 'Completed' },
+            { value: `${completionRatio}%`, label: language === 'th' ? 'อัตราดูจบ' : 'Completion rate' },
+          ].map((s) => (
+            <div key={s.label} className="profile-mw-stat-tile">
+              <div className="profile-mw-stat-value">{s.value}</div>
+              <div className="profile-mw-stat-label">{s.label}</div>
+            </div>
+          ))}
+        </div>
 
         {user?.id && user.id !== profile.id && (
           <article className="public-profile-card">
@@ -633,6 +790,14 @@ export function PublicProfile() {
             </>
           )}
         </article>
+
+        {followListKind && (
+          <FollowListModal
+            profileUserId={profile.id}
+            kind={followListKind}
+            onClose={() => setFollowListKind(null)}
+          />
+        )}
       </div>
     </section>
   );

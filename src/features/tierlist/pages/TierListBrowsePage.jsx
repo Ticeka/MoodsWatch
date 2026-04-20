@@ -11,7 +11,7 @@ import {
   TierListErrorPanel,
 } from '@/features/tierlist/components';
 import { BROWSE_ENTITY_LIST_LIMIT, BROWSE_PAGE_SIZE, ENTITY_TYPE_OPTIONS } from '@/features/tierlist/constants';
-import { buildTierListFromTemplate, cleanupDuplicateTierLists, dedupeTierTemplatesByIdentity, findTierTemplate, loadTierLibrary, loadTierTemplates, saveTierTemplate, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
+import { buildTierListFromTemplate, dedupeTierTemplatesByIdentity, loadTierLibrary, loadTierTemplates, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
 import { getEntityTypeLabel, getTierCategoryLabel } from '@/features/tierlist/lib/tierlistLabels';
 import { buildEntityMaps, createEmptyBrowseVisibility, getBrowseHydrationEntryKey, matchesListMetadataAgeGate, matchesTemplateMetadataAgeGate, matchesTierEntryAgeGate, mergeBrowseVisibilityState, mergeEntitiesByTypeAndId, resolveTierBrowseEntitiesForEntries, resolveTierBrowsePreviewEntitiesForEntries } from '@/features/tierlist/lib/tierlistBrowseHelpers';
 import { buildRemixedTierList, getCurrentUsername, hasMeaningfulTierRanking, paginate, sortListsByRecentAndPopularity, sortTemplates } from '@/features/tierlist/lib/tierlistPageUtils';
@@ -349,17 +349,32 @@ export function TierListBrowsePage() {
     () => buildEntityMaps([...titles, ...songEntities], browseCustomItems),
     [browseCustomItems, songEntities, titles]
   );
+  const hasBrowseVisibilityEntries = useMemo(
+    () => Object.values(browseVisibility?.allowedByType || {}).some((bucket) => bucket instanceof Set && bucket.size > 0)
+      || Object.values(browseVisibility?.blockedByType || {}).some((bucket) => bucket instanceof Set && bucket.size > 0),
+    [browseVisibility]
+  );
   const publicLists = useMemo(
     () => {
       if (isCatalogHydrating) {
-        return [];
+        return communityPreviewCandidates;
       }
 
-      return communityPreviewCandidates.filter((list) => (
+      const visibleLists = communityPreviewCandidates.filter((list) => (
         matchesTierEntryAgeGate(list, entityMaps, showAdult, browseVisibility)
       ));
+
+      if (visibleLists.length > 0) {
+        return visibleLists;
+      }
+
+      if (!hasBrowseVisibilityEntries && communityPreviewCandidates.length > 0) {
+        return communityPreviewCandidates;
+      }
+
+      return visibleLists;
     },
-    [browseVisibility, communityPreviewCandidates, entityMaps, isCatalogHydrating, showAdult]
+    [browseVisibility, communityPreviewCandidates, entityMaps, hasBrowseVisibilityEntries, isCatalogHydrating, showAdult]
   );
   const recentCommunityLists = useMemo(
     () => sortListsByRecentAndPopularity(publicLists)
@@ -382,39 +397,36 @@ export function TierListBrowsePage() {
 
   const handlePlayTemplate = async (template) => {
     try {
-      const currentLibrary = await loadTierLibrary([], {
-        userId: user?.id || null,
-        includePublic: false,
-        includeOwned: true,
-        showAdult,
-      });
-      const cleanupResult = await cleanupDuplicateTierLists(currentLibrary, {
-        userId: user?.id || null,
-      });
-      const workingLibrary = cleanupResult.library;
-      const updatedTemplate = { ...template, plays: Number(template.plays || 0) + 1 };
-      const libraryAfterTemplate = await saveTierTemplate(updatedTemplate, workingLibrary, {
-        userId: user?.id || null,
-        preserveOwnership: true,
-      });
-      const savedTemplate = findTierTemplate(updatedTemplate.id, libraryAfterTemplate) || libraryAfterTemplate.templates[0] || updatedTemplate;
-      const normalizedSavedTemplate = normalizeCatalogEntityType(savedTemplate?.entityType) === THEME_SONG_ENTITY_TYPE
-        ? { ...savedTemplate, entityType: THEME_SONG_ENTITY_TYPE }
-        : savedTemplate;
-      const list = buildTierListFromTemplate(normalizedSavedTemplate);
-      const seeded = seedPoolFromCatalog(list, savedTemplate.titleIds);
+      const normalizedTemplate = normalizeCatalogEntityType(template?.entityType) === THEME_SONG_ENTITY_TYPE
+        ? { ...template, entityType: THEME_SONG_ENTITY_TYPE }
+        : template;
       const ownerUsername = getCurrentUsername(user);
+      const list = buildTierListFromTemplate(normalizedTemplate, {
+        ownerUserId: user?.id || null,
+      });
+      const seeded = seedPoolFromCatalog(list, normalizedTemplate.titleIds);
       const nextList = {
         ...seeded,
         ownerName: ownerUsername || 'You',
         ownerUsername,
         ownerUserId: user?.id || null,
       };
-      setLibrary(libraryAfterTemplate);
+      const nextLibrary = {
+        ...library,
+        templates: [
+          normalizedTemplate,
+          ...library.templates.filter((entry) => String(entry?.id || '') !== String(normalizedTemplate?.id || '')),
+        ],
+        lists: [
+          nextList,
+          ...library.lists.filter((entry) => String(entry?.id || '') !== String(nextList.id)),
+        ],
+      };
+      setLibrary(nextLibrary);
       navigate(`/tierlist/play/${nextList.id}`, {
         state: {
           initialTierList: nextList,
-          initialLibrary: libraryAfterTemplate,
+          initialLibrary: nextLibrary,
         },
       });
     } catch (error) {

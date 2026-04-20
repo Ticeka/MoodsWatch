@@ -7,6 +7,10 @@
   justify-content: flex-start;
   min-height: 60vh;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-x: clip;
   padding: 2rem;
   color: #fff;
   font-family: 'Inter', sans-serif;
@@ -21,6 +25,8 @@
 .party-vote-experience-shell {
   width: 100%;
   max-width: 1760px;
+  min-width: 0;
+  box-sizing: border-box;
   display: grid;
   gap: 0.85rem;
   transition:
@@ -37,10 +43,14 @@
 
 .party-vote-experience-shell.is-theater.is-fullscreen {
   max-width: none;
+  width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   padding: 0;
   gap: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 30%),
     #05070d;
@@ -134,6 +144,9 @@
 .party-vote-live-layout {
   width: 100%;
   max-width: 1760px;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24rem;
   gap: 0.25rem;
@@ -148,6 +161,7 @@
   max-width: none;
   grid-template-columns: minmax(0, 1fr) 24rem;
   gap: 0;
+  overflow: hidden;
 }
 
 .party-vote-live-layout.is-detached {
@@ -158,6 +172,9 @@
 .party-vote-live-shell {
   width: 100%;
   max-width: 1760px;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   background: rgba(10, 10, 15, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-bottom: 0;
@@ -183,6 +200,7 @@
 
 .party-vote-experience-shell.is-theater.is-fullscreen .party-vote-live-shell {
   height: calc(100vh - 4.7rem);
+  height: calc(100dvh - 4.7rem);
   border-radius: 0;
   border-left: 0;
   border-right: 0;
@@ -238,7 +256,11 @@
 
 .party-vote-main-panel {
   min-width: 0;
+  min-height: 0;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   justify-content: center;
   padding: 1rem 0.35rem 1rem 1rem;
@@ -254,15 +276,59 @@
 
 .party-vote-main-panel.is-theater {
   padding: clamp(0.75rem, 1.5vw, 1.2rem);
+  overflow: hidden auto;
 }
 
 .party-vote-experience-shell.is-theater.is-fullscreen .party-vote-main-panel.is-theater {
   padding: clamp(0.9rem, 1.8vw, 1.5rem);
 }
 
+.party-vote-live-shell.is-theater .vote-phase-playback {
+  display: flex;
+  width: 100%;
+  max-width: min(100%, 1180px);
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.party-vote-live-shell.is-theater .track-playback-card {
+  display: flex;
+  max-height: 100%;
+  flex-direction: column;
+}
+
+.party-vote-live-shell.is-theater .track-playback-video-wrapper,
+.party-vote-live-shell.is-theater .track-playback-image-only-wrapper {
+  flex: 0 1 auto;
+  max-height: min(58vh, 44rem);
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-live-layout {
+  height: 100%;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .party-vote-main-panel.is-theater {
+  height: 100%;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .track-playback-card {
+  max-height: 100%;
+}
+
+.party-vote-experience-shell.is-theater.is-fullscreen .track-playback-video-wrapper,
+.party-vote-experience-shell.is-theater.is-fullscreen .track-playback-image-only-wrapper {
+  max-height: min(54vh, calc(100vh - 18rem));
+  max-height: min(54vh, calc(100dvh - 18rem));
+}
+
 .party-vote-chat-panel {
   min-width: 0;
+  min-height: 0;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   position: relative;
   display: flex;
   align-self: stretch;
@@ -437,6 +503,8 @@
 .vote-phase-playback {
   width: 100%;
   max-width: 900px;
+  min-width: 0;
+  box-sizing: border-box;
   position: relative;
   z-index: 10;
 }
@@ -447,6 +515,11 @@
   justify-items: center;
 }
 .track-playback-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   background: rgba(10, 10, 15, 0.95);
   border-radius: 12px;
   padding: 1.5rem;
@@ -467,6 +540,7 @@
   gap: 1rem;
   align-items: stretch;
   margin-bottom: 1rem;
+  min-width: 0;
 }
 .playback-cover {
   width: 80px;
@@ -513,6 +587,8 @@
   width: 100%;
   max-width: 100%;
   max-height: 60vh;
+  min-width: 0;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,6 +605,7 @@
 }
 .track-playback-image-only-cover {
   width: 100%;
+  max-width: 100%;
   max-height: 60vh;
   object-fit: contain;
   display: block;
@@ -544,6 +621,7 @@
 .track-playback-video-wrapper {
   width: 100%;
   max-width: 100%;
+  max-height: min(62vh, 42rem);
   aspect-ratio: 16/9;
   background: #000;
   border-radius: 8px;
@@ -561,12 +639,13 @@
 .track-playback-video-wrapper .party-yt-player-container,
 .track-playback-video-wrapper .party-yt-player-container iframe,
 .track-playback-video-wrapper iframe.party-yt-player-container {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   display: block;
 }
 .track-playback-video-wrapper .party-yt-player-wrapper {
@@ -646,7 +725,8 @@
   min-height: 0;
   box-sizing: border-box;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 .track-playback-video-overlay {
   position: absolute;

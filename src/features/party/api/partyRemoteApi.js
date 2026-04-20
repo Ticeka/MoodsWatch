@@ -56,6 +56,7 @@ import {
   takeFirstRecord,
   togglePartyMemberReady,
   updatePartyRoomAccess,
+  updatePartyRoomPresence,
   updatePartyRoomSettings,
 } from './partyRoomApi.js';
 import {
@@ -149,6 +150,7 @@ export {
   searchPublicPartyRooms,
   togglePartyMemberReady,
   updatePartyRoomAccess,
+  updatePartyRoomPresence,
   updatePartyRoomSettings,
   updatePartyTitleGuessSet,
 };
@@ -159,6 +161,7 @@ const TIERLIST_CATEGORY_CHARACTER_PREFIX = 'character::';
 const TIERLIST_CATEGORY_THEME_SONG_PREFIX = 'theme_song::';
 const TIERLIST_CATEGORY_YOUTUBE_PREFIX = 'youtube::';
 const PARTY_SONG_POOL_CACHE_TTL_MS = 2 * 60 * 1000;
+const PARTY_AUTO_REVEAL_DELAY_MS = 1000;
 const partySongPoolCache = new Map();
 
 async function fetchPartyVoteSummary(roomId, matchId, roundId, songA, songB) {
@@ -231,6 +234,247 @@ async function fetchPartyVoteSummary(roomId, matchId, roundId, songA, songB) {
     is_tie,
     winning_song_id,
   };
+}
+
+function getDistinctMemberTokens(records = []) {
+  return [
+    ...new Set(
+      (Array.isArray(records) ? records : [])
+        .map((record) => String(record?.member_token || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function waitForPartyAutoRevealDelay() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, PARTY_AUTO_REVEAL_DELAY_MS);
+  });
+}
+
+async function haveAllPartyMembersAnswered(roomId, matchId, roundId) {
+  if (!supabase || !roomId || !matchId || !roundId) {
+    return false;
+  }
+
+  const members = await fetchPartyRoomMembers(roomId);
+  const memberTokens = getDistinctMemberTokens(members);
+  if (memberTokens.length === 0) {
+    return false;
+  }
+
+  const { data: answerRecords, error: answersError } = await supabase
+    .from('party_room_answers')
+    .select('member_token')
+    .eq('room_id', roomId)
+    .eq('match_id', String(matchId))
+    .eq('round_id', String(roundId));
+
+  if (answersError) {
+    throw answersError;
+  }
+
+  const answeredTokens = new Set(getDistinctMemberTokens(answerRecords));
+  return memberTokens.every((token) => answeredTokens.has(token));
+}
+
+function buildImmediatePartyRevealMatch(match) {
+  if (!match || match.phase !== 'question') {
+    return null;
+  }
+
+  const now = Date.now();
+  const nextMatch = { ...match };
+  const currentRound = getPartyCurrentRound(nextMatch);
+  const totalClues = Math.max(1, Number(currentRound?.totalClues || currentRound?.clues?.length || 0));
+
+  nextMatch.phase = 'reveal';
+  if (nextMatch.modeType === 'title-guess' && totalClues > 0) {
+    nextMatch.revealedClueCount = totalClues;
+  }
+  nextMatch.phaseStartedAt = new Date(now).toISOString();
+  nextMatch.phaseEndsAt = new Date(now + (Number(nextMatch.revealSec || 6) * 1000)).toISOString();
+
+  return nextMatch;
+}
+
+async function commitImmediatePartyReveal(freshRoom, nextMatch, previousRoom = freshRoom) {
+  if (!freshRoom?.id || !nextMatch) {
+    return null;
+  }
+
+  const nextStatus = nextMatch.phase === 'final' ? 'finished' : 'live';
+  const { data, error } = await supabase
+    .from('party_rooms')
+    .update({
+      status: nextStatus,
+      current_match: nextMatch,
+    })
+    .eq('id', freshRoom.id)
+    .eq('host_member_token', freshRoom.host_member_token)
+    .eq('status', freshRoom.status)
+    .eq('updated_at', freshRoom.updated_at)
+    .select(PARTY_ROOM_SELECT);
+
+  if (error) {
+    throw error;
+  }
+
+  const nextRoom = takeFirstRecord(data);
+  if (!nextRoom) {
+    return null;
+  }
+
+  await broadcastPartyRoomEvent(freshRoom.id, {
+    type: 'MATCH_ADVANCED',
+    payload: {
+      room: buildPartyRoomRealtimePatch(nextRoom, previousRoom, { forceKeys: ['status', 'current_match', 'updated_at'] }),
+    },
+  });
+
+  return nextRoom;
+}
+
+async function revealPartyQuestionIfAllAnswered(freshRoom, roundId) {
+  if (!freshRoom?.current_match || freshRoom.current_match.phase !== 'question') {
+    return null;
+  }
+
+  const allAnswered = await haveAllPartyMembersAnswered(
+    freshRoom.id,
+    freshRoom.current_match.id,
+    roundId,
+  );
+
+  if (!allAnswered) {
+    return null;
+  }
+
+  await waitForPartyAutoRevealDelay();
+  const latestRoom = await fetchPartyRoomRecordById(freshRoom.id);
+  if (
+    !latestRoom?.current_match
+    || latestRoom.current_match.phase !== 'question'
+    || String(latestRoom.current_match.id || '') !== String(freshRoom.current_match.id || '')
+    || String(getPartyCurrentRound(latestRoom.current_match)?.id || '') !== String(roundId || '')
+  ) {
+    return null;
+  }
+
+  return commitImmediatePartyReveal(
+    latestRoom,
+    buildImmediatePartyRevealMatch(latestRoom.current_match),
+  );
+}
+
+async function revealPartyVoteIfAllAnswered(freshRoom, battleId) {
+  if (!freshRoom?.current_match || freshRoom.current_match.phase !== 'vote') {
+    return null;
+  }
+
+  const allAnswered = await haveAllPartyMembersAnswered(
+    freshRoom.id,
+    freshRoom.current_match.id,
+    battleId,
+  );
+
+  if (!allAnswered) {
+    return null;
+  }
+
+  await waitForPartyAutoRevealDelay();
+  const latestRoom = await fetchPartyRoomRecordById(freshRoom.id);
+  if (
+    !latestRoom?.current_match
+    || latestRoom.current_match.phase !== 'vote'
+    || String(latestRoom.current_match.id || '') !== String(freshRoom.current_match.id || '')
+  ) {
+    return null;
+  }
+
+  const battle = latestRoom.current_match.currentBattle;
+  if (!battle || String(battle.id || '') !== String(battleId || '')) {
+    return null;
+  }
+
+  const voteSummary = await fetchPartyVoteSummary(
+    latestRoom.id,
+    latestRoom.current_match.id,
+    battleId,
+    battle.songA,
+    battle.songB,
+  );
+
+  const matchWithTally = {
+    ...latestRoom.current_match,
+    currentBattle: {
+      ...battle,
+      voteSummary: {
+        songA_votes: Number(voteSummary?.songA_votes || 0),
+        songB_votes: Number(voteSummary?.songB_votes || 0),
+        total_votes: Number(voteSummary?.total_votes || 0),
+        winning_song_id: String(voteSummary?.winning_song_id || ''),
+        is_tie: Boolean(voteSummary?.is_tie),
+      },
+      winnerSongId: String(voteSummary?.winning_song_id || ''),
+    },
+  };
+
+  return commitImmediatePartyReveal(
+    latestRoom,
+    advancePartyVoteMatch(matchWithTally),
+  );
+}
+
+async function revealPartyTierlistVoteIfAllAnswered(freshRoom, roundId) {
+  if (!freshRoom?.current_match || freshRoom.current_match.phase !== 'vote') {
+    return null;
+  }
+
+  const allAnswered = await haveAllPartyMembersAnswered(
+    freshRoom.id,
+    freshRoom.current_match.id,
+    roundId,
+  );
+
+  if (!allAnswered) {
+    return null;
+  }
+
+  await waitForPartyAutoRevealDelay();
+  const latestRoom = await fetchPartyRoomRecordById(freshRoom.id);
+  if (
+    !latestRoom?.current_match
+    || latestRoom.current_match.phase !== 'vote'
+    || String(latestRoom.current_match.id || '') !== String(freshRoom.current_match.id || '')
+    || String(latestRoom.current_match.currentVote?.roundId || '') !== String(roundId || '')
+  ) {
+    return null;
+  }
+
+  const { data: voteRecords, error: voteError } = await supabase
+    .from('party_room_answers')
+    .select('selected_option_id')
+    .eq('room_id', latestRoom.id)
+    .eq('match_id', String(latestRoom.current_match.id))
+    .eq('round_id', String(roundId));
+
+  if (voteError) {
+    throw voteError;
+  }
+
+  const matchWithTally = {
+    ...latestRoom.current_match,
+    currentVote: {
+      ...latestRoom.current_match.currentVote,
+      result: tallyTierlistVotes(latestRoom.current_match.tierRows, voteRecords || []),
+    },
+  };
+
+  return commitImmediatePartyReveal(
+    latestRoom,
+    advancePartyTierlistMatch(matchWithTally),
+  );
 }
 
 function makeId(prefix = 'party') {
@@ -1138,6 +1382,12 @@ export async function submitPartyAnswer({
     },
   });
 
+  try {
+    await revealPartyQuestionIfAllAnswered(freshRoom, round.id);
+  } catch (autoRevealError) {
+    console.warn('Failed to auto-reveal after all party answers were submitted', autoRevealError);
+  }
+
   return data;
 }
 
@@ -1192,6 +1442,12 @@ export async function submitPartyVote({
 
   if (error) {
     throw error;
+  }
+
+  try {
+    await revealPartyVoteIfAllAnswered(freshRoom, currentBattle.id);
+  } catch (autoRevealError) {
+    console.warn('Failed to auto-reveal after all party votes were submitted', autoRevealError);
   }
 
   // Optionally broadcast but we can rely on standard channel if configured, or just skip broadcasting individual votes to prevent live bias
@@ -1251,6 +1507,12 @@ export async function submitPartyTierlistVote({
 
   if (error) {
     throw error;
+  }
+
+  try {
+    await revealPartyTierlistVoteIfAllAnswered(freshRoom, currentRoundId);
+  } catch (autoRevealError) {
+    console.warn('Failed to auto-reveal after all tierlist votes were submitted', autoRevealError);
   }
 
   return data;

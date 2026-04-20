@@ -21,9 +21,11 @@ import { normalizeArtworkSource } from '@/shared/lib/titleArtwork';
 import {
   applyYoutubeSourceSuggestion,
   extractYoutubeSourceCandidates,
+  getYoutubeItemThumbnail,
   isYoutubeItemPlayable,
   normalizeYoutubePlaylistPayload,
   normalizeYoutubeVideoPayload,
+  parseYoutubeVideoId,
   scoreYoutubeSourceCandidateMatch,
 } from '../lib/partyYoutube.js';
 
@@ -407,6 +409,12 @@ function getPartyTemplateItemCoverCandidate(item = {}, titleCoverMap = new Map()
     return directCover;
   }
 
+  const youtubeVideoId = String(item?.provider_media_id || item?.providerMediaId || '').trim()
+    || parseYoutubeVideoId(item?.provider_url || item?.providerUrl || '');
+  if (youtubeVideoId) {
+    return getYoutubeItemThumbnail(youtubeVideoId, 'hq');
+  }
+
   const titleId = getPartyTemplateCoverTitleId(item);
   if (!titleId) {
     return '';
@@ -428,7 +436,7 @@ async function fetchPartyTemplateCoverFallbackMap(templateIds = []) {
 
   const { data: itemRows, error: itemError } = await supabase
     .from('party_song_template_items')
-    .select('template_id, position, cover_url, source_title_id, resolved_source_title_id')
+    .select('template_id, position, cover_url, source_title_id, resolved_source_title_id, provider_media_id, provider_url')
     .in('template_id', normalizedTemplateIds)
     .order('position', { ascending: true });
 

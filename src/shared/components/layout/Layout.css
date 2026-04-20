@@ -251,6 +251,31 @@
   background: transparent;
 }
 
+.coffee-support-dismiss-today {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.2rem;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: color 0.15s;
+  user-select: none;
+}
+
+.coffee-support-dismiss-today:hover {
+  color: var(--text-secondary);
+}
+
+.coffee-support-dismiss-today input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 .coffee-support-note {
   padding: 0.9rem 1.4rem 1.3rem;
   margin: 0;

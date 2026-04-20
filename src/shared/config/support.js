@@ -1,10 +1,28 @@
 export const SUPPORT_STRIPE_COFFEE_URL = String(import.meta.env.VITE_STRIPE_COFFEE_URL || '').trim();
 
-export const SUPPORT_MODAL_DELAY_MS = 75 * 1000;
+export const SUPPORT_MODAL_DELAY_MS = 300 * 1000;
 export const SUPPORT_MODAL_DISMISS_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 export const SUPPORT_MODAL_DONATED_COOLDOWN_MS = 45 * 24 * 60 * 60 * 1000;
 
 export const SUPPORT_MODAL_DISMISSED_AT_KEY = 'moodswatch-support-modal-dismissed-at';
+export const SUPPORT_MODAL_DISMISS_TODAY_KEY = 'moodswatch-support-modal-dismiss-today';
+
+export function isSuppressedToday() {
+  try {
+    const stored = window.localStorage.getItem(SUPPORT_MODAL_DISMISS_TODAY_KEY);
+    return stored === new Date().toISOString().slice(0, 10);
+  } catch {
+    return false;
+  }
+}
+
+export function suppressToday() {
+  try {
+    window.localStorage.setItem(SUPPORT_MODAL_DISMISS_TODAY_KEY, new Date().toISOString().slice(0, 10));
+  } catch {
+    // ignore
+  }
+}
 export const SUPPORT_MODAL_DONATED_AT_KEY = 'moodswatch-support-modal-donated-at';
 export const SUPPORT_CONFIG_STORAGE_KEY = 'moodswatch-support-config';
 export const SUPPORT_CONFIG_UPDATED_EVENT = 'moodswatch:support-config-updated';

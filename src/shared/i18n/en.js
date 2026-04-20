@@ -945,7 +945,7 @@ export const translations = {
     "readingProgress": "manga or manhwa in progress",
     "completed": "Completed",
     "finishedTitles": "finished titles",
-    "librarySummary": "Library Summary",
+    "librarySummary": "Overview",
     "openFullList": "Open Full List",
     "loadingLibrary": "Loading library...",
     "loadingLibraryFailed": "Failed to load titles",

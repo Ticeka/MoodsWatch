@@ -945,7 +945,7 @@ export const translations = {
     "readingProgress": "มังงะหรือมันฮวาที่กำลังอ่าน",
     "completed": "จบแล้ว",
     "finishedTitles": "เรื่องที่ดู/อ่านจบ",
-    "librarySummary": "สรุปคลัง",
+    "librarySummary": "ภาพรวม",
     "openFullList": "เปิดลิสต์ทั้งหมด",
     "loadingLibrary": "กำลังโหลดข้อมูลคลัง...",
     "loadingLibraryFailed": "โหลดรายการเรื่องไม่สำเร็จ",

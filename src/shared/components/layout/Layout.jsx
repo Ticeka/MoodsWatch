@@ -8,6 +8,8 @@ import { MobileSwipePager } from '@/shared/components/layout/MobileSwipePager';
 import {
   SUPPORT_MODAL_OPEN_EVENT,
   SUPPORT_STRIPE_COFFEE_URL,
+  isSuppressedToday,
+  suppressToday,
 } from '@/shared/config/support';
 import { useDonateConfig } from '@/shared/hooks/useDonateConfig';
 import { useSupportConfig } from '@/shared/hooks/useSupportConfig';
@@ -46,6 +48,7 @@ export function Layout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const [donateOpen, setDonateOpen] = useState(false);
+  const [dismissToday, setDismissToday] = useState(false);
   const location = useLocation();
   const supportConfig = useSupportConfig();
   const donateConfig = useDonateConfig();
@@ -81,7 +84,7 @@ export function Layout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || shouldSuppressSupportPrompt || supportModalOpen || !supportConfig.enabled) {
+    if (typeof window === 'undefined' || shouldSuppressSupportPrompt || supportModalOpen || !supportConfig.enabled || isSuppressedToday()) {
       return undefined;
     }
 
@@ -110,8 +113,12 @@ export function Layout() {
   }, []);
 
   const closeSupportModal = useCallback(() => {
+    if (dismissToday) {
+      suppressToday();
+      setDismissToday(false);
+    }
     setSupportModalOpen(false);
-  }, []);
+  }, [dismissToday]);
 
   const handleSupportCoffee = useCallback(() => {
     if (!SUPPORT_STRIPE_COFFEE_URL) {
@@ -147,6 +154,8 @@ export function Layout() {
         onPromptPay={handleOpenPromptPay}
         config={supportConfig}
         donateEnabled={donateConfig.enabled}
+        dismissToday={dismissToday}
+        onDismissTodayChange={setDismissToday}
       />
       {donateConfig.enabled ? (
         <DonateModal open={donateOpen} onClose={() => setDonateOpen(false)} config={donateConfig} />

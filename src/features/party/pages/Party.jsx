@@ -47,6 +47,7 @@ import {
   submitPartyAnswer,
   subscribeToPartyRoom,
   togglePartyMemberReady,
+  updatePartyRoomPresence,
   updatePartyRoomSettings,
 } from '@/features/party/api/partyRemoteApi';
 import {
@@ -181,6 +182,7 @@ export function PartyRoomPage() {
   const lastResyncAtRef = useRef(0);
   const hiddenAtRef = useRef(0);
   const pageUnloadRef = useRef(false);
+  const leavingRoomRef = useRef(false);
   const lastAppliedRoomSettingsSnapshotRef = useRef('');
   const isAutosavingRef = useRef(false);
   const roomSettingsDraftHydratedKeyRef = useRef('');
@@ -545,6 +547,28 @@ export function PartyRoomPage() {
     };
   }, [requestRoomResync, room?.id, syncState]);
 
+  useEffect(() => {
+    if (!room?.id || !currentMember?.member_token || room.status === 'closed') {
+      return undefined;
+    }
+
+    let stopped = false;
+    const touchPresence = () => {
+      if (stopped || document?.visibilityState === 'hidden') {
+        return;
+      }
+      void updatePartyRoomPresence(room.id, currentMember.member_token).catch(() => null);
+    };
+
+    touchPresence();
+    const intervalId = window.setInterval(touchPresence, 30_000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+    };
+  }, [currentMember?.member_token, room?.id, room?.status]);
+
   const isHost = room && String(room.host_member_token || '') === String(guestToken || '');
   const currentMatch = room?.current_match || null;
   const currentRound = getPartyCurrentRound(currentMatch);
@@ -702,24 +726,48 @@ export function PartyRoomPage() {
     }).format(lastSyncedAt);
   }, [lastSyncedAt]);
 
-  useEffect(() => () => {
+  const leaveStoredRoomSilently = React.useCallback(() => {
+    if (leavingRoomRef.current) {
+      return null;
+    }
+
     const activeRoom = usePartyRoomStore.getState().room;
     const activeMembers = usePartyRoomStore.getState().members || [];
     const selfToken = String(guestToken || '');
     const selfMember = activeMembers.find((member) => String(member?.member_token || '') === selfToken);
 
-    // Keep room membership when navigating within the SPA (for example
-    // opening templates/builders from the lobby). Only leave on actual
-    // page unload/refresh/tab close.
-    if (!pageUnloadRef.current || !activeRoom?.id || activeRoom?.status === 'closed' || !selfMember) {
+    if (!activeRoom?.id || activeRoom?.status === 'closed' || !selfMember) {
+      return null;
+    }
+
+    leavingRoomRef.current = true;
+    return leavePartyRoom({
+      room: activeRoom,
+      memberToken: selfMember.member_token,
+    }).finally(() => {
+      leavingRoomRef.current = false;
+    });
+  }, [guestToken]);
+
+  useEffect(() => () => {
+    if (!pageUnloadRef.current) {
       return;
     }
 
-    void leavePartyRoom({
-      room: activeRoom,
-      memberToken: selfMember.member_token,
-    }).catch(() => null);
-  }, [guestToken]);
+    void leaveStoredRoomSilently()?.catch(() => null);
+  }, [leaveStoredRoomSilently]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      void leaveStoredRoomSilently()?.catch(() => null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [leaveStoredRoomSilently]);
 
   useEffect(() => {
     if (!room?.settings) {
@@ -1614,6 +1662,44 @@ export function PartyRoomPage() {
     }
   };
 
+  const handleLeaveRoom = async () => {
+    if (!room || !currentMember?.member_token) {
+      navigate('/party');
+      return;
+    }
+
+    try {
+      setBusyAction('leave');
+      leavingRoomRef.current = true;
+      const result = await leavePartyRoom({
+        room,
+        memberToken: currentMember.member_token,
+      });
+      if (result?.roomClosed) {
+        applyEvent({
+          type: 'ROOM_CLOSED',
+          payload: {
+            room: result.room,
+          },
+        });
+      } else {
+        applyEvent({
+          type: 'MEMBER_REMOVED',
+          payload: {
+            memberToken: currentMember.member_token,
+          },
+        });
+      }
+      toast.success(pick('ออกจากห้องแล้ว', 'Left the room'));
+      navigate('/party');
+    } catch (error) {
+      toast.error(getPartyBackendHint(error, pick));
+    } finally {
+      leavingRoomRef.current = false;
+      setBusyAction('');
+    }
+  };
+
   const hostEditor = isHost && room?.status === 'lobby'
     ? {
       settings: roomSettingsDraft,
@@ -1713,7 +1799,15 @@ export function PartyRoomPage() {
             <Copy size={14} />
             {pick('คัดลอกรหัส', 'Copy code')}
           </button>
-          <Link to="/party" className="party-code-btn subtle">{pick('กลับ', 'Back')}</Link>
+          <button
+            type="button"
+            className="party-code-btn subtle"
+            onClick={handleLeaveRoom}
+            disabled={busyAction === 'leave'}
+          >
+            {busyAction === 'leave' ? <Loader2 size={14} className="spin" /> : null}
+            {pick('ออกจากห้อง', 'Leave room')}
+          </button>
         </div>
       </div>
       <section className="party-room-shell">

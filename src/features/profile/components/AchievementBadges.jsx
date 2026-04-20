@@ -4,7 +4,7 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import '../styles/AchievementBadges.css';
 
-export function AchievementBadges({ userId }) {
+export function AchievementBadges({ userId, variant = 'default' }) {
   const { user } = useAuth();
   const { language, t } = useLanguage();
   const [allAchievements, setAllAchievements] = useState([]);
@@ -39,6 +39,41 @@ export function AchievementBadges({ userId }) {
 
   const earnedCount = earned.size;
   const total = allAchievements.length;
+
+  if (variant === 'mw') {
+    return (
+      <section className="profile-mw-badges">
+        <div className="profile-mw-badges-head">
+          <div className="profile-mw-section-kicker">
+            {t('achievements.title')} · {earnedCount} {language === 'th' ? 'ได้รับแล้ว' : 'earned'}
+          </div>
+          <span className="profile-mw-badges-count">{earnedCount} / {total}</span>
+        </div>
+        <div className="profile-mw-badges-bar">
+          <div className="profile-mw-badges-bar-fill" style={{ width: `${(earnedCount / total) * 100}%` }} />
+        </div>
+        <div className="profile-mw-badges-grid">
+          {allAchievements.map((ach) => {
+            const isEarned = earned.has(ach.id);
+            const earnedAt = earned.get(ach.id);
+            const name = language === 'th' ? ach.name_th : ach.name_en;
+            const description = language === 'th' ? ach.description_th : ach.description_en;
+            return (
+              <div
+                key={ach.id}
+                className={`profile-mw-badge ${isEarned ? 'earned' : 'locked'}`}
+                title={`${name}${description ? '\n' + description : ''}${earnedAt ? '\n' + new Date(earnedAt).toLocaleDateString() : ''}`}
+                aria-label={`${name}${isEarned ? '' : ' — ' + t('achievements.locked')}`}
+              >
+                <span className="profile-mw-badge-icon">{ach.icon}</span>
+                <span className="profile-mw-badge-name">{name}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="achievements-section">
