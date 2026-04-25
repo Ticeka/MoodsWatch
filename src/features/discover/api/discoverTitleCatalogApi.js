@@ -17,12 +17,15 @@ import { buildCharacterEntity } from '@/shared/lib/catalogEntities';
 const CACHE_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_CATALOG_MAX_ROWS = null;
+const CATALOG_STORAGE_KEY = 'moodtoon.catalog.browse.v1';
+const CATALOG_STORAGE_TTL_MS = 30 * 60 * 1000;
 
 let cachedTitles = null;
 let cachedTitlesPromise = null;
 let cacheTimestamp = 0;
 let cacheError = null;
 let cachedCatalogLimit = null;
+let persistenceDisabled = false;
 let cachedDetailedTitles = null;
 let cachedDetailedTitlesPromise = null;
 let detailedCacheTimestamp = 0;
@@ -171,6 +174,63 @@ function storeTitlesInCaches(titles) {
   }
 }
 
+function getCatalogStorage() {
+  if (persistenceDisabled || typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    persistenceDisabled = true;
+    return null;
+  }
+}
+
+function hydrateCatalogFromStorage() {
+  const storage = getCatalogStorage();
+  if (!storage) return;
+  try {
+    const raw = storage.getItem(CATALOG_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.titles) || !parsed.timestamp) return;
+    if (Date.now() - parsed.timestamp >= CATALOG_STORAGE_TTL_MS) {
+      storage.removeItem(CATALOG_STORAGE_KEY);
+      return;
+    }
+    cachedTitles = parsed.titles;
+    cacheTimestamp = parsed.timestamp;
+    cachedCatalogLimit = parsed.limit ?? null;
+    parsed.titles.forEach((title) => {
+      if (title?.id != null) titleByIdCache.set(title.id, title);
+    });
+  } catch {
+    try { storage.removeItem(CATALOG_STORAGE_KEY); } catch { /* noop */ }
+  }
+}
+
+function persistCatalogToStorage() {
+  const storage = getCatalogStorage();
+  if (!storage) return;
+  if (!cachedTitles?.length) return;
+  try {
+    storage.setItem(CATALOG_STORAGE_KEY, JSON.stringify({
+      titles: cachedTitles,
+      timestamp: cacheTimestamp,
+      limit: cachedCatalogLimit,
+    }));
+  } catch {
+    persistenceDisabled = true;
+    try { storage.removeItem(CATALOG_STORAGE_KEY); } catch { /* noop */ }
+  }
+}
+
+function clearCatalogStorage() {
+  const storage = getCatalogStorage();
+  if (!storage) return;
+  try { storage.removeItem(CATALOG_STORAGE_KEY); } catch { /* noop */ }
+}
+
+hydrateCatalogFromStorage();
+
 export async function fetchTitlesPageFromSupabase({ type = 'all', query = '', tag: _tag = '', sortBy = 'popularity', page = 1, pageSize = DEFAULT_PAGE_SIZE, showAdult = true } = {}) {
   return fetchDiscoverTitlesPage({ type, query, sortBy, page, pageSize, showAdult });
 }
@@ -227,6 +287,7 @@ export async function getAllTitles({
         cachedCatalogLimit = requestedLimit;
         cacheTimestamp = Date.now();
         cacheError = null;
+        persistCatalogToStorage();
       }
 
       return hydratedTitles;
@@ -272,6 +333,7 @@ export function clearTitlesCache() {
   titleByIdsRequestCache.clear();
   titleBySlugCache.clear();
   titleBySlugRequestCache.clear();
+  clearCatalogStorage();
 }
 
 export function isCatalogCacheWarm() {

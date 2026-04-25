@@ -222,7 +222,7 @@ export const translations = {
     "suggestionAction": "เปิดแท็ก action",
     "suggestionPeople": "สำรวจผู้ใช้",
     "suggestionTierlists": "ลองหา romance tier",
-    "searchPlaceholder": "เช่น Frieren, alice, romance tier หรือ action",
+    "searchPlaceholder": "ค้นหาเรื่อง ผู้ใช้ หรือ tier list...",
     "clearSearch": "ล้างการค้นหา",
     "searchLabel": "ค้นหา",
     "jumpToResults": "ดูผลลัพธ์",
@@ -279,6 +279,11 @@ export const translations = {
     "scopePeople": "ผู้ใช้",
     "scopeTierlists": "เทียร์ลิสต์",
     "typeTabsAria": "แท็บประเภทสำหรับค้นหา",
+    "filter": {
+      "type": "ประเภท",
+      "mood": "อารมณ์",
+      "year": "ปี"
+    },
     "resultsToolbarAria": "แถบเครื่องมือผลการค้นหา",
     "catalogLabel": "แคตตาล็อก",
     "titleTypeLabel": "หมวดเรื่อง",

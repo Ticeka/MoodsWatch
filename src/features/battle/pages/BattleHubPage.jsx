@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -39,17 +39,8 @@ import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useHiddenTitles } from '@/features/profile/hooks/useHiddenTitles';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
-import {
-  CHARACTER_ENTITY_TYPE,
-  CUSTOM_IMAGE_ENTITY_TYPE,
-  CUSTOM_VIDEO_ENTITY_TYPE,
-  THEME_SONG_ENTITY_TYPE,
-  TRAILER_ENTITY_TYPE,
-  getCatalogEntities,
-  normalizeCatalogEntityType,
-} from '@/shared/lib/catalogEntities';
 import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
-import { getAllTitles } from '@/features/discover/lib/recommend';
+import { fetchBattleTitlesPage } from '@/features/battle/api/battleCatalogApi';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
 import { BattleVsIcon } from '@/shared/components/icons/BattleVsIcon';
 import {
@@ -94,6 +85,7 @@ export function BattleHub() {
   
   const [savedDecks, setSavedDecks] = useState([]);
   const [publicDecks, setPublicDecks] = useState([]);
+  const [presetDecks, setPresetDecks] = useState([]);
   
   const [publicDecksPage, setPublicDecksPage] = useState(0);
   const [hasNextPublicPage, setHasNextPublicPage] = useState(false);
@@ -134,9 +126,49 @@ export function BattleHub() {
           setIsLoading(false);
         }
 
-        const allTitles = await getAllTitles({ maxRows: Number.POSITIVE_INFINITY });
+        if (cancelled) return;
+
+        const nextPresetEntries = await Promise.all(
+          getBattlePresets().map(async (preset) => {
+            const filters = preset.filters || {};
+            const result = await fetchBattleTitlesPage({
+              type: filters.type || 'all',
+              tag: filters.tag || '',
+              mood: filters.mood || '',
+              query: filters.query || '',
+              trailerState: filters.trailerState || 'all',
+              trailerProvider: filters.trailerProvider || 'all',
+              showAdult,
+              hiddenTitleIds,
+              page: 0,
+              pageSize: Math.max(8, Number(filters.size || 32)),
+            });
+            if (cancelled) return null;
+            const deck = buildBattleDeck(result.rows || [], { ...filters, label: preset.label }, {
+              hiddenTitleIds,
+              excludeAdult: !showAdult,
+              onlyAdult: showAdult,
+            });
+
+            return {
+              preset,
+              deck: {
+                ...deck,
+                sourceCount: Number(result.total || deck.sourceCount || 0),
+              },
+            };
+          })
+        );
+
         if (!cancelled) {
-          setTitles(allTitles);
+          const presetTitleMap = new Map();
+          nextPresetEntries.forEach(({ deck }) => {
+            (deck?.titles || []).forEach((title) => {
+              if (title?.id != null) presetTitleMap.set(Number(title.id), title);
+            });
+          });
+          setPresetDecks(nextPresetEntries);
+          setTitles([...presetTitleMap.values()]);
           setIsPresetsLoading(false);
         }
       } catch (loadError) {
@@ -153,7 +185,7 @@ export function BattleHub() {
 
     loadHub();
     return () => { cancelled = true; };
-  }, [t, user?.id]);
+  }, [hiddenTitleIds, showAdult, t, user?.id]);
 
   useEffect(() => {
     if (!activeOverlay) {
@@ -296,40 +328,14 @@ export function BattleHub() {
     }
   };
 
-  const hiddenSet = useMemo(() => new Set(hiddenTitleIds), [hiddenTitleIds]);
-
-  const deckOptions = useMemo(() => ({
-    hiddenTitleIds,
-    excludeAdult: !showAdult,
-    onlyAdult: showAdult,
-  }), [hiddenTitleIds, showAdult]);
-
-  const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
-    [hiddenSet, showAdult, titles]
-  );
-  const visibleCharacterCatalog = useMemo(
-    () => getCatalogEntities(visibleCatalogTitles, CHARACTER_ENTITY_TYPE),
-    [visibleCatalogTitles]
-  );
   const titleLookup = useMemo(
     () => new Map(titles.map((title) => [Number(title.id), title])),
     [titles]
   );
   
-  const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
-  const deferredCatalogTitlesForPresets = useDeferredValue(visibleCatalogTitles);
-  const isComputingPresets = deferredCatalogTitlesForPresets !== visibleCatalogTitles;
+  const hiddenExcludedCount = 0;
+  const isComputingPresets = false;
   
-  const presets = useMemo(() => getBattlePresets(), []);
-  const presetDecks = useMemo(
-    () => presets.map((preset) => ({
-      preset,
-      deck: buildBattleDeck(deferredCatalogTitlesForPresets, { ...preset.filters, label: preset.label }, deckOptions),
-    })),
-    [deckOptions, deferredCatalogTitlesForPresets, presets]
-  );
-
   const readyPresetDecks = useMemo(
     () => presetDecks.filter(({ deck }) => (deck?.titles?.length || 0) >= 8),
     [presetDecks]
@@ -392,15 +398,7 @@ export function BattleHub() {
     }
 
     let session = saveBattleSession(createBattleSession(deck, {
-      catalogCount: normalizeCatalogEntityType(deck?.filters?.entityType) === CHARACTER_ENTITY_TYPE
-        ? visibleCharacterCatalog.length
-        : normalizeCatalogEntityType(deck?.filters?.entityType) === THEME_SONG_ENTITY_TYPE
-          ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-          : normalizeCatalogEntityType(deck?.filters?.entityType) === CUSTOM_IMAGE_ENTITY_TYPE || normalizeCatalogEntityType(deck?.filters?.entityType) === CUSTOM_VIDEO_ENTITY_TYPE
-            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-          : normalizeCatalogEntityType(deck?.filters?.entityType) === TRAILER_ENTITY_TYPE
-            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-            : visibleCatalogTitles.length,
+      catalogCount: Number(deck?.sourceCount || deck?.titles?.length || 0),
       hiddenExcludedCount,
       excludesAdultContent: !showAdult,
     }));

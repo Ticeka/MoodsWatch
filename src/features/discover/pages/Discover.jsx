@@ -38,15 +38,8 @@ import {
 
 import { DiscoverHero } from '../components/sections/DiscoverHero';
 import { DiscoverSearchField } from '../components/sections/DiscoverSearchField';
-import { DiscoverSearchMeta } from '../components/sections/DiscoverSearchMeta';
 import { DiscoverScopeTabs } from '../components/sections/DiscoverScopeTabs';
 import { DiscoverFilterBar } from '../components/sections/DiscoverFilterBar';
-import { DiscoverQuickPicks } from '../components/sections/DiscoverQuickPicks';
-import { DiscoverSavedSearches } from '../components/sections/DiscoverSavedSearches';
-import { DiscoverStarterLanes } from '../components/sections/DiscoverStarterLanes';
-import { DiscoverActiveFilters } from '../components/sections/DiscoverActiveFilters';
-import { DiscoverResultsToolbar } from '../components/sections/DiscoverResultsToolbar';
-import { DiscoverResultsOverview } from '../components/sections/DiscoverResultsOverview';
 import { DiscoverResults } from '../components/sections/DiscoverResults';
 import { DiscoverRecoveryActions } from '../components/sections/DiscoverRecoveryActions';
 
@@ -523,6 +516,16 @@ export function Discover() {
     tierlists: tierlists.length,
   };
 
+  const totalResults = scope === 'titles'
+    ? titleScopeCount
+    : scope === 'posts'
+      ? posts.length
+      : scope === 'people'
+        ? profiles.length
+        : scope === 'tierlists'
+          ? tierlists.length
+          : allScopeCount;
+
   return (
     <div className="dv2-root animate-fade-in">
       <div className="dv2-container">
@@ -551,126 +554,56 @@ export function Discover() {
               }}
             />
 
-            <DiscoverSearchMeta
-              isLoading={hasAnyLoading}
-              isShortQuery={searchIntent.isShort}
-              isBroadQuery={searchIntent.isBroad}
-              catalogCount={catalogInfo.count}
-              canSave={hasSavableSearch}
-              isSaved={isCurrentSearchSaved}
-              isSaveDisabled={isCurrentSearchSaved || isSavedSearchesLoading}
-              onSave={saveCurrentSearch}
-              hasSavedToggle={savedSearches.length > 0 || isSearchWorkbenchOpen}
-              isWorkbenchOpen={isSearchWorkbenchOpen}
-              onToggleWorkbench={() => setShowSearchWorkbench((current) => !current)}
-            />
-
             <DiscoverScopeTabs
               active={scope}
               counts={scopeCounts}
-              showCounts={showScopeCounts}
+              showCounts={false}
               onChange={setScope}
             />
+          </div>
+        </DiscoverHero>
 
-            {(scope === 'all' || scope === 'titles') ? (
+        <section ref={browseSectionRef} className="dv2-layout">
+          {(scope === 'all' || scope === 'titles') ? (
+            <aside className="dv2-sidebar">
               <DiscoverFilterBar
                 activeTitleType={titleType}
                 onTitleTypeChange={setTitleType}
                 activeTag={tag}
                 onToggleTag={toggleTag}
               />
-            ) : null}
-
-            <DiscoverQuickPicks
-              recentSearches={visibleRecentSearches}
-              onClearRecent={clearRecentSearches}
-              onApplyPreset={applySearchPreset}
-              chipRefs={helperChipRefs}
-              onChipKeyDown={handleHelperChipKeyDown}
-              recentOffset={recentSearchOffset}
-              suggestedOffset={suggestedSearchOffset}
-            />
-
-            <DiscoverSavedSearches
-              open={isSearchWorkbenchOpen}
-              savedSearches={renderedSavedSearches}
-              error={savedSearchesError}
-              editingId={editingSavedSearchId}
-              labelDraft={savedSearchLabelDraft}
-              onLabelDraftChange={setSavedSearchLabelDraft}
-              inputRef={savedSearchInputRef}
-              chipRefs={helperChipRefs}
-              savedOffset={savedSearchOffset}
-              onApplyPreset={applySearchPreset}
-              onChipKeyDown={handleHelperChipKeyDown}
-              onStartRename={startSavedSearchRename}
-              onSubmitRename={submitSavedSearchRename}
-              onCancelRename={cancelSavedSearchRename}
-              onTogglePin={handleSavedSearchPinToggle}
-              onDelete={handleSavedSearchDelete}
-              onClearAll={handleClearSavedSearches}
-            />
-          </div>
-        </DiscoverHero>
-
-        {isIdleDiscover ? (
-          <DiscoverStarterLanes counts={laneCounts} onLaneClick={applySearchPreset} />
-        ) : null}
-
-        {hasDiscoverFilters ? (
-          <DiscoverActiveFilters
-            query={query}
-            committedQuery={hasCommittedQuery}
-            activeTag={tag}
-            activeScope={scope}
-            activeTitleType={titleType}
-            isBroadQuery={searchIntent.isBroad}
-            onClearTag={() => setTag('')}
-            onClearScope={() => setScope('all')}
-            onClearTitleType={() => setTitleType('all')}
-          />
-        ) : null}
-
-        <section ref={browseSectionRef} className="dv2-results">
-          <DiscoverResultsToolbar
-            heading={currentHeading}
-            subtitle={currentSubtitle}
-            showTitleControls={scope === 'all' || scope === 'titles'}
-            visibleCount={visibleTitleCount}
-            totalCount={titleScopeCount}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            hideSeen={hideSeen}
-            onHideSeenChange={setHideSeen}
-          />
-
-          {scope === 'all' && !noResultsEverywhere && !isIdleDiscover ? (
-            <DiscoverResultsOverview counts={laneCounts} onScopeChange={setScope} />
+            </aside>
           ) : null}
 
-          <DiscoverResults
-            scope={scope}
-            query={query}
-            locale={locale}
-            titles={rankedTitles}
-            titleTotal={titleScopeCount}
-            posts={posts}
-            profiles={profiles}
-            tierlists={tierlists}
-            loading={loading}
-            error={error}
-            noResultsEverywhere={noResultsEverywhere}
-            crossLaneFallback={crossLaneFallback}
-            emptyAction={emptyStateAction}
-            onRetry={retry}
-            onResultClick={analytics.trackResultClick}
-            onScopeChange={setScope}
-            pagination={scope === 'titles' ? {
-              page,
-              totalPages: titlesState.totalPages,
-              onChange: handleBrowsePageChange,
-            } : null}
-          />
+          <div className="dv2-results">
+            <div className="dv2-results-count">
+              {totalResults} {language === 'th' ? 'รายการ' : 'results'}
+            </div>
+
+            <DiscoverResults
+              scope={scope}
+              query={query}
+              locale={locale}
+              titles={rankedTitles}
+              titleTotal={titleScopeCount}
+              posts={posts}
+              profiles={profiles}
+              tierlists={tierlists}
+              loading={loading}
+              error={error}
+              noResultsEverywhere={noResultsEverywhere}
+              crossLaneFallback={crossLaneFallback}
+              emptyAction={emptyStateAction}
+              onRetry={retry}
+              onResultClick={analytics.trackResultClick}
+              onScopeChange={setScope}
+              pagination={scope === 'titles' ? {
+                page,
+                totalPages: titlesState.totalPages,
+                onChange: handleBrowsePageChange,
+              } : null}
+            />
+          </div>
         </section>
       </div>
     </div>

@@ -4,12 +4,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Globe, Layers, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
   CHARACTER_ENTITY_TYPE,
-  CUSTOM_IMAGE_ENTITY_TYPE,
-  CUSTOM_VIDEO_ENTITY_TYPE,
   THEME_SONG_ENTITY_TYPE,
   TITLE_ENTITY_TYPE,
   TRAILER_ENTITY_TYPE,
-  getCatalogEntities,
   normalizeCatalogEntityType,
 } from '@/shared/lib/catalogEntities';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
@@ -20,7 +17,6 @@ import { filterDecksForAgeGate } from '@/shared/lib/ageGate';
 import { Button } from '@/shared/components/ui/Button';
 import { SortSelect } from '@/shared/components/ui/SortSelect';
 import { BattleReadyDeckCard } from '@/features/battle/components/BattleReadyDeckCard';
-import { getAllTitles } from '@/features/discover/lib/recommend';
 import {
   enrichPublicDeckOwners,
   renderBattleDeckOwnerSubtitle,
@@ -37,7 +33,8 @@ import {
 } from '@/features/battle/api/battleRemoteApi';
 import '../styles/Battle.css';
 
-const BROWSE_BATCH_SIZE = 96;
+const BROWSE_INITIAL_FETCH = 192;
+const BROWSE_LOAD_MORE = 96;
 const BROWSE_PAGE_SIZE = 12;
 
 function BattleBrowseCardSkeleton() {
@@ -68,9 +65,10 @@ export function BattleBrowsePage() {
   const { t } = useLanguage();
   const { hiddenTitleIds } = useHiddenTitles();
   const { showAdult } = useAgeGate();
-  const [titles, setTitles] = useState([]);
   const [publicDecks, setPublicDecks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreDecks, setHasMoreDecks] = useState(false);
   const [error, setError] = useState('');
 
   // Filter/search/page state persisted in URL so browser back restores it
@@ -103,32 +101,19 @@ export function BattleBrowsePage() {
       setError('');
 
       try {
-        const MAX_DECKS = 480;
-        const BATCH_COUNT = Math.ceil(MAX_DECKS / BROWSE_BATCH_SIZE);
-
-        const [allTitles, decks] = await Promise.all([
-          getAllTitles({ maxRows: Number.POSITIVE_INFINITY }),
-          (async () => {
-            // Fetch all batches in parallel — stop collecting after first partial batch
-            const batches = await Promise.all(
-              Array.from({ length: BATCH_COUNT }, (_, i) =>
-                fetchPublicBattleDecks({ limit: BROWSE_BATCH_SIZE, offset: i * BROWSE_BATCH_SIZE }).catch(() => [])
-              )
-            );
-
-            const collected = [];
-            for (const batch of batches) {
-              collected.push(...batch);
-              if (batch.length < BROWSE_BATCH_SIZE) break;
-            }
-
-            return enrichPublicDeckOwners(collected);
-          })(),
-        ]);
-
+        const fetched = await fetchPublicBattleDecks({
+          limit: BROWSE_INITIAL_FETCH + 1,
+          offset: 0,
+        });
         if (cancelled) return;
-        setTitles(allTitles);
-        setPublicDecks(decks);
+
+        const hasMore = fetched.length > BROWSE_INITIAL_FETCH;
+        const initial = hasMore ? fetched.slice(0, BROWSE_INITIAL_FETCH) : fetched;
+        const enriched = await enrichPublicDeckOwners(initial);
+        if (cancelled) return;
+
+        setPublicDecks(enriched);
+        setHasMoreDecks(hasMore);
         setIsLoading(false);
       } catch (loadError) {
         if (cancelled) return;
@@ -143,7 +128,28 @@ export function BattleBrowsePage() {
     };
   }, [t]);
 
-  const hiddenSet = useMemo(() => new Set(hiddenTitleIds), [hiddenTitleIds]);
+  const handleLoadMoreDecks = useCallback(async () => {
+    if (isLoadingMore || !hasMoreDecks) return;
+    setIsLoadingMore(true);
+    try {
+      const fetched = await fetchPublicBattleDecks({
+        limit: BROWSE_LOAD_MORE + 1,
+        offset: publicDecks.length,
+      });
+      const hasMore = fetched.length > BROWSE_LOAD_MORE;
+      const next = hasMore ? fetched.slice(0, BROWSE_LOAD_MORE) : fetched;
+      const enriched = await enrichPublicDeckOwners(next);
+      setPublicDecks((prev) => {
+        const seen = new Set(prev.map((deck) => deck.id));
+        return [...prev, ...enriched.filter((deck) => !seen.has(deck.id))];
+      });
+      setHasMoreDecks(hasMore);
+    } catch {
+      // keep current list on error
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [hasMoreDecks, isLoadingMore, publicDecks.length]);
 
   const deckOptions = useMemo(() => ({
     hiddenTitleIds,
@@ -151,23 +157,9 @@ export function BattleBrowsePage() {
     onlyAdult: showAdult,
   }), [hiddenTitleIds, showAdult]);
 
-  const visibleCatalogTitles = useMemo(
-    () => titles.filter((title) => !hiddenSet.has(title.id) && (showAdult ? title.is_adult : !title.is_adult)),
-    [hiddenSet, showAdult, titles]
-  );
-  const visibleCharacterCatalog = useMemo(
-    () => getCatalogEntities(visibleCatalogTitles, CHARACTER_ENTITY_TYPE),
-    [visibleCatalogTitles]
-  );
-  const titleLookup = useMemo(
-    () => new Map(titles.map((title) => [Number(title.id), title])),
-    [titles]
-  );
-  const hiddenExcludedCount = Math.max(0, titles.length - visibleCatalogTitles.length);
-
   const visibleDecks = useMemo(
-    () => filterDecksForAgeGate(publicDecks, showAdult, titleLookup).filter((deck) => (deck?.titles?.length || deck?.titleIds?.length || 0) >= 8),
-    [publicDecks, showAdult, titleLookup]
+    () => filterDecksForAgeGate(publicDecks, showAdult).filter((deck) => (deck?.titles?.length || deck?.titleIds?.length || 0) >= 8),
+    [publicDecks, showAdult]
   );
 
   const filteredDecks = useMemo(() => {
@@ -233,18 +225,9 @@ export function BattleBrowsePage() {
       }
     }
 
-    const entityType = normalizeCatalogEntityType(deck?.filters?.entityType);
     let session = saveBattleSession(createBattleSession(deck, {
-      catalogCount: entityType === CHARACTER_ENTITY_TYPE
-        ? visibleCharacterCatalog.length
-        : entityType === THEME_SONG_ENTITY_TYPE
-          ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-          : entityType === CUSTOM_IMAGE_ENTITY_TYPE || entityType === CUSTOM_VIDEO_ENTITY_TYPE
-            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-          : entityType === TRAILER_ENTITY_TYPE
-            ? Number(deck?.sourceCount || deck?.titles?.length || 0)
-            : visibleCatalogTitles.length,
-      hiddenExcludedCount,
+      catalogCount: Number(deck?.sourceCount || deck?.titles?.length || 0),
+      hiddenExcludedCount: 0,
       excludesAdultContent: !showAdult,
       deckOptions,
     }));
@@ -469,6 +452,19 @@ export function BattleBrowsePage() {
                       <ChevronRight size={20} strokeWidth={3} />
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {hasMoreDecks && visiblePage >= totalPages - 1 ? (
+                <div className="battle-pagination-footer">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleLoadMoreDecks}
+                    disabled={isLoadingMore}
+                  >
+                    {isLoadingMore ? t('common.loading') : t('battle.browseMoreStages')}
+                  </Button>
                 </div>
               ) : null}
             </>

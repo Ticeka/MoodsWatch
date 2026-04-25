@@ -257,6 +257,24 @@ async function haveAllPartyMembersAnswered(roomId, matchId, roundId) {
     return false;
   }
 
+  try {
+    const { data, error } = await supabase.rpc('get_party_answer_progress', {
+      p_room_id: roomId,
+      p_match_id: String(matchId),
+      p_round_id: String(roundId),
+      p_member_token: getPartyGuestToken() || '',
+    });
+
+    if (!error) {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) {
+        return Boolean(row.all_answered);
+      }
+    }
+  } catch {
+    // Older databases may not have the aggregate helper yet; fall back below.
+  }
+
   const members = await fetchPartyRoomMembers(roomId);
   const memberTokens = getDistinctMemberTokens(members);
   if (memberTokens.length === 0) {
@@ -1367,7 +1385,7 @@ export async function submitPartyAnswer({
       points_awarded: Number(score.points || 0),
       elapsed_ms: elapsedMs,
       submitted_at: new Date(now).toISOString(),
-    }, { onConflict: 'round_id,member_token' })
+    }, { onConflict: 'room_id,match_id,round_id,member_token' })
     .select(PARTY_ROOM_ANSWER_SELECT)
     .single();
 
@@ -1436,7 +1454,7 @@ export async function submitPartyVote({
       points_awarded: 0,
       elapsed_ms: elapsedMs,
       submitted_at: new Date(now).toISOString(),
-    }, { onConflict: 'round_id,member_token' })
+    }, { onConflict: 'room_id,match_id,round_id,member_token' })
     .select(PARTY_ROOM_ANSWER_SELECT)
     .single();
 
@@ -1501,7 +1519,7 @@ export async function submitPartyTierlistVote({
       points_awarded: 0,
       elapsed_ms: elapsedMs,
       submitted_at: new Date(now).toISOString(),
-    }, { onConflict: 'round_id,member_token' })
+    }, { onConflict: 'room_id,match_id,round_id,member_token' })
     .select(PARTY_ROOM_ANSWER_SELECT)
     .single();
 

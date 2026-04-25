@@ -2,6 +2,7 @@ import { supabase } from '@/shared/lib/supabase';
 import {
   createPartySettings,
   generatePartyRoomCode,
+  getPartyCurrentRound,
 } from '../lib/partyEngine.js';
 import {
   broadcastPartyRoomEvent,
@@ -120,6 +121,21 @@ export function takeFirstRecord(records) {
   return Array.isArray(records) ? records[0] || null : records || null;
 }
 
+function getActivePartyAnswerRoundIds(room = null) {
+  const match = room?.current_match || null;
+  if (!match?.id) {
+    return [];
+  }
+
+  return [
+    getPartyCurrentRound(match)?.id,
+    match?.currentBattle?.id,
+    match?.currentVote?.roundId,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
 export async function fetchPartyRoomRecordById(roomId) {
   if (!supabase || !roomId) {
     return null;
@@ -175,17 +191,26 @@ export async function fetchPartyRoomBundle(roomCode) {
     return null;
   }
 
+  const activeRoundIds = getActivePartyAnswerRoundIds(room);
+  const memberRequest = supabase
+    .from('party_room_members')
+    .select(PARTY_ROOM_MEMBER_SELECT)
+    .eq('room_id', room.id)
+    .order('joined_at', { ascending: true });
+
+  const answerRequest = activeRoundIds.length > 0
+    ? supabase
+        .from('party_room_answers')
+        .select(PARTY_ROOM_ANSWER_SELECT)
+        .eq('room_id', room.id)
+        .eq('match_id', String(room.current_match.id))
+        .in('round_id', activeRoundIds)
+        .order('submitted_at', { ascending: true })
+    : Promise.resolve({ data: [], error: null });
+
   const [{ data: members, error: membersError }, { data: answers, error: answersError }] = await Promise.all([
-    supabase
-      .from('party_room_members')
-      .select(PARTY_ROOM_MEMBER_SELECT)
-      .eq('room_id', room.id)
-      .order('joined_at', { ascending: true }),
-    supabase
-      .from('party_room_answers')
-      .select(PARTY_ROOM_ANSWER_SELECT)
-      .eq('room_id', room.id)
-      .order('submitted_at', { ascending: true }),
+    memberRequest,
+    answerRequest,
   ]);
 
   if (membersError) {
@@ -646,12 +671,23 @@ export async function updatePartyRoomAccess(roomId, { roomName, visibility } = {
     return;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('party_rooms')
     .update(patch)
-    .eq('id', roomId);
+    .eq('id', roomId)
+    .select(PARTY_ROOM_SELECT);
 
   if (error) {
     throw error;
+  }
+
+  const nextRoom = takeFirstRecord(data);
+  if (nextRoom) {
+    await broadcastPartyRoomEvent(roomId, {
+      type: 'ROOM_UPDATED',
+      payload: {
+        room: nextRoom,
+      },
+    });
   }
 }

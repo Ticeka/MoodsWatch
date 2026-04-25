@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight,
   TrendingUp,
@@ -15,11 +15,13 @@ import {
   ArrowRight,
   Heart,
   Film,
+  Sparkles,
 } from 'lucide-react';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useWatchlist } from '@/features/watchlist/contexts/WatchlistContext';
+import { Button } from '@/shared/components/ui/Button';
 import {
   usePartySection,
   useBattleSection,
@@ -63,6 +65,19 @@ function EmptyState({ text }) {
   return <div className="hv2-empty">{text}</div>;
 }
 
+function ErrorState({ text, retryLabel, onRetry }) {
+  return (
+    <div className="hv2-empty hv2-empty--error">
+      <span>{text}</span>
+      {onRetry ? (
+        <button type="button" className="hv2-btn hv2-btn--muted" onClick={onRetry}>
+          {retryLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    HERO — clear value proposition + dual CTA + floating preview card
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -72,7 +87,6 @@ export function HeroBanner() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
 
-  const title = heroBlock?.title || pick('หาดูเรื่องที่ใช่ เล่นกับเพื่อน แล้วจัดอันดับทุกความชอบ', 'Find what to watch. Play with friends. Rank everything.');
   const subtitle =
     heroBlock?.subtitle ||
     pick(
@@ -87,21 +101,43 @@ export function HeroBanner() {
   return (
     <section className="hv2-hero">
       <div className="hv2-hero-inner">
+        <span className="hv2-hero-badge">
+          <Sparkles size={12} aria-hidden="true" />
+          {pick('เริ่มจากอารมณ์ของคุณ', 'Start with your mood')}
+        </span>
         <div className="hv2-hero-eyebrow">{dateLabel}</div>
         <h1 className="hv2-hero-title">
-          {pick('วันนี้คุณ', 'What are you')} <em className="hv2-gradient-word">{feelingWord}</em> {pick('ยังไง?', 'today?')}
+          <span>{pick('วันนี้คุณ', 'What are you')}</span>
+          <span>
+            <em className="hv2-gradient-word">{feelingWord}</em> {pick('ยังไง?', 'today?')}
+          </span>
         </h1>
         <p className="hv2-hero-subtitle">{subtitle}</p>
         <div className="hv2-hero-actions">
-          <button className="hv2-btn hv2-btn--gradient" onClick={() => navigate('/discover')}>
-            <Compass size={16} /> {pick('ค้นหาตามมู้ด', 'Find my match')}
-          </button>
-          <button className="hv2-btn hv2-btn--ghost" onClick={() => navigate('/party/templates')}>
-            {pick('เล่นกับเพื่อน', 'Play with friends')} <ChevronRight size={14} />
-          </button>
+          <Button size="lg" icon={<Compass size={18} />} onClick={() => navigate('/discover')}>
+            {pick('ค้นหาตามมู้ด', 'Find my match')}
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            iconRight={<ChevronRight size={16} />}
+            onClick={() => navigate('/party/templates')}
+          >
+            {pick('เล่นกับเพื่อน', 'Play with friends')}
+          </Button>
         </div>
         <div className="hv2-hero-meta">
           <Film size={13} /> {pick('อนิเมะ · หนัง · ซีรีส์ · K-drama · มังงะ', 'Anime · Movies · Series · K-drama · Manga')}
+        </div>
+        <div className="hv2-hero-links" aria-label={pick('ลิงก์ลัดหน้าแรก', 'Homepage shortcuts')}>
+          <Link to="/discover" className="hv2-hero-link">
+            <span>{pick('สำรวจ', 'Explore')}</span>
+            {pick('เปิด Discover', 'Open Discover')}
+          </Link>
+          <Link to="/watchlist" className="hv2-hero-link">
+            <span>{pick('ลิสต์ของคุณ', 'Your list')}</span>
+            {pick('ไปที่ Watchlist', 'Go to Watchlist')}
+          </Link>
         </div>
       </div>
     </section>
@@ -240,9 +276,20 @@ export function ContinueWatchingSection() {
   const navigate = useNavigate();
   const { pick } = useLanguage();
   const { user } = useAuth();
-  const { watchlistTitles = [], isLoading } = useWatchlist() || {};
+  const {
+    watchlist = [],
+    watchlistTitles = [],
+    isLoading,
+    isTitleMetadataLoading,
+  } = useWatchlist() || {};
 
   const visible = (watchlistTitles || []).slice(0, 10);
+  const hasWatchlistItems = (watchlist?.length || 0) > 0;
+  // Provider flips isTitleMetadataLoading synchronously before scheduling
+  // hydration, so these two flags together cover the full in-flight window.
+  // When hydration fails they both go back to false and we fall through to
+  // the has-items-but-no-titles recovery branch below.
+  const isHydrating = isLoading || isTitleMetadataLoading;
 
   if (!user) {
     return (
@@ -270,7 +317,7 @@ export function ContinueWatchingSection() {
     );
   }
 
-  if (isLoading) {
+  if (isHydrating) {
     return (
       <Section
         title={pick('ดูต่อจากที่ค้างไว้', 'Pick up where you left off')}
@@ -279,6 +326,33 @@ export function ContinueWatchingSection() {
         seeAllLabel={pick('ดูทั้งหมด', 'See All')}
       >
         <SkeletonRow />
+      </Section>
+    );
+  }
+
+  // Safety net: watchlist has items but title metadata never resolved
+  // (network error, RLS miss, etc). Don't show the "empty" copy — surface
+  // a recovery CTA to the full watchlist page.
+  if (hasWatchlistItems && visible.length === 0) {
+    return (
+      <Section
+        title={pick('ดูต่อจากที่ค้างไว้', 'Pick up where you left off')}
+        icon={Clock}
+        seeAllHref="/watchlist"
+        seeAllLabel={pick('ดูทั้งหมด', 'See All')}
+      >
+        <div className="hv2-watchlist-empty">
+          <div className="hv2-watchlist-empty-copy">
+            <Bookmark size={28} />
+            <h3>{pick('ลิสต์ของคุณยังโหลดไม่ครบ', "We couldn't load your saved titles")}</h3>
+            <p>{pick('ลองเปิดหน้าลิสต์ของคุณโดยตรงเพื่อดูรายการทั้งหมด', 'Open your watchlist directly to see everything you saved.')}</p>
+            <div className="hv2-watchlist-empty-actions">
+              <button className="hv2-btn hv2-btn--solid" onClick={() => navigate('/watchlist')}>
+                {pick('เปิดลิสต์ของคุณ', 'Open your watchlist')}
+              </button>
+            </div>
+          </div>
+        </div>
       </Section>
     );
   }
@@ -335,7 +409,7 @@ export function ContinueWatchingSection() {
 
 export function TrendingSection() {
   const { showAdult } = useAgeGate();
-  const { trendingTitles, loading } = useTrendingSection(showAdult);
+  const { trendingTitles, loading, error, retry } = useTrendingSection(showAdult);
   const navigate = useNavigate();
   const { pick } = useLanguage();
 
@@ -349,6 +423,12 @@ export function TrendingSection() {
     >
       {loading ? (
         <SkeletonRow />
+      ) : error ? (
+        <ErrorState
+          text={pick('โหลดเรื่องฮอตไม่สำเร็จ', "Couldn't load trending titles")}
+          retryLabel={pick('ลองอีกครั้ง', 'Try again')}
+          onRetry={retry}
+        />
       ) : trendingTitles.length === 0 ? (
         <EmptyState text={pick('ตอนนี้ยังไม่มีเรื่องที่กำลังมาแรง', 'Nothing trending right now')} />
       ) : (
@@ -445,8 +525,9 @@ export function HowToStartSection() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export function PartySection() {
-  const { showAdult } = useAgeGate();
-  const { partyTemplates, loading } = usePartySection(showAdult);
+  // Party templates aren't age-gated server-side, so we don't pass showAdult —
+  // avoids a pointless refetch (and its creator/cover fan-out) on toggle.
+  const { partyTemplates, loading, error, retry } = usePartySection();
   const navigate = useNavigate();
   const { pick } = useLanguage();
 
@@ -460,6 +541,12 @@ export function PartySection() {
     >
       {loading ? (
         <SkeletonRow />
+      ) : error ? (
+        <ErrorState
+          text={pick('โหลดเทมเพลตปาร์ตี้ไม่สำเร็จ', "Couldn't load party templates")}
+          retryLabel={pick('ลองอีกครั้ง', 'Try again')}
+          onRetry={retry}
+        />
       ) : partyTemplates.length === 0 ? (
         <EmptyState text={pick('ยังไม่มีเทมเพลตให้เล่นตอนนี้', 'No templates available')} />
       ) : (
@@ -474,7 +561,7 @@ export function PartySection() {
 }
 
 export function BattleSection() {
-  const { battleDecks, loading } = useBattleSection();
+  const { battleDecks, loading, error, retry } = useBattleSection();
   const navigate = useNavigate();
   const { pick } = useLanguage();
 
@@ -488,6 +575,12 @@ export function BattleSection() {
     >
       {loading ? (
         <SkeletonRow />
+      ) : error ? (
+        <ErrorState
+          text={pick('โหลดแบทเทิลเด็คไม่สำเร็จ', "Couldn't load battle decks")}
+          retryLabel={pick('ลองอีกครั้ง', 'Try again')}
+          onRetry={retry}
+        />
       ) : battleDecks.length === 0 ? (
         <EmptyState text={pick('ยังไม่มีแบทเทิลให้เล่นตอนนี้', 'No battles available')} />
       ) : (
@@ -503,7 +596,7 @@ export function BattleSection() {
 
 export function TierlistSection() {
   const { showAdult } = useAgeGate();
-  const { tierlistTemplates, loading } = useTierlistSection(showAdult);
+  const { tierlistTemplates, loading, error, retry } = useTierlistSection(showAdult);
   const navigate = useNavigate();
   const { pick } = useLanguage();
 
@@ -517,6 +610,12 @@ export function TierlistSection() {
     >
       {loading ? (
         <SkeletonRow />
+      ) : error ? (
+        <ErrorState
+          text={pick('โหลดเทียร์ลิสต์ไม่สำเร็จ', "Couldn't load tier lists")}
+          retryLabel={pick('ลองอีกครั้ง', 'Try again')}
+          onRetry={retry}
+        />
       ) : tierlistTemplates.length === 0 ? (
         <EmptyState text={pick('ยังไม่มีเทียร์ลิสต์ให้ดูตอนนี้', 'No tier lists available')} />
       ) : (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Heart, Layers, Pencil, Play, Sparkles, Star, Users } from 'lucide-react';
 import { getTemplateCoverUrl } from '@/features/party/lib/partyTemplateUtils';
 import './PartyTemplates.css';
@@ -23,9 +23,15 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
   const isTierlist = contentType === 'tierlist';
   const resolvedCoverUrl = isTitleGuess || isBattleDeck || isTierlist ? coverUrl : getTemplateCoverUrl(coverUrl);
   const coverShapeClass = coverShape === 'portrait' ? 'is-portrait-cover' : '';
+  const imgRef = useRef(null);
 
   useEffect(() => {
-    setCoverShape('unknown');
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setCoverShape(img.naturalHeight > img.naturalWidth * 1.12 ? 'portrait' : 'landscape');
+    } else {
+      setCoverShape('unknown');
+    }
   }, [resolvedCoverUrl]);
 
   const playableLabel = isTierlist
@@ -64,6 +70,7 @@ export function PartyTemplateCard({ template, onClick, onEdit, canEdit = false, 
               />
               <div className="party-template-card-cover-poster">
                 <img
+                  ref={imgRef}
                   className="party-template-card-cover-image"
                   src={resolvedCoverUrl}
                   alt=""

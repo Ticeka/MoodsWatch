@@ -898,6 +898,7 @@
 
 .battle-preset-carousel {
   display: flex;
+  align-items: stretch;
   gap: 1.25rem;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
@@ -910,8 +911,25 @@
 }
 
 .carousel-item {
-  flex: 0 0 280px; /* Fixed width for cards in carousel */
+  flex: 0 0 clamp(252px, 21vw, 272px); /* Comfortable card width while keeping the next card visible */
+  display: flex;
+  align-items: stretch;
   scroll-snap-align: start;
+}
+
+.carousel-item > .battle-preset-card,
+.carousel-item > .battle-preset-card-skeleton {
+  height: 100%;
+  max-width: none;
+}
+
+.battle-carousel-container-official .battle-preset-card {
+  min-height: 520px;
+}
+
+.battle-carousel-container-official .battle-preset-art {
+  height: 256px;
+  min-height: 256px;
 }
 
 .battle-carousel-container.is-loading .battle-preset-carousel {

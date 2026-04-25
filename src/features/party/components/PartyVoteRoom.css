@@ -1298,7 +1298,7 @@
 .champion-firework {
   --firework-hue: calc(18deg * var(--spark-index));
   position: absolute;
-  top: calc(8% + (var(--spark-index) % 4) * 18%);
+  top: calc(8% + mod(var(--spark-index), 4) * 18%);
   left: calc(6% + (var(--spark-index) * 7.5%));
   width: 0.85rem;
   height: 0.85rem;

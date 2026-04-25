@@ -16,9 +16,9 @@
 }
 
 .hv2-container {
-  max-width: 1280px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6) 0;
+  padding: var(--space-8) var(--space-4) 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
@@ -35,13 +35,26 @@
    HERO
    ========================================================================== */
 
-.hv2-hero { padding: var(--space-6) 0 var(--space-4); }
+.hv2-hero { padding: var(--space-4) 0 var(--space-4); }
 
 .hv2-hero-inner {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  max-width: 900px;
+  max-width: 1040px;
+}
+
+.hv2-hero-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .hv2-hero-eyebrow {
@@ -50,21 +63,27 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--primary);
-  margin-bottom: 0.25rem;
+  margin-top: -0.15rem;
 }
 
 .hv2-hero-title {
-  font-family: var(--hv2-font-display);
-  font-size: clamp(2.4rem, 5.8vw, 4.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+  max-width: 11ch;
+  font-family: var(--font-heading);
+  font-size: clamp(2.6rem, 6vw, 4.35rem);
   font-weight: 800;
   letter-spacing: -0.04em;
-  line-height: 0.98;
+  line-height: 0.94;
   margin: 0;
   color: var(--text-primary);
   text-wrap: balance;
 }
 
 .hv2-gradient-word {
+  display: inline-block;
+  font-family: var(--hv2-font-display);
   font-style: italic;
   font-weight: 800;
   background: linear-gradient(120deg, var(--primary) 0%, var(--accent-500, var(--accent)) 55%, #8b5cf6 100%);
@@ -100,16 +119,16 @@
 }
 
 .hv2-hero-subtitle {
-  font-size: 1rem;
+  max-width: 60ch;
+  font-size: 1.02rem;
   color: var(--text-secondary);
-  line-height: 1.55;
-  margin: 0.5rem 0 0;
-  max-width: 560px;
+  line-height: 1.65;
+  margin: 0.25rem 0 0;
 }
 
 .hv2-hero-actions {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
   flex-wrap: wrap;
   margin-top: var(--space-2);
 }
@@ -117,10 +136,40 @@
 .hv2-hero-meta {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   font-size: 0.8rem;
   color: var(--text-tertiary);
   margin-top: var(--space-1);
+}
+
+.hv2-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.hv2-hero-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+.hv2-hero-link span {
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hv2-hero-link:hover {
+  color: var(--primary);
 }
 
 /* ==========================================================================
@@ -732,6 +781,20 @@
   border: 1px dashed var(--border-default);
 }
 
+.hv2-empty--error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  font-style: normal;
+  color: var(--text-secondary);
+  border-style: solid;
+}
+
+.hv2-empty--error .hv2-btn {
+  font-style: normal;
+}
+
 /* ==========================================================================
    COMMUNITY CTA
    ========================================================================== */
@@ -808,7 +871,7 @@
 
 @media (max-width: 768px) {
   .hv2-container { padding: var(--space-6) var(--space-4) 0; gap: var(--space-8); }
-  .hv2-hero-title { font-size: 2.2rem; }
+  .hv2-hero-title { max-width: 10ch; font-size: 2.35rem; }
   .hv2-section-title { font-size: 1.3rem; }
   .hv2-card { min-width: 170px; width: 170px; }
   .hv2-scroll-btn { display: none; }
@@ -819,7 +882,10 @@
 
 @media (max-width: 480px) {
   .hv2-card { min-width: 150px; width: 150px; }
+  .hv2-hero-title { max-width: none; font-size: 2rem; }
   .hv2-hero-actions { flex-direction: column; align-items: stretch; width: 100%; }
+  .hv2-hero-actions .btn { width: 100%; justify-content: center; }
+  .hv2-hero-links { flex-direction: column; gap: var(--space-2); }
   .hv2-btn { width: 100%; justify-content: center; }
   .hv2-pillars-grid { grid-template-columns: 1fr; }
 }

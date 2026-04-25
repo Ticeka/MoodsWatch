@@ -22,8 +22,11 @@ export function preloadAppLanguage() {
 }
 
 export function scheduleDiscoverCatalogWarmup() {
+  // Avoid warming the entire catalog on cold start. At production scale this
+  // turns every new visitor into a multi-page canonical_titles fetch.
   const warmCatalog = () =>
-    import('@/features/discover/lib/recommend').then((module) => module.getAllTitles().catch(() => {}));
+    import('@/features/discover/api/discoverTitleCatalogApi')
+      .then((module) => module.getTrendingTitles(8, { showAdult: false }).catch(() => {}));
 
   if ('requestIdleCallback' in window) {
     requestIdleCallback(warmCatalog, { timeout: 5000 });

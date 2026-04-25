@@ -176,11 +176,11 @@ export function WatchlistProvider({ children }) {
               setIsTitleMetadataLoading(false);
             } else {
               setWatchlistTitles((current) => mergeMappedTitles(current, [], titleIds));
+              if (!cancelled) {
+                setIsTitleMetadataLoading(true);
+              }
               cancelIdleWork?.();
               cancelIdleWork = scheduleWhenIdle(async () => {
-                if (!cancelled) {
-                  setIsTitleMetadataLoading(true);
-                }
                 try {
                   for (let index = 0; index < titleIds.length; index += WATCHLIST_TITLE_HYDRATION_BATCH_SIZE) {
                     const batchIds = titleIds.slice(index, index + WATCHLIST_TITLE_HYDRATION_BATCH_SIZE);

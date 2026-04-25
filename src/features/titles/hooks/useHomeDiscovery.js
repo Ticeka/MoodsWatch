@@ -305,7 +305,6 @@ export function useHomeDiscovery({
     let cancelled = false;
 
     async function fetchInitial() {
-      getAllTitles().catch(() => {});
       try {
         const [nextTrending, homepageBlocks] = await Promise.all([
           getTrendingTitles(8, { showAdult }),

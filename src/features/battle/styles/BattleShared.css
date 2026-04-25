@@ -342,6 +342,7 @@
   padding-top: 0;
   max-width: 260px;
   width: 100%;
+  height: 100%;
   min-height: 576px;
 }
 
@@ -395,11 +396,12 @@
 }
 
 .battle-preset-art {
-  min-height: 164px;
+  height: 280px;
+  min-height: 280px;
   margin: 0 -1.1rem;
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
-  grid-template-rows: repeat(2, minmax(72px, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 0;
   padding: 0;
   overflow: hidden;
@@ -436,6 +438,8 @@
 .battle-preset-art-tile,
 .battle-preset-art-empty {
   position: relative;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   border-radius: 0;
   background: rgba(15, 23, 42, 0.7);
@@ -450,6 +454,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center top;
   display: block;
 }
 
@@ -480,6 +485,11 @@
   color: var(--text-primary);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  min-height: 2.5em;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .battle-preset-badge {
@@ -515,6 +525,11 @@
   line-height: 1.45;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  min-height: 1.45em;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
 .battle-preset-meta {
@@ -524,6 +539,9 @@
   min-height: 1.25rem;
   font-size: 0.82rem;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .battle-deck-card-body {

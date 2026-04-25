@@ -222,7 +222,7 @@ export const translations = {
     "suggestionAction": "Open the action tag",
     "suggestionPeople": "View profiles",
     "suggestionTierlists": "Try romance tier",
-    "searchPlaceholder": "e.g. Frieren, alice, romance tier, or action",
+    "searchPlaceholder": "Search titles, users, or tier lists...",
     "clearSearch": "Clear search",
     "searchLabel": "Search",
     "jumpToResults": "Jump to results",
@@ -279,6 +279,11 @@ export const translations = {
     "scopePeople": "People",
     "scopeTierlists": "Tier Lists",
     "typeTabsAria": "Content type tabs for discovery",
+    "filter": {
+      "type": "Type",
+      "mood": "Mood",
+      "year": "Year"
+    },
     "resultsToolbarAria": "Discovery results toolbar",
     "catalogLabel": "Catalog",
     "titleTypeLabel": "Title format",
