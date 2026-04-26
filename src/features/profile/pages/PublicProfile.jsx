@@ -12,12 +12,12 @@ import {
 } from '@/features/profile/lib/profilePageUtils';
 import { getTitleDisplayName, TOP_TITLE_TYPE_OPTIONS } from '@/features/profile/lib/profileStore';
 import {
-  createProfileNotification,
   createPublicProfileComment,
   fetchPublicProfileByUsername,
   fetchPublicProfileComments,
   fetchPublicProfileWatchStats,
   fetchWatchlistOverlap,
+  notifyProfileComment,
 } from '@/features/profile/api/publicProfileApi';
 import { FollowButton } from '@/features/social/components/FollowButton';
 import { FollowListModal } from '@/features/social/components/FollowListModal';
@@ -235,30 +235,8 @@ export function PublicProfile() {
 
   const getTypeLabel = (typeId) => PROFILE_TYPE_LABELS[typeId]?.[language] || typeId;
 
-  const fireProfileNotifications = (savedParentEntry) => {
-    const actorName = user?.profile?.name || user?.profile?.username || t('profile.publicCommentAnonymous');
-    const notifInserts = [];
-    if (profile.id !== user.id) {
-      notifInserts.push(createProfileNotification({
-        user_id: profile.id,
-        type: savedParentEntry ? 'comment_reply' : 'profile_comment',
-        reference_id: profile.username,
-        actor_user_id: user.id,
-        message: savedParentEntry
-          ? `${actorName} ${language === 'th' ? 'ตอบกลับคอมเมนต์บนโปรไฟล์ของคุณ' : 'replied to a comment on your profile'}`
-          : `${actorName} ${language === 'th' ? 'คอมเมนต์บนโปรไฟล์ของคุณ' : 'commented on your profile'}`,
-      }));
-    }
-    if (savedParentEntry?.author_user_id && savedParentEntry.author_user_id !== user.id && savedParentEntry.author_user_id !== profile.id) {
-      notifInserts.push(createProfileNotification({
-        user_id: savedParentEntry.author_user_id,
-        type: 'comment_reply',
-        reference_id: profile.username,
-        actor_user_id: user.id,
-        message: `${actorName} ${language === 'th' ? 'ตอบกลับคอมเมนต์ของคุณ' : 'replied to your comment'}`,
-      }));
-    }
-    if (notifInserts.length) Promise.allSettled(notifInserts);
+  const fireProfileNotifications = (commentId) => {
+    void notifyProfileComment({ commentId, language });
   };
 
   const submitComment = async (event) => {
@@ -290,7 +268,7 @@ export function PublicProfile() {
       setComments((current) => [...current, data]);
       setCommentDraft('');
       setCommentSuccess(t('profile.publicCommentSuccess'));
-      fireProfileNotifications(null);
+      fireProfileNotifications(data.id);
     } catch {
       setCommentError(t('profile.publicCommentSubmitFailed'));
     } finally {
@@ -316,7 +294,7 @@ export function PublicProfile() {
       setReplyDraft('');
       setActiveReplyId(null);
       setExpandedReplies((prev) => new Set([...prev, parentEntry.id]));
-      fireProfileNotifications(parentEntry);
+      fireProfileNotifications(data.id);
     } catch {
       setReplyError(t('profile.publicCommentSubmitFailed'));
     } finally {

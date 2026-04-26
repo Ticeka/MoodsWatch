@@ -93,6 +93,7 @@ async function loadTranslationMap(language) {
   return request;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getInitialLanguagePreference() {
   if (typeof window === 'undefined') {
     return 'en';
@@ -102,6 +103,7 @@ export function getInitialLanguagePreference() {
   return storedLanguage === 'th' ? 'th' : 'en';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function preloadTranslations(language) {
   await loadTranslationMap(language);
 }

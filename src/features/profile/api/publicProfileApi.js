@@ -104,12 +104,16 @@ export async function createPublicProfileComment({ profileUserId, authorUserId, 
   return data;
 }
 
-export async function createProfileNotification(payload) {
-  if (!supabase || !payload?.user_id) {
+export async function notifyProfileComment({ commentId, language = 'en' }) {
+  if (!supabase || !commentId) {
     return;
   }
 
-  const { error } = await supabase.from('notifications').insert(payload);
+  const { error } = await supabase.rpc('notify_profile_comment', {
+    p_comment_id: commentId,
+    p_language: language,
+  });
+
   if (error) {
     throw error;
   }

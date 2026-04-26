@@ -11,7 +11,6 @@ function normalizeSearchText(value) {
     .replace(/[×✕✖]/g, ' x ')
     .replace(/&/g, ' and ')
     .replace(/['’`´]/g, ' ')
-    .replace(/['’`´]/g, '')
     .replace(/[_./\\|:+;!?()[\]{}-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

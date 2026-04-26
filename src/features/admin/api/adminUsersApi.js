@@ -61,10 +61,10 @@ export async function updateAdminUserRole(userId, role) {
     throw new Error('Supabase client is not available');
   }
 
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({ role })
-    .eq('id', userId);
+  const { error } = await supabase.rpc('update_user_role', {
+    p_user_id: userId,
+    p_role: role,
+  });
 
   if (error) {
     throw error;

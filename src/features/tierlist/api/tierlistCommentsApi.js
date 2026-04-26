@@ -44,40 +44,13 @@ export async function createTierlistComment({ listId, userId, body, parentCommen
   return data;
 }
 
-export function notifyTierlistCommentParticipants({ listId, listOwnerId, actorUserId, actorName, parentEntry, pick }) {
-  if (!supabase || !listId || !actorUserId) {
+export function notifyTierlistCommentParticipants({ commentId, language = 'en' }) {
+  if (!supabase || !commentId) {
     return;
   }
 
-  const notifications = [];
-
-  if (listOwnerId && listOwnerId !== actorUserId) {
-    notifications.push(supabase.from('notifications').insert({
-      user_id: listOwnerId,
-      type: parentEntry ? 'comment_reply' : 'tierlist_comment',
-      reference_id: listId,
-      actor_user_id: actorUserId,
-      message: parentEntry
-        ? `${actorName} ${pick('ตอบกลับคอมเมนต์บน tierlist ของคุณ', 'replied to a comment on your tierlist')}`
-        : `${actorName} ${pick('คอมเมนต์บน tierlist ของคุณ', 'commented on your tierlist')}`,
-    }));
-  }
-
-  if (
-    parentEntry?.author_user_id
-    && parentEntry.author_user_id !== actorUserId
-    && parentEntry.author_user_id !== listOwnerId
-  ) {
-    notifications.push(supabase.from('notifications').insert({
-      user_id: parentEntry.author_user_id,
-      type: 'comment_reply',
-      reference_id: listId,
-      actor_user_id: actorUserId,
-      message: `${actorName} ${pick('ตอบกลับคอมเมนต์ของคุณ', 'replied to your comment')}`,
-    }));
-  }
-
-  if (notifications.length > 0) {
-    void Promise.allSettled(notifications);
-  }
+  void supabase.rpc('notify_tierlist_comment', {
+    p_comment_id: commentId,
+    p_language: language,
+  });
 }

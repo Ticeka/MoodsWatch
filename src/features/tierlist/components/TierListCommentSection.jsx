@@ -99,6 +99,8 @@ export function TierListCommentSection({ listId, listOwnerId, pick }) {
       setComments((current) => [...current, data]);
       setDraft('');
       notifyTierlistCommentParticipants({
+        commentId: data.id,
+        language: pick('th', 'en'),
         listId,
         listOwnerId,
         actorUserId: user.id,
@@ -141,6 +143,8 @@ export function TierListCommentSection({ listId, listOwnerId, pick }) {
       setActiveReplyId(null);
       setExpandedReplies((current) => new Set([...current, parentEntry.id]));
       notifyTierlistCommentParticipants({
+        commentId: data.id,
+        language: pick('th', 'en'),
         listId,
         listOwnerId,
         actorUserId: user.id,
