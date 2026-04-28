@@ -283,6 +283,160 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.tierlist-youtube-preview-card,
+.tierlist-youtube-playlist-preview {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+}
+
+.tierlist-youtube-preview-card {
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.tierlist-youtube-preview-thumb,
+.tierlist-youtube-playlist-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.tierlist-youtube-preview-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.tierlist-youtube-preview-copy strong,
+.tierlist-youtube-preview-copy span,
+.tierlist-youtube-playlist-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tierlist-youtube-preview-copy strong {
+  color: var(--text-primary);
+  font-size: 0.86rem;
+}
+
+.tierlist-youtube-preview-copy span,
+.tierlist-youtube-preview-copy small {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.tierlist-youtube-playlist-head {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.tierlist-youtube-status-row,
+.tierlist-youtube-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.tierlist-youtube-status,
+.tierlist-youtube-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: fit-content;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tierlist-youtube-status-ready,
+.tierlist-youtube-stat.is-ready {
+  color: color-mix(in srgb, var(--success-600, #15803d) 90%, var(--text-primary));
+}
+
+.tierlist-youtube-status-limited,
+.tierlist-youtube-status-unknown,
+.tierlist-youtube-stat.is-limited {
+  color: color-mix(in srgb, var(--warning-700, #b45309) 90%, var(--text-primary));
+}
+
+.tierlist-youtube-status-blocked,
+.tierlist-youtube-stat.is-blocked {
+  color: color-mix(in srgb, var(--danger) 82%, white);
+}
+
+.tierlist-youtube-alert {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.7rem;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.tierlist-youtube-alert.is-ok {
+  color: color-mix(in srgb, var(--success-600, #15803d) 90%, var(--text-primary));
+  background: color-mix(in srgb, var(--success-500, #22c55e) 11%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--success-500, #22c55e) 20%, transparent);
+}
+
+.tierlist-youtube-alert.is-warning {
+  color: color-mix(in srgb, var(--warning-700, #b45309) 92%, var(--text-primary));
+  background: color-mix(in srgb, var(--warning-500, #f59e0b) 12%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--warning-500, #f59e0b) 22%, transparent);
+}
+
+.tierlist-youtube-playlist-items {
+  display: grid;
+  border: 1px solid color-mix(in srgb, var(--border-default) 58%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tierlist-youtube-playlist-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.42rem 0.6rem;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+}
+
+.tierlist-youtube-playlist-row + .tierlist-youtube-playlist-row {
+  border-top: 1px solid color-mix(in srgb, var(--border-default) 52%, transparent);
+}
+
+.tierlist-youtube-playlist-row.is-blocked,
+.tierlist-youtube-playlist-row.is-unknown {
+  opacity: 0.62;
+}
+
+.tierlist-youtube-playlist-row img {
+  width: 42px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+.tierlist-youtube-preview-more {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
 .tierlist-picker-thumb {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -943,6 +1097,25 @@
   color: color-mix(in srgb, var(--danger) 78%, white);
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-secondary));
   border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.tierlist-chip.tierlist-chip-youtube-ready {
+  color: color-mix(in srgb, var(--success-600, #15803d) 92%, var(--text-primary));
+  background: color-mix(in srgb, var(--success-500, #22c55e) 14%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--success-500, #22c55e) 24%, transparent);
+}
+
+.tierlist-chip.tierlist-chip-youtube-limited,
+.tierlist-chip.tierlist-chip-youtube-unknown {
+  color: color-mix(in srgb, var(--warning-700, #b45309) 92%, var(--text-primary));
+  background: color-mix(in srgb, var(--warning-500, #f59e0b) 15%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--warning-500, #f59e0b) 24%, transparent);
+}
+
+.tierlist-chip.tierlist-chip-youtube-blocked {
+  color: color-mix(in srgb, var(--danger) 82%, white);
+  background: color-mix(in srgb, var(--danger) 13%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
 .tierlist-picker-card-title {

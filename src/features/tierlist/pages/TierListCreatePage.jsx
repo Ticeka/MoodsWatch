@@ -15,6 +15,13 @@ import {
   TierListCreateToolbar,
 } from '@/features/tierlist/components';
 import { useTierListCreateCoverEditor } from '@/features/tierlist/hooks';
+import { resolvePartyYoutubeUrl } from '@/features/party/api/partyRemoteApi';
+import {
+  getYoutubeAvailabilityReasonLabel,
+  getYoutubePlaybackLabel,
+  normalizeYoutubePlaylistPayload,
+  normalizeYoutubeVideoPayload,
+} from '@/features/party/lib/partyYoutube';
 import { buildTierListFromTemplate, createTemplateFromCatalog, cleanupDuplicateTierLists, findTierTemplate, loadTierLibrary, saveTierTemplate, seedPoolFromCatalog } from '@/features/tierlist/lib/tierlistStore';
 import { getDisplayName, getEntityModeSummary, matchesCharacterName, matchesSongQuery, matchesStatusFilter } from '@/features/tierlist/lib/tierlistLabels';
 import { fetchSongsForTitle, preloadSongsForTitle, splitByAdultFlag, toCustomTierEntity } from '@/features/tierlist/lib/tierlistBrowseHelpers';
@@ -23,42 +30,50 @@ import { useLanguage } from '@/shared/contexts/LanguageContext';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { CHARACTER_ENTITY_TYPE, TEXT_ENTITY_TYPE, THEME_SONG_ENTITY_TYPE, TITLE_ENTITY_TYPE, YOUTUBE_ENTITY_TYPE, normalizeCatalogEntityType } from '@/shared/lib/catalogEntities';
 import { generateTextTileImage } from '@/features/tierlist/lib/textTileCanvas';
-import { buildTrailerUrl, normalizeTrailer, parseTrailerUrl } from '@/shared/lib/trailers';
 import '../styles/TierList.css';
 
-const CUSTOM_YOUTUBE_TIMEOUT_MS = 5000;
+const CUSTOM_YOUTUBE_PREVIEW_MAX_ITEMS = 5000;
 
-async function fetchYoutubeVideoMetadata(url, timeoutMs = CUSTOM_YOUTUBE_TIMEOUT_MS) {
-  const parsed = parseTrailerUrl(url);
-  if (parsed?.site !== 'youtube' || !parsed?.videoId || typeof fetch !== 'function') {
-    return null;
-  }
+function makeCustomYoutubeItem(row, index = 0, { titleOverride = '', subtitleOverride = '' } = {}) {
+  const videoId = String(row?.provider_media_id || row?.providerMediaId || row?.videoId || '').trim();
+  const customId = -(Date.now() + Math.floor(Math.random() * 1000) + index);
+  const metadata = row?.metadata_json || row?.metadataJson || {};
+  const playlistTitle = String(metadata?.playlistTitle || '').trim();
+  const channelTitle = String(row?.artist_name || row?.artistName || metadata?.channelTitle || '').trim();
+  const watchUrl = row?.provider_url || row?.providerUrl || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+  const playbackStatus = String(row?.playback_status || row?.playbackStatus || 'unknown').trim() || 'unknown';
+  const availabilityReason = String(row?.availability_reason || row?.availabilityReason || metadata?.availabilityReason || playbackStatus || '').trim();
 
-  const watchUrl = buildTrailerUrl({ site: 'youtube', videoId: parsed.videoId }) || String(url || '').trim();
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  return {
+    id: customId,
+    title: String(titleOverride || row?.song_title || row?.songTitle || '').trim() || (videoId ? `YouTube ${videoId}` : `YouTube video ${index + 1}`),
+    subtitle: String(subtitleOverride || (channelTitle ? `YouTube · ${channelTitle}` : playlistTitle ? `YouTube · ${playlistTitle}` : 'YouTube')).trim(),
+    imageUrl: String(row?.cover_url || row?.coverUrl || '').trim(),
+    sourceUrl: watchUrl,
+    videoUrl: watchUrl,
+    artistName: channelTitle,
+    themeLabel: playlistTitle ? 'YouTube Playlist' : 'YouTube',
+    entityType: YOUTUBE_ENTITY_TYPE,
+    trailerSite: 'youtube',
+    trailerVideoId: videoId,
+    trailerThumbnailUrl: String(row?.cover_url || row?.coverUrl || '').trim(),
+    playbackStatus,
+    availabilityReason,
+    providerCollectionId: row?.provider_collection_id || row?.providerCollectionId || null,
+    sourceKind: row?.source_kind || row?.sourceKind || 'youtube_video',
+  };
+}
 
-  try {
-    const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`, {
-      signal: controller?.signal,
-    });
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = await response.json();
-    return {
-      title: String(payload?.title || '').trim(),
-      authorName: String(payload?.author_name || '').trim(),
-      thumbnailUrl: String(payload?.thumbnail_url || '').trim(),
-    };
-  } catch {
-    return null;
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  }
+function getYoutubeStatusCounts(items = []) {
+  return items.reduce((counts, item) => {
+    const status = String(item?.playbackStatus || 'unknown').toLowerCase();
+    counts.total += 1;
+    if (status === 'ready') counts.ready += 1;
+    else if (status === 'limited') counts.limited += 1;
+    else if (status === 'blocked') counts.blocked += 1;
+    else counts.unknown += 1;
+    return counts;
+  }, { total: 0, ready: 0, limited: 0, blocked: 0, unknown: 0 });
 }
 
 export function TierListCreatePage() {
@@ -90,6 +105,8 @@ export function TierListCreatePage() {
     title: '',
     subtitle: '',
   });
+  const [customVideoPreview, setCustomVideoPreview] = useState(null);
+  const [customVideoError, setCustomVideoError] = useState('');
   const [textDraft, setTextDraft] = useState('');
   const [textBgColor, setTextBgColor] = useState('#ffffff');
   const [textFgColor, setTextFgColor] = useState('#111111');
@@ -461,73 +478,102 @@ export function TierListCreatePage() {
       ...current,
       [field]: value,
     }));
+    if (field === 'url') {
+      setCustomVideoPreview(null);
+      setCustomVideoError('');
+    }
   };
 
-  const handleCreateCustomVideo = async () => {
+  const handlePreviewCustomVideo = async () => {
     const rawUrl = String(customVideoDraft.url || '').trim();
     if (!rawUrl) {
       toast.error(pick('วางลิงก์ YouTube ก่อน', 'Paste a YouTube link first'));
       return;
     }
 
-    const parsed = parseTrailerUrl(rawUrl);
-    if (parsed?.site !== 'youtube' || !parsed?.videoId) {
-      toast.error(pick('ตอนนี้รองรับลิงก์ YouTube เท่านั้น', 'Only YouTube links are supported right now'));
-      return;
-    }
-
     setIsSubmittingCustomVideo(true);
+    setCustomVideoError('');
+    setCustomVideoPreview(null);
     try {
-      const youtubeMetadata = await fetchYoutubeVideoMetadata(rawUrl);
-      const normalizedTrailer = normalizeTrailer({ trailer_url: rawUrl });
-      const title = String(customVideoDraft.title || '').trim() || youtubeMetadata?.title || `YouTube ${parsed.videoId}`;
-      const subtitle = String(customVideoDraft.subtitle || '').trim()
-        || (youtubeMetadata?.authorName ? `YouTube · ${youtubeMetadata.authorName}` : 'YouTube');
-      const imageUrl = youtubeMetadata?.thumbnailUrl || normalizedTrailer?.thumbnailUrl || '';
-
-      if (!imageUrl) {
-        toast.error(pick('ลิงก์นี้ยังสร้างภาพตัวอย่างไม่ได้ ลองเปลี่ยนลิงก์อีกอัน', 'This link could not produce a preview image. Try another YouTube URL.'));
+      const result = await resolvePartyYoutubeUrl(rawUrl, { maxItems: CUSTOM_YOUTUBE_PREVIEW_MAX_ITEMS });
+      if (result?.type === 'video' && result.video) {
+        setCustomVideoPreview({
+          type: 'video',
+          video: normalizeYoutubeVideoPayload(result.video, 0),
+        });
         return;
       }
-
-      const customId = -(Date.now() + Math.floor(Math.random() * 1000));
-      const item = {
-        id: customId,
-        title,
-        subtitle,
-        imageUrl,
-        sourceUrl: normalizedTrailer?.watchUrl || rawUrl,
-        videoUrl: normalizedTrailer?.watchUrl || rawUrl,
-        artistName: youtubeMetadata?.authorName || '',
-        themeLabel: 'YouTube',
-        entityType: YOUTUBE_ENTITY_TYPE,
-        trailerSite: normalizedTrailer?.site || 'youtube',
-        trailerVideoId: normalizedTrailer?.videoId || parsed.videoId,
-        trailerThumbnailUrl: imageUrl,
-      };
-
-      setCustomItems((prev) => [...prev, item]);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.add(Number(item.id));
-        return next;
-      });
-      setSelectedEntityCache((prev) => {
-        const next = new Map(prev);
-        next.set(Number(item.id), toCustomTierEntity(item, YOUTUBE_ENTITY_TYPE));
-        return next;
-      });
-      setCustomVideoDraft({
-        url: '',
-        title: '',
-        subtitle: '',
-      });
-      toast.success(pick('เพิ่มลิงก์ YouTube เข้า pool แล้ว', 'Added YouTube link to the pool'));
-    } catch {
-      toast.error(pick('เพิ่มลิงก์ YouTube ไม่สำเร็จ', 'Could not add this YouTube link'));
+      if (result?.type === 'playlist' && result.playlist) {
+        const { playlist, items } = normalizeYoutubePlaylistPayload(result.playlist, 0);
+        setCustomVideoPreview({
+          type: 'playlist',
+          playlist,
+          items,
+        });
+        return;
+      }
+      setCustomVideoError(pick('รูปแบบ URL ไม่รู้จัก', 'Unrecognised URL format.'));
+    } catch (error) {
+      const code = error?.code;
+      const message = code === 'invalid_url'
+        ? pick('URL ไม่ถูกต้อง กรุณาวาง YouTube link', 'Invalid URL. Please paste a YouTube link.')
+        : code === 'not_found'
+          ? pick('ไม่พบวิดีโอหรือเพลย์ลิสต์', 'Video or playlist not found.')
+          : code === 'quota_exceeded'
+            ? pick('โควต้า YouTube API หมด ลองใหม่ภายหลัง', 'YouTube API quota exceeded. Try again later.')
+            : error?.message || pick('โหลดข้อมูล YouTube ไม่สำเร็จ', 'Failed to load YouTube data.');
+      setCustomVideoError(message);
+      toast.error(message);
     } finally {
       setIsSubmittingCustomVideo(false);
     }
+  };
+
+  const importYoutubePreviewItems = (rows = []) => {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const rowsToImport = sourceRows.filter((row) => {
+      const status = String(row?.playback_status || row?.playbackStatus || '').toLowerCase();
+      return status === 'ready' || status === 'limited';
+    });
+    const existingVideoIds = new Set(
+      selectedCustomEntities
+        .map((entry) => String(entry?.trailer_video_id || '').trim())
+        .filter(Boolean)
+    );
+    const importedItems = rowsToImport
+      .filter((row) => !existingVideoIds.has(String(row?.provider_media_id || row?.providerMediaId || '').trim()))
+      .map((row, index) => makeCustomYoutubeItem(row, index, {
+        titleOverride: sourceRows.length === 1 ? customVideoDraft.title : '',
+        subtitleOverride: sourceRows.length === 1 ? customVideoDraft.subtitle : '',
+      }))
+      .filter((item) => item.trailerVideoId && item.imageUrl);
+
+    if (importedItems.length === 0) {
+      toast.error(pick('ไม่มีวิดีโอที่นำเข้าได้', 'No importable videos to add.'));
+      return;
+    }
+
+    setCustomItems((prev) => [...prev, ...importedItems]);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      importedItems.forEach((item) => next.add(Number(item.id)));
+      return next;
+    });
+    setSelectedEntityCache((prev) => {
+      const next = new Map(prev);
+      importedItems.forEach((item) => {
+        next.set(Number(item.id), toCustomTierEntity(item, YOUTUBE_ENTITY_TYPE));
+      });
+      return next;
+    });
+    setCustomVideoDraft({ url: '', title: '', subtitle: '' });
+    setCustomVideoPreview(null);
+    setCustomVideoError('');
+    const counts = getYoutubeStatusCounts(importedItems);
+    toast.success(pick(
+      `เพิ่ม ${counts.total} วิดีโอแล้ว · พร้อม ${counts.ready} · จำกัด ${counts.limited} · บล็อก ${counts.blocked}`,
+      `Added ${counts.total} videos · ready ${counts.ready} · limited ${counts.limited} · blocked ${counts.blocked}`
+    ));
   };
 
   const handleAddTextItem = () => {
@@ -624,6 +670,10 @@ export function TierListCreatePage() {
           trailerSite: entry.trailer_site || '',
           trailerVideoId: entry.trailer_video_id || '',
           trailerThumbnailUrl: entry.trailer_thumbnail_url || entry.cover || entry.image_url || '',
+          playbackStatus: entry.playback_status || '',
+          availabilityReason: entry.availability_reason || '',
+          providerCollectionId: entry.provider_collection_id || '',
+          sourceKind: entry.source_kind || '',
           ...(entry.textTileSize ? { textTileSize: entry.textTileSize } : {}),
         }));
       const catalogItems = entitiesToUse.filter((entry) => !entry?.isCustomTierItem);
@@ -859,6 +909,8 @@ export function TierListCreatePage() {
         coverStageRef={coverStageRef}
         customItemsCount={customItems.length}
         customVideoDraft={customVideoDraft}
+        customVideoError={customVideoError}
+        customVideoPreview={customVideoPreview}
         draftCoverImageOffsetX={draftCoverImageOffsetX}
         draftCoverImageOffsetY={draftCoverImageOffsetY}
         draftCoverPreviewStyle={draftCoverPreviewStyle}
@@ -881,7 +933,7 @@ export function TierListCreatePage() {
         onCatalogEntityTypeChange={handleCatalogEntityTypeChange}
         onCategoryChange={setCategory}
         onCloseCoverEditor={closeCoverEditor}
-        onCreateCustomVideo={handleCreateCustomVideo}
+        onCreateCustomVideo={handlePreviewCustomVideo}
         onCreate={handleCreate}
         onCoverPreviewPointerDown={handleCoverPreviewPointerDown}
         onCoverPreviewPointerMove={handleCoverPreviewPointerMove}
@@ -890,6 +942,7 @@ export function TierListCreatePage() {
         onCoverStageImageLoad={handleCoverStageImageLoad}
         onDraftCoverImageOffsetXChange={handleDraftCoverImageOffsetXChange}
         onDraftCoverImageOffsetYChange={handleDraftCoverImageOffsetYChange}
+        onImportYoutubePreviewItems={importYoutubePreviewItems}
         onRemoveSelectedPoolItem={removeSelectedPoolItem}
         onResetCoverPreviewFrame={resetCoverPreviewFrame}
         onSaveCoverPreviewFrame={saveCoverPreviewFrame}
@@ -900,6 +953,8 @@ export function TierListCreatePage() {
         onUploadPoolItems={handleUploadPoolItems}
         openCoverEditor={openCoverEditor}
         pick={pick}
+        youtubeAvailabilityReasonLabel={getYoutubeAvailabilityReasonLabel}
+        youtubePlaybackLabel={getYoutubePlaybackLabel}
         savedCoverPreviewStyle={savedCoverPreviewStyle}
         selectedItems={selectedItems}
         showAdult={showAdult}

@@ -122,6 +122,10 @@ export function normalizeCustomTierItems(items = []) {
       const trailerSite = String(item?.trailerSite ?? item?.trailer_site ?? '').trim();
       const trailerVideoId = String(item?.trailerVideoId ?? item?.trailer_video_id ?? '').trim();
       const trailerThumbnailUrl = String(item?.trailerThumbnailUrl ?? item?.trailer_thumbnail_url ?? imageUrl).trim();
+      const playbackStatus = String(item?.playbackStatus ?? item?.playback_status ?? '').trim();
+      const availabilityReason = String(item?.availabilityReason ?? item?.availability_reason ?? '').trim();
+      const providerCollectionId = String(item?.providerCollectionId ?? item?.provider_collection_id ?? '').trim();
+      const sourceKind = String(item?.sourceKind ?? item?.source_kind ?? '').trim();
 
       return {
         id,
@@ -136,6 +140,10 @@ export function normalizeCustomTierItems(items = []) {
         trailerSite,
         trailerVideoId,
         trailerThumbnailUrl,
+        playbackStatus,
+        availabilityReason,
+        providerCollectionId,
+        sourceKind,
       };
     })
     .filter((item) => item.imageUrl)

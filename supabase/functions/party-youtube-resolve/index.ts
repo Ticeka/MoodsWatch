@@ -184,10 +184,19 @@ function buildThumbnailUrl(thumbnails: Record<string, { url?: string }> | null, 
 function resolvePlaybackStatus(
   privacyStatus: string | null,
   embeddable: boolean | null,
+  contentDetails: Record<string, unknown> = {},
 ): { status: PlaybackStatus; reason: string | null } {
   if (privacyStatus === 'private') return { status: 'blocked', reason: 'private' }
   if (privacyStatus === 'unlisted') return { status: 'limited', reason: 'unlisted' }
   if (embeddable === false) return { status: 'limited', reason: 'embed_disabled' }
+  const contentRating = (contentDetails.contentRating || {}) as Record<string, unknown>
+  if (String(contentRating.ytRating || '').toLowerCase() === 'ytagerestricted') {
+    return { status: 'limited', reason: 'age_restricted' }
+  }
+  const regionRestriction = (contentDetails.regionRestriction || {}) as Record<string, unknown>
+  if (Array.isArray(regionRestriction.allowed) || Array.isArray(regionRestriction.blocked)) {
+    return { status: 'limited', reason: 'region_restricted' }
+  }
   if (privacyStatus === 'public' && embeddable !== false) return { status: 'ready', reason: null }
   return { status: 'unknown', reason: null }
 }
@@ -214,6 +223,7 @@ async function resolveVideo(videoId: string, apiKey: string): Promise<YoutubeVid
   const { status: playbackStatus, reason: availabilityReason } = resolvePlaybackStatus(
     String(status.privacyStatus || '').toLowerCase() || null,
     status.embeddable !== undefined ? Boolean(status.embeddable) : null,
+    contentDetails,
   )
 
   return {
@@ -258,6 +268,7 @@ async function batchFetchVideoDetails(
     const { status: playbackStatus, reason: availabilityReason } = resolvePlaybackStatus(
       String(status.privacyStatus || '').toLowerCase() || null,
       status.embeddable !== undefined ? Boolean(status.embeddable) : null,
+      contentDetails,
     )
     result.set(id, {
       durationSec: parseDuration(String(contentDetails.duration || '')),
@@ -343,8 +354,8 @@ async function resolvePlaylist(
       tags: Array.isArray(details?.tags) ? details.tags : [],
       thumbnailUrl: pi.thumbnailUrl,
       durationSec: details?.durationSec ?? null,
-      playbackStatus: details?.playbackStatus ?? 'unknown',
-      availabilityReason: details?.availabilityReason ?? null,
+      playbackStatus: details?.playbackStatus ?? 'blocked',
+      availabilityReason: details?.availabilityReason ?? 'not_found',
       embedUrl: `https://www.youtube.com/embed/${pi.videoId}`,
       watchUrl: `https://www.youtube.com/watch?v=${pi.videoId}`,
       playlistId,
@@ -419,7 +430,7 @@ Deno.serve(async (request) => {
     }
 
     // playlist
-    const maxItems = Math.min(Math.max(1, Number(body.maxItems || 100)), 200)
+    const maxItems = Math.min(Math.max(1, Number(body.maxItems || 100)), 5000)
     const pageToken = body.pageToken ? String(body.pageToken) : null
     const playlist = await resolvePlaylist(parsed.id, apiKey, maxItems, pageToken)
 

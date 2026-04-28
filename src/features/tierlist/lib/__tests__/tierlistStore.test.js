@@ -230,6 +230,7 @@ vi.mock('@/shared/lib/catalogEntities', () => ({
   TITLE_ENTITY_TYPE: 'title',
   CHARACTER_ENTITY_TYPE: 'character',
   THEME_SONG_ENTITY_TYPE: 'theme_song',
+  YOUTUBE_ENTITY_TYPE: 'youtube',
   normalizeCatalogEntityType: (value) => (value ? String(value) : 'title'),
 }), { virtual: true });
 

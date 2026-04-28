@@ -38,6 +38,10 @@ export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
     const videoUrl = String(item?.videoUrl || item?.sourceUrl || '');
     const themeLabel = String(item?.themeLabel || item?.role || 'YouTube');
     const artistName = String(item?.artistName || '');
+    const playbackStatus = String(item?.playbackStatus || item?.playback_status || '').trim();
+    const availabilityReason = String(item?.availabilityReason || item?.availability_reason || '').trim();
+    const providerCollectionId = String(item?.providerCollectionId || item?.provider_collection_id || '').trim();
+    const sourceKind = String(item?.sourceKind || item?.source_kind || '').trim();
 
     return {
       id: Number(item?.id),
@@ -59,6 +63,10 @@ export function toCustomTierEntity(item, entityType = TITLE_ENTITY_TYPE) {
       artist_name: artistName,
       theme_label: themeLabel,
       role: themeLabel,
+      playback_status: playbackStatus,
+      availability_reason: availabilityReason,
+      provider_collection_id: providerCollectionId,
+      source_kind: sourceKind,
       isCustomTierItem: true,
     };
   }

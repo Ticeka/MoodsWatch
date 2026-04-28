@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { AlertTriangle, CheckCircle, Loader2, Plus, Search, XCircle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { CREATE_CATEGORY_OPTIONS, ENTITY_TYPE_OPTIONS } from '@/features/tierlist/constants';
 import { TierListCreateCoverEditorPanel } from './TierListCreateCoverEditorPanel';
@@ -22,6 +23,8 @@ export function TierListCreateToolbar({
   coverStageRef,
   customItemsCount,
   customVideoDraft,
+  customVideoError,
+  customVideoPreview,
   draftCoverImageOffsetX,
   draftCoverImageOffsetY,
   draftCoverPreviewStyle,
@@ -52,6 +55,7 @@ export function TierListCreateToolbar({
   onCoverStageImageLoad,
   onDraftCoverImageOffsetXChange,
   onDraftCoverImageOffsetYChange,
+  onImportYoutubePreviewItems,
   onRemoveSelectedPoolItem,
   onResetCoverPreviewFrame,
   onSaveCoverPreviewFrame,
@@ -62,12 +66,124 @@ export function TierListCreateToolbar({
   onUploadPoolItems,
   openCoverEditor,
   pick,
+  youtubeAvailabilityReasonLabel,
+  youtubePlaybackLabel,
   savedCoverPreviewStyle,
   selectedItems,
   showAdult,
   templateDesc,
   templateName,
 }) {
+  const renderYoutubeStatusBadge = (status) => {
+    const normalized = ['ready', 'limited', 'blocked'].includes(String(status || '').toLowerCase())
+      ? String(status).toLowerCase()
+      : 'unknown';
+    const Icon = normalized === 'ready' ? CheckCircle : normalized === 'blocked' ? XCircle : AlertTriangle;
+    return (
+      <span className={`tierlist-youtube-status tierlist-youtube-status-${normalized}`}>
+        <Icon size={12} />
+        {youtubePlaybackLabel(normalized, pick)}
+      </span>
+    );
+  };
+
+  const renderYoutubePreview = () => {
+    if (!customVideoPreview) {
+      return null;
+    }
+
+    if (customVideoPreview.type === 'video') {
+      const video = customVideoPreview.video;
+      const status = video?.playback_status || 'unknown';
+      const canImportVideo = status === 'ready' || status === 'limited';
+      const reason = youtubeAvailabilityReasonLabel(video?.metadata_json?.availabilityReason || status, pick);
+      return (
+        <div className="tierlist-youtube-preview-card">
+          {video?.cover_url ? <img src={video.cover_url} alt="" className="tierlist-youtube-preview-thumb" /> : null}
+          <div className="tierlist-youtube-preview-copy">
+            <strong>{video?.song_title || pick('ไม่ทราบชื่อ', 'Unknown title')}</strong>
+            <span>{video?.artist_name || 'YouTube'}</span>
+            <div className="tierlist-youtube-status-row">{renderYoutubeStatusBadge(status)}</div>
+            {status !== 'ready' ? <small>{reason}</small> : null}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => onImportYoutubePreviewItems([video])}
+            disabled={!canImportVideo}
+          >
+            <Plus size={14} /> {pick('เพิ่ม', 'Add')}
+          </Button>
+        </div>
+      );
+    }
+
+    const playlist = customVideoPreview.playlist || {};
+    const items = Array.isArray(customVideoPreview.items) ? customVideoPreview.items : [];
+    const ready = items.filter((item) => item.playback_status === 'ready').length;
+    const limited = items.filter((item) => item.playback_status === 'limited').length;
+    const blocked = items.filter((item) => item.playback_status === 'blocked').length;
+    const unknown = items.filter((item) => !['ready', 'limited', 'blocked'].includes(String(item.playback_status || ''))).length;
+    const playable = ready + limited;
+
+    return (
+      <div className="tierlist-youtube-playlist-preview">
+        <div className="tierlist-youtube-playlist-head">
+          {playlist.thumbnailUrl ? <img src={playlist.thumbnailUrl} alt="" className="tierlist-youtube-playlist-cover" /> : null}
+          <div className="tierlist-youtube-preview-copy">
+            <strong>{playlist.title || pick('YouTube Playlist', 'YouTube Playlist')}</strong>
+            <span>{playlist.channelTitle || 'YouTube'}</span>
+            <div className="tierlist-youtube-status-row">
+              <span className="tierlist-youtube-stat is-ready"><CheckCircle size={12} /> Ready {ready}</span>
+              {limited > 0 ? <span className="tierlist-youtube-stat is-limited"><AlertTriangle size={12} /> Limited {limited}</span> : null}
+              {blocked > 0 ? <span className="tierlist-youtube-stat is-blocked"><XCircle size={12} /> Blocked {blocked}</span> : null}
+              {unknown > 0 ? <span className="tierlist-youtube-stat is-blocked"><XCircle size={12} /> Unknown {unknown}</span> : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={`tierlist-youtube-alert${blocked > 0 || unknown > 0 || limited > 0 ? ' is-warning' : ' is-ok'}`}>
+          {blocked > 0 || unknown > 0 || limited > 0 ? <AlertTriangle size={15} /> : <CheckCircle size={15} />}
+          <span>
+            {pick(
+              `ตรวจแล้ว ${items.length} วิดีโอ: นำเข้าได้ ${playable}, บล็อก/ไม่ทราบ ${blocked + unknown}`,
+              `Checked ${items.length} videos: importable ${playable}, blocked/unknown ${blocked + unknown}`
+            )}
+          </span>
+        </div>
+
+        <div className="tierlist-youtube-playlist-items">
+          {items.slice(0, 8).map((item, index) => {
+            const status = item.playback_status || 'unknown';
+            return (
+              <div key={item.provider_media_id || index} className={`tierlist-youtube-playlist-row is-${status}`}>
+                {item.cover_url ? <img src={item.cover_url} alt="" /> : null}
+                <span>{item.song_title || `YouTube ${index + 1}`}</span>
+                {renderYoutubeStatusBadge(status)}
+              </div>
+            );
+          })}
+          {items.length > 8 ? (
+            <p className="tierlist-youtube-preview-more">+{items.length - 8} {pick('เพิ่มเติม', 'more')}</p>
+          ) : null}
+        </div>
+
+        <div className="tierlist-youtube-import-actions">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => onImportYoutubePreviewItems(items)}
+            disabled={playable === 0}
+          >
+            <Plus size={14} />
+            {pick(`นำเข้าที่ใช้ได้ ${playable}`, `Import importable ${playable}`)}
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section className="container tierlist-create-toolbar-shell tierlist-create-rail">
       <div className="tierlist-toolbar glass-heavy tierlist-create-toolbar">
@@ -157,8 +273,8 @@ export function TierListCreateToolbar({
           {isYoutubeMode ? (
             <div className="tierlist-create-video-link-panel">
               <div className="tierlist-create-external-head">
-                <strong>{pick('เพิ่มลิงก์ YouTube', 'Add YouTube Link')}</strong>
-                <span>{pick('วางลิงก์เพลงจาก YouTube เพื่อสร้างการ์ดในพูลและกดฟังตอนจัดอันดับได้เลย', 'Paste a YouTube song link to create a pool card that you can preview while ranking.')}</span>
+                <strong>{pick('เพิ่มลิงก์ YouTube / เพลย์ลิสต์', 'Add YouTube Link / Playlist')}</strong>
+                <span>{pick('วางลิงก์วิดีโอหรือเพลย์ลิสต์ YouTube ระบบจะนำเข้าทุกวิดีโอที่ดึงได้และเช็กสถานะพร้อมเล่น จำกัด หรือบล็อก', 'Paste a YouTube video or playlist link. The app imports every fetched video and checks ready, limited, or blocked status.')}</span>
               </div>
               <div className="tierlist-create-video-link-grid">
                 <label className="tierlist-field">
@@ -169,7 +285,7 @@ export function TierListCreateToolbar({
                     placeholder="https://www.youtube.com/watch?v=..."
                     disabled={isSubmittingCustomVideo || isSaving}
                   />
-                  <small>{pick('รองรับ watch, youtu.be, shorts และ live', 'Supports watch, youtu.be, shorts, and live URLs')}</small>
+                  <small>{pick('รองรับ watch, youtu.be, shorts, live และ playlist/list', 'Supports watch, youtu.be, shorts, live, and playlist/list URLs')}</small>
                 </label>
               </div>
               <div className="tierlist-toolbar-actions">
@@ -178,9 +294,24 @@ export function TierListCreateToolbar({
                   onClick={onCreateCustomVideo}
                   disabled={isSubmittingCustomVideo || isSaving || !String(customVideoDraft.url || '').trim()}
                 >
-                  {isSubmittingCustomVideo ? pick('กำลังเพิ่มลิงก์...', 'Adding link...') : pick('เพิ่มลิงก์เข้า pool', 'Add link to pool')}
+                  {isSubmittingCustomVideo ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> {pick('กำลังตรวจ...', 'Checking...')}
+                    </>
+                  ) : (
+                    <>
+                      <Search size={14} /> {pick('ดูตัวอย่าง', 'Preview')}
+                    </>
+                  )}
                 </Button>
               </div>
+              {customVideoError ? (
+                <div className="tierlist-youtube-alert is-warning">
+                  <AlertTriangle size={15} />
+                  <span>{customVideoError}</span>
+                </div>
+              ) : null}
+              {renderYoutubePreview()}
             </div>
           ) : null}
           <TierListCreateCoverEditorPanel

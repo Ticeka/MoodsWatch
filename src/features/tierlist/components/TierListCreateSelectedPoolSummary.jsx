@@ -2,6 +2,21 @@ import React from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 
+function getPlaybackStatusLabel(status, pick) {
+  switch (String(status || '').toLowerCase()) {
+    case 'ready':
+      return pick('พร้อมเล่น', 'Ready');
+    case 'limited':
+      return pick('จำกัด', 'Limited');
+    case 'blocked':
+      return pick('บล็อก', 'Blocked');
+    case 'unknown':
+      return pick('ไม่ทราบ', 'Unknown');
+    default:
+      return '';
+  }
+}
+
 export function TierListCreateSelectedPoolSummary({
   customItemsCount,
   getArtworkSource,
@@ -29,6 +44,9 @@ export function TierListCreateSelectedPoolSummary({
                   ? pick('นำเข้าจาก YouTube', 'Imported from YouTube')
                   : pick('อิมพอร์ตจากข้างนอก', 'Imported from outside'))
               : getMetaLine(entry) || pick('เลือกจากคลังในเว็บ', 'Selected from the site catalog');
+            const playbackLabel = entry?.trailer_site === 'youtube'
+              ? getPlaybackStatusLabel(entry?.playback_status, pick)
+              : '';
             return (
               <article key={`selected-pool-${entry.id}`} className="tierlist-create-summary-item">
                 <div className="tierlist-create-summary-thumb">
@@ -42,6 +60,11 @@ export function TierListCreateSelectedPoolSummary({
                         : pick('จากเว็บ', 'Catalog')}
                     </span>
                     {entry?.is_adult ? <span className="tierlist-chip tierlist-chip-adult">18+</span> : null}
+                    {playbackLabel ? (
+                      <span className={`tierlist-chip tierlist-chip-youtube-${entry.playback_status || 'unknown'}`}>
+                        {playbackLabel}
+                      </span>
+                    ) : null}
                   </div>
                   <strong>{getDisplayName(entry)}</strong>
                   <span>{metaLine}</span>
