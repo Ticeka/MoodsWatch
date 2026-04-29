@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Copy,
   LibrarySquare,
-  Link2,
   Loader2,
   Sparkles,
   TimerReset,
@@ -85,7 +83,7 @@ import { PartyVoteRoomView } from '../components/PartyVoteRoomView';
 import { PartyTierlistRoomView } from '../components/PartyTierlistRoomView';
 import '../styles/Party.css';
 
-const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 300;
+const PARTY_LOBBY_AUTOSAVE_DELAY_MS = 900;
 
 function mapBattleDeckToPartyPool(deck = {}) {
   const titles = Array.isArray(deck?.titles) ? deck.titles : [];
@@ -579,7 +577,7 @@ export function PartyRoomPage() {
   const draftClipTimeOptions = isDraftTitleGuessMode
     ? [4, 5, 6, 7, 8, 10, 12, 15]
     : draftSupportsLongClipTime
-      ? [8, 10, 12, 15, 20, 30, 45, 60, 90, 120, 150, 180]
+      ? [8, 10, 15, 20, 30]
       : [8, 10, 12, 15, 20];
   const draftSongPoolSelectValue = roomSettingsDraft.songPresetId
     ? `preset:${roomSettingsDraft.songPresetId}`
@@ -1366,16 +1364,9 @@ export function PartyRoomPage() {
         setSelectedTemplateIntent(null);
       }
 
-      if (room?.id) {
-        void broadcastPartyRoomEvent(room.id, {
-          type: 'SETTINGS_PREVIEW',
-          settings: nextSettings,
-        });
-      }
-
       return nextSettings;
     });
-  }, [room?.id, selectedTemplateIntent]);
+  }, [selectedTemplateIntent]);
 
   const handleResetRoomSettingsDraft = React.useCallback(() => {
     if (!room?.settings) {
@@ -1593,29 +1584,6 @@ export function PartyRoomPage() {
     }
   };
 
-  const handleCopyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(String(room?.room_code || roomCode || ''));
-      toast.success(pick('คัดลอกรหัสห้องแล้ว', 'Room code copied'));
-    } catch {
-      toast.error(pick('คัดลอกรหัสห้องไม่สำเร็จ', 'Could not copy the room code'));
-    }
-  };
-
-  const handleCopyRoomLink = async () => {
-    try {
-      const resolvedCode = String(room?.room_code || roomCode || '').trim();
-      const roomPath = `/party/room/${resolvedCode}`;
-      const roomLink = typeof window !== 'undefined'
-        ? new URL(roomPath, window.location.origin).toString()
-        : roomPath;
-      await navigator.clipboard.writeText(roomLink);
-      toast.success(pick('คัดลอกลิงก์ห้องแล้ว', 'Room link copied'));
-    } catch {
-      toast.error(pick('คัดลอกลิงก์ห้องไม่สำเร็จ', 'Could not copy the room link'));
-    }
-  };
-
   const handleRematch = async () => {
     if (!room || !isHost) {
       return;
@@ -1658,44 +1626,6 @@ export function PartyRoomPage() {
     } catch (error) {
       toast.error(getPartyBackendHint(error, pick));
     } finally {
-      setBusyAction('');
-    }
-  };
-
-  const handleLeaveRoom = async () => {
-    if (!room || !currentMember?.member_token) {
-      navigate('/party');
-      return;
-    }
-
-    try {
-      setBusyAction('leave');
-      leavingRoomRef.current = true;
-      const result = await leavePartyRoom({
-        room,
-        memberToken: currentMember.member_token,
-      });
-      if (result?.roomClosed) {
-        applyEvent({
-          type: 'ROOM_CLOSED',
-          payload: {
-            room: result.room,
-          },
-        });
-      } else {
-        applyEvent({
-          type: 'MEMBER_REMOVED',
-          payload: {
-            memberToken: currentMember.member_token,
-          },
-        });
-      }
-      toast.success(pick('ออกจากห้องแล้ว', 'Left the room'));
-      navigate('/party');
-    } catch (error) {
-      toast.error(getPartyBackendHint(error, pick));
-    } finally {
-      leavingRoomRef.current = false;
       setBusyAction('');
     }
   };
@@ -1785,31 +1715,6 @@ export function PartyRoomPage() {
 
   return (
     <div className="party-page">
-      <div className="party-room-hud">
-        <div className="party-room-hud-title">
-          <h1>{pick('ห้อง', 'Room')} {room.room_code}</h1>
-          <p>{pick(currentPreset.labelTh, currentPreset.label)} | {pick(selectedPoolNameTh, selectedPoolName)}</p>
-        </div>
-        <div className="party-room-hud-actions">
-          <button type="button" className="party-code-btn" onClick={handleCopyRoomLink}>
-            <Link2 size={14} />
-            {pick('คัดลอกลิงก์', 'Copy link')}
-          </button>
-          <button type="button" className="party-code-btn" onClick={handleCopyCode}>
-            <Copy size={14} />
-            {pick('คัดลอกรหัส', 'Copy code')}
-          </button>
-          <button
-            type="button"
-            className="party-code-btn subtle"
-            onClick={handleLeaveRoom}
-            disabled={busyAction === 'leave'}
-          >
-            {busyAction === 'leave' ? <Loader2 size={14} className="spin" /> : null}
-            {pick('ออกจากห้อง', 'Leave room')}
-          </button>
-        </div>
-      </div>
       <section className="party-room-shell">
         <PartyAutoAdvance
           isHost={isHost}

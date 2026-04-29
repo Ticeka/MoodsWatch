@@ -245,13 +245,13 @@ describe('partyEngine', () => {
     expect(settings.revealSec).toBe(8);
   });
 
-  it('allows longer clip windows for vote battle playback', () => {
+  it('caps vote battle preview windows at 30 seconds', () => {
     const settings = createPartySettings({
       modeType: 'vote',
       timePerRoundSec: 90,
     });
 
-    expect(settings.timePerRoundSec).toBe(90);
+    expect(settings.timePerRoundSec).toBe(30);
   });
 
   it('defaults vote playback mode to preview and accepts full clip mode', () => {

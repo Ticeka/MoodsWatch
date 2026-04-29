@@ -71,7 +71,7 @@ export function PartyCard({ template, onClick }) {
   const templateName = (language === 'th' ? template.nameTh : null) || template.name;
 
   return (
-    <div className="hv2-card" onClick={onClick}>
+    <div className="hv2-card hv2-card--game hv2-card--party" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
           ? <img src={coverUrl} alt={templateName} loading="lazy" decoding="async" draggable={false} />
@@ -101,7 +101,7 @@ export function BattleCard({ deck, onClick }) {
   const ownerName = deck.ownerDisplayName || pick('คอมมูนิตี้', 'Community');
 
   return (
-    <div className="hv2-card" onClick={onClick}>
+    <div className="hv2-card hv2-card--game hv2-card--battle" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
           ? <img src={coverUrl} alt={name} loading="lazy" decoding="async" draggable={false} />
@@ -131,7 +131,7 @@ export function TierlistCard({ template, onClick }) {
   const subtitle = String(firstCustomItem?.subtitle || firstCustomItem?.artistName || '').trim()
     || getTierlistCategoryLabel(template?.category, pick);
   return (
-    <div className="hv2-card" onClick={onClick}>
+    <div className="hv2-card hv2-card--game hv2-card--tierlist" onClick={onClick}>
       <div className="hv2-card-img">
         {coverUrl
           ? (
@@ -141,7 +141,6 @@ export function TierlistCard({ template, onClick }) {
               loading="lazy"
               decoding="async"
               draggable={false}
-              style={{ objectFit: template.previewArtworkFit || 'cover', objectPosition: template.previewArtworkPosition || 'center' }}
             />
           )
           : <div className="hv2-placeholder hv2-placeholder--tierlist" aria-hidden="true" />

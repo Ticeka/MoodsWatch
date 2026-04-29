@@ -1,8 +1,6 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ChevronRight,
-  TrendingUp,
   Disc3,
   Swords,
   ListOrdered,
@@ -11,11 +9,10 @@ import {
   Bookmark,
   Clock,
   Users,
-  Flame,
   ArrowRight,
   Heart,
-  Film,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import { useAgeGate } from '@/shared/contexts/AgeGateContext';
 import { useLanguage } from '@/shared/contexts/LanguageContext';
@@ -52,7 +49,7 @@ function Section({ title, subtitle, eyebrow, accent, icon: Icon, seeAllHref, see
         </div>
         {seeAllHref && (
           <button className="hv2-see-all" onClick={() => navigate(seeAllHref)}>
-            {seeAllLabel} <ChevronRight size={14} />
+            {seeAllLabel} <ArrowRight size={12} />
           </button>
         )}
       </div>
@@ -82,34 +79,58 @@ function ErrorState({ text, retryLabel, onRetry }) {
    HERO — clear value proposition + dual CTA + floating preview card
    ═══════════════════════════════════════════════════════════════════════════ */
 
+function getTitleTypeLabel(type, pick) {
+  if (type === 'anime') return pick('อนิเมะ', 'Anime');
+  if (type === 'manga') return pick('มังงะ', 'Manga');
+  if (type === 'manhwa') return pick('มันฮวา', 'Manhwa');
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : pick('เรื่องแนะนำ', 'Title');
+}
+
 export function HeroBanner() {
   const { heroBlock } = useHeroBlock();
+  const { showAdult } = useAgeGate();
+  const { trendingTitles } = useTrendingSection(showAdult);
   const navigate = useNavigate();
-  const { pick } = useLanguage();
+  const { language, pick } = useLanguage();
 
   const subtitle =
     heroBlock?.subtitle ||
     pick(
-      'ค้นหาเรื่องจากอารมณ์ เก็บลิสต์ดูต่อแบบฉลาด ดวลรสนิยมกับเพื่อน และจัดอันดับทุกเรื่องที่รักได้ในที่เดียว',
-      'Discover titles by mood, keep a smart watchlist, battle taste with friends, and rank everything you love - all in one place.',
+      'ค้นหาเรื่องจากอารมณ์ เก็บลิสต์ดูต่อแบบฉลาด ดวลรสนิยมกับเพื่อน และจัดอันดับทุกเรื่องที่รักไว้ในที่เดียว',
+      'Find titles by mood, keep a smart watchlist, battle taste with friends, and rank everything you love — all in one place.',
     );
 
   const today = new Date();
   const dateLabel = today.toLocaleDateString(pick('th-TH', 'en-US'), { weekday: 'short', month: 'short', day: 'numeric' });
-  const feelingWord = pick('รู้สึก', 'feeling');
+
+  // Spotlight: pull from top trending title (real data only — no design fillers).
+  const spotlightTitle = trendingTitles?.[0];
+  const spotlightCover = spotlightTitle?.cover || spotlightTitle?.cover_image || '';
+  const spotlightName = spotlightTitle
+    ? ((language === 'th' && spotlightTitle.title_th) ? spotlightTitle.title_th : (spotlightTitle.title_en || spotlightTitle.canonicalTitle || spotlightTitle.canonical_title || ''))
+    : '';
+  const spotlightTypeLabel = getTitleTypeLabel(spotlightTitle?.type, pick);
+  const spotlightYear = spotlightTitle?.year || spotlightTitle?.release_year || null;
+  const rawScore = spotlightTitle?.score ?? spotlightTitle?.avg_score ?? null;
+  const spotlightScore = (typeof rawScore === 'number' && rawScore > 0)
+    ? (rawScore > 10 ? (rawScore / 10).toFixed(1) : rawScore.toFixed(1))
+    : null;
+  const spotlightHref = spotlightTitle?.slug ? `/title/${spotlightTitle.slug}` : '/discover';
+  const showSpotlight = Boolean(spotlightTitle && spotlightCover);
 
   return (
-    <section className="hv2-hero">
+    <section className={`hv2-hero${showSpotlight ? '' : ' hv2-hero--single'}`}>
+      <div className="hv2-hero-bg" aria-hidden="true" />
       <div className="hv2-hero-inner">
         <span className="hv2-hero-badge">
-          <Sparkles size={12} aria-hidden="true" />
           {pick('เริ่มจากอารมณ์ของคุณ', 'Start with your mood')}
         </span>
-        <div className="hv2-hero-eyebrow">{dateLabel}</div>
+        <div className="hv2-hero-eyebrow">{dateLabel.toUpperCase()}</div>
         <h1 className="hv2-hero-title">
-          <span>{pick('วันนี้คุณ', 'What are you')}</span>
+          <span>{pick('วันนี้คุณรู้สึก', 'What are you')}</span>
           <span>
-            <em className="hv2-gradient-word">{feelingWord}</em> {pick('ยังไง?', 'today?')}
+            <em className="hv2-gradient-word">{pick('แบบไหน', 'feeling')}</em>
+            {pick(' ?', ' tonight?')}
           </span>
         </h1>
         <p className="hv2-hero-subtitle">{subtitle}</p>
@@ -120,26 +141,44 @@ export function HeroBanner() {
           <Button
             size="lg"
             variant="secondary"
-            iconRight={<ChevronRight size={16} />}
+            iconRight={<ArrowRight size={16} />}
             onClick={() => navigate('/party/templates')}
           >
             {pick('เล่นกับเพื่อน', 'Play with friends')}
           </Button>
         </div>
         <div className="hv2-hero-meta">
-          <Film size={13} /> {pick('อนิเมะ · หนัง · ซีรีส์ · K-drama · มังงะ', 'Anime · Movies · Series · K-drama · Manga')}
-        </div>
-        <div className="hv2-hero-links" aria-label={pick('ลิงก์ลัดหน้าแรก', 'Homepage shortcuts')}>
-          <Link to="/discover" className="hv2-hero-link">
-            <span>{pick('สำรวจ', 'Explore')}</span>
-            {pick('เปิด Discover', 'Open Discover')}
-          </Link>
-          <Link to="/watchlist" className="hv2-hero-link">
-            <span>{pick('ลิสต์ของคุณ', 'Your list')}</span>
-            {pick('ไปที่ Watchlist', 'Go to Watchlist')}
-          </Link>
+          {pick('อนิเมะ · หนัง · ซีรีส์ · K-drama · มังงะ', 'Anime · Movies · Series · K-drama · Manga')}
         </div>
       </div>
+
+      {showSpotlight && (
+        <button
+          type="button"
+          className="hv2-hero-spotlight"
+          onClick={() => navigate(spotlightHref)}
+          aria-label={pick(`เปิด ${spotlightName}`, `Open ${spotlightName}`)}
+        >
+          <img className="hv2-hero-spotlight-img" src={spotlightCover} alt={spotlightName} loading="lazy" />
+          <span className="hv2-spotlight-tag">
+            <span className="hv2-spotlight-tag-dot" />
+            {pick('กำลังมาแรง', 'Trending now')}
+          </span>
+          {spotlightScore && (
+            <span className="hv2-spotlight-rating">
+              <Star size={11} aria-hidden="true" />
+              {spotlightScore}
+            </span>
+          )}
+          <span className="hv2-spotlight-play" aria-hidden="true">
+            <Play size={22} />
+          </span>
+          <div className="hv2-spotlight-title">{spotlightName}</div>
+          <div className="hv2-spotlight-meta">
+            {[spotlightYear, spotlightTypeLabel].filter(Boolean).join(' · ')}
+          </div>
+        </button>
+      )}
     </section>
   );
 }
@@ -166,22 +205,20 @@ export function MoodQuickChips() {
     <section className="hv2-moods">
       <div className="hv2-moods-head">
         <span className="hv2-moods-label">{pick('ตอนนี้อารมณ์ไหน?', "What's your mood?")}</span>
-        <button className="hv2-moods-link" onClick={() => navigate('/discover')}>
-          {pick('ดูทุกมู้ด', 'All moods')} <ChevronRight size={14} />
+      </div>
+      {MOOD_CHIPS.map((m) => (
+        <button
+          key={m.label}
+          className="hv2-mood-chip"
+          onClick={() => navigate(`/discover?mood=${encodeURIComponent(m.slug)}`)}
+        >
+          <span className="hv2-mood-emoji">{m.emoji}</span>
+          <span>{language === 'th' ? m.labelTh : m.label}</span>
         </button>
-      </div>
-      <div className="hv2-moods-row">
-        {MOOD_CHIPS.map((m) => (
-          <button
-            key={m.label}
-            className="hv2-mood-chip"
-            onClick={() => navigate(`/discover?mood=${encodeURIComponent(m.slug)}`)}
-          >
-            <span className="hv2-mood-emoji">{m.emoji}</span>
-            <span>{language === 'th' ? m.labelTh : m.label}</span>
-          </button>
-        ))}
-      </div>
+      ))}
+      <button className="hv2-moods-link" onClick={() => navigate('/discover')}>
+        {pick('ดูทุกมู้ด', 'All moods')} <ArrowRight size={12} />
+      </button>
     </section>
   );
 }
@@ -198,7 +235,8 @@ export function FeaturePillars() {
       key: 'discover',
       icon: Compass,
       title: pick('ค้นหา', 'Discover'),
-      blurb: pick('หาเรื่องที่ตรงกับอารมณ์ของคุณตอนนี้', 'Find stories that match how you feel right now.'),
+      blurb: pick('หาเรื่องที่ตรงกับอารมณ์ของคุณตอนนี้ ไม่ใช่สิ่งที่อัลกอริทึมเดา', "Stories that match exactly how you feel right now — not what an algorithm thinks you watched."),
+      cta: pick('สำรวจ', 'Explore'),
       href: '/discover',
       accent: 'indigo',
     },
@@ -206,7 +244,8 @@ export function FeaturePillars() {
       key: 'watchlist',
       icon: Bookmark,
       title: pick('ลิสต์ของฉัน', 'Watchlist'),
-      blurb: pick('บันทึก ติดตามความคืบหน้า แล้วกลับมาดูต่อได้ทันที', 'Save, track progress, pick up right where you left off.'),
+      blurb: pick('บันทึก ติดตามความคืบหน้า กลับมาดูต่อได้ทุกอุปกรณ์', 'Save, track, and pick up right where you left off — across every device.'),
+      cta: pick('เปิดลิสต์', 'Open list'),
       href: '/watchlist',
       accent: 'sky',
     },
@@ -214,7 +253,8 @@ export function FeaturePillars() {
       key: 'battle',
       icon: Swords,
       title: pick('แบทเทิล', 'Battle'),
-      blurb: pick('เปิดโหวตดวลกับเพื่อน แล้วดูว่าเรื่องไหนชนะสายคุณ', 'Vote showdowns with friends. Who wins your bracket?'),
+      blurb: pick('ดวลตัวต่อตัว เพื่อนโหวต แบรกเก็ตชี้ขาดแบบเรียลไทม์', 'Pit two titles head-to-head. Friends vote. Your bracket runs in real time.'),
+      cta: pick('เปิดสนาม', 'Open arena'),
       href: '/battle',
       accent: 'rose',
     },
@@ -222,15 +262,17 @@ export function FeaturePillars() {
       key: 'party',
       icon: Disc3,
       title: pick('ปาร์ตี้', 'Party'),
-      blurb: pick('ห้องเกมทายและโหวตที่เล่นกับเพื่อนได้ทันที', 'Quiz and vote games you can run in a room with friends.'),
+      blurb: pick('ห้องเกมทายและโหวตที่เล่นกับเพื่อนได้ทันที — Mood G.I., Bracket Royale, Trivia', 'Quiz and vote games with friends in a private room. Mood G.I., Bracket Royale, Trivia.'),
+      cta: pick('สร้างห้อง', 'Make a room'),
       href: '/party',
       accent: 'purple',
     },
     {
       key: 'tierlist',
       icon: ListOrdered,
-      title: pick('เทียร์ลิสต์', 'Tierlist'),
-      blurb: pick('จัดอันดับทุกอย่างตั้งแต่ S ถึง F แล้วแชร์ความเห็นของคุณ', 'Rank anything from S to F. Share your hot takes.'),
+      title: pick('เทียร์ลิสต์', 'Tier list'),
+      blurb: pick('จัดอันดับทุกอย่างจาก S ถึง F แชร์ความเห็นแล้วเทียบกับชาวเรา', 'Rank anything from S to F, share your hot takes, see how your tier compares.'),
+      cta: pick('สร้างเทียร์', 'Make a tier'),
       href: '/tierlist',
       accent: 'emerald',
     },
@@ -247,20 +289,22 @@ export function FeaturePillars() {
         </div>
       </div>
       <div className="hv2-pillars-grid">
-        {pillars.map(({ key, icon: Icon, title, blurb, href, accent }) => (
+        {pillars.map(({ key, icon: Icon, title, blurb, cta, href, accent }) => (
           <button
             key={key}
             className={`hv2-pillar hv2-pillar--${accent}`}
             onClick={() => navigate(href)}
           >
             <div className="hv2-pillar-icon">
-              <Icon size={22} strokeWidth={2.2} />
+              <Icon size={22} strokeWidth={2} />
             </div>
             <div className="hv2-pillar-body">
               <div className="hv2-pillar-title">{title}</div>
               <div className="hv2-pillar-blurb">{blurb}</div>
             </div>
-            <ArrowRight size={16} className="hv2-pillar-arrow" />
+            <span className="hv2-pillar-cta">
+              {cta} <ArrowRight size={12} />
+            </span>
           </button>
         ))}
       </div>
@@ -387,7 +431,7 @@ export function ContinueWatchingSection() {
       title={pick('ดูต่อ', 'Pick up')}
       accent={pick('ที่ค้างไว้', 'where you left off')}
       seeAllHref="/watchlist"
-      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all')}
     >
       <Carousel>
         {visible.map((t) => (
@@ -419,7 +463,7 @@ export function TrendingSection() {
       title={pick('ทุกคน', 'Everyone is')}
       accent={pick('กำลังดู', 'watching')}
       seeAllHref="/discover"
-      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all')}
     >
       {loading ? (
         <SkeletonRow />
@@ -457,33 +501,35 @@ export function HowToStartSection() {
   const paths = [
     {
       key: 'mood',
-      tag: pick('ยังไม่รู้จะดูอะไรดี?', 'Not sure what to watch?'),
-      title: pick('ค้นหาตามมู้ด', 'Find by mood'),
-      desc: pick('บอกอารมณ์ตอนนี้ แล้วรับเรื่องที่เข้ากัน', 'Tell us how you feel and get a pick that fits.'),
-      cta: pick('เปิด Discover', 'Open Discover'),
-      icon: Compass,
+      title: pick('เลือกมู้ด', 'Pick a mood'),
+      desc: pick('แตะชิป หรือบอกว่าตอนนี้รู้สึกยังไง เราจะกรองทั้งคลังตามอารมณ์ ไม่ใช่แนว', "Tap a chip or describe how you feel. We'll filter the entire library by vibe, not genre."),
+      icon: Sparkles,
       href: '/discover',
       variant: 'indigo',
     },
     {
-      key: 'party',
-      tag: pick('มีเวลา 10 นาทีกับเพื่อน?', 'Got 10 minutes with friends?'),
-      title: pick('เริ่มปาร์ตี้', 'Start a party'),
-      desc: pick('เลือกเทมเพลตเกมทายหรือโหวต แล้วแชร์ลิงก์ห้องได้เลย', 'Pick a quiz or vote template and share the room link.'),
-      cta: pick('ดูเทมเพลต', 'Browse templates'),
-      icon: Disc3,
-      href: '/party/templates',
+      key: 'save',
+      title: pick('บันทึกสิ่งที่เจอ', 'Save your finds'),
+      desc: pick('แตะ bookmark เพื่อเพิ่มลงลิสต์ ความคืบหน้าจะถูกติดตามอัตโนมัติ', 'Tap the bookmark to add to your watchlist. Track progress automatically as you go.'),
+      icon: Bookmark,
+      href: '/watchlist',
       variant: 'purple',
     },
     {
       key: 'battle',
-      tag: pick('อยากเถียงเรื่องรสนิยม?', 'Want to argue taste?'),
-      title: pick('เปิดแบทเทิล', 'Spin up a battle'),
-      desc: pick('ตั้งโหมดดวลแบบตัวต่อตัวกับทุกเรื่องที่คุณชอบ', 'Run a head-to-head bracket on anything you love.'),
-      cta: pick('ดูแบทเทิล', 'Browse battles'),
+      title: pick('ดวลกับเพื่อน', 'Battle a friend'),
+      desc: pick('ส่งคำท้าดวลรสนิยม 1v1 เพื่อนโหวต คุณโหวต แบรกเก็ตชี้ขาด', 'Send a 1v1 taste battle. They vote, you vote, the bracket settles it.'),
       icon: Swords,
       href: '/battle/browse',
       variant: 'rose',
+    },
+    {
+      key: 'rank',
+      title: pick('จัดอันดับ', 'Rank it'),
+      desc: pick('ลากเรื่องไปใส่เทียร์ S–F เผยแพร่ลิสต์ แล้วดูว่าใครรสนิยมตรงกับคุณ', 'Drag titles into S–F tiers. Publish your list and see whose taste actually matches yours.'),
+      icon: ListOrdered,
+      href: '/tierlist',
+      variant: 'amber',
     },
   ];
   return (
@@ -492,27 +538,23 @@ export function HowToStartSection() {
         <div className="hv2-section-heading">
           <div className="hv2-section-eyebrow">{pick('เพิ่งเข้ามา?', 'New here?')}</div>
           <h2 className="hv2-section-title">
-            {pick('เริ่มจาก', 'Start from')} <em className="hv2-accent">{pick('ทางลัดพวกนี้', 'one of these')}</em>
+            {pick('วิธี', 'How to')} <em className="hv2-accent">{pick('เริ่ม', 'start')}</em>
           </h2>
-          <p className="hv2-section-subtitle">{pick('3 วิธีสั้น ๆ ให้คุ้นกับ MoodsWatch ภายในไม่ถึงนาที', 'Three quick ways to get the hang of MoodsWatch in under a minute.')}</p>
+          <p className="hv2-section-subtitle">{pick('4 ขั้นตอน ใช้เวลาประมาณ 90 วินาที', 'Four steps · about ninety seconds.')}</p>
         </div>
       </div>
       <div className="hv2-howto-grid">
-        {paths.map(({ key, tag, title, desc, cta, icon: Icon, href, variant }) => (
+        {paths.map(({ key, title, desc, icon: Icon, href, variant }) => (
           <button
             key={key}
             className={`hv2-howto-card hv2-howto-card--${variant}`}
             onClick={() => navigate(href)}
           >
             <div className="hv2-howto-icon">
-              <Icon size={22} />
+              <Icon size={18} strokeWidth={2.2} />
             </div>
-            <div className="hv2-howto-tag">{tag}</div>
             <div className="hv2-howto-title">{title}</div>
             <div className="hv2-howto-desc">{desc}</div>
-            <div className="hv2-howto-cta">
-              {cta} <ArrowRight size={14} />
-            </div>
           </button>
         ))}
       </div>
@@ -537,7 +579,7 @@ export function PartySection() {
       title={pick('ปาร์ตี้', 'Party')}
       accent={pick('เริ่มเลย', 'right now')}
       seeAllHref="/party/templates"
-      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all')}
     >
       {loading ? (
         <SkeletonRow />
@@ -571,7 +613,7 @@ export function BattleSection() {
       title={pick('สนาม', 'Battle')}
       accent={pick('แบทเทิล', 'arena')}
       seeAllHref="/battle/browse"
-      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all')}
     >
       {loading ? (
         <SkeletonRow />
@@ -606,7 +648,7 @@ export function TierlistSection() {
       title={pick('เทียร์ลิสต์', 'Tier lists')}
       accent={pick('ที่กำลังฮอต', 'going viral')}
       seeAllHref="/tierlist"
-      seeAllLabel={pick('ดูทั้งหมด', 'See all →')}
+      seeAllLabel={pick('ดูทั้งหมด', 'See all')}
     >
       {loading ? (
         <SkeletonRow />
@@ -633,36 +675,58 @@ export function TierlistSection() {
    COMMUNITY CTA — bottom-of-page closer
    ═══════════════════════════════════════════════════════════════════════════ */
 
+const COMMUNITY_AVATARS = [
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=240&q=70',
+  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=240&q=70',
+  'https://images.unsplash.com/photo-1607746882042-944635dfe10e?w=240&q=70',
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&q=70',
+  null, // center sparkles tile
+  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=240&q=70',
+  'https://images.unsplash.com/photo-1614283233556-f35b0c801ef1?w=240&q=70',
+  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=240&q=70',
+  'https://images.unsplash.com/photo-1463453091185-61582044d556?w=240&q=70',
+];
+
 export function CommunityCta() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { pick } = useLanguage();
 
   return (
     <section className="hv2-community">
-      <div className="hv2-community-bg" aria-hidden="true" />
       <div className="hv2-community-content">
-        <div className="hv2-community-icon">
-          <Users size={22} />
-        </div>
+        <div className="hv2-community-eyebrow">{pick('จากชาวเรา', 'From the community')}</div>
         <h2 className="hv2-community-title">
-          {user ? pick('ชวนเพื่อนเข้ามาสนุกด้วยกัน', 'Bring your friends in') : pick('เข้าร่วมคอมมูนิตี้', 'Join the community')}
+          {pick('เทียร์ลิสต์ ปาร์ตี้ แบทเทิล', 'Tier lists, parties & battles')}{' '}
+          <em>{pick('ที่ทุกคนสร้าง', 'made by everyone')}</em>
         </h2>
         <p className="hv2-community-sub">
-          {user
-            ? pick('แชร์ห้องปาร์ตี้ ชวนเพื่อนมาแบทเทิล หรืออวดเทียร์ลิสต์ของคุณได้เลย', 'Share a party room, challenge a friend to a battle, or show off your tier list.')
-            : pick('เข้าสู่ระบบเพื่อบันทึกลิสต์ เปิดห้องปาร์ตี้ และไต่แรงก์บนกระดานแบทเทิล', 'Sign in to save your watchlist, host parties, and climb the battle leaderboard.')}
+          {pick(
+            'เข้าห้องปาร์ตี้ที่กำลังเล่นอยู่ตอนนี้ ดูอันดับบนกระดาน Battle หรือเล่นเทียร์ลิสต์ฮิตประจำสัปดาห์',
+            'Drop into a live party room, climb the Battle leaderboard, or play this week\'s hot tier list.',
+          )}
         </p>
         <div className="hv2-community-actions">
-          {!user && (
-            <button className="hv2-btn hv2-btn--primary" onClick={() => navigate('/login')}>
-              <Flame size={16} /> {pick('สร้างบัญชีฟรี', 'Create a free account')}
-            </button>
-          )}
-          <button className="hv2-btn hv2-btn--ghost" onClick={() => navigate('/party/templates')}>
-            <Play size={16} /> {pick('เปิดปาร์ตี้', 'Host a party')}
+          <button className="hv2-btn hv2-btn--primary" onClick={() => navigate('/party/rooms')}>
+            <Users size={15} /> {pick('ดูห้องที่กำลังเล่น', 'Join a live room')}
+          </button>
+          <button className="hv2-btn hv2-btn--secondary" onClick={() => navigate('/battle/leaderboard')}>
+            {pick('เปิด Leaderboard', 'Open leaderboard')} <ArrowRight size={14} />
           </button>
         </div>
+      </div>
+
+      <div className="hv2-community-stack" aria-hidden="true">
+        {COMMUNITY_AVATARS.map((src, i) => (
+          src ? (
+            <div key={i} className="hv2-community-stack-cell">
+              <img src={src} alt="" loading="lazy" />
+            </div>
+          ) : (
+            <div key={i} className="hv2-community-stack-cell hv2-community-stack-center">
+              <Sparkles size={26} strokeWidth={2.4} />
+            </div>
+          )
+        ))}
       </div>
     </section>
   );

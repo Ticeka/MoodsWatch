@@ -361,7 +361,6 @@ export function createPartySettings(input = {}) {
     : getPartyPresetById(input.presetId);
   const roundCount = clamp(Number(input.roundCount || 10), 2, 20);
   const entrantCount = normalizeVoteEntrantCount(input.entrantCount || input.roundCount || 8);
-  const isLongPlaybackMode = modeType === 'vote';
   const clipPlaybackMode = modeType === 'vote'
     ? normalizePartyVotePlaybackMode(input.clipPlaybackMode)
     : 'preview';
@@ -371,7 +370,7 @@ export function createPartySettings(input = {}) {
   const timePerRoundSec = clamp(
     defaultTimePerRoundSec,
     modeType === 'title-guess' ? 4 : 8,
-    modeType === 'title-guess' ? 15 : (isLongPlaybackMode ? 180 : 20)
+    modeType === 'title-guess' ? 15 : (modeType === 'vote' ? 30 : 20)
   );
   const voteSec = clamp(Number(input.voteSec || 10), 5, 20);
   const revealSec = clamp(Number(input.revealSec || 12), 6, 20);

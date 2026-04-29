@@ -90,9 +90,10 @@ function JoinRequestCard({ request, onApprove, onReject, busyId, pick }) {
   );
 }
 
-export function PartyJoinRequestsPanel({ roomId, pick }) {
+export function PartyJoinRequestsPanel({ roomId, pick, variant = 'card' }) {
   const { joinRequests, setJoinRequests, upsertJoinRequest, removeJoinRequest } = usePartyRoomStore();
   const [busyId, setBusyId] = useState('');
+  const [open, setOpen] = useState(false);
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -166,6 +167,48 @@ export function PartyJoinRequestsPanel({ roomId, pick }) {
       setBusyId('');
     }
   };
+
+  if (variant === 'popover') {
+    return (
+      <div className="party-join-requests-popover">
+        <button
+          type="button"
+          className={`party-join-requests-trigger${joinRequests.length ? ' has-requests' : ''}`}
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          <Bell size={15} />
+          <span>{pick('คำขอเข้าห้อง', 'Join requests')}</span>
+          {joinRequests.length ? (
+            <strong>{joinRequests.length}</strong>
+          ) : null}
+        </button>
+
+        {open ? (
+          <div className="party-join-requests-dropdown">
+            {joinRequests.length ? (
+              <div className="party-join-requests-list">
+                {joinRequests.map((req) => (
+                  <JoinRequestCard
+                    key={req.id}
+                    request={req}
+                    onApprove={handleApprove}
+                    onReject={handleReject}
+                    busyId={busyId}
+                    pick={pick}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="party-join-requests-empty">
+                <span>{pick('ยังไม่มีคำขอ', 'No requests yet')}</span>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={`party-lobby-block party-join-requests-card${!joinRequests.length ? ' is-empty' : ''}`}>
