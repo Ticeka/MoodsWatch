@@ -38,6 +38,17 @@ Follow this file together with the global Desktop `AGENTS.md`. This project file
 - E2E tests: `npm run test:e2e`
 - Storybook: `npm run storybook`
 
+## OpenClaw Overnight Coding
+
+For long autonomous runs, use the dedicated OpenClaw agent `moodswatch-overnight`.
+
+- Preferred trigger: `.\overnight.cmd "describe the task"` from the repository root.
+- Read `docs/openclaw/OVERNIGHT.md` before starting an overnight task.
+- Follow `docs/openclaw/TOOLS.md` for allowed commands and restricted actions.
+- Use `docs/openclaw/TODO.md` as the live task board and final handoff log.
+- Keep all work inside this repository unless the user explicitly allows global OpenClaw config changes.
+- Do not touch existing dirty user changes unless they are directly required for the requested task.
+
 ## Automatic Role And Subagent Policy
 
 - For simple explanations, one-command checks, and tiny edits, use the relevant role as guidance and do the work directly.

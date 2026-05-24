@@ -8,11 +8,22 @@ This project now uses a canonical catalog model in Supabase with multi-source in
 
 ## Documentation
 
-- Full system guide: [docs/SYSTEM_GUIDE.md](/c:/Users/WiNDOWS%2011%20PRO/Desktop/ProjectPunlan/docs/SYSTEM_GUIDE.md)
+- Full system guide: [docs/SYSTEM_GUIDE.md](docs/SYSTEM_GUIDE.md)
+
+## Project Layout
+
+- `src/`: Vite + React application code.
+- `src/features/`: feature slices such as discover, tierlist, party, auth, and watchlist.
+- `src/shared/`: shared UI, hooks, config, data, and Supabase helpers.
+- `scripts/`: catalog ingestion, verification, benchmarks, and maintenance scripts.
+- `supabase/`: migrations and edge functions.
+- `docs/` and `prd/`: system docs, product notes, and mockups.
+- `archive/root-artifacts/`: old temp logs, audits, scratch SQL/CSS, and visual references moved out of the root.
+- `docs/openclaw/` and `overnight.cmd`: OpenClaw overnight coding setup.
 
 ## Database
 
-Apply [supabase/migrations/20260314_canonical_catalog.sql](/c:/Users/WiNDOWS%2011%20PRO/Desktop/ProjectPunlan/supabase/migrations/20260314_canonical_catalog.sql).
+Apply the catalog migrations in [supabase/migrations](supabase/migrations).
 
 Core catalog tables:
 

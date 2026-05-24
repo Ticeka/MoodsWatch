@@ -14,6 +14,7 @@ storybook-static
 # Logs
 logs
 *.log
+*.pid
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -42,3 +43,8 @@ Thumbs.db
 # Cache
 .cache
 *.local
+.tmp-*
+tmp_*
+
+# Local OpenClaw workspace state
+.openclaw/

@@ -1349,11 +1349,21 @@ describe('partyRemote template CRUD', () => {
       }
 
       if (table === 'party_song_template_items') {
+        const orderBuilder = {
+          order: vi.fn(() => Promise.resolve({ data: existingItemRows, error: null })),
+        };
         return {
           select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              order: vi.fn(() => Promise.resolve({ data: existingItemRows, error: null })),
-            })),
+            eq: vi.fn(() => orderBuilder),
+            in: vi.fn(() => orderBuilder),
+          })),
+        };
+      }
+
+      if (table === 'canonical_titles') {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(async () => ({ data: [], error: null })),
           })),
         };
       }
@@ -2136,6 +2146,9 @@ describe('partyRemote template CRUD', () => {
       }
       if (table === 'party_song_template_items') {
         return makeTemplateQueryBuilder({ selectData: SAMPLE_ITEM_ROWS });
+      }
+      if (table === 'canonical_titles') {
+        return makeTemplateQueryBuilder({ selectData: [] });
       }
       if (table === 'user_profiles') {
         return {
